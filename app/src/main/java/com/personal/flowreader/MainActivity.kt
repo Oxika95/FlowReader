@@ -29,19 +29,20 @@ import com.personal.flowreader.ui.theme.FlowTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
-    private val pendingShare = MutableStateFlow<Intent?>(null)
+    private val pendingIncoming = MutableStateFlow<Intent?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (isShareIntent(intent)) {
-            pendingShare.value = Intent(intent)
+        if (isIncomingIntent(intent)) {
+            pendingIncoming.value = Intent(intent)
         }
         enableEdgeToEdge()
         setContent {
             val openVm: OpenBookViewModel = viewModel()
             val libraryVm: LibraryViewModel = viewModel()
             val openUi by openVm.ui.collectAsState()
-            val shareIntent by pendingShare.collectAsState()
+            val libraryUi by libraryVm.ui.collectAsState()
+            val incoming by pendingIncoming.collectAsState()
 
             LaunchedEffect(openUi.orientation) {
                 requestedOrientation = when (openUi.orientation) {
@@ -59,15 +60,19 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val nav = rememberNavController()
 
-                    LaunchedEffect(shareIntent) {
-                        val incoming = shareIntent ?: return@LaunchedEffect
-                        if (libraryVm.handleShareIntent(incoming)) {
-                            pendingShare.value = null
+                    LaunchedEffect(incoming) {
+                        val intent = incoming ?: return@LaunchedEffect
+                        if (libraryVm.handleIncomingIntent(intent)) {
+                            pendingIncoming.value = null
                             setIntent(Intent(this@MainActivity, MainActivity::class.java))
-                            nav.navigate("library") {
-                                launchSingleTop = true
-                                restoreState = true
-                            }
+                        }
+                    }
+
+                    LaunchedEffect(libraryUi.pendingOpenBookId) {
+                        val id = libraryUi.pendingOpenBookId ?: return@LaunchedEffect
+                        libraryVm.consumePendingOpen()
+                        nav.navigate("reader/$id") {
+                            launchSingleTop = true
                         }
                     }
 
@@ -138,13 +143,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (isShareIntent(intent)) {
-            pendingShare.value = Intent(intent)
+        if (isIncomingIntent(intent)) {
+            pendingIncoming.value = Intent(intent)
         }
     }
 
-    private fun isShareIntent(intent: Intent?): Boolean =
-        intent?.action == Intent.ACTION_SEND
+    private fun isIncomingIntent(intent: Intent?): Boolean =
+        intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_VIEW
 }
 
 @androidx.compose.runtime.Composable

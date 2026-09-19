@@ -32,6 +32,8 @@ data class LibraryUi(
     val busy: Boolean = false,
     val message: String? = null,
     val error: String? = null,
+    /** When set, MainActivity should navigate to the reader for this bookId. */
+    val pendingOpenBookId: String? = null,
 )
 
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
@@ -75,21 +77,78 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Handle ACTION_SEND text/plain from Flow Reader or Flow-Que share aliases.
-     * @return true if the intent was a share we consumed
+     * Handle ACTION_SEND / ACTION_VIEW from the share sheet or "Open with".
+     * @return true if the intent was consumed (async work may still be running)
      */
-    fun handleShareIntent(intent: Intent?): Boolean {
+    fun handleIncomingIntent(intent: Intent?): Boolean {
         if (intent == null) return false
-        if (intent.action != Intent.ACTION_SEND) return false
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
-        if (text.isEmpty()) {
-            _ui.value = _ui.value.copy(error = "Nothing to share")
-            return true
+        when (intent.action) {
+            Intent.ACTION_VIEW -> {
+                val uri = intent.data ?: return false
+                openExternalUri(uri)
+                return true
+            }
+            Intent.ACTION_SEND -> {
+                val component = intent.component?.className.orEmpty()
+                // Aliases: text → library or Que. Direct SEND with a stream → open file.
+                @Suppress("DEPRECATION")
+                val stream = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                if (stream != null && !component.contains("ShareQueAlias") &&
+                    !component.contains("ShareLibraryAlias")
+                ) {
+                    openExternalUri(stream)
+                    return true
+                }
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+                if (text.isEmpty()) {
+                    if (stream != null) {
+                        openExternalUri(stream)
+                        return true
+                    }
+                    _ui.value = _ui.value.copy(error = "Nothing to share")
+                    return true
+                }
+                // File-like SEND of plain text without alias: treat as open if it looks like a URI stream only
+                val toQue = component.endsWith("ShareQueAlias")
+                ingestSharedText(text, toQue = toQue)
+                return true
+            }
+            else -> return false
         }
-        val component = intent.component?.className.orEmpty()
-        val toQue = component.endsWith("ShareQueAlias")
-        ingestSharedText(text, toQue = toQue)
-        return true
+    }
+
+    /** Import or link an external book URI, then request the reader to open it. */
+    fun openExternalUri(uri: Uri) {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(busy = true, error = null, message = null)
+            try {
+                val row = withContext(Dispatchers.IO) {
+                    try {
+                        flow.catalog.add(uri, BookSource.Linked)
+                    } catch (_: Throwable) {
+                        flow.catalog.add(uri, BookSource.Imported)
+                    }
+                }
+                val books = withContext(Dispatchers.IO) { flow.catalog.list() }
+                flow.settings.setLibraryTab(LibraryTab.Files)
+                _ui.value = _ui.value.copy(
+                    books = books,
+                    tab = LibraryTab.Files,
+                    busy = false,
+                    message = "Opened ${row.title}",
+                    pendingOpenBookId = row.bookId,
+                )
+            } catch (t: Throwable) {
+                _ui.value = _ui.value.copy(
+                    busy = false,
+                    error = t.message ?: "Could not open file",
+                )
+            }
+        }
+    }
+
+    fun consumePendingOpen() {
+        _ui.value = _ui.value.copy(pendingOpenBookId = null)
     }
 
     fun ingestSharedText(text: String, toQue: Boolean) {
