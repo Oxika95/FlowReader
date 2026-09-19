@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Flow Reader</string>
+    <string name="share_library_label">Flow Reader</string>
+    <string name="share_que_label">Flow-Que</string>
 </resources>

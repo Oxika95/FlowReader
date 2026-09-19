@@ -119,6 +119,12 @@ enum class ReaderOrientation {
 object TtsEngines {
     const val EDGE = "edge"
     const val SYSTEM_DEFAULT = "system"
+
+    /** Always-present engine choices, ahead of any installed Android TTS engines. */
+    val BUILT_IN: List<TtsEngineOption> = listOf(
+        TtsEngineOption(EDGE, "Edge TTS"),
+        TtsEngineOption(SYSTEM_DEFAULT, "System Default"),
+    )
 }
 
 data class TtsEngineOption(
@@ -129,4 +135,32 @@ data class TtsEngineOption(
 data class TtsVoiceOption(
     val id: String,
     val label: String,
+)
+
+enum class BookSource {
+    Imported,
+    Linked,
+    ;
+
+    val label: String
+        get() = when (this) {
+            Imported -> "Imported"
+            Linked -> "Linked"
+        }
+}
+
+enum class LibraryViewMode {
+    List,
+    Shelf,
+}
+
+enum class LibraryTab {
+    Files,
+    Que,
+}
+
+/** Result of sharing text into the library and/or Que. */
+data class TextIngestResult(
+    val progress: ProgressEntity,
+    val queItem: QueItemEntity? = null,
 )

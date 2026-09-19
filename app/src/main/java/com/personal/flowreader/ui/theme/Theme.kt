@@ -11,16 +11,48 @@ import com.personal.flowreader.data.AccentHue
 import com.personal.flowreader.data.ThemeMode
 
 private val LightBase = lightColorScheme()
-private val DarkBase = darkColorScheme()
+/** Neutral charcoal dark — no Material purple tint on surfaces. */
+private val DarkBase = darkColorScheme(
+    background = Color(0xFF121212),
+    surface = Color(0xFF121212),
+    surfaceVariant = Color(0xFF2C2C2C),
+    surfaceDim = Color(0xFF121212),
+    surfaceBright = Color(0xFF393939),
+    surfaceContainerLowest = Color(0xFF0E0E0E),
+    surfaceContainerLow = Color(0xFF1A1A1A),
+    surfaceContainer = Color(0xFF1E1E1E),
+    surfaceContainerHigh = Color(0xFF242424),
+    surfaceContainerHighest = Color(0xFF2A2A2A),
+    onBackground = Color(0xFFE3E3E3),
+    onSurface = Color(0xFFE3E3E3),
+    onSurfaceVariant = Color(0xFFC6C6C6),
+    outline = Color(0xFF8E8E8E),
+    outlineVariant = Color(0xFF444444),
+    inverseSurface = Color(0xFFE3E3E3),
+    inverseOnSurface = Color(0xFF1A1A1A),
+    surfaceTint = Color.Transparent,
+    scrim = Color.Black,
+)
 private val OledBase = darkColorScheme(
     background = Color.Black,
     surface = Color.Black,
     surfaceVariant = Color(0xFF1A1A1A),
+    surfaceDim = Color.Black,
+    surfaceBright = Color(0xFF2A2A2A),
     surfaceContainerLowest = Color.Black,
     surfaceContainerLow = Color(0xFF0E0E0E),
     surfaceContainer = Color(0xFF161616),
     surfaceContainerHigh = Color(0xFF1E1E1E),
     surfaceContainerHighest = Color(0xFF2A2A2A),
+    onBackground = Color(0xFFF5F5F5),
+    onSurface = Color(0xFFF5F5F5),
+    onSurfaceVariant = Color(0xFFC6C6C6),
+    outline = Color(0xFF8E8E8E),
+    outlineVariant = Color(0xFF333333),
+    inverseSurface = Color(0xFFE3E3E3),
+    inverseOnSurface = Color(0xFF1A1A1A),
+    surfaceTint = Color.Transparent,
+    scrim = Color.Black,
 )
 
 private fun normalizeHue(hue: Float): Float {
@@ -84,6 +116,12 @@ fun schemeFor(mode: ThemeMode, accentHue: Float = AccentHue.DEFAULT): ColorSchem
         onSecondary = onFor(muted),
         secondaryContainer = container,
         onSecondaryContainer = onFor(container),
+        // Keep tertiary on the same two accent sats — never Material's purple tertiary.
+        tertiary = muted,
+        onTertiary = onFor(muted),
+        tertiaryContainer = container,
+        onTertiaryContainer = onFor(container),
+        surfaceTint = Color.Transparent,
     )
 }
 

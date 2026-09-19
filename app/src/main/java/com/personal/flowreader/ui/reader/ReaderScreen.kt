@@ -76,7 +76,6 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -90,12 +89,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.personal.flowreader.data.BlockKind
+import com.personal.flowreader.data.FilterRule
+import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.SentenceSplitter
 import com.personal.flowreader.data.ThemeMode
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -105,8 +106,6 @@ private val RailLoadingBright = Color(0xFF8A8A8A)
 private val EdgeFade = 96.dp
 /** Full left margin from screen edge to text; bars are centered in this gutter. */
 private val RailGutterWidth = ReaderContentStartPadding
-private val ReaderListEndPadding = 20.dp
-private val ReaderTextEndPadding = 4.dp
 private val RailDotRadius = 1.25.dp
 private val RailDotStep = 4.dp
 /** Loading pill matches cache-dot diameter. */
@@ -136,9 +135,16 @@ private data class BlockSentence(
 
 private enum class ReaderOverlay { Hidden, Chrome, Settings, Toc }
 
+private data class FilterEditorSession(
+    val scope: FilterScope,
+    val rule: FilterRule,
+    val isNew: Boolean,
+)
+
 @Composable
 fun ReaderScreen(
     vm: ReaderViewModel,
+    queId: String? = null,
     themeMode: ThemeMode,
     accentHue: Float,
     fontScale: Float,
@@ -152,6 +158,7 @@ fun ReaderScreen(
     onLineSpacing: (Float) -> Unit,
     onOrientation: (ReaderOrientation) -> Unit,
     onBack: () -> Unit,
+    onAdvanceQue: (bookId: String, queId: String) -> Unit = { _, _ -> },
 ) {
     val ui by vm.ui.collectAsState()
     val tts by vm.tts.state.collectAsState()
@@ -160,23 +167,47 @@ fun ReaderScreen(
     val scope = rememberCoroutineScope()
     var programmatic by remember { mutableStateOf(false) }
     var overlay by remember { mutableStateOf(ReaderOverlay.Hidden) }
-    /** Skip the next follow-scroll once (sentence double-tap sets locus without moving the list). */
+    var filterEditor by remember { mutableStateOf<FilterEditorSession?>(null) }
+    /** Skip the next TTS follow-scroll once when we center the list ourselves (double-tap / pin). */
     var suppressFollowScroll by remember { mutableStateOf(false) }
     var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
     val items = doc?.items.orEmpty()
     val allSentences = remember(doc) { doc?.let { SentenceSplitter.split(it) }.orEmpty() }
-    val currentSentenceIndex = when {
-        tts.playing && tts.sentence != null -> tts.sentenceIndex
-        allSentences.isEmpty() -> 0
-        else -> SentenceSplitter.indexAt(allSentences, ui.locus)
+    /** (chapter, block) → flat item index; the reader looks this up on every frame. */
+    val blockIndexOf = remember(doc) {
+        buildMap(items.size) {
+            items.forEachIndexed { i, item -> put(item.chapterIndex to item.blockIndex, i) }
+        }
     }
-    val showBufferRail = true
+    // Only computed while paused, and only when the locus actually moves.
+    val locusSentenceIndex = remember(allSentences) {
+        derivedStateOf {
+            if (allSentences.isEmpty()) 0 else SentenceSplitter.indexAt(allSentences, ui.locus)
+        }
+    }
+    val currentSentenceIndex = if (tts.playing && tts.sentence != null) {
+        tts.sentenceIndex
+    } else {
+        locusSentenceIndex.value
+    }
     val leave = rememberUpdatedState {
         vm.persistNow()
         onBack()
     }
 
-    ImmersiveSystemBars(enabled = true)
+    ImmersiveSystemBars()
+
+    val activeQueId = queId ?: vm.queId
+    LaunchedEffect(activeQueId, vm.bookId) {
+        if (activeQueId.isNullOrBlank()) return@LaunchedEffect
+        vm.tts.bookFinished.collect {
+            val next = vm.finishQueAndNext()
+            if (next != null) {
+                vm.suppressPauseOnClear = true
+                onAdvanceQue(next.first, next.second)
+            }
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, vm) {
@@ -190,14 +221,13 @@ fun ReaderScreen(
         }
     }
 
-    val locusIndex by remember(ui.locus, tts.sentence, doc, tts.playing, tts.following) {
+    val locusIndex by remember(doc) {
         derivedStateOf {
             val s = tts.sentence
             // While TTS is actively following, highlight the spoken sentence.
             // Otherwise prefer the saved/scrolled UI locus so silent reading tracks the viewport.
-            if (s != null && tts.playing && tts.following) {
-                items.indexOfFirst { it.chapterIndex == s.chapterIndex && it.blockIndex == s.blockIndex }
-                    .coerceAtLeast(0)
+            if (s != null && tts.playing && tts.following && tts.autoScrollWithTts) {
+                blockIndexOf[s.chapterIndex to s.blockIndex] ?: 0
             } else {
                 ui.locus.flatIndex(doc ?: return@derivedStateOf 0)
             }
@@ -221,11 +251,7 @@ fun ReaderScreen(
         derivedStateOf {
             if (!tts.playing) return@derivedStateOf null
             val s = tts.sentence ?: return@derivedStateOf null
-            val bookItems = doc?.items.orEmpty()
-            val idx = bookItems.indexOfFirst {
-                it.chapterIndex == s.chapterIndex && it.blockIndex == s.blockIndex
-            }
-            if (idx < 0) return@derivedStateOf null
+            val idx = blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@derivedStateOf null
 
             // Subscribe to scroll position (layoutInfo alone can miss some updates).
             listState.firstVisibleItemIndex
@@ -265,13 +291,7 @@ fun ReaderScreen(
     val playbackBlockIndex by remember(doc) {
         derivedStateOf {
             val s = tts.sentence
-            if (!tts.playing || s == null) {
-                -1
-            } else {
-                doc?.items.orEmpty().indexOfFirst {
-                    it.chapterIndex == s.chapterIndex && it.blockIndex == s.blockIndex
-                }
-            }
+            if (!tts.playing || s == null) -1 else blockIndexOf[s.chapterIndex to s.blockIndex] ?: -1
         }
     }
 
@@ -281,6 +301,10 @@ fun ReaderScreen(
         programmatic = true
         try {
             listState.animateScrollItemToCenter(target)
+            // Wait until LazyList reports idle so a cancelled/settling scroll
+            // cannot be mistaken for a user fling after we clear [programmatic].
+            snapshotFlow { listState.isScrollInProgress }
+                .first { !it }
         } finally {
             programmatic = false
         }
@@ -293,39 +317,45 @@ fun ReaderScreen(
         programmatic = true
         try {
             listState.scrollItemToCenter(target)
+            snapshotFlow { listState.isScrollInProgress }
+                .first { !it }
         } finally {
             programmatic = false
             restoredScroll = true
         }
     }
 
-    LaunchedEffect(tts.following, locusIndex, tts.playing) {
-        if (!tts.following || !tts.playing || items.isEmpty() || !restoredScroll) return@LaunchedEffect
+    // Re-center on each spoken sentence while follow mode is on.
+    LaunchedEffect(tts.following, tts.playing, tts.sentenceIndex, tts.autoScrollWithTts, restoredScroll) {
+        if (!tts.autoScrollWithTts || !tts.following || !tts.playing ||
+            items.isEmpty() || !restoredScroll
+        ) {
+            return@LaunchedEffect
+        }
+        val s = tts.sentence ?: return@LaunchedEffect
+        val target = blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@LaunchedEffect
         if (suppressFollowScroll) {
             suppressFollowScroll = false
             return@LaunchedEffect
         }
-        centerItem(locusIndex)
+        centerItem(target)
     }
 
     val ttsForScroll = rememberUpdatedState(tts)
     val programmaticForScroll = rememberUpdatedState(programmatic)
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.isScrollInProgress }
-            .distinctUntilChanged()
-            .collect { moving ->
-                if (moving && !programmaticForScroll.value && ttsForScroll.value.playing) {
-                    vm.tts.userScrolledAway()
-                }
-            }
-    }
 
-    // Finger/mouse scroll must break follow immediately — don't wait for isScrollInProgress,
-    // and don't ignore input while a programmatic follow-scroll is still settling.
+    // Only real user gestures break follow. Do not watch isScrollInProgress —
+    // follow animations and their cancellation settling look identical and were
+    // permanently clearing [following] mid-playback.
     val stopFollowOnUserScroll = remember(vm) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput && ttsForScroll.value.playing) {
+                if (source == NestedScrollSource.UserInput &&
+                    available != Offset.Zero &&
+                    !programmaticForScroll.value &&
+                    ttsForScroll.value.playing &&
+                    ttsForScroll.value.following
+                ) {
                     vm.tts.userScrolledAway()
                 }
                 return Offset.Zero
@@ -350,10 +380,12 @@ fun ReaderScreen(
     }
 
     BackHandler {
-        when (overlay) {
-            ReaderOverlay.Settings, ReaderOverlay.Toc, ReaderOverlay.Chrome ->
-                overlay = ReaderOverlay.Hidden
-            ReaderOverlay.Hidden -> leave.value()
+        when {
+            filterEditor != null -> filterEditor = null
+            overlay == ReaderOverlay.Settings ||
+                overlay == ReaderOverlay.Toc ||
+                overlay == ReaderOverlay.Chrome -> overlay = ReaderOverlay.Hidden
+            else -> leave.value()
         }
     }
 
@@ -431,23 +463,30 @@ fun ReaderScreen(
                             }
                         }
                         var textLayout by remember(item.block.id) { mutableStateOf<TextLayoutResult?>(null) }
+                        val replacedRanges = ui.replacedRangesByBlockId[item.block.id].orEmpty()
                         val text = buildAnnotatedString {
                             val raw = item.block.text
+                            append(raw)
+                            for (range in replacedRanges) {
+                                val start = range.first.coerceIn(0, raw.length)
+                                val end = (range.last + 1).coerceIn(start, raw.length)
+                                if (start < end) {
+                                    addStyle(SpanStyle(color = colors.secondary), start, end)
+                                }
+                            }
                             if (highlight) {
                                 val start = sentence!!.start.coerceIn(0, raw.length)
                                 val end = sentence.end.coerceIn(start, raw.length)
-                                append(raw.substring(0, start))
-                                withStyle(
-                                    SpanStyle(
-                                        background = Color(0x66FFC107),
-                                        fontWeight = FontWeight.Medium,
-                                    ),
-                                ) {
-                                    append(raw.substring(start, end))
+                                if (start < end) {
+                                    addStyle(
+                                        SpanStyle(
+                                            background = Color(0x66FFC107),
+                                            fontWeight = FontWeight.Medium,
+                                        ),
+                                        start,
+                                        end,
+                                    )
                                 }
-                                append(raw.substring(end))
-                            } else {
-                                append(raw)
                             }
                         }
                         val style = when (item.block.kind) {
@@ -467,7 +506,6 @@ fun ReaderScreen(
                                 sentences = blockSentences,
                                 textLayout = textLayout,
                                 currentSentenceIndex = currentSentenceIndex,
-                                showBuffer = showBufferRail,
                                 ready = tts.readySentenceIndices,
                                 generating = tts.generatingSentenceIndices,
                                 softAccent = colors.secondary,
@@ -481,7 +519,7 @@ fun ReaderScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .padding(end = ReaderTextEndPadding)
-                                    .pointerInput(blockSentences, overlay) {
+                                    .pointerInput(blockSentences, overlay, tts.doubleTapPlay) {
                                         detectTapGestures(
                                             onTap = {
                                                 when (overlay) {
@@ -504,6 +542,7 @@ fun ReaderScreen(
                                                             blockSentences.firstOrNull()
                                                         }
                                                         val charOffset = sentence?.start ?: 0
+                                                        // Re-enable follow + center the tapped sentence.
                                                         suppressFollowScroll = true
                                                         vm.jumpTo(
                                                             Locus(
@@ -512,6 +551,10 @@ fun ReaderScreen(
                                                                 charOffset,
                                                             ),
                                                         )
+                                                        if (tts.doubleTapPlay) {
+                                                            vm.tts.play()
+                                                        }
+                                                        scope.launch { centerItem(index) }
                                                         if (overlay == ReaderOverlay.Hidden) {
                                                             toggleChrome()
                                                         }
@@ -574,7 +617,7 @@ fun ReaderScreen(
         }
 
         SettingsOverlay(
-            visible = overlay == ReaderOverlay.Settings,
+            visible = overlay == ReaderOverlay.Settings && filterEditor == null,
             themeMode = themeMode,
             accentHue = accentHue,
             fontScale = fontScale,
@@ -588,6 +631,11 @@ fun ReaderScreen(
             speed = tts.speed,
             pitch = tts.pitch,
             prefetchCount = tts.prefetchCount,
+            doubleTapPlay = tts.doubleTapPlay,
+            autoScrollWithTts = tts.autoScrollWithTts,
+            filtersGlobal = ui.filtersGlobal,
+            filtersGroups = ui.filtersGroups,
+            filtersLocal = ui.filtersLocal,
             onTheme = onTheme,
             onAccentHue = onAccentHue,
             onFontScale = onFontScale,
@@ -599,8 +647,56 @@ fun ReaderScreen(
             onSpeed = { vm.tts.setSpeed(it) },
             onPitch = { vm.tts.setPitch(it) },
             onPrefetchCount = { vm.tts.setPrefetchCount(it) },
+            onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
+            onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
+            onAddFilter = { scope ->
+                filterEditor = FilterEditorSession(
+                    scope = scope,
+                    rule = FilterRule(),
+                    isNew = true,
+                )
+            },
+            onEditFilter = { scope, rule ->
+                filterEditor = FilterEditorSession(
+                    scope = scope,
+                    rule = rule,
+                    isNew = false,
+                )
+            },
+            onSetFilterEnabled = { scope, id, enabled ->
+                vm.setFilterEnabled(scope, id, enabled)
+            },
             onDismiss = { overlay = ReaderOverlay.Hidden },
         )
+
+        val editor = filterEditor
+        if (editor != null) {
+            FilterRuleEditorOverlay(
+                visible = true,
+                scope = editor.scope,
+                initial = editor.rule,
+                sampleSeed = vm.currentBlockSample(),
+                isNew = editor.isNew,
+                previewApply = { sample, draft, mode ->
+                    vm.previewApply(sample, draft, editor.scope, mode)
+                },
+                onSave = { draft ->
+                    if (editor.isNew) vm.addFilter(editor.scope, draft)
+                    else vm.updateFilter(editor.scope, draft)
+                    filterEditor = null
+                },
+                onDelete = if (editor.isNew) {
+                    null
+                } else {
+                    {
+                        vm.deleteFilter(editor.scope, editor.rule.id)
+                        filterEditor = null
+                    }
+                },
+                onSpeak = { vm.tts.speakPreview(it) },
+                onDismiss = { filterEditor = null },
+            )
+        }
 
         TocOverlay(
             visible = overlay == ReaderOverlay.Toc,
@@ -646,12 +742,19 @@ fun ReaderScreen(
                             .align(align)
                             .padding(vertical = edgePad)
                             .fillMaxWidth()
-                            .clickable {
-                                vm.tts.followAgain()
-                                val target = playbackBlockIndex
-                                if (target >= 0) {
-                                    scope.launch { centerItem(target) }
+                            .pointerInput(playbackBlockIndex) {
+                                fun resumeFollow() {
+                                    suppressFollowScroll = true
+                                    vm.tts.followAgain()
+                                    val target = playbackBlockIndex
+                                    if (target >= 0) {
+                                        scope.launch { centerItem(target) }
+                                    }
                                 }
+                                detectTapGestures(
+                                    onDoubleTap = { resumeFollow() },
+                                    onTap = { resumeFollow() },
+                                )
                             },
                         matchReaderWidth = true,
                     ) {
@@ -684,11 +787,14 @@ private suspend fun LazyListState.scrollItemToCenter(index: Int) {
 private suspend fun LazyListState.bringItemToCenter(index: Int, animated: Boolean) {
     val alreadyVisible = layoutInfo.visibleItemsInfo.any { it.index == index }
     if (!alreadyVisible) {
-        // Instant place at top only as a layout probe — corrected to center before paint when possible.
+        // Place on-screen first, then correct to center (animated when requested).
         scrollToItem(index)
         val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
         val delta = centerDelta(item)
-        if (kotlin.math.abs(delta) > 1f) {
+        if (kotlin.math.abs(delta) <= 1f) return
+        if (animated) {
+            animateScrollBy(delta)
+        } else {
             scroll { scrollBy(delta) }
         }
         return
@@ -735,22 +841,20 @@ private suspend fun PointerInputScope.detectRailHold(
         val down = awaitFirstDown(requireUnconsumed = false)
         down.consume()
         val holdSlop = viewConfiguration.touchSlop * 2f
-        val releasedEarly = withTimeoutOrNull(holdMs) {
+        // Completes early on release or drag; null means the finger outlasted [holdMs].
+        val heldToTimeout = withTimeoutOrNull(holdMs) {
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Main)
                 val change = event.changes.firstOrNull { it.id == down.id }
-                    ?: return@withTimeoutOrNull true
+                    ?: return@withTimeoutOrNull
                 val travel = (change.position - down.position).getDistance()
-                if (travel > holdSlop) return@withTimeoutOrNull true
+                if (travel > holdSlop) return@withTimeoutOrNull
                 // Consume so the parent LazyColumn does not start a scroll.
                 change.consume()
-                if (!change.pressed) return@withTimeoutOrNull true
+                if (!change.pressed) return@withTimeoutOrNull
             }
-            @Suppress("UNREACHABLE_CODE")
-            true
-        }
-        if (releasedEarly == null) {
-            // Timed out while still pressed → force regen.
+        } == null
+        if (heldToTimeout) {
             onHold()
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Main)
@@ -768,7 +872,6 @@ private fun LocusRail(
     sentences: List<BlockSentence>,
     textLayout: TextLayoutResult?,
     currentSentenceIndex: Int,
-    showBuffer: Boolean,
     ready: Set<Int>,
     generating: Set<Int>,
     softAccent: Color,
@@ -779,25 +882,29 @@ private fun LocusRail(
         return
     }
 
-    val transition = rememberInfiniteTransition(label = "rail-pulse")
-    val pulseT by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(550, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "rail-pulse-t",
-    )
     val farthestGenerating = generating.maxOrNull()
-    val needsPulse = generating.isNotEmpty()
-    val pulse = if (needsPulse) pulseT else 0f
+    val transition = rememberInfiniteTransition(label = "rail-pulse")
+    // Composing the animation only while something is generating keeps the per-frame
+    // clock off entirely during normal reading.
+    val pulse = if (generating.isEmpty()) {
+        0f
+    } else {
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(550, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "rail-pulse-t",
+        ).value
+    }
     val density = LocalDensity.current
     val onForceRegenerateState = rememberUpdatedState(onForceRegenerate)
 
     fun segmentGenerating(index: Int): Boolean = index in generating
     fun segmentReady(index: Int): Boolean =
-        showBuffer && index in ready && index !in generating && index != currentSentenceIndex
+        index in ready && index !in generating && index != currentSentenceIndex
     fun canForceRegenerate(index: Int): Boolean =
         index in ready && index !in generating
 
@@ -825,7 +932,6 @@ private fun LocusRail(
 
     Box(
         modifier.drawBehind {
-            if (!showBuffer) return@drawBehind
             val layout = textLayout
             val behind = ArrayList<Pair<Float, Float>>()
             val ahead = ArrayList<Pair<Float, Float>>()
@@ -990,18 +1096,17 @@ private fun RailSegmentMark(
         )
     }
 }
+/** Hides the system bars for as long as it stays composed. */
 @Composable
-private fun ImmersiveSystemBars(enabled: Boolean) {
+private fun ImmersiveSystemBars() {
     val view = LocalView.current
-    DisposableEffect(enabled) {
+    DisposableEffect(view) {
         val window = (view.context as Activity).window
         val controller = WindowCompat.getInsetsController(window, view)
         val previous = controller.systemBarsBehavior
-        if (enabled) {
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         onDispose {
             controller.show(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = previous

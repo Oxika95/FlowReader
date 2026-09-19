@@ -1,5 +1,6 @@
 package com.personal.flowreader
 
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -19,19 +20,28 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.personal.flowreader.data.ReaderOrientation
-import com.personal.flowreader.ui.open.OpenBookScreen
+import com.personal.flowreader.ui.library.LibraryScreen
+import com.personal.flowreader.ui.library.LibraryViewModel
 import com.personal.flowreader.ui.open.OpenBookViewModel
 import com.personal.flowreader.ui.reader.ReaderScreen
 import com.personal.flowreader.ui.reader.ReaderViewModel
 import com.personal.flowreader.ui.theme.FlowTheme
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
+    private val pendingShare = MutableStateFlow<Intent?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (isShareIntent(intent)) {
+            pendingShare.value = Intent(intent)
+        }
         enableEdgeToEdge()
         setContent {
             val openVm: OpenBookViewModel = viewModel()
+            val libraryVm: LibraryViewModel = viewModel()
             val openUi by openVm.ui.collectAsState()
+            val shareIntent by pendingShare.collectAsState()
 
             LaunchedEffect(openUi.orientation) {
                 requestedOrientation = when (openUi.orientation) {
@@ -48,37 +58,75 @@ class MainActivity : ComponentActivity() {
                     contentColor = MaterialTheme.colorScheme.onBackground,
                 ) {
                     val nav = rememberNavController()
+
+                    LaunchedEffect(shareIntent) {
+                        val incoming = shareIntent ?: return@LaunchedEffect
+                        if (libraryVm.handleShareIntent(incoming)) {
+                            pendingShare.value = null
+                            setIntent(Intent(this@MainActivity, MainActivity::class.java))
+                            nav.navigate("library") {
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    }
+
                     NavHost(
                         navController = nav,
-                        startDestination = "open",
+                        startDestination = "library",
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        composable("open") {
-                            OpenBookScreen(
-                                vm = openVm,
-                                onOpened = { id -> nav.navigate("reader/$id") },
+                        composable("library") {
+                            LibraryScreen(
+                                vm = libraryVm,
+                                themeMode = openUi.theme,
+                                accentHue = openUi.accentHue,
+                                onTheme = { openVm.setTheme(it) },
+                                onAccentHue = { openVm.setAccentHue(it) },
+                                onOpenBook = { id -> nav.navigate("reader/$id") },
+                                onOpenQue = { bookId, queId ->
+                                    nav.navigate("reader/$bookId/que/$queId")
+                                },
                             )
                         }
                         composable(
-                            "reader/{bookId}",
-                            arguments = listOf(navArgument("bookId") { type = NavType.StringType }),
+                            route = "reader/{bookId}",
+                            arguments = listOf(
+                                navArgument("bookId") { type = NavType.StringType },
+                            ),
                         ) {
-                            val readerVm: ReaderViewModel = viewModel()
-                            ReaderScreen(
-                                vm = readerVm,
-                                themeMode = openUi.theme,
-                                accentHue = openUi.accentHue,
-                                fontScale = openUi.fontScale,
-                                fontFamily = openUi.fontFamily,
-                                lineSpacing = openUi.lineSpacing,
-                                orientation = openUi.orientation,
-                                onTheme = { openVm.setTheme(it) },
-                                onAccentHue = { openVm.setAccentHue(it) },
-                                onFontScale = { openVm.setFontScale(it) },
-                                onFontFamily = { openVm.setFontFamily(it) },
-                                onLineSpacing = { openVm.setLineSpacing(it) },
-                                onOrientation = { openVm.setOrientation(it) },
+                            ReaderRoute(
+                                openUi = openUi,
+                                openVm = openVm,
+                                queId = null,
                                 onBack = { nav.popBackStack() },
+                                onAdvanceQue = { _, _ -> },
+                            )
+                        }
+                        composable(
+                            route = "reader/{bookId}/que/{queId}?autoPlay={autoPlay}",
+                            arguments = listOf(
+                                navArgument("bookId") { type = NavType.StringType },
+                                navArgument("queId") { type = NavType.StringType },
+                                navArgument("autoPlay") {
+                                    type = NavType.StringType
+                                    nullable = true
+                                    defaultValue = null
+                                },
+                            ),
+                        ) { entry ->
+                            val queId = entry.arguments?.getString("queId")
+                            ReaderRoute(
+                                openUi = openUi,
+                                openVm = openVm,
+                                queId = queId,
+                                onBack = { nav.popBackStack() },
+                                onAdvanceQue = { nextBookId, nextQueId ->
+                                    nav.navigate("reader/$nextBookId/que/$nextQueId?autoPlay=1") {
+                                        popUpTo("library") { inclusive = false }
+                                        launchSingleTop = true
+                                    }
+                                },
                             )
                         }
                     }
@@ -86,4 +134,44 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (isShareIntent(intent)) {
+            pendingShare.value = Intent(intent)
+        }
+    }
+
+    private fun isShareIntent(intent: Intent?): Boolean =
+        intent?.action == Intent.ACTION_SEND
+}
+
+@androidx.compose.runtime.Composable
+private fun ReaderRoute(
+    openUi: com.personal.flowreader.ui.open.OpenUi,
+    openVm: OpenBookViewModel,
+    queId: String?,
+    onBack: () -> Unit,
+    onAdvanceQue: (String, String) -> Unit,
+) {
+    val readerVm: ReaderViewModel = viewModel()
+    ReaderScreen(
+        vm = readerVm,
+        queId = queId,
+        themeMode = openUi.theme,
+        accentHue = openUi.accentHue,
+        fontScale = openUi.fontScale,
+        fontFamily = openUi.fontFamily,
+        lineSpacing = openUi.lineSpacing,
+        orientation = openUi.orientation,
+        onTheme = { openVm.setTheme(it) },
+        onAccentHue = { openVm.setAccentHue(it) },
+        onFontScale = { openVm.setFontScale(it) },
+        onFontFamily = { openVm.setFontFamily(it) },
+        onLineSpacing = { openVm.setLineSpacing(it) },
+        onOrientation = { openVm.setOrientation(it) },
+        onBack = onBack,
+        onAdvanceQue = onAdvanceQue,
+    )
 }

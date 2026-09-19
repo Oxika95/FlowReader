@@ -9,7 +9,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,7 +33,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Toc
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -56,11 +57,15 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -78,16 +83,26 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.personal.flowreader.data.AccentHue
+import com.personal.flowreader.data.FilterApplyResult
+import com.personal.flowreader.data.FilterMatchType
+import com.personal.flowreader.data.FilterRule
+import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ReaderOrientation
+import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.data.TtsEngineOption
+import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.ui.theme.accentPrimary
 import kotlin.math.roundToInt
@@ -96,8 +111,12 @@ internal val ReaderPanelShape = RoundedCornerShape(16.dp)
 internal val ReaderPanelFeather = 20.dp
 /** Left inset of reading text (locus rail gutter). */
 internal val ReaderContentStartPadding = 28.dp
-/** Right inset of reading text (list end padding + text end padding). */
-internal val ReaderContentEndPadding = 24.dp
+/** End padding on the reading LazyColumn. */
+internal val ReaderListEndPadding = 20.dp
+/** Extra end padding on the paragraph text itself. */
+internal val ReaderTextEndPadding = 4.dp
+/** Right inset of reading text — panels must land on the same edge as the text column. */
+internal val ReaderContentEndPadding = ReaderListEndPadding + ReaderTextEndPadding
 /** Top/bottom inset for Settings/TOC cards — same scale as the reading-column side gutters. */
 internal val ReaderOverlayVerticalPad = ReaderContentStartPadding
 
@@ -137,8 +156,6 @@ internal fun ReaderPanelSurface(
     modifier: Modifier = Modifier,
     shape: RoundedCornerShape = ReaderPanelShape,
     feather: Dp = ReaderPanelFeather,
-    /** When true, the card fills the parent's height (TOC / tall overlays). */
-    fillHeight: Boolean = false,
     /** Align solid card width with the ereader text column. */
     matchReaderWidth: Boolean = false,
     content: @Composable () -> Unit,
@@ -161,7 +178,6 @@ internal fun ReaderPanelSurface(
             modifier = Modifier
                 .then(cardInset)
                 .fillMaxWidth()
-                .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier)
                 .then(
                     if (feather > 0.dp) {
                         Modifier.drawBehind {
@@ -324,13 +340,16 @@ internal fun MediaControlCard(
     }
 }
 
+/**
+ * Scrim + centered scrolling card shared by the Settings and TOC modals: tap the scrim to
+ * dismiss, taps inside the card are swallowed, and the card never outgrows the viewport.
+ */
 @Composable
-internal fun TocOverlay(
+internal fun ReaderModalScaffold(
     visible: Boolean,
-    chapters: List<String>,
-    chapterIndex: Int,
-    onChapter: (Int) -> Unit,
+    contentPadding: PaddingValues,
     onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -372,54 +391,70 @@ internal fun TocOverlay(
                             .fillMaxWidth()
                             .heightIn(max = maxCardHeight)
                             .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                "Contents",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 12.dp),
-                            )
-                            IconButton(onClick = onDismiss) {
-                                Icon(Icons.Default.Close, contentDescription = "Close contents")
-                            }
-                        }
-                        chapters.forEachIndexed { index, name ->
-                            Text(
-                                name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (index == chapterIndex) {
-                                    FontWeight.SemiBold
-                                } else {
-                                    FontWeight.Normal
-                                },
-                                color = if (index == chapterIndex) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onBackground
-                                },
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onChapter(index) }
-                                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                            )
-                            if (index < chapters.lastIndex) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant,
-                                )
-                            }
-                        }
-                    }
+                            .padding(contentPadding),
+                        content = content,
+                    )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun TocOverlay(
+    visible: Boolean,
+    chapters: List<String>,
+    chapterIndex: Int,
+    onChapter: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ReaderModalScaffold(
+        visible = visible,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        onDismiss = onDismiss,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Contents",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "Close contents")
+            }
+        }
+        chapters.forEachIndexed { index, name ->
+            Text(
+                name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (index == chapterIndex) {
+                    FontWeight.SemiBold
+                } else {
+                    FontWeight.Normal
+                },
+                color = if (index == chapterIndex) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onBackground
+                },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onChapter(index) }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            )
+            if (index < chapters.lastIndex) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
             }
         }
     }
@@ -442,6 +477,11 @@ internal fun SettingsOverlay(
     speed: Float,
     pitch: Float,
     prefetchCount: Int,
+    doubleTapPlay: Boolean,
+    autoScrollWithTts: Boolean,
+    filtersGlobal: List<FilterRule>,
+    filtersGroups: List<FilterRule>,
+    filtersLocal: List<FilterRule>,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
     onFontScale: (Float) -> Unit,
@@ -453,122 +493,117 @@ internal fun SettingsOverlay(
     onSpeed: (Float) -> Unit,
     onPitch: (Float) -> Unit,
     onPrefetchCount: (Int) -> Unit,
+    onDoubleTapPlay: (Boolean) -> Unit,
+    onAutoScrollWithTts: (Boolean) -> Unit,
+    onAddFilter: (FilterScope) -> Unit,
+    onEditFilter: (FilterScope, FilterRule) -> Unit,
+    onSetFilterEnabled: (FilterScope, String, Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
 
-    AnimatedVisibility(
+    ReaderModalScaffold(
         visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut(),
+        contentPadding = PaddingValues(bottom = 8.dp),
+        onDismiss = onDismiss,
     ) {
-        BoxWithConstraints(
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss,
-                ),
-            contentAlignment = Alignment.Center,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 4.dp, top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            val maxCardHeight = maxHeight - ReaderOverlayVerticalPad * 2
-            AnimatedVisibility(
-                visible = visible,
-                enter = fadeIn() + scaleIn(initialScale = 0.96f),
-                exit = fadeOut() + scaleOut(targetScale = 0.96f),
-            ) {
-                ReaderPanelSurface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = maxCardHeight)
-                        .wrapContentHeight()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {},
-                        ),
-                    matchReaderWidth = true,
-                    feather = 0.dp,
-                ) {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = maxCardHeight)
-                            .verticalScroll(rememberScrollState())
-                            .padding(bottom = 8.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 8.dp, end = 4.dp, top = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                "Settings",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 12.dp),
-                            )
-                            IconButton(onClick = onDismiss) {
-                                Icon(Icons.Default.Close, contentDescription = "Close settings")
-                            }
-                        }
+            Text(
+                "Settings",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "Close settings")
+            }
+        }
 
-                        PrimaryTabRow(selectedTabIndex = tab) {
-                            Tab(
-                                selected = tab == 0,
-                                onClick = { tab = 0 },
-                                text = { Text("Layout") },
-                            )
-                            Tab(
-                                selected = tab == 1,
-                                onClick = { tab = 1 },
-                                text = { Text("Audio") },
-                            )
-                        }
+        PrimaryTabRow(selectedTabIndex = tab) {
+            Tab(
+                selected = tab == 0,
+                onClick = { tab = 0 },
+                text = { Text("Layout") },
+            )
+            Tab(
+                selected = tab == 1,
+                onClick = { tab = 1 },
+                text = { Text("Audio") },
+            )
+            Tab(
+                selected = tab == 2,
+                onClick = { tab = 2 },
+                text = { Text("Filters") },
+            )
+        }
 
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 12.dp),
-                        ) {
-                            if (tab == 0) {
-                                LayoutSettingsTab(
-                                    themeMode = themeMode,
-                                    accentHue = accentHue,
-                                    fontScale = fontScale,
-                                    fontFamily = fontFamily,
-                                    lineSpacing = lineSpacing,
-                                    orientation = orientation,
-                                    onTheme = onTheme,
-                                    onAccentHue = onAccentHue,
-                                    onFontScale = onFontScale,
-                                    onFontFamily = onFontFamily,
-                                    onLineSpacing = onLineSpacing,
-                                    onOrientation = onOrientation,
-                                )
-                            } else {
-                                AudioSettingsTab(
-                                    engineKey = engineKey,
-                                    voiceId = voiceId,
-                                    engines = engines,
-                                    voices = voices,
-                                    speed = speed,
-                                    pitch = pitch,
-                                    prefetchCount = prefetchCount,
-                                    onEngine = onEngine,
-                                    onVoice = onVoice,
-                                    onSpeed = onSpeed,
-                                    onPitch = onPitch,
-                                    onPrefetchCount = onPrefetchCount,
-                                )
-                            }
-                        }
-                    }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+        ) {
+            when (tab) {
+                0 -> {
+                    LayoutSettingsTab(
+                        themeMode = themeMode,
+                        accentHue = accentHue,
+                        fontScale = fontScale,
+                        fontFamily = fontFamily,
+                        lineSpacing = lineSpacing,
+                        orientation = orientation,
+                        onTheme = onTheme,
+                        onAccentHue = onAccentHue,
+                        onFontScale = onFontScale,
+                        onFontFamily = onFontFamily,
+                        onLineSpacing = onLineSpacing,
+                        onOrientation = onOrientation,
+                    )
+                    SettingsLocationNote(
+                        "Font, spacing, and orientation are only available while reading.",
+                    )
+                }
+                1 -> {
+                    AudioSettingsTab(
+                        engineKey = engineKey,
+                        voiceId = voiceId,
+                        engines = engines,
+                        voices = voices,
+                        speed = speed,
+                        pitch = pitch,
+                        prefetchCount = prefetchCount,
+                        doubleTapPlay = doubleTapPlay,
+                        autoScrollWithTts = autoScrollWithTts,
+                        onEngine = onEngine,
+                        onVoice = onVoice,
+                        onSpeed = onSpeed,
+                        onPitch = onPitch,
+                        onPrefetchCount = onPrefetchCount,
+                        onDoubleTapPlay = onDoubleTapPlay,
+                        onAutoScrollWithTts = onAutoScrollWithTts,
+                    )
+                    SettingsLocationNote(
+                        "Speed, pitch, and playback options are only available while reading.",
+                    )
+                }
+                else -> {
+                    FiltersSettingsTab(
+                        filtersGlobal = filtersGlobal,
+                        filtersGroups = filtersGroups,
+                        filtersLocal = filtersLocal,
+                        onAdd = onAddFilter,
+                        onEdit = onEditFilter,
+                        onSetEnabled = onSetFilterEnabled,
+                    )
+                    SettingsLocationNote(
+                        "Local filters are only available while reading.",
+                    )
                 }
             }
         }
@@ -576,19 +611,11 @@ internal fun SettingsOverlay(
 }
 
 @Composable
-private fun LayoutSettingsTab(
+internal fun AppearanceSettings(
     themeMode: ThemeMode,
     accentHue: Float,
-    fontScale: Float,
-    fontFamily: ReaderFont,
-    lineSpacing: Float,
-    orientation: ReaderOrientation,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
-    onFontScale: (Float) -> Unit,
-    onFontFamily: (ReaderFont) -> Unit,
-    onLineSpacing: (Float) -> Unit,
-    onOrientation: (ReaderOrientation) -> Unit,
 ) {
     var accentDragging by remember { mutableStateOf(false) }
     var localAccent by remember { mutableFloatStateOf(accentHue) }
@@ -647,6 +674,29 @@ private fun LayoutSettingsTab(
             ),
         )
     }
+}
+
+@Composable
+private fun LayoutSettingsTab(
+    themeMode: ThemeMode,
+    accentHue: Float,
+    fontScale: Float,
+    fontFamily: ReaderFont,
+    lineSpacing: Float,
+    orientation: ReaderOrientation,
+    onTheme: (ThemeMode) -> Unit,
+    onAccentHue: (Float) -> Unit,
+    onFontScale: (Float) -> Unit,
+    onFontFamily: (ReaderFont) -> Unit,
+    onLineSpacing: (Float) -> Unit,
+    onOrientation: (ReaderOrientation) -> Unit,
+) {
+    AppearanceSettings(
+        themeMode = themeMode,
+        accentHue = accentHue,
+        onTheme = onTheme,
+        onAccentHue = onAccentHue,
+    )
 
     Spacer(Modifier.height(12.dp))
     SettingsLabel("Font")
@@ -707,19 +757,24 @@ private fun LayoutSettingsTab(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AudioSettingsTab(
+internal fun AudioSettingsTab(
     engineKey: String,
     voiceId: String,
     engines: List<TtsEngineOption>,
     voices: List<TtsVoiceOption>,
-    speed: Float,
-    pitch: Float,
-    prefetchCount: Int,
+    speed: Float = 1f,
+    pitch: Float = 1f,
+    prefetchCount: Int = 1,
+    doubleTapPlay: Boolean = false,
+    autoScrollWithTts: Boolean = false,
     onEngine: (String) -> Unit,
     onVoice: (String) -> Unit,
-    onSpeed: (Float) -> Unit,
-    onPitch: (Float) -> Unit,
-    onPrefetchCount: (Int) -> Unit,
+    onSpeed: (Float) -> Unit = {},
+    onPitch: (Float) -> Unit = {},
+    onPrefetchCount: (Int) -> Unit = {},
+    onDoubleTapPlay: (Boolean) -> Unit = {},
+    onAutoScrollWithTts: (Boolean) -> Unit = {},
+    compact: Boolean = false,
 ) {
     var engineOpen by remember { mutableStateOf(false) }
     var voiceOpen by remember { mutableStateOf(false) }
@@ -803,8 +858,9 @@ private fun AudioSettingsTab(
         }
     }
 
-    Spacer(Modifier.height(12.dp))
-    SettingsLabel("Speed")
+    if (!compact) {
+        Spacer(Modifier.height(12.dp))
+        SettingsLabel("Speed")
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -871,8 +927,8 @@ private fun AudioSettingsTab(
                 onPrefetchCount(localPrefetch.roundToInt())
                 prefetchDragging = false
             },
-            valueRange = 1f..10f,
-            steps = 8,
+            valueRange = TtsPrefs.MIN_PREFETCH.toFloat()..TtsPrefs.MAX_PREFETCH.toFloat(),
+            steps = TtsPrefs.MAX_PREFETCH - TtsPrefs.MIN_PREFETCH - 1,
             modifier = Modifier.weight(1f),
         )
         Text(
@@ -881,10 +937,442 @@ private fun AudioSettingsTab(
             modifier = Modifier.width(48.dp),
         )
     }
+
+    Spacer(Modifier.height(16.dp))
+    AudioToggleRow(
+        title = "Auto-scroll with playback",
+        subtitle = "Keep the spoken text centered until you scroll away",
+        checked = autoScrollWithTts,
+        onCheckedChange = onAutoScrollWithTts,
+    )
+    Spacer(Modifier.height(8.dp))
+        AudioToggleRow(
+            title = "Double-tap starts playback",
+            subtitle = "Seek to the tapped sentence and play",
+            checked = doubleTapPlay,
+            onCheckedChange = onDoubleTapPlay,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun FiltersSettingsTab(
+    filtersGlobal: List<FilterRule>,
+    filtersGroups: List<FilterRule>,
+    filtersLocal: List<FilterRule>,
+    onAdd: (FilterScope) -> Unit,
+    onEdit: (FilterScope, FilterRule) -> Unit,
+    onSetEnabled: (FilterScope, String, Boolean) -> Unit,
+    scopes: List<FilterScope> = FilterScope.entries,
+) {
+    var scopeTab by remember { mutableIntStateOf(0) }
+    val visibleScopes = scopes.ifEmpty { FilterScope.entries }
+    val scope = visibleScopes[scopeTab.coerceIn(0, visibleScopes.lastIndex)]
+    val rules = when (scope) {
+        FilterScope.Global -> filtersGlobal
+        FilterScope.Local -> filtersLocal
+        FilterScope.Groups -> filtersGroups
+    }
+
+    SecondaryTabRow(selectedTabIndex = scopeTab.coerceIn(0, visibleScopes.lastIndex)) {
+        visibleScopes.forEachIndexed { index, entry ->
+            Tab(
+                selected = scopeTab == index,
+                onClick = { scopeTab = index },
+                text = { Text(entry.label) },
+            )
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Rules",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { onAdd(scope) }) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Add")
+        }
+    }
+
+    if (rules.isEmpty()) {
+        Text(
+            "No filters yet. Add a rule to replace text in the reader and TTS.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = 8.dp),
+        )
+    } else {
+        rules.sortedBy { it.order }.forEach { rule ->
+            FilterRuleRow(
+                rule = rule,
+                onToggle = { onSetEnabled(scope, rule.id, it) },
+                onClick = { onEdit(scope, rule) },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        }
+    }
+
+    val enabledCount = rules.count { it.enabled }
+    Text(
+        "Enabled $enabledCount of ${rules.size}",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 12.dp),
+    )
 }
 
 @Composable
-private fun SettingsLabel(text: String) {
+private fun FilterRuleRow(
+    rule: FilterRule,
+    onToggle: (Boolean) -> Unit,
+    onClick: () -> Unit,
+) {
+    val title = rule.title.ifBlank { rule.pattern.ifBlank { "Untitled rule" } }
+    val replacementLabel = rule.replacement.ifEmpty { "(empty)" }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${rule.pattern} → $replacementLabel",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Switch(checked = rule.enabled, onCheckedChange = onToggle)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun FilterRuleEditorOverlay(
+    visible: Boolean,
+    scope: FilterScope,
+    initial: FilterRule,
+    sampleSeed: String,
+    isNew: Boolean,
+    previewApply: (sample: String, draft: FilterRule, mode: FilterPreviewMode) -> FilterApplyResult,
+    onSave: (FilterRule) -> Unit,
+    onDelete: (() -> Unit)?,
+    onSpeak: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (!visible) return
+
+    var title by remember(initial.id, visible) { mutableStateOf(initial.title) }
+    var matchType by remember(initial.id, visible) { mutableStateOf(initial.matchType) }
+    var wholeWords by remember(initial.id, visible) { mutableStateOf(initial.wholeWords) }
+    var pattern by remember(initial.id, visible) { mutableStateOf(initial.pattern) }
+    var replacement by remember(initial.id, visible) { mutableStateOf(initial.replacement) }
+    var previewMode by remember(initial.id, visible) { mutableStateOf(FilterPreviewMode.ThisRule) }
+    var typeOpen by remember { mutableStateOf(false) }
+
+    val draft = initial.copy(
+        title = title,
+        matchType = matchType,
+        wholeWords = wholeWords,
+        pattern = pattern,
+        replacement = replacement,
+    )
+    val patternError = TextFilters.validatePattern(draft)
+    val preview = remember(sampleSeed, draft, previewMode, scope) {
+        previewApply(sampleSeed, draft, previewMode)
+    }
+    val regexMode = matchType == FilterMatchType.RegEx
+    val colors = MaterialTheme.colorScheme
+    val sampleAnnotated = remember(preview, colors.secondary) {
+        buildAnnotatedString {
+            append(preview.text)
+            for (range in preview.replacedRanges) {
+                val start = range.first.coerceIn(0, preview.text.length)
+                val end = (range.last + 1).coerceIn(start, preview.text.length)
+                if (start < end) {
+                    addStyle(SpanStyle(color = colors.secondary), start, end)
+                }
+            }
+        }
+    }
+
+    ReaderModalScaffold(
+        visible = visible,
+        contentPadding = PaddingValues(bottom = 8.dp),
+        onDismiss = onDismiss,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 4.dp, top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (isNew) "New ${scope.label} Filter" else "Edit ${scope.label} Filter",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "Close")
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            SettingsLabel("Title (optional)")
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(12.dp))
+            SettingsLabel("Type")
+            ExposedDropdownMenuBox(
+                expanded = typeOpen,
+                onExpandedChange = { typeOpen = it },
+            ) {
+                OutlinedTextField(
+                    value = matchType.label,
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeOpen) },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(
+                    expanded = typeOpen,
+                    onDismissRequest = { typeOpen = false },
+                ) {
+                    FilterMatchType.entries.forEach { type ->
+                        DropdownMenuItem(
+                            text = { Text(type.label) },
+                            onClick = {
+                                matchType = type
+                                typeOpen = false
+                            },
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("Whole words only", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        if (regexMode) "Not used for RegEx" else "Match complete words",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = wholeWords && !regexMode,
+                    onCheckedChange = { wholeWords = it },
+                    enabled = !regexMode,
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+            SettingsLabel("Find")
+            OutlinedTextField(
+                value = pattern,
+                onValueChange = { pattern = it },
+                singleLine = true,
+                isError = patternError != null,
+                supportingText = patternError?.let { { Text(it) } },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(8.dp))
+            SettingsLabel("Replace with")
+            OutlinedTextField(
+                value = replacement,
+                onValueChange = { replacement = it },
+                singleLine = true,
+                placeholder = { Text("(empty deletes matches)") },
+                trailingIcon = {
+                    IconButton(
+                        onClick = { onSpeak(replacement) },
+                        enabled = replacement.isNotBlank(),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak replacement")
+                    }
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(16.dp))
+            SettingsLabel("Preview")
+            ChipRow {
+                FilterPreviewMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = previewMode == mode,
+                        onClick = { previewMode = mode },
+                        label = { Text(mode.label) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            FilterSampleField(
+                annotated = sampleAnnotated,
+                plain = preview.text,
+                onSpeak = onSpeak,
+            )
+
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onDelete != null) {
+                    TextButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Delete")
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(
+                    onClick = { onSave(draft) },
+                    enabled = pattern.isNotBlank() && patternError == null,
+                ) {
+                    Text("Save")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterSampleField(
+    annotated: AnnotatedString,
+    plain: String,
+    onSpeak: (String) -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(16.dp)
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextFieldDefaults.DecorationBox(
+            value = plain.ifEmpty { " " },
+            innerTextField = {
+                Text(
+                    text = annotated,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    minLines = 2,
+                    maxLines = 4,
+                )
+            },
+            enabled = true,
+            singleLine = false,
+            visualTransformation = VisualTransformation.None,
+            interactionSource = interaction,
+            isError = false,
+            label = { Text("Sample") },
+            trailingIcon = {
+                IconButton(
+                    onClick = { onSpeak(plain) },
+                    enabled = plain.isNotBlank(),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak preview")
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(),
+            contentPadding = OutlinedTextFieldDefaults.contentPadding(
+                start = 16.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = 16.dp,
+            ),
+            container = {
+                OutlinedTextFieldDefaults.Container(
+                    enabled = true,
+                    isError = false,
+                    interactionSource = interaction,
+                    shape = shape,
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun AudioToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+internal fun SettingsLocationNote(text: String) {
+    Spacer(Modifier.height(16.dp))
+    Text(
+        "* $text",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+internal fun SettingsLabel(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelMedium,
@@ -894,7 +1382,7 @@ private fun SettingsLabel(text: String) {
 }
 
 @Composable
-private fun ChipRow(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+internal fun ChipRow(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         content = content,
