@@ -63,6 +63,70 @@ data class Sentence(
     val text: String,
 )
 
-enum class ThemeMode { Light, Dark, Oled }
+enum class ThemeMode {
+    Light,
+    Dark,
+    Oled,
+    ;
 
-enum class TtsEngineKind { System, Edge }
+    val label: String
+        get() = when (this) {
+            Light -> "Light"
+            Dark -> "Dark"
+            Oled -> "OLED"
+        }
+}
+
+/**
+ * Default accent hue (purple). Saturation/lightness are resolved per [ThemeMode]
+ * so accents stay readable on light, dark, and OLED backgrounds.
+ */
+object AccentHue {
+    const val DEFAULT = 288f
+    const val MIN = 0f
+    const val MAX = 360f
+}
+
+enum class ReaderFont {
+    Sans,
+    Serif,
+    Mono,
+    ;
+
+    val label: String
+        get() = when (this) {
+            Sans -> "Sans"
+            Serif -> "Serif"
+            Mono -> "Mono"
+        }
+}
+
+enum class ReaderOrientation {
+    Auto,
+    Portrait,
+    Landscape,
+    ;
+
+    val label: String
+        get() = when (this) {
+            Auto -> "Auto"
+            Portrait -> "Portrait"
+            Landscape -> "Landscape"
+        }
+}
+
+/** Virtual Edge engine, or an Android TTS engine package / system default. */
+object TtsEngines {
+    const val EDGE = "edge"
+    const val SYSTEM_DEFAULT = "system"
+}
+
+data class TtsEngineOption(
+    val key: String,
+    val label: String,
+)
+
+data class TtsVoiceOption(
+    val id: String,
+    val label: String,
+)

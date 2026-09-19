@@ -56,10 +56,32 @@ class ReaderViewModel(
         }
     }
 
+    fun jumpToChapter(chapterIndex: Int) {
+        val doc = _ui.value.doc ?: return
+        val ci = chapterIndex.coerceIn(0, doc.chapters.lastIndex)
+        jumpTo(Locus(ci, 0, 0))
+    }
+
+    fun jumpTo(locus: Locus) {
+        onLocus(locus)
+        tts.jumpTo(locus)
+    }
+
     fun onLocus(locus: Locus) {
         _ui.value = _ui.value.copy(locus = locus)
-        viewModelScope.launch {
-            val row = flow.db.progress().get(bookId) ?: return@launch
+        persist(locus)
+    }
+
+    /** Flush current UI locus using app scope so it survives ViewModel teardown. */
+    fun persistNow() {
+        persist(_ui.value.locus)
+    }
+
+    private fun persist(locus: Locus) {
+        val id = bookId
+        if (id.isBlank()) return
+        flow.appScope.launch {
+            val row = flow.db.progress().get(id) ?: return@launch
             flow.db.progress().upsert(
                 ProgressEntity(
                     bookId = row.bookId,
@@ -75,8 +97,7 @@ class ReaderViewModel(
     }
 
     override fun onCleared() {
-        val loc = tts.currentLocus()
-        onLocus(loc)
+        persistNow()
         tts.pause()
         super.onCleared()
     }

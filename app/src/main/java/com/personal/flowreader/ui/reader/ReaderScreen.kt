@@ -1,45 +1,49 @@
 package com.personal.flowreader.ui.reader
 
 import android.app.Activity
-import androidx.compose.foundation.BorderStroke
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListItemInfo
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,38 +52,105 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.personal.flowreader.data.BlockKind
 import com.personal.flowreader.data.Locus
+import com.personal.flowreader.data.ReaderFont
+import com.personal.flowreader.data.ReaderOrientation
+import com.personal.flowreader.data.SentenceSplitter
 import com.personal.flowreader.data.ThemeMode
-import com.personal.flowreader.data.TtsEngineKind
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
-private val LocusGray = Color(0x52808080)
+/** Loading pulse — independent of accent. */
+private val RailLoading = Color(0xFF6A6A6A)
+private val RailLoadingBright = Color(0xFF8A8A8A)
 private val EdgeFade = 96.dp
+/** Full left margin from screen edge to text; bars are centered in this gutter. */
+private val RailGutterWidth = ReaderContentStartPadding
+private val ReaderListEndPadding = 20.dp
+private val ReaderTextEndPadding = 4.dp
+private val RailDotRadius = 1.25.dp
+private val RailDotStep = 4.dp
+/** Loading pill matches cache-dot diameter. */
+private val RailBarWidth = RailDotRadius * 2
+private val RailCurrentBarWidth = 7.dp
+private const val RailForceRegenHoldMs = 3_000L
+/** Loading solid → cache window (dots) after Edge audio lands. */
+private const val RailReadyRevealMs = 1_500
+/** Behind (before) cache dots — neutral gray. Ahead uses soft accent (secondary). */
+private val RailBehindDot = Color(0xFF7A7A7A)
+
+/** Now-playing snippet card when the spoken block is scrolled out of view. */
+private enum class PlaybackPinEdge { Top, Bottom }
+
+private val PinPadDefault = 24.dp
+/** Clears the title banner when chrome is open. */
+private val PinPadBelowTitleChrome = 128.dp
+/** Clears the media controls when chrome is open. */
+private val PinPadAboveMediaChrome = 132.dp
+
+/** One TTS sentence in a block, with char offsets into the displayed paragraph text. */
+private data class BlockSentence(
+    val index: Int,
+    val start: Int,
+    val end: Int,
+)
+
+private enum class ReaderOverlay { Hidden, Chrome, Settings, Toc }
 
 @Composable
 fun ReaderScreen(
     vm: ReaderViewModel,
     themeMode: ThemeMode,
-    onCycleTheme: () -> Unit,
+    accentHue: Float,
+    fontScale: Float,
+    fontFamily: ReaderFont,
+    lineSpacing: Float,
+    orientation: ReaderOrientation,
+    onTheme: (ThemeMode) -> Unit,
+    onAccentHue: (Float) -> Unit,
+    onFontScale: (Float) -> Unit,
+    onFontFamily: (ReaderFont) -> Unit,
+    onLineSpacing: (Float) -> Unit,
+    onOrientation: (ReaderOrientation) -> Unit,
     onBack: () -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
@@ -88,16 +159,43 @@ fun ReaderScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var programmatic by remember { mutableStateOf(false) }
-    var chromeVisible by remember { mutableStateOf(false) }
-    var chromeTick by remember { mutableStateOf(0) }
+    var overlay by remember { mutableStateOf(ReaderOverlay.Hidden) }
+    /** Skip the next follow-scroll once (sentence double-tap sets locus without moving the list). */
+    var suppressFollowScroll by remember { mutableStateOf(false) }
+    var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
     val items = doc?.items.orEmpty()
+    val allSentences = remember(doc) { doc?.let { SentenceSplitter.split(it) }.orEmpty() }
+    val currentSentenceIndex = when {
+        tts.playing && tts.sentence != null -> tts.sentenceIndex
+        allSentences.isEmpty() -> 0
+        else -> SentenceSplitter.indexAt(allSentences, ui.locus)
+    }
+    val showBufferRail = true
+    val leave = rememberUpdatedState {
+        vm.persistNow()
+        onBack()
+    }
 
     ImmersiveSystemBars(enabled = true)
 
-    val locusIndex by remember(ui.locus, tts.sentence, doc) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, vm) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) vm.persistNow()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            vm.persistNow()
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val locusIndex by remember(ui.locus, tts.sentence, doc, tts.playing, tts.following) {
         derivedStateOf {
             val s = tts.sentence
-            if (s != null) {
+            // While TTS is actively following, highlight the spoken sentence.
+            // Otherwise prefer the saved/scrolled UI locus so silent reading tracks the viewport.
+            if (s != null && tts.playing && tts.following) {
                 items.indexOfFirst { it.chapterIndex == s.chapterIndex && it.blockIndex == s.blockIndex }
                     .coerceAtLeast(0)
             } else {
@@ -106,55 +204,176 @@ fun ReaderScreen(
         }
     }
 
-    val onScreen by remember {
+    val chapterIndex = ui.locus.chapterIndex
+    val chapterName = doc?.chapters?.getOrNull(chapterIndex)?.title
+        ?.ifBlank { null }
+        ?: "Chapter ${chapterIndex + 1}"
+    val chapters = doc?.chapters?.mapIndexed { i, ch ->
+        ch.title.ifBlank { "Chapter ${i + 1}" }
+    }.orEmpty()
+    val progress = if (items.size <= 1) 0f else locusIndex.toFloat() / items.lastIndex
+
+    /**
+     * Where to park the now-playing chip, or null if the spoken block is still on-screen
+     * (or nothing is playing).
+     */
+    val pinEdge by remember(doc) {
         derivedStateOf {
-            listState.layoutInfo.visibleItemsInfo.any { it.index == locusIndex }
-        }
-    }
-    val pinTop by remember {
-        derivedStateOf {
-            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0
-            locusIndex < first
+            if (!tts.playing) return@derivedStateOf null
+            val s = tts.sentence ?: return@derivedStateOf null
+            val bookItems = doc?.items.orEmpty()
+            val idx = bookItems.indexOfFirst {
+                it.chapterIndex == s.chapterIndex && it.blockIndex == s.blockIndex
+            }
+            if (idx < 0) return@derivedStateOf null
+
+            // Subscribe to scroll position (layoutInfo alone can miss some updates).
+            listState.firstVisibleItemIndex
+            listState.firstVisibleItemScrollOffset
+
+            val info = listState.layoutInfo
+            val visible = info.visibleItemsInfo
+            if (visible.isEmpty()) return@derivedStateOf null
+
+            val viewStart = info.viewportStartOffset
+            val viewEnd = info.viewportEndOffset
+            val placed = visible.firstOrNull { it.index == idx }
+            if (placed != null) {
+                val top = placed.offset
+                val bottom = placed.offset + placed.size
+                val overlap = minOf(bottom, viewEnd) - maxOf(top, viewStart)
+                // Any real intersection counts as on-screen.
+                if (overlap > 1) return@derivedStateOf null
+                return@derivedStateOf if (bottom <= viewStart) {
+                    PlaybackPinEdge.Top
+                } else {
+                    PlaybackPinEdge.Bottom
+                }
+            }
+
+            val first = visible.first().index
+            val last = visible.last().index
+            when {
+                idx < first -> PlaybackPinEdge.Top
+                idx > last -> PlaybackPinEdge.Bottom
+                idx <= (first + last) / 2 -> PlaybackPinEdge.Top
+                else -> PlaybackPinEdge.Bottom
+            }
         }
     }
 
-    LaunchedEffect(tts.following, locusIndex, tts.playing) {
-        if (tts.following && tts.playing && items.isNotEmpty()) {
-            programmatic = true
-            listState.animateScrollToItem(locusIndex.coerceIn(0, items.lastIndex))
+    val playbackBlockIndex by remember(doc) {
+        derivedStateOf {
+            val s = tts.sentence
+            if (!tts.playing || s == null) {
+                -1
+            } else {
+                doc?.items.orEmpty().indexOfFirst {
+                    it.chapterIndex == s.chapterIndex && it.blockIndex == s.blockIndex
+                }
+            }
+        }
+    }
+
+    suspend fun centerItem(index: Int) {
+        if (items.isEmpty()) return
+        val target = index.coerceIn(0, items.lastIndex)
+        programmatic = true
+        try {
+            listState.animateScrollItemToCenter(target)
+        } finally {
             programmatic = false
         }
     }
 
-    val scrolledAway = rememberUpdatedState(vm.tts)
-    LaunchedEffect(listState, tts.playing) {
+    // Jump to the saved locus once the book finishes loading.
+    LaunchedEffect(doc, ui.loading) {
+        if (doc == null || ui.loading || restoredScroll || items.isEmpty()) return@LaunchedEffect
+        val target = ui.locus.flatIndex(doc).coerceIn(0, items.lastIndex)
+        programmatic = true
+        try {
+            listState.scrollItemToCenter(target)
+        } finally {
+            programmatic = false
+            restoredScroll = true
+        }
+    }
+
+    LaunchedEffect(tts.following, locusIndex, tts.playing) {
+        if (!tts.following || !tts.playing || items.isEmpty() || !restoredScroll) return@LaunchedEffect
+        if (suppressFollowScroll) {
+            suppressFollowScroll = false
+            return@LaunchedEffect
+        }
+        centerItem(locusIndex)
+    }
+
+    val ttsForScroll = rememberUpdatedState(tts)
+    val programmaticForScroll = rememberUpdatedState(programmatic)
+    LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
             .collect { moving ->
-                if (moving && !programmatic && tts.playing) {
-                    scrolledAway.value.userScrolledAway()
+                if (moving && !programmaticForScroll.value && ttsForScroll.value.playing) {
+                    vm.tts.userScrolledAway()
                 }
             }
     }
 
-    LaunchedEffect(tts.sentence) {
+    // Finger/mouse scroll must break follow immediately — don't wait for isScrollInProgress,
+    // and don't ignore input while a programmatic follow-scroll is still settling.
+    val stopFollowOnUserScroll = remember(vm) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && ttsForScroll.value.playing) {
+                    vm.tts.userScrolledAway()
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
+    // Playback locus is updated by TTS while playing, or by explicit double-tap / TOC — not by scroll.
+    LaunchedEffect(tts.sentence, tts.playing) {
+        if (!tts.playing) return@LaunchedEffect
         tts.sentence?.let { s ->
             vm.onLocus(Locus(s.chapterIndex, s.blockIndex, s.start))
         }
     }
 
-    LaunchedEffect(chromeVisible, chromeTick) {
-        if (!chromeVisible) return@LaunchedEffect
-        delay(4_000)
-        chromeVisible = false
+    fun toggleChrome() {
+        overlay = when (overlay) {
+            ReaderOverlay.Hidden -> ReaderOverlay.Chrome
+            ReaderOverlay.Chrome -> ReaderOverlay.Hidden
+            ReaderOverlay.Settings, ReaderOverlay.Toc -> ReaderOverlay.Hidden
+        }
     }
 
-    fun bumpChrome() {
-        chromeVisible = true
-        chromeTick++
+    BackHandler {
+        when (overlay) {
+            ReaderOverlay.Settings, ReaderOverlay.Toc, ReaderOverlay.Chrome ->
+                overlay = ReaderOverlay.Hidden
+            ReaderOverlay.Hidden -> leave.value()
+        }
     }
 
     val colors = MaterialTheme.colorScheme
+    val typeface = when (fontFamily) {
+        ReaderFont.Sans -> FontFamily.SansSerif
+        ReaderFont.Serif -> FontFamily.Serif
+        ReaderFont.Mono -> FontFamily.Monospace
+    }
+    val bodyStyle = MaterialTheme.typography.bodyLarge.copy(
+        fontFamily = typeface,
+        fontSize = MaterialTheme.typography.bodyLarge.fontSize * fontScale,
+        lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * fontScale * lineSpacing,
+    )
+    val headingStyle = MaterialTheme.typography.headlineSmall.copy(
+        fontFamily = typeface,
+        fontSize = MaterialTheme.typography.headlineSmall.fontSize * fontScale,
+        lineHeight = MaterialTheme.typography.headlineSmall.lineHeight * fontScale * lineSpacing,
+    )
+
     Box(
         Modifier
             .fillMaxSize()
@@ -173,6 +392,7 @@ fun ReaderScreen(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
+                        .nestedScroll(stopFollowOnUserScroll)
                         .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                         .drawWithContent {
                             drawContent()
@@ -188,8 +408,8 @@ fun ReaderScreen(
                             )
                         },
                     contentPadding = PaddingValues(
-                        start = 20.dp,
-                        end = 20.dp,
+                        start = 0.dp,
+                        end = ReaderListEndPadding,
                         top = 28.dp,
                         bottom = 28.dp,
                     ),
@@ -199,7 +419,18 @@ fun ReaderScreen(
                         val sentence = tts.sentence
                         val highlight = active && sentence != null &&
                             sentence.chapterIndex == item.chapterIndex &&
-                            sentence.blockIndex == item.blockIndex
+                            sentence.blockIndex == item.blockIndex &&
+                            tts.playing
+                        val blockSentences = remember(allSentences, item.chapterIndex, item.blockIndex) {
+                            allSentences.mapIndexedNotNull { si, s ->
+                                if (s.chapterIndex == item.chapterIndex && s.blockIndex == item.blockIndex) {
+                                    BlockSentence(si, s.start, s.end)
+                                } else {
+                                    null
+                                }
+                            }
+                        }
+                        var textLayout by remember(item.block.id) { mutableStateOf<TextLayoutResult?>(null) }
                         val text = buildAnnotatedString {
                             val raw = item.block.text
                             if (highlight) {
@@ -220,141 +451,545 @@ fun ReaderScreen(
                             }
                         }
                         val style = when (item.block.kind) {
-                            BlockKind.Heading -> MaterialTheme.typography.headlineSmall
-                            BlockKind.Quote -> MaterialTheme.typography.bodyLarge
-                            BlockKind.Paragraph -> MaterialTheme.typography.bodyLarge
+                            BlockKind.Heading -> headingStyle
+                            BlockKind.Quote, BlockKind.Paragraph -> bodyStyle
                         }
-                        Text(
-                            text,
-                            style = style,
-                            color = colors.onBackground,
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(
-                                    if (active) LocusGray else Color.Transparent,
-                                    RoundedCornerShape(4.dp),
-                                )
-                                .clickable {
-                                    val loc = Locus(item.chapterIndex, item.blockIndex, 0)
-                                    vm.onLocus(loc)
-                                    vm.tts.jumpTo(loc)
-                                    bumpChrome()
-                                }
-                                .padding(vertical = 10.dp, horizontal = 6.dp),
-                        )
+                                .height(IntrinsicSize.Min)
+                                .padding(vertical = 10.dp),
+                        ) {
+                            LocusRail(
+                                modifier = Modifier
+                                    .width(RailGutterWidth)
+                                    .fillMaxHeight(),
+                                sentences = blockSentences,
+                                textLayout = textLayout,
+                                currentSentenceIndex = currentSentenceIndex,
+                                showBuffer = showBufferRail,
+                                ready = tts.readySentenceIndices,
+                                generating = tts.generatingSentenceIndices,
+                                softAccent = colors.secondary,
+                                onForceRegenerate = { vm.tts.forceRegenerateSentence(it) },
+                            )
+                            Text(
+                                text,
+                                style = style,
+                                color = colors.onBackground,
+                                onTextLayout = { textLayout = it },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = ReaderTextEndPadding)
+                                    .pointerInput(blockSentences, overlay) {
+                                        detectTapGestures(
+                                            onTap = {
+                                                when (overlay) {
+                                                    ReaderOverlay.Settings, ReaderOverlay.Toc -> {
+                                                        overlay = ReaderOverlay.Hidden
+                                                    }
+                                                    ReaderOverlay.Hidden, ReaderOverlay.Chrome -> toggleChrome()
+                                                }
+                                            },
+                                            onDoubleTap = { pos ->
+                                                when (overlay) {
+                                                    ReaderOverlay.Settings, ReaderOverlay.Toc -> {
+                                                        overlay = ReaderOverlay.Hidden
+                                                    }
+                                                    else -> {
+                                                        val layout = textLayout
+                                                        val sentence = if (layout != null) {
+                                                            sentenceAtPosition(blockSentences, layout, pos)
+                                                        } else {
+                                                            blockSentences.firstOrNull()
+                                                        }
+                                                        val charOffset = sentence?.start ?: 0
+                                                        suppressFollowScroll = true
+                                                        vm.jumpTo(
+                                                            Locus(
+                                                                item.chapterIndex,
+                                                                item.blockIndex,
+                                                                charOffset,
+                                                            ),
+                                                        )
+                                                        if (overlay == ReaderOverlay.Hidden) {
+                                                            toggleChrome()
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                        )
+                                    },
+                            )
+                        }
                         Spacer(Modifier.height(4.dp))
                     }
                 }
 
-                if (!chromeVisible) {
+                if (overlay == ReaderOverlay.Hidden || overlay == ReaderOverlay.Chrome) {
                     Box(
                         Modifier
                             .align(Alignment.TopCenter)
                             .fillMaxWidth()
                             .height(56.dp)
-                            .clickable { bumpChrome() },
+                            .clickable { toggleChrome() },
                     )
                     Box(
                         Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .height(72.dp)
-                            .clickable { bumpChrome() },
+                            .clickable { toggleChrome() },
                     )
                 }
 
-                if (chromeVisible) {
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .fillMaxWidth(),
-                        color = colors.surface.copy(alpha = 0.94f),
-                        contentColor = colors.onSurface,
-                    ) {
-                        Row(
-                            Modifier
-                                .statusBarsPadding()
-                                .fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(onClick = onBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                            }
-                            Text(
-                                ui.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.weight(1f),
-                            )
-                            TextButton(onClick = {
-                                onCycleTheme()
-                                bumpChrome()
-                            }) {
-                                Text(themeMode.name)
-                            }
-                        }
+                TitleBannerCard(
+                    visible = overlay == ReaderOverlay.Chrome,
+                    title = ui.title,
+                    chapter = chapterName,
+                    progress = progress,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                    onBack = { leave.value() },
+                    onToc = { overlay = ReaderOverlay.Toc },
+                )
+
+                MediaControlCard(
+                    visible = overlay == ReaderOverlay.Chrome,
+                    playing = tts.playing,
+                    error = tts.error,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                    onPlay = { vm.tts.play() },
+                    onPause = { vm.tts.pause() },
+                    onPrev = { vm.tts.skipPrev() },
+                    onNext = { vm.tts.skipNext() },
+                    onSettings = { overlay = ReaderOverlay.Settings },
+                )
+            }
+        }
+
+        SettingsOverlay(
+            visible = overlay == ReaderOverlay.Settings,
+            themeMode = themeMode,
+            accentHue = accentHue,
+            fontScale = fontScale,
+            fontFamily = fontFamily,
+            lineSpacing = lineSpacing,
+            orientation = orientation,
+            engineKey = tts.engineKey,
+            voiceId = tts.voiceId,
+            engines = tts.engines,
+            voices = tts.voices,
+            speed = tts.speed,
+            pitch = tts.pitch,
+            prefetchCount = tts.prefetchCount,
+            onTheme = onTheme,
+            onAccentHue = onAccentHue,
+            onFontScale = onFontScale,
+            onFontFamily = onFontFamily,
+            onLineSpacing = onLineSpacing,
+            onOrientation = onOrientation,
+            onEngine = { vm.tts.setEngine(it) },
+            onVoice = { vm.tts.setVoice(it) },
+            onSpeed = { vm.tts.setSpeed(it) },
+            onPitch = { vm.tts.setPitch(it) },
+            onPrefetchCount = { vm.tts.setPrefetchCount(it) },
+            onDismiss = { overlay = ReaderOverlay.Hidden },
+        )
+
+        TocOverlay(
+            visible = overlay == ReaderOverlay.Toc,
+            chapters = chapters,
+            chapterIndex = chapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0)),
+            onChapter = { ci ->
+                overlay = ReaderOverlay.Hidden
+                suppressFollowScroll = true
+                vm.jumpToChapter(ci)
+                val target = doc?.let { d ->
+                    var i = 0
+                    for (c in 0 until ci) i += d.chapters[c].blocks.size
+                    i
+                } ?: 0
+                scope.launch { centerItem(target) }
+            },
+            onDismiss = { overlay = ReaderOverlay.Hidden },
+        )
+
+        when (val edge = pinEdge) {
+            null -> Unit
+            PlaybackPinEdge.Top, PlaybackPinEdge.Bottom -> {
+                // pinEdge is non-null only when the spoken block is outside the viewport.
+                // User scroll clears follow so auto-center does not pull it back on-screen.
+                val showPin = tts.playing &&
+                    tts.snippet.isNotBlank() &&
+                    overlay != ReaderOverlay.Settings &&
+                    overlay != ReaderOverlay.Toc
+                if (showPin) {
+                    val align = when (edge) {
+                        PlaybackPinEdge.Top -> Alignment.TopCenter
+                        PlaybackPinEdge.Bottom -> Alignment.BottomCenter
                     }
-                    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
-                        TtsBar(
-                            playing = tts.playing,
-                            engine = tts.engine,
-                            speed = tts.speed,
-                            error = tts.error,
-                            onInteract = { bumpChrome() },
-                            onPlay = { vm.tts.play() },
-                            onPause = { vm.tts.pause() },
-                            onPrev = { vm.tts.skipPrev() },
-                            onNext = { vm.tts.skipNext() },
-                            onEngine = {
-                                vm.tts.setEngine(
-                                    if (tts.engine == TtsEngineKind.System) {
-                                        TtsEngineKind.Edge
-                                    } else {
-                                        TtsEngineKind.System
-                                    },
-                                )
+                    val chromeOpen = overlay == ReaderOverlay.Chrome
+                    val edgePad = when {
+                        chromeOpen && edge == PlaybackPinEdge.Top -> PinPadBelowTitleChrome
+                        chromeOpen && edge == PlaybackPinEdge.Bottom -> PinPadAboveMediaChrome
+                        else -> PinPadDefault
+                    }
+                    ReaderPanelSurface(
+                        modifier = Modifier
+                            .zIndex(8f)
+                            .align(align)
+                            .padding(vertical = edgePad)
+                            .fillMaxWidth()
+                            .clickable {
+                                vm.tts.followAgain()
+                                val target = playbackBlockIndex
+                                if (target >= 0) {
+                                    scope.launch { centerItem(target) }
+                                }
                             },
-                            onSpeed = {
-                                val options = floatArrayOf(0.8f, 1f, 1.25f, 1.5f, 2f)
-                                val i = options.indexOfFirst { it == tts.speed }
-                                vm.tts.setSpeed(options[(i + 1) % options.size])
-                            },
+                        matchReaderWidth = true,
+                    ) {
+                        Text(
+                            tts.snippet,
+                            style = bodyStyle,
+                            color = colors.onBackground,
+                            maxLines = 3,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         )
                     }
                 }
             }
         }
+    }
+}
 
-        val showPin = tts.playing && !tts.following && !onScreen && tts.snippet.isNotBlank()
-        if (showPin) {
-            val align = if (pinTop) Alignment.TopCenter else Alignment.BottomCenter
-            Card(
-                modifier = Modifier
-                    .align(align)
-                    .padding(horizontal = 16.dp, vertical = if (chromeVisible) 88.dp else 24.dp)
-                    .fillMaxWidth()
-                    .clickable {
-                        vm.tts.followAgain()
-                        scope.launch {
-                            programmatic = true
-                            listState.animateScrollToItem(locusIndex.coerceIn(0, items.lastIndex))
-                            programmatic = false
-                        }
-                    },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            ) {
-                Text(
-                    tts.snippet,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 3,
-                    modifier = Modifier.padding(16.dp),
+private suspend fun LazyListState.animateScrollItemToCenter(index: Int) {
+    bringItemToCenter(index, animated = true)
+}
+
+private suspend fun LazyListState.scrollItemToCenter(index: Int) {
+    bringItemToCenter(index, animated = false)
+}
+
+/**
+ * Always targets the vertical middle of the viewport.
+ * Never leaves the user on LazyList's default "item at top" alignment.
+ */
+private suspend fun LazyListState.bringItemToCenter(index: Int, animated: Boolean) {
+    val alreadyVisible = layoutInfo.visibleItemsInfo.any { it.index == index }
+    if (!alreadyVisible) {
+        // Instant place at top only as a layout probe — corrected to center before paint when possible.
+        scrollToItem(index)
+        val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+        val delta = centerDelta(item)
+        if (kotlin.math.abs(delta) > 1f) {
+            scroll { scrollBy(delta) }
+        }
+        return
+    }
+
+    val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+    val delta = centerDelta(item)
+    if (kotlin.math.abs(delta) <= 2f) return
+    if (animated) {
+        animateScrollBy(delta)
+    } else {
+        scroll { scrollBy(delta) }
+    }
+}
+
+private fun LazyListState.centerDelta(item: LazyListItemInfo): Float {
+    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+    val itemCenter = item.offset + item.size / 2
+    return (itemCenter - viewport / 2).toFloat()
+}
+
+private fun sentenceAtPosition(
+    sentences: List<BlockSentence>,
+    layout: TextLayoutResult,
+    pos: Offset,
+): BlockSentence? {
+    if (sentences.isEmpty()) return null
+    val offset = layout.getOffsetForPosition(pos).coerceIn(0, layout.layoutInput.text.length)
+    sentences.firstOrNull { offset in it.start until it.end.coerceAtLeast(it.start + 1) }
+        ?.let { return it }
+    // Prefer the nearest sentence by start offset when landing on whitespace gaps.
+    return sentences.minByOrNull { abs(it.start - offset) }
+}
+
+/**
+ * Hold without letting LazyColumn steal the gesture after touch-slop.
+ * Consumes small moves inside the rail hit target for [holdMs], then fires [onHold].
+ */
+private suspend fun PointerInputScope.detectRailHold(
+    holdMs: Long,
+    onHold: () -> Unit,
+) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        down.consume()
+        val holdSlop = viewConfiguration.touchSlop * 2f
+        val releasedEarly = withTimeoutOrNull(holdMs) {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Main)
+                val change = event.changes.firstOrNull { it.id == down.id }
+                    ?: return@withTimeoutOrNull true
+                val travel = (change.position - down.position).getDistance()
+                if (travel > holdSlop) return@withTimeoutOrNull true
+                // Consume so the parent LazyColumn does not start a scroll.
+                change.consume()
+                if (!change.pressed) return@withTimeoutOrNull true
+            }
+            @Suppress("UNREACHABLE_CODE")
+            true
+        }
+        if (releasedEarly == null) {
+            // Timed out while still pressed → force regen.
+            onHold()
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Main)
+                event.changes.forEach { it.consume() }
+                val change = event.changes.firstOrNull { it.id == down.id }
+                if (change == null || !change.pressed) break
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocusRail(
+    modifier: Modifier,
+    sentences: List<BlockSentence>,
+    textLayout: TextLayoutResult?,
+    currentSentenceIndex: Int,
+    showBuffer: Boolean,
+    ready: Set<Int>,
+    generating: Set<Int>,
+    softAccent: Color,
+    onForceRegenerate: (Int) -> Unit,
+) {
+    if (sentences.isEmpty()) {
+        Spacer(modifier)
+        return
+    }
+
+    val transition = rememberInfiniteTransition(label = "rail-pulse")
+    val pulseT by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(550, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "rail-pulse-t",
+    )
+    val farthestGenerating = generating.maxOrNull()
+    val needsPulse = generating.isNotEmpty()
+    val pulse = if (needsPulse) pulseT else 0f
+    val density = LocalDensity.current
+    val onForceRegenerateState = rememberUpdatedState(onForceRegenerate)
+
+    fun segmentGenerating(index: Int): Boolean = index in generating
+    fun segmentReady(index: Int): Boolean =
+        showBuffer && index in ready && index !in generating && index != currentSentenceIndex
+    fun canForceRegenerate(index: Int): Boolean =
+        index in ready && index !in generating
+
+    /** One shared absolute-Y grid; windows only reveal it (lapping won't densify). */
+    fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCacheDotWindows(
+        windows: List<Pair<Float, Float>>,
+        color: Color,
+    ) {
+        if (windows.isEmpty()) return
+        val step = RailDotStep.toPx()
+        val r = RailDotRadius.toPx()
+        val cx = size.width * 0.5f
+        val phase = step * 0.5f
+        for ((top, bottom) in windows) {
+            if (bottom <= top) continue
+            clipRect(left = 0f, top = top, right = size.width, bottom = bottom) {
+                var y = phase + ceil((top - phase) / step).toInt() * step
+                while (y < bottom) {
+                    drawCircle(color = color, radius = r, center = Offset(cx, y))
+                    y += step
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier.drawBehind {
+            if (!showBuffer) return@drawBehind
+            val layout = textLayout
+            val behind = ArrayList<Pair<Float, Float>>()
+            val ahead = ArrayList<Pair<Float, Float>>()
+            if (layout != null && layout.layoutInput.text.isNotEmpty()) {
+                val lastChar = (layout.layoutInput.text.length - 1).coerceAtLeast(0)
+                for (s in sentences) {
+                    if (!segmentReady(s.index)) continue
+                    val start = s.start.coerceIn(0, lastChar)
+                    val endInclusive = (s.end - 1).coerceIn(start, lastChar)
+                    val top = layout.getLineTop(layout.getLineForOffset(start))
+                    val bottom = layout.getLineBottom(layout.getLineForOffset(endInclusive))
+                    if (s.index > currentSentenceIndex) ahead += top to bottom
+                    else behind += top to bottom
+                }
+            } else {
+                val h = size.height / sentences.size.coerceAtLeast(1)
+                for ((i, s) in sentences.withIndex()) {
+                    if (!segmentReady(s.index)) continue
+                    val top = i * h
+                    val bottom = (i + 1) * h
+                    if (s.index > currentSentenceIndex) ahead += top to bottom
+                    else behind += top to bottom
+                }
+            }
+            // Before = gray; after = soft accent (scheme secondary).
+            drawCacheDotWindows(behind, RailBehindDot)
+            drawCacheDotWindows(ahead, softAccent)
+        },
+    ) {
+        val layout = textLayout
+        // Farthest from current drawn first; current gets zIndex 0 (top) when bars lap.
+        val drawOrder = remember(sentences, currentSentenceIndex) {
+            sentences.sortedByDescending { abs(it.index - currentSentenceIndex) }
+        }
+        if (layout == null || layout.layoutInput.text.isEmpty()) {
+            Column(Modifier.fillMaxSize()) {
+                for (s in sentences) {
+                    key(s.index) {
+                        RailSegmentMark(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .zIndex(-abs(s.index - currentSentenceIndex).toFloat()),
+                            isCurrent = s.index == currentSentenceIndex,
+                            isGenerating = segmentGenerating(s.index),
+                            isReady = segmentReady(s.index),
+                            emphasizePulse = s.index == farthestGenerating ||
+                                (segmentGenerating(s.index) && s.index == currentSentenceIndex),
+                            pulse = pulse,
+                            canForceRegenerate = canForceRegenerate(s.index),
+                            onForceRegenerate = { onForceRegenerateState.value(s.index) },
+                        )
+                    }
+                }
+            }
+            return@Box
+        }
+
+        val lastChar = (layout.layoutInput.text.length - 1).coerceAtLeast(0)
+        for (s in drawOrder) {
+            val start = s.start.coerceIn(0, lastChar)
+            val endInclusive = (s.end - 1).coerceIn(start, lastChar)
+            // Same geometry the amber SpanStyle highlight uses: line boxes for the char range.
+            val top = layout.getLineTop(layout.getLineForOffset(start))
+            val bottom = layout.getLineBottom(layout.getLineForOffset(endInclusive))
+            val heightPx = (bottom - top).coerceAtLeast(1f)
+            val dist = abs(s.index - currentSentenceIndex)
+            key(s.index) {
+                RailSegmentMark(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .zIndex(-dist.toFloat())
+                        .offset { IntOffset(0, top.roundToInt()) }
+                        .width(RailGutterWidth)
+                        .height(with(density) { heightPx.toDp() }),
+                    isCurrent = s.index == currentSentenceIndex,
+                    isGenerating = segmentGenerating(s.index),
+                    isReady = segmentReady(s.index),
+                    emphasizePulse = s.index == farthestGenerating ||
+                        (segmentGenerating(s.index) && s.index == currentSentenceIndex),
+                    pulse = pulse,
+                    canForceRegenerate = canForceRegenerate(s.index),
+                    onForceRegenerate = { onForceRegenerateState.value(s.index) },
                 )
             }
         }
     }
 }
 
+@Composable
+private fun RailSegmentMark(
+    modifier: Modifier,
+    isCurrent: Boolean,
+    isGenerating: Boolean,
+    isReady: Boolean,
+    emphasizePulse: Boolean,
+    pulse: Float,
+    canForceRegenerate: Boolean,
+    onForceRegenerate: () -> Unit,
+) {
+    val railCurrent = MaterialTheme.colorScheme.primary
+    val edge = MaterialTheme.colorScheme.background
+    val onForceRegenerateState = rememberUpdatedState(onForceRegenerate)
+    // 1 = solid loading cover; 0 = fully revealed cache window underneath.
+    val reveal = remember { Animatable(0f) }
+
+    LaunchedEffect(isGenerating, isReady, isCurrent) {
+        when {
+            isGenerating -> reveal.snapTo(1f)
+            isCurrent -> reveal.snapTo(0f)
+            isReady -> {
+                if (reveal.value > 0f) {
+                    reveal.animateTo(
+                        0f,
+                        tween(RailReadyRevealMs, easing = FastOutSlowInEasing),
+                    )
+                }
+            }
+            else -> reveal.snapTo(0f)
+        }
+    }
+
+    val pulseAmount = if (emphasizePulse) pulse else pulse * 0.45f
+    val loadingColor = lerp(RailLoading, RailLoadingBright, pulseAmount)
+    val showCurrentBar = isCurrent && !isGenerating
+    val showLoadingCover = !isCurrent && reveal.value > 0.001f
+    val barWidth = if (showCurrentBar) RailCurrentBarWidth else RailBarWidth
+    val holdModifier = if (canForceRegenerate) {
+        Modifier.pointerInput(canForceRegenerate) {
+            detectRailHold(RailForceRegenHoldMs) {
+                onForceRegenerateState.value()
+            }
+        }
+    } else {
+        Modifier
+    }
+
+    val barColor = when {
+        showCurrentBar -> railCurrent
+        isGenerating -> loadingColor
+        showLoadingCover -> RailLoading.copy(alpha = reveal.value)
+        else -> null
+    }
+
+    Box(modifier.then(holdModifier), contentAlignment = Alignment.Center) {
+        val color = barColor ?: return@Box
+        Box(
+            Modifier
+                .width(barWidth)
+                .fillMaxHeight(0.92f)
+                .clip(RoundedCornerShape(barWidth / 2))
+                .drawBehind {
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            0f to edge,
+                            0.20f to color,
+                            0.80f to color,
+                            1f to edge,
+                        ),
+                    )
+                },
+        )
+    }
+}
 @Composable
 private fun ImmersiveSystemBars(enabled: Boolean) {
     val view = LocalView.current
@@ -370,64 +1005,6 @@ private fun ImmersiveSystemBars(enabled: Boolean) {
         onDispose {
             controller.show(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = previous
-        }
-    }
-}
-
-@Composable
-private fun TtsBar(
-    playing: Boolean,
-    engine: TtsEngineKind,
-    speed: Float,
-    error: String?,
-    onInteract: () -> Unit,
-    onPlay: () -> Unit,
-    onPause: () -> Unit,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
-    onEngine: () -> Unit,
-    onSpeed: () -> Unit,
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 2.dp,
-    ) {
-        Column(Modifier.navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = {
-                    onInteract()
-                    onPrev()
-                }) { Icon(Icons.Default.SkipPrevious, "Previous") }
-                IconButton(onClick = {
-                    onInteract()
-                    if (playing) onPause() else onPlay()
-                }) {
-                    Icon(
-                        if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        if (playing) "Pause" else "Play",
-                    )
-                }
-                IconButton(onClick = {
-                    onInteract()
-                    onNext()
-                }) { Icon(Icons.Default.SkipNext, "Next") }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = {
-                    onInteract()
-                    onEngine()
-                }) { Text(if (engine == TtsEngineKind.Edge) "Edge" else "System") }
-                TextButton(onClick = {
-                    onInteract()
-                    onSpeed()
-                }) { Text("${speed}x") }
-            }
-            error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
         }
     }
 }

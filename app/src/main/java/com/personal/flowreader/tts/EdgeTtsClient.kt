@@ -21,6 +21,7 @@ class EdgeTtsClient(
         voice: String = "en-US-JennyNeural",
         lang: String = "en-US",
         ratePercent: Int = 0,
+        pitchPercent: Int = 0,
     ): EdgeAudio = suspendCancellableCoroutine { cont ->
         val id = UUID.randomUUID().toString().replace("-", "")
         val url = EdgeHandshake.url(id, System.currentTimeMillis() / 1000)
@@ -53,8 +54,9 @@ class EdgeTtsClient(
                         .replace("<", "&lt;")
                         .replace(">", "&gt;")
                     val rate = if (ratePercent >= 0) "+$ratePercent%" else "$ratePercent%"
+                    val pitch = if (pitchPercent >= 0) "+$pitchPercent%" else "$pitchPercent%"
                     val ssml =
-                        """<speak version="1.0" xml:lang="$lang"><voice name="$voice"><prosody rate="$rate">$escaped</prosody></voice></speak>"""
+                        """<speak version="1.0" xml:lang="$lang"><voice name="$voice"><prosody rate="$rate" pitch="$pitch">$escaped</prosody></voice></speak>"""
                     val content = buildString {
                         append("Content-Type: application/ssml+xml\r\n")
                         append("Path: ssml\r\n")

@@ -5,8 +5,11 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.flowreader.FlowApp
+import com.personal.flowreader.data.AccentHue
 import com.personal.flowreader.data.EpubIngest
 import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.ReaderFont
+import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.data.TxtIngest
 import java.io.File
@@ -19,11 +22,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class OpenUi(
-    val theme: ThemeMode = ThemeMode.Dark,
+    val theme: ThemeMode = ThemeMode.Oled,
+    val accentHue: Float = AccentHue.DEFAULT,
+    val fontScale: Float = 1f,
+    val fontFamily: ReaderFont = ReaderFont.Sans,
+    val lineSpacing: Float = 1f,
+    val orientation: ReaderOrientation = ReaderOrientation.Auto,
     val lastTitle: String? = null,
     val lastId: String? = null,
     val busy: Boolean = false,
     val error: String? = null,
+    val ready: Boolean = false,
 )
 
 class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
@@ -33,20 +42,53 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
+            val prefs = flow.settings.readerOnce()
             val last = flow.db.progress().latest()
-            if (last != null) {
-                _ui.value = _ui.value.copy(lastTitle = last.title, lastId = last.bookId)
-            }
+            _ui.value = _ui.value.copy(
+                theme = prefs.theme,
+                accentHue = prefs.accentHue,
+                fontScale = prefs.fontScale,
+                fontFamily = prefs.fontFamily,
+                lineSpacing = prefs.lineSpacing,
+                orientation = prefs.orientation,
+                lastTitle = last?.title,
+                lastId = last?.bookId,
+                ready = true,
+            )
         }
     }
 
-    fun cycleTheme() {
-        val next = when (_ui.value.theme) {
-            ThemeMode.Light -> ThemeMode.Dark
-            ThemeMode.Dark -> ThemeMode.Oled
-            ThemeMode.Oled -> ThemeMode.Light
-        }
-        _ui.value = _ui.value.copy(theme = next)
+    fun setTheme(mode: ThemeMode) {
+        _ui.value = _ui.value.copy(theme = mode)
+        viewModelScope.launch { flow.settings.setTheme(mode) }
+    }
+
+    fun setAccentHue(hue: Float) {
+        val value = hue.coerceIn(AccentHue.MIN, AccentHue.MAX)
+        _ui.value = _ui.value.copy(accentHue = value)
+        viewModelScope.launch { flow.settings.setAccentHue(value) }
+    }
+
+    fun setFontScale(scale: Float) {
+        val value = scale.coerceIn(0.85f, 1.75f)
+        _ui.value = _ui.value.copy(fontScale = value)
+        viewModelScope.launch { flow.settings.setFontScale(value) }
+    }
+
+    fun setFontFamily(font: ReaderFont) {
+        _ui.value = _ui.value.copy(fontFamily = font)
+        viewModelScope.launch { flow.settings.setFontFamily(font) }
+    }
+
+    fun setLineSpacing(spacing: Float) {
+        val value = spacing.coerceIn(0.85f, 1.8f)
+        _ui.value = _ui.value.copy(lineSpacing = value)
+        viewModelScope.launch { flow.settings.setLineSpacing(value) }
+    }
+
+    fun setOrientation(orientation: ReaderOrientation) {
+        _ui.value = _ui.value.copy(orientation = orientation)
+        viewModelScope.launch { flow.settings.setOrientation(orientation) }
     }
 
     fun openUri(uri: Uri, onDone: (String) -> Unit) {
@@ -80,14 +122,15 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
         tmp.copyTo(dest, overwrite = true)
         tmp.delete()
         val doc = if (ext == "txt") TxtIngest.read(dest) else EpubIngest.read(dest)
+        val existing = flow.db.progress().get(id)
         flow.db.progress().upsert(
             ProgressEntity(
                 bookId = id,
                 title = doc.title,
                 storedPath = dest.absolutePath,
-                chapterIndex = 0,
-                blockIndex = 0,
-                charOffset = 0,
+                chapterIndex = existing?.chapterIndex ?: 0,
+                blockIndex = existing?.blockIndex ?: 0,
+                charOffset = existing?.charOffset ?: 0,
                 updatedAt = System.currentTimeMillis(),
             ),
         )
