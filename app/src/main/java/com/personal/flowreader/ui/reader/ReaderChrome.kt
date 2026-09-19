@@ -948,7 +948,7 @@ internal fun AudioSettingsTab(
     Spacer(Modifier.height(8.dp))
         AudioToggleRow(
             title = "Double-tap starts playback",
-            subtitle = "Seek to the tapped sentence and play",
+            subtitle = "Unavailable on body text while selection is on — use play controls",
             checked = doubleTapPlay,
             onCheckedChange = onDoubleTapPlay,
         )

@@ -24,6 +24,8 @@ data class ProgressEntity(
     val updatedAt: Long,
     /** When true, the book appears on the Files tab. Que-only shares stay false. */
     val inLibrary: Boolean = true,
+    /** 0–1 reading progress matching the eReader header bar (block index / last block). */
+    val readingProgress: Float = 0f,
 )
 
 @Entity(tableName = "book_filters")
@@ -142,9 +144,15 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE progress ADD COLUMN readingProgress REAL NOT NULL DEFAULT 0")
+    }
+}
+
 @Database(
     entities = [ProgressEntity::class, BookFiltersEntity::class, QueItemEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

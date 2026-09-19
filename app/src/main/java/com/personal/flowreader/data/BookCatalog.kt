@@ -57,17 +57,35 @@ object FileAccessAdvice {
     }
 }
 
+/** Display title for shared/clipboard text. Does not alter the stored body. */
 object SharedTextTitle {
     private const val FALLBACK = "Shared text"
-    private const val MAX_LEN = 80
+    private const val WINDOW = 32
 
     fun from(text: String, hint: String? = null): String {
-        hint?.trim()?.takeIf { it.isNotEmpty() }?.let { return it.take(MAX_LEN) }
-        val line = text.lineSequence()
-            .map { it.trim() }
-            .firstOrNull { it.isNotEmpty() }
-            ?: return FALLBACK
-        return if (line.length <= MAX_LEN) line else line.take(MAX_LEN - 1).trimEnd() + "…"
+        hint?.trim()?.takeIf { it.isNotEmpty() }?.let { return it.take(WINDOW) }
+
+        val title = buildString {
+            var pendingSpace = false
+            for (ch in text.take(WINDOW)) {
+                when {
+                    ch.isLetterOrDigit() -> {
+                        if (pendingSpace && isNotEmpty()) append(' ')
+                        pendingSpace = false
+                        append(ch)
+                    }
+                    ch == ',' || ch == '.' || ch == '!' || ch == '?' -> {
+                        if (pendingSpace && isNotEmpty()) append(' ')
+                        pendingSpace = false
+                        append(ch)
+                    }
+                    ch.isWhitespace() -> pendingSpace = true
+                    // Drop other characters; do not join adjacent words.
+                    else -> pendingSpace = true
+                }
+            }
+        }.trim()
+        return title.ifEmpty { FALLBACK }
     }
 }
 
@@ -114,6 +132,10 @@ class BookCatalog(private val app: FlowApp) {
 
     /**
      * Ingest shared plain text as a content-addressed TXT.
+     *
+     * Stored file bytes are the shared text as-is. [SharedTextTitle] derives a
+     * display label from the first characters only and must not rewrite the body.
+     *
      * @param inLibrary when true, show on Files; when false, only create progress if needed for Que
      * @param enqueue when true, append a new Que playlist row
      */
@@ -123,17 +145,17 @@ class BookCatalog(private val app: FlowApp) {
         inLibrary: Boolean,
         enqueue: Boolean,
     ): TextIngestResult {
-        val body = text.trim()
-        if (body.isEmpty()) throw IllegalArgumentException("Nothing to share")
+        if (text.isBlank()) throw IllegalArgumentException("Nothing to share")
 
-        val bytes = body.toByteArray(Charsets.UTF_8)
+        val bytes = text.toByteArray(Charsets.UTF_8)
         val id = BookBytes.sha256(bytes)
         val existing = app.db.progress().get(id)
         val dest = destination(id, "txt", BookSource.Imported)
         dest.parentFile?.mkdirs()
         dest.writeBytes(bytes)
 
-        val title = SharedTextTitle.from(body, titleHint)
+        // Title from first chars only — does not affect the stored body.
+        val title = SharedTextTitle.from(text, titleHint)
         val now = System.currentTimeMillis()
         val row = ProgressEntity(
             bookId = id,
@@ -146,6 +168,7 @@ class BookCatalog(private val app: FlowApp) {
             charOffset = existing?.charOffset ?: 0,
             updatedAt = now,
             inLibrary = (existing?.inLibrary == true) || inLibrary,
+            readingProgress = existing?.readingProgress ?: 0f,
         )
         app.db.progress().upsert(row)
 
@@ -185,6 +208,9 @@ class BookCatalog(private val app: FlowApp) {
             val dest = destination(id, ext, kind)
             dest.parentFile?.mkdirs()
             tmp.copyTo(dest, overwrite = true)
+            if (ext.equals("epub", ignoreCase = true)) {
+                EpubCover.ensureCached(dest)
+            }
 
             val title = ingestTitle(dest, ext, uri)
             val row = ProgressEntity(
@@ -198,6 +224,7 @@ class BookCatalog(private val app: FlowApp) {
                 charOffset = existing?.charOffset ?: 0,
                 updatedAt = System.currentTimeMillis(),
                 inLibrary = true,
+                readingProgress = existing?.readingProgress ?: 0f,
             )
             app.db.progress().upsert(row)
             return row
@@ -229,6 +256,10 @@ class BookCatalog(private val app: FlowApp) {
                 } ?: throw IllegalArgumentException(
                     "This linked file is no longer accessible. Re-add it, or import a copy.",
                 )
+                if (local.extension.equals("epub", ignoreCase = true)) {
+                    EpubCover.invalidate(local)
+                    EpubCover.ensureCached(local)
+                }
                 local
             }
         }

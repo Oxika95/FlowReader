@@ -10,7 +10,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -34,16 +33,19 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,8 +70,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -78,6 +83,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.zIndex
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -106,6 +112,8 @@ private val RailLoadingBright = Color(0xFF8A8A8A)
 private val EdgeFade = 96.dp
 /** Full left margin from screen edge to text; bars are centered in this gutter. */
 private val RailGutterWidth = ReaderContentStartPadding
+/** Hit strip for Android-style swipe-left back gesture. */
+private val RightEdgeBackWidth = 24.dp
 private val RailDotRadius = 1.25.dp
 private val RailDotStep = 4.dp
 /** Loading pill matches cache-dot diameter. */
@@ -132,8 +140,6 @@ private data class BlockSentence(
     val start: Int,
     val end: Int,
 )
-
-private enum class ReaderOverlay { Hidden, Chrome, Settings, Toc }
 
 private data class FilterEditorSession(
     val scope: FilterScope,
@@ -171,6 +177,17 @@ fun ReaderScreen(
     /** Skip the next TTS follow-scroll once when we center the list ourselves (double-tap / pin). */
     var suppressFollowScroll by remember { mutableStateOf(false) }
     var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
+    val view = LocalView.current
+    var selectionActive by remember { mutableStateOf(false) }
+    var selectionEpoch by remember { mutableIntStateOf(0) }
+    val textToolbar = remember(view) {
+        ReaderTextToolbar(view) { selectionActive = it }
+    }
+    fun clearTextSelection() {
+        textToolbar.hide()
+        selectionActive = false
+        selectionEpoch++
+    }
     val items = doc?.items.orEmpty()
     val allSentences = remember(doc) { doc?.let { SentenceSplitter.split(it) }.orEmpty() }
     /** (chapter, block) → flat item index; the reader looks this up on every frame. */
@@ -190,12 +207,12 @@ fun ReaderScreen(
     } else {
         locusSentenceIndex.value
     }
+    val restoreSystemBars = rememberImmersiveSystemBars()
     val leave = rememberUpdatedState {
         vm.persistNow()
+        restoreSystemBars()
         onBack()
     }
-
-    ImmersiveSystemBars()
 
     val activeQueId = queId ?: vm.queId
     LaunchedEffect(activeQueId, vm.bookId) {
@@ -379,8 +396,9 @@ fun ReaderScreen(
         }
     }
 
-    BackHandler {
+    fun navigateBack() {
         when {
+            selectionActive -> clearTextSelection()
             filterEditor != null -> filterEditor = null
             overlay == ReaderOverlay.Settings ||
                 overlay == ReaderOverlay.Toc ||
@@ -388,6 +406,41 @@ fun ReaderScreen(
             else -> leave.value()
         }
     }
+
+    fun resumeFollow() {
+        suppressFollowScroll = true
+        vm.tts.followAgain()
+        val target = playbackBlockIndex
+        if (target >= 0) {
+            scope.launch { centerItem(target) }
+        }
+    }
+
+    /** All reader gesture outcomes go through here so handlers share one policy. */
+    fun dispatch(action: ReaderTouchAction) {
+        when (action) {
+            ReaderTouchAction.ClearSelection -> clearTextSelection()
+            ReaderTouchAction.ToggleChrome -> toggleChrome()
+            ReaderTouchAction.DismissOverlay -> overlay = ReaderOverlay.Hidden
+            ReaderTouchAction.NavigateBack -> navigateBack()
+            ReaderTouchAction.ResumeFollow -> resumeFollow()
+            ReaderTouchAction.DoubleTapPlay -> Unit // handled at the Text call site
+        }
+    }
+
+    fun onReaderGesture(
+        target: ReaderTouchTarget,
+        kind: ReaderGestureKind,
+        onDoubleTapPlay: (() -> Unit)? = null,
+    ) {
+        when (val action = resolveTouch(target, kind, overlay, selectionActive)) {
+            null -> Unit
+            ReaderTouchAction.DoubleTapPlay -> onDoubleTapPlay?.invoke()
+            else -> dispatch(action)
+        }
+    }
+
+    BackHandler { navigateBack() }
 
     val colors = MaterialTheme.colorScheme
     val typeface = when (fontFamily) {
@@ -420,152 +473,203 @@ fun ReaderScreen(
             }
             doc != null -> {
                 val fadePx = with(LocalDensity.current) { EdgeFade.toPx() }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
+                val rightEdgePx = with(LocalDensity.current) { RightEdgeBackWidth.toPx() }
+                Box(
+                    Modifier
                         .fillMaxSize()
-                        .nestedScroll(stopFollowOnUserScroll)
-                        .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-                        .drawWithContent {
-                            drawContent()
-                            val stop = (fadePx / size.height).coerceIn(0f, 0.5f)
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    0f to Color.Transparent,
-                                    stop to Color.Black,
-                                    1f - stop to Color.Black,
-                                    1f to Color.Transparent,
-                                ),
-                                blendMode = BlendMode.DstIn,
-                            )
+                        .pointerInput(overlay, selectionActive) {
+                            detectRightEdgeBackSwipe(rightEdgePx) {
+                                onReaderGesture(
+                                    ReaderTouchTarget.RightEdgeBack,
+                                    ReaderGestureKind.SwipeBack,
+                                )
+                            }
                         },
-                    contentPadding = PaddingValues(
-                        start = 0.dp,
-                        end = ReaderListEndPadding,
-                        top = 28.dp,
-                        bottom = 28.dp,
-                    ),
                 ) {
-                    itemsIndexed(items, key = { _, it -> it.block.id }) { index, item ->
-                        val active = index == locusIndex
-                        val sentence = tts.sentence
-                        val highlight = active && sentence != null &&
-                            sentence.chapterIndex == item.chapterIndex &&
-                            sentence.blockIndex == item.blockIndex &&
-                            tts.playing
-                        val blockSentences = remember(allSentences, item.chapterIndex, item.blockIndex) {
-                            allSentences.mapIndexedNotNull { si, s ->
-                                if (s.chapterIndex == item.chapterIndex && s.blockIndex == item.blockIndex) {
-                                    BlockSentence(si, s.start, s.end)
-                                } else {
-                                    null
-                                }
-                            }
-                        }
-                        var textLayout by remember(item.block.id) { mutableStateOf<TextLayoutResult?>(null) }
-                        val replacedRanges = ui.replacedRangesByBlockId[item.block.id].orEmpty()
-                        val text = buildAnnotatedString {
-                            val raw = item.block.text
-                            append(raw)
-                            for (range in replacedRanges) {
-                                val start = range.first.coerceIn(0, raw.length)
-                                val end = (range.last + 1).coerceIn(start, raw.length)
-                                if (start < end) {
-                                    addStyle(SpanStyle(color = colors.secondary), start, end)
-                                }
-                            }
-                            if (highlight) {
-                                val start = sentence!!.start.coerceIn(0, raw.length)
-                                val end = sentence.end.coerceIn(start, raw.length)
-                                if (start < end) {
-                                    addStyle(
-                                        SpanStyle(
-                                            background = Color(0x66FFC107),
-                                            fontWeight = FontWeight.Medium,
-                                        ),
-                                        start,
-                                        end,
-                                    )
-                                }
-                            }
-                        }
-                        val style = when (item.block.kind) {
-                            BlockKind.Heading -> headingStyle
-                            BlockKind.Quote, BlockKind.Paragraph -> bodyStyle
-                        }
-                        Row(
+                CompositionLocalProvider(LocalTextToolbar provides textToolbar) {
+                    key(selectionEpoch) {
+                        SelectionContainer(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(IntrinsicSize.Min)
-                                .padding(vertical = 10.dp),
+                                .fillMaxSize()
+                                .pointerInput(selectionActive) {
+                                    if (!selectionActive) return@pointerInput
+                                    detectSelectionCancelGestures(
+                                        onCancel = {
+                                            dispatch(ReaderTouchAction.ClearSelection)
+                                        },
+                                    )
+                                },
                         ) {
-                            LocusRail(
+                            LazyColumn(
+                                state = listState,
                                 modifier = Modifier
-                                    .width(RailGutterWidth)
-                                    .fillMaxHeight(),
-                                sentences = blockSentences,
-                                textLayout = textLayout,
-                                currentSentenceIndex = currentSentenceIndex,
-                                ready = tts.readySentenceIndices,
-                                generating = tts.generatingSentenceIndices,
-                                softAccent = colors.secondary,
-                                onForceRegenerate = { vm.tts.forceRegenerateSentence(it) },
-                            )
-                            Text(
-                                text,
-                                style = style,
-                                color = colors.onBackground,
-                                onTextLayout = { textLayout = it },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(end = ReaderTextEndPadding)
-                                    .pointerInput(blockSentences, overlay, tts.doubleTapPlay) {
-                                        detectTapGestures(
-                                            onTap = {
-                                                when (overlay) {
-                                                    ReaderOverlay.Settings, ReaderOverlay.Toc -> {
-                                                        overlay = ReaderOverlay.Hidden
-                                                    }
-                                                    ReaderOverlay.Hidden, ReaderOverlay.Chrome -> toggleChrome()
-                                                }
-                                            },
-                                            onDoubleTap = { pos ->
-                                                when (overlay) {
-                                                    ReaderOverlay.Settings, ReaderOverlay.Toc -> {
-                                                        overlay = ReaderOverlay.Hidden
-                                                    }
-                                                    else -> {
-                                                        val layout = textLayout
-                                                        val sentence = if (layout != null) {
-                                                            sentenceAtPosition(blockSentences, layout, pos)
-                                                        } else {
-                                                            blockSentences.firstOrNull()
-                                                        }
-                                                        val charOffset = sentence?.start ?: 0
-                                                        // Re-enable follow + center the tapped sentence.
-                                                        suppressFollowScroll = true
-                                                        vm.jumpTo(
-                                                            Locus(
-                                                                item.chapterIndex,
-                                                                item.blockIndex,
-                                                                charOffset,
-                                                            ),
-                                                        )
-                                                        if (tts.doubleTapPlay) {
-                                                            vm.tts.play()
-                                                        }
-                                                        scope.launch { centerItem(index) }
-                                                        if (overlay == ReaderOverlay.Hidden) {
-                                                            toggleChrome()
-                                                        }
-                                                    }
-                                                }
-                                            },
+                                    .fillMaxSize()
+                                    .nestedScroll(stopFollowOnUserScroll)
+                                    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                                    .drawWithContent {
+                                        drawContent()
+                                        val stop = (fadePx / size.height).coerceIn(0f, 0.5f)
+                                        drawRect(
+                                            brush = Brush.verticalGradient(
+                                                0f to Color.Transparent,
+                                                stop to Color.Black,
+                                                1f - stop to Color.Black,
+                                                1f to Color.Transparent,
+                                            ),
+                                            blendMode = BlendMode.DstIn,
                                         )
                                     },
-                            )
+                                contentPadding = PaddingValues(
+                                    start = 0.dp,
+                                    end = ReaderListEndPadding,
+                                    top = 28.dp,
+                                    bottom = 28.dp,
+                                ),
+                            ) {
+                                itemsIndexed(items, key = { _, it -> it.block.id }) { index, item ->
+                                    val active = index == locusIndex
+                                    val sentence = tts.sentence
+                                    val highlight = active && sentence != null &&
+                                        sentence.chapterIndex == item.chapterIndex &&
+                                        sentence.blockIndex == item.blockIndex &&
+                                        tts.playing
+                                    val blockSentences = remember(allSentences, item.chapterIndex, item.blockIndex) {
+                                        allSentences.mapIndexedNotNull { si, s ->
+                                            if (s.chapterIndex == item.chapterIndex && s.blockIndex == item.blockIndex) {
+                                                BlockSentence(si, s.start, s.end)
+                                            } else {
+                                                null
+                                            }
+                                        }
+                                    }
+                                    var textLayout by remember(item.block.id) { mutableStateOf<TextLayoutResult?>(null) }
+                                    val replacedRanges = ui.replacedRangesByBlockId[item.block.id].orEmpty()
+                                    val text = buildAnnotatedString {
+                                        val raw = item.block.text
+                                        append(raw)
+                                        for (range in replacedRanges) {
+                                            val start = range.first.coerceIn(0, raw.length)
+                                            val end = (range.last + 1).coerceIn(start, raw.length)
+                                            if (start < end) {
+                                                addStyle(SpanStyle(color = colors.secondary), start, end)
+                                            }
+                                        }
+                                        if (highlight) {
+                                            val start = sentence!!.start.coerceIn(0, raw.length)
+                                            val end = sentence.end.coerceIn(start, raw.length)
+                                            if (start < end) {
+                                                addStyle(
+                                                    SpanStyle(
+                                                        background = Color(0x66FFC107),
+                                                        fontWeight = FontWeight.Medium,
+                                                    ),
+                                                    start,
+                                                    end,
+                                                )
+                                            }
+                                        }
+                                    }
+                                    val style = when (item.block.kind) {
+                                        BlockKind.Heading -> headingStyle
+                                        BlockKind.Quote, BlockKind.Paragraph -> bodyStyle
+                                    }
+                                    // Gaps: single-tap chrome / clear. Double-tap play stays on Text.
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .pointerInput(overlay, selectionActive) {
+                                                detectTapGestures(
+                                                    onTap = {
+                                                        onReaderGesture(
+                                                            ReaderTouchTarget.BodyGap,
+                                                            ReaderGestureKind.SingleTap,
+                                                        )
+                                                    },
+                                                )
+                                            },
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(IntrinsicSize.Min)
+                                                .padding(vertical = 10.dp),
+                                        ) {
+                                            LocusRail(
+                                                modifier = Modifier
+                                                    .width(RailGutterWidth)
+                                                    .fillMaxHeight(),
+                                                sentences = blockSentences,
+                                                textLayout = textLayout,
+                                                currentSentenceIndex = currentSentenceIndex,
+                                                ready = tts.readySentenceIndices,
+                                                generating = tts.generatingSentenceIndices,
+                                                softAccent = colors.secondary,
+                                                onForceRegenerate = { vm.tts.forceRegenerateSentence(it) },
+                                            )
+                                            Text(
+                                                text,
+                                                style = style,
+                                                color = colors.onBackground,
+                                                onTextLayout = { textLayout = it },
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .padding(end = ReaderTextEndPadding)
+                                                    .pointerInput(
+                                                        blockSentences,
+                                                        overlay,
+                                                        tts.doubleTapPlay,
+                                                        selectionActive,
+                                                        index,
+                                                    ) {
+                                                        detectTapGestures(
+                                                            onTap = {
+                                                                onReaderGesture(
+                                                                    ReaderTouchTarget.BodyText,
+                                                                    ReaderGestureKind.SingleTap,
+                                                                )
+                                                            },
+                                                            onDoubleTap = { pos ->
+                                                                onReaderGesture(
+                                                                    ReaderTouchTarget.BodyText,
+                                                                    ReaderGestureKind.DoubleTap,
+                                                                ) {
+                                                                    val layout = textLayout
+                                                                    val sentence = if (layout != null) {
+                                                                        sentenceAtPosition(
+                                                                            blockSentences,
+                                                                            layout,
+                                                                            pos,
+                                                                        )
+                                                                    } else {
+                                                                        blockSentences.firstOrNull()
+                                                                    }
+                                                                    val charOffset = sentence?.start ?: 0
+                                                                    suppressFollowScroll = true
+                                                                    vm.jumpTo(
+                                                                        Locus(
+                                                                            item.chapterIndex,
+                                                                            item.blockIndex,
+                                                                            charOffset,
+                                                                        ),
+                                                                    )
+                                                                    if (tts.doubleTapPlay) {
+                                                                        vm.tts.play()
+                                                                    }
+                                                                    scope.launch { centerItem(index) }
+                                                                    if (overlay == ReaderOverlay.Hidden) {
+                                                                        toggleChrome()
+                                                                    }
+                                                                }
+                                                            },
+                                                        )
+                                                    },
+                                            )
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                    }
+                                }
+                            }
                         }
-                        Spacer(Modifier.height(4.dp))
                     }
                 }
 
@@ -575,14 +679,32 @@ fun ReaderScreen(
                             .align(Alignment.TopCenter)
                             .fillMaxWidth()
                             .height(56.dp)
-                            .clickable { toggleChrome() },
+                            .pointerInput(overlay, selectionActive) {
+                                detectTapGestures(
+                                    onTap = {
+                                        onReaderGesture(
+                                            ReaderTouchTarget.EdgeBand,
+                                            ReaderGestureKind.SingleTap,
+                                        )
+                                    },
+                                )
+                            },
                     )
                     Box(
                         Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .height(72.dp)
-                            .clickable { toggleChrome() },
+                            .pointerInput(overlay, selectionActive) {
+                                detectTapGestures(
+                                    onTap = {
+                                        onReaderGesture(
+                                            ReaderTouchTarget.EdgeBand,
+                                            ReaderGestureKind.SingleTap,
+                                        )
+                                    },
+                                )
+                            },
                     )
                 }
 
@@ -613,6 +735,7 @@ fun ReaderScreen(
                     onNext = { vm.tts.skipNext() },
                     onSettings = { overlay = ReaderOverlay.Settings },
                 )
+                }
             }
         }
 
@@ -742,18 +865,20 @@ fun ReaderScreen(
                             .align(align)
                             .padding(vertical = edgePad)
                             .fillMaxWidth()
-                            .pointerInput(playbackBlockIndex) {
-                                fun resumeFollow() {
-                                    suppressFollowScroll = true
-                                    vm.tts.followAgain()
-                                    val target = playbackBlockIndex
-                                    if (target >= 0) {
-                                        scope.launch { centerItem(target) }
-                                    }
-                                }
+                            .pointerInput(playbackBlockIndex, overlay, selectionActive) {
                                 detectTapGestures(
-                                    onDoubleTap = { resumeFollow() },
-                                    onTap = { resumeFollow() },
+                                    onTap = {
+                                        onReaderGesture(
+                                            ReaderTouchTarget.Pin,
+                                            ReaderGestureKind.SingleTap,
+                                        )
+                                    },
+                                    onDoubleTap = {
+                                        onReaderGesture(
+                                            ReaderTouchTarget.Pin,
+                                            ReaderGestureKind.DoubleTap,
+                                        )
+                                    },
                                 )
                             },
                         matchReaderWidth = true,
@@ -1096,9 +1221,9 @@ private fun RailSegmentMark(
         )
     }
 }
-/** Hides the system bars for as long as it stays composed. */
+/** Hides the system bars for as long as it stays composed; returns a restore callback for leave. */
 @Composable
-private fun ImmersiveSystemBars() {
+private fun rememberImmersiveSystemBars(): () -> Unit {
     val view = LocalView.current
     DisposableEffect(view) {
         val window = (view.context as Activity).window
@@ -1110,6 +1235,13 @@ private fun ImmersiveSystemBars() {
         onDispose {
             controller.show(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = previous
+        }
+    }
+    return remember(view) {
+        {
+            val window = (view.context as Activity).window
+            WindowCompat.getInsetsController(window, view)
+                .show(WindowInsetsCompat.Type.systemBars())
         }
     }
 }

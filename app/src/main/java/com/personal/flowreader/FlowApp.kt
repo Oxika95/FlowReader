@@ -7,6 +7,7 @@ import com.personal.flowreader.data.BookCatalog
 import com.personal.flowreader.data.MIGRATION_1_2
 import com.personal.flowreader.data.MIGRATION_2_3
 import com.personal.flowreader.data.MIGRATION_3_4
+import com.personal.flowreader.data.MIGRATION_4_5
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.tts.TtsController
 import java.io.File
@@ -32,7 +33,7 @@ class FlowApp : Application() {
     override fun onCreate() {
         super.onCreate()
         db = Room.databaseBuilder(this, AppDatabase::class.java, "flow.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
         settings = SettingsStore(this)
         tts = TtsController(this, settings)

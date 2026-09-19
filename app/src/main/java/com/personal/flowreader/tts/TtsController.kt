@@ -1,13 +1,25 @@
 package com.personal.flowreader.tts
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.Bitmap
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.media.MediaMetadata
 import android.media.MediaPlayer
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import androidx.core.content.ContextCompat
+import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.BookDoc
+import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.Sentence
 import com.personal.flowreader.data.SentenceSplitter
@@ -97,6 +109,41 @@ class TtsController(
     private var session: MediaSession? = null
     /** Suppress MediaSession onPlay while we push PLAYING ourselves. */
     private var suppressSessionPlay = false
+    @Volatile
+    private var bookTitle: String = ""
+    @Volatile
+    private var chapterTitles: List<String> = emptyList()
+    @Volatile
+    private var coverArt: Bitmap? = null
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var holdsAudioFocus = false
+    private var noisyRegistered = false
+    /** Activity-registered asker for POST_NOTIFICATIONS (API 33+). */
+    @Volatile
+    private var notificationPermissionAsker: ((onDone: () -> Unit) -> Unit)? = null
+
+    private val audioManager: AudioManager =
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            -> {
+                if (_state.value.playing) pause()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> Unit
+            AudioManager.AUDIOFOCUS_GAIN -> Unit
+        }
+    }
+
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && _state.value.playing) {
+                pause()
+            }
+        }
+    }
 
     private val _state = MutableStateFlow(TtsUiState())
     val state: StateFlow<TtsUiState> = _state
@@ -104,6 +151,22 @@ class TtsController(
     private val _bookFinished = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     /** Emits when playback reaches the last sentence and stops (Que auto-advance listens). */
     val bookFinished: SharedFlow<Unit> = _bookFinished
+
+    fun setNotificationPermissionAsker(asker: ((onDone: () -> Unit) -> Unit)?) {
+        notificationPermissionAsker = asker
+    }
+
+    fun sessionToken(): MediaSession.Token? = session?.sessionToken
+
+    fun mediaTitle(): String = bookTitle.ifBlank { "Flow Reader" }
+
+    fun mediaSubtitle(): String {
+        val s = sentences.getOrNull(index) ?: return _state.value.snippet
+        val chapter = chapterTitles.getOrNull(s.chapterIndex).orEmpty()
+        return chapter.ifBlank { s.text.take(120) }
+    }
+
+    fun mediaCover(): Bitmap? = coverArt
 
     init {
         scope.launch {
@@ -139,7 +202,14 @@ class TtsController(
         releasePlayer()
         systemTts?.stop()
         cancelEdgeJobs()
+        abandonAudioFocus()
+        unregisterNoisyReceiver()
+        TtsPlaybackService.stop()
         bookKey = sanitizeBookKey(bookId)
+        bookTitle = book.title
+        chapterTitles = book.chapters.map { it.title }
+        coverArt?.recycle()
+        coverArt = null
         sentences = SentenceSplitter.split(book)
         index = SentenceSplitter.indexAt(sentences, start)
         val s = sentences.getOrNull(index)
@@ -155,6 +225,9 @@ class TtsController(
                 generatingSentenceIndices = emptySet(),
             )
         }
+        ensureSession()
+        updateSessionMetadata()
+        setSessionState(PlaybackState.STATE_PAUSED)
         val center = index
         scope.launch {
             // Disk work for the rail (drop other books, trim to window, rescan) stays off main.
@@ -165,6 +238,15 @@ class TtsController(
             }
             _state.update { it.copy(readySentenceIndices = ready) }
             refreshCatalog()
+            val cover = withContext(Dispatchers.IO) { loadCoverArt(bookId) }
+            if (bookKey == sanitizeBookKey(bookId)) {
+                coverArt?.recycle()
+                coverArt = cover
+                updateSessionMetadata()
+                TtsPlaybackService.refresh()
+            } else {
+                cover?.recycle()
+            }
         }
     }
 
@@ -432,6 +514,9 @@ class TtsController(
         systemTts?.stop()
         systemTts?.shutdown()
         systemTts = null
+        abandonAudioFocus()
+        unregisterNoisyReceiver()
+        TtsPlaybackService.stop()
         _state.update { it.copy(playing = false) }
         session?.release()
         session = null
@@ -443,7 +528,13 @@ class TtsController(
      */
     private suspend fun startPlayback() = playGate.withLock {
         if (_state.value.playing && playJob?.isActive == true) return@withLock
+        ensureNotificationPermission()
         ensureSession()
+        if (!requestAudioFocus()) {
+            _state.update { it.copy(error = "Audio focus unavailable") }
+            return@withLock
+        }
+        registerNoisyReceiver()
         playGeneration++
         val generation = playGeneration
         val previous = playJob
@@ -458,12 +549,15 @@ class TtsController(
                 error = null,
             )
         }
+        updateSessionMetadata()
+        TtsPlaybackService.start(context)
         playJob = scope.launch {
             loop(generation)
         }
         suppressSessionPlay = true
         try {
             setSessionState(PlaybackState.STATE_PLAYING)
+            TtsPlaybackService.refresh()
         } finally {
             suppressSessionPlay = false
         }
@@ -478,6 +572,17 @@ class TtsController(
         systemTts?.stop()
         _state.update { it.copy(playing = false) }
         setSessionState(sessionState)
+        when (sessionState) {
+            PlaybackState.STATE_STOPPED -> {
+                abandonAudioFocus()
+                unregisterNoisyReceiver()
+                TtsPlaybackService.stop()
+            }
+            else -> {
+                // Keep FGS so the shade card stays for resume (Readest-style).
+                TtsPlaybackService.refresh()
+            }
+        }
     }
 
     private suspend fun refreshCatalog() {
@@ -551,19 +656,57 @@ class TtsController(
                 override fun onPause() {
                     if (_state.value.playing) pause()
                 }
+                override fun onSkipToNext() {
+                    skipNext()
+                }
+                override fun onSkipToPrevious() {
+                    skipPrev()
+                }
+                override fun onStop() {
+                    scope.launch { pausePlayback(PlaybackState.STATE_STOPPED) }
+                }
             })
             isActive = true
         }
+        updateSessionMetadata()
     }
 
     private fun setSessionState(state: Int) {
         val s = session ?: return
         s.setPlaybackState(
             PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE)
+                .setActions(
+                    PlaybackState.ACTION_PLAY or
+                        PlaybackState.ACTION_PAUSE or
+                        PlaybackState.ACTION_SKIP_TO_NEXT or
+                        PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                        PlaybackState.ACTION_STOP,
+                )
                 .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, _state.value.speed)
                 .build(),
         )
+    }
+
+    private fun updateSessionMetadata() {
+        val s = session ?: return
+        val builder = MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, mediaTitle())
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, mediaSubtitle())
+            .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, mediaTitle())
+            .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, mediaSubtitle())
+        coverArt?.let { art ->
+            builder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, art)
+            builder.putBitmap(MediaMetadata.METADATA_KEY_ART, art)
+            builder.putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, art)
+        }
+        s.setMetadata(builder.build())
+    }
+
+    private suspend fun loadCoverArt(bookId: String): Bitmap? {
+        val app = context.applicationContext as? FlowApp ?: return null
+        val row = app.db.progress().get(bookId) ?: return null
+        val file = File(row.storedPath)
+        return EpubCover.loadBitmap(file)
     }
 
     private fun restartLoop() {
@@ -589,6 +732,8 @@ class TtsController(
         _state.update {
             it.copy(sentence = s, sentenceIndex = index, snippet = s?.text.orEmpty())
         }
+        updateSessionMetadata()
+        TtsPlaybackService.refresh()
         pruneCacheToWindow(index)
     }
 
@@ -652,12 +797,18 @@ class TtsController(
             } catch (t: Throwable) {
                 _state.update { it.copy(playing = false, error = t.message ?: "TTS failed") }
                 setSessionState(PlaybackState.STATE_STOPPED)
+                abandonAudioFocus()
+                unregisterNoisyReceiver()
+                TtsPlaybackService.stop()
                 return
             }
             if (generation != playGeneration) return
             if (index >= sentences.lastIndex) {
                 _state.update { it.copy(playing = false) }
                 setSessionState(PlaybackState.STATE_STOPPED)
+                abandonAudioFocus()
+                unregisterNoisyReceiver()
+                TtsPlaybackService.stop()
                 _bookFinished.tryEmit(Unit)
                 return
             }
@@ -891,6 +1042,79 @@ class TtsController(
                 TextToSpeech(context, listener, enginePackage)
             }
         }
+    }
+
+    private suspend fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.POST_NOTIFICATIONS,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) return
+        if (settings.notificationsAskedOnce()) return
+        settings.setNotificationsAskedOnce(true)
+        val asker = notificationPermissionAsker ?: return
+        suspendCancellableCoroutine { cont ->
+            asker {
+                if (cont.isActive) cont.resume(Unit)
+            }
+        }
+    }
+
+    private fun requestAudioFocus(): Boolean {
+        if (holdsAudioFocus) return true
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val attrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(attrs)
+                .setOnAudioFocusChangeListener(audioFocusListener)
+                .setWillPauseWhenDucked(true)
+                .build()
+            audioFocusRequest = request
+            audioManager.requestAudioFocus(request)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                audioFocusListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN,
+            )
+        }
+        holdsAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        return holdsAudioFocus
+    }
+
+    private fun abandonAudioFocus() {
+        if (!holdsAudioFocus && audioFocusRequest == null) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(audioFocusListener)
+        }
+        audioFocusRequest = null
+        holdsAudioFocus = false
+    }
+
+    private fun registerNoisyReceiver() {
+        if (noisyRegistered) return
+        val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        ContextCompat.registerReceiver(
+            context,
+            noisyReceiver,
+            filter,
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        noisyRegistered = true
+    }
+
+    private fun unregisterNoisyReceiver() {
+        if (!noisyRegistered) return
+        runCatching { context.unregisterReceiver(noisyReceiver) }
+        noisyRegistered = false
     }
 
     private fun edgeVoiceId(): String {

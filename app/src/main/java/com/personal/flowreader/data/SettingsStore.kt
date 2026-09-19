@@ -138,6 +138,13 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_LIBRARY_TAB] = tab.name }
     }
 
+    suspend fun notificationsAskedOnce(): Boolean =
+        store.data.first()[KEY_NOTIFICATIONS_ASKED] ?: false
+
+    suspend fun setNotificationsAskedOnce(asked: Boolean) {
+        store.edit { it[KEY_NOTIFICATIONS_ASKED] = asked }
+    }
+
     companion object {
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_ACCENT = stringPreferencesKey("accent") // legacy enum name
@@ -157,6 +164,7 @@ class SettingsStore(context: Context) {
         private val KEY_GROUP_FILTERS = stringPreferencesKey("group_filters")
         private val KEY_LIBRARY_VIEW = stringPreferencesKey("library_view")
         private val KEY_LIBRARY_TAB = stringPreferencesKey("library_tab")
+        private val KEY_NOTIFICATIONS_ASKED = booleanPreferencesKey("notifications_asked")
 
         private fun Preferences.toReaderPrefs() = ReaderPrefs(
             theme = runCatching { ThemeMode.valueOf(this[KEY_THEME] ?: ThemeMode.Oled.name) }

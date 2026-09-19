@@ -5,8 +5,27 @@ import org.junit.Test
 
 class SharedTextTitleTest {
     @Test
-    fun usesFirstNonEmptyLine() {
-        assertEquals("Hello world", SharedTextTitle.from("\n\nHello world\nMore"))
+    fun takesFirst32KeepsAllowedAndSpacesFromBreaks() {
+        assertEquals(
+            "Hello, world! More text after",
+            SharedTextTitle.from("\"\nHello, world!\nMore text after"),
+        )
+    }
+
+    @Test
+    fun lineBreaksBecomeSpaces() {
+        assertEquals(
+            "Hello world",
+            SharedTextTitle.from("Hello\nworld"),
+        )
+    }
+
+    @Test
+    fun dropsDisallowedPunctuationWithoutJoiningWords() {
+        assertEquals(
+            "Title here.",
+            SharedTextTitle.from("# Title here."),
+        )
     }
 
     @Test
@@ -15,11 +34,14 @@ class SharedTextTitleTest {
     }
 
     @Test
-    fun truncatesLongLine() {
-        val long = "a".repeat(100)
-        val title = SharedTextTitle.from(long)
-        assertEquals(80, title.length)
-        assertEquals('…', title.last())
+    fun fallsBackWhenOnlyDisallowed() {
+        assertEquals("Shared text", SharedTextTitle.from("\"\"\n—\n***"))
+    }
+
+    @Test
+    fun windowIs32SourceChars() {
+        val source = "a".repeat(40)
+        assertEquals("a".repeat(32), SharedTextTitle.from(source))
     }
 
     @Test

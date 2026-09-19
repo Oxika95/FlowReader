@@ -6,23 +6,29 @@ import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -45,6 +51,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarHost
@@ -58,19 +65,26 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.personal.flowreader.data.BookSource
+import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.FileAccessAdvice
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
@@ -87,8 +101,10 @@ import com.personal.flowreader.ui.reader.FilterRuleEditorOverlay
 import com.personal.flowreader.ui.reader.FiltersSettingsTab
 import com.personal.flowreader.ui.reader.ReaderModalScaffold
 import com.personal.flowreader.ui.reader.ReaderPanelShape
-import com.personal.flowreader.ui.reader.ReaderPanelSurface
 import com.personal.flowreader.ui.reader.SettingsLocationNote
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private const val LibraryFilterPreviewSample =
     "The quick brown fox jumps over the lazy dog. Names like Alice and Bob can be replaced."
@@ -113,6 +129,7 @@ private class PersistableOpenDocument : ActivityResultContracts.OpenDocument() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LibraryScreen(
     vm: LibraryViewModel,
@@ -150,6 +167,11 @@ fun LibraryScreen(
         vm.consumeError()
     }
 
+    val libraryInset = WindowInsets.statusBarsIgnoringVisibility
+        .asPaddingValues()
+        .calculateTopPadding()
+        .coerceAtLeast(16.dp)
+
     Box(
         Modifier
             .fillMaxSize()
@@ -158,11 +180,12 @@ fun LibraryScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .statusBarsPadding(),
+                .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility),
         ) {
-            LibraryTitleCard(
+            LibraryTopBar(
                 tab = ui.tab,
                 viewMode = ui.viewMode,
+                inset = libraryInset,
                 onTab = vm::setTab,
                 onViewMode = vm::setViewMode,
                 onSettings = { settingsOpen = true },
@@ -172,12 +195,14 @@ fun LibraryScreen(
                     books = ui.books,
                     viewMode = ui.viewMode,
                     busy = ui.busy,
+                    inset = libraryInset,
                     onOpen = onOpenBook,
                     modifier = Modifier.weight(1f),
                 )
                 LibraryTab.Que -> QueTab(
                     entries = ui.que,
                     busy = ui.busy,
+                    inset = libraryInset,
                     onOpen = { entry -> onOpenQue(entry.progress.bookId, entry.item.id) },
                     onRemove = { entry -> vm.removeQue(entry.item.id) },
                     modifier = Modifier.weight(1f),
@@ -190,8 +215,8 @@ fun LibraryScreen(
                 onClick = { if (!ui.busy) addDialog = true },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(end = 20.dp, bottom = 20.dp)
+                    .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
+                    .padding(end = libraryInset, bottom = libraryInset)
                     .size(56.dp),
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Add file", modifier = Modifier.size(28.dp))
@@ -202,8 +227,8 @@ fun LibraryScreen(
             snackbar,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 84.dp),
+                .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
+                .padding(bottom = libraryInset + 64.dp),
         )
 
         if (ui.busy) {
@@ -291,73 +316,67 @@ fun LibraryScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryTitleCard(
+private fun LibraryTopBar(
     tab: LibraryTab,
     viewMode: LibraryViewMode,
+    inset: Dp,
     onTab: (LibraryTab) -> Unit,
     onViewMode: (LibraryViewMode) -> Unit,
     onSettings: () -> Unit,
 ) {
-    ReaderPanelSurface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp),
-        matchReaderWidth = true,
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 4.dp, top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Flow Reader",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                if (tab == LibraryTab.Files) {
-                    IconButton(onClick = { onViewMode(LibraryViewMode.List) }) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ViewList,
-                            contentDescription = "List view",
-                            tint = if (viewMode == LibraryViewMode.List) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
-                    IconButton(onClick = { onViewMode(LibraryViewMode.Shelf) }) {
-                        Icon(
-                            Icons.Filled.GridView,
-                            contentDescription = "Shelf view",
-                            tint = if (viewMode == LibraryViewMode.Shelf) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = inset),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Flow Reader",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            if (tab == LibraryTab.Files) {
+                IconButton(onClick = { onViewMode(LibraryViewMode.List) }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ViewList,
+                        contentDescription = "List view",
+                        tint = if (viewMode == LibraryViewMode.List) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
-                IconButton(onClick = onSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                IconButton(onClick = { onViewMode(LibraryViewMode.Shelf) }) {
+                    Icon(
+                        Icons.Filled.GridView,
+                        contentDescription = "Shelf view",
+                        tint = if (viewMode == LibraryViewMode.Shelf) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
             }
-            val tabIndex = if (tab == LibraryTab.Files) 0 else 1
-            PrimaryTabRow(selectedTabIndex = tabIndex) {
-                Tab(
-                    selected = tab == LibraryTab.Files,
-                    onClick = { onTab(LibraryTab.Files) },
-                    text = { Text("Files") },
-                )
-                Tab(
-                    selected = tab == LibraryTab.Que,
-                    onClick = { onTab(LibraryTab.Que) },
-                    text = { Text("Que") },
-                )
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Filled.Settings, contentDescription = "Settings")
             }
+        }
+        val tabIndex = if (tab == LibraryTab.Files) 0 else 1
+        PrimaryTabRow(selectedTabIndex = tabIndex) {
+            Tab(
+                selected = tab == LibraryTab.Files,
+                onClick = { onTab(LibraryTab.Files) },
+                text = { Text("Files") },
+            )
+            Tab(
+                selected = tab == LibraryTab.Que,
+                onClick = { onTab(LibraryTab.Que) },
+                text = { Text("Que") },
+            )
         }
     }
 }
@@ -524,6 +543,7 @@ private fun FilesTab(
     books: List<ProgressEntity>,
     viewMode: LibraryViewMode,
     busy: Boolean,
+    inset: Dp,
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -538,8 +558,8 @@ private fun FilesTab(
             }
         } else {
             when (viewMode) {
-                LibraryViewMode.List -> BookList(books, onOpen)
-                LibraryViewMode.Shelf -> BookShelf(books, onOpen)
+                LibraryViewMode.List -> BookList(books, inset, onOpen)
+                LibraryViewMode.Shelf -> BookShelf(books, inset, onOpen)
             }
         }
     }
@@ -549,6 +569,7 @@ private fun FilesTab(
 private fun QueTab(
     entries: List<QueEntry>,
     busy: Boolean,
+    inset: Dp,
     onOpen: (QueEntry) -> Unit,
     onRemove: (QueEntry) -> Unit,
     modifier: Modifier = Modifier,
@@ -564,7 +585,12 @@ private fun QueTab(
             }
         } else {
             LazyColumn(
-                contentPadding = PaddingValues(start = 28.dp, top = 4.dp, end = 16.dp, bottom = 96.dp),
+                contentPadding = PaddingValues(
+                    start = inset,
+                    top = inset,
+                    end = inset,
+                    bottom = inset,
+                ),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 items(entries, key = { it.item.id }) { entry ->
@@ -643,104 +669,227 @@ private fun LibraryBookCard(
 }
 
 @Composable
-private fun BookList(books: List<ProgressEntity>, onOpen: (String) -> Unit) {
+private fun BookProgressBar(progress: Float, modifier: Modifier = Modifier) {
+    LinearProgressIndicator(
+        progress = { progress.coerceIn(0f, 1f) },
+        modifier = modifier
+            .fillMaxWidth()
+            .height(3.dp)
+            .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
+    )
+}
+
+@Composable
+private fun BookList(books: List<ProgressEntity>, inset: Dp, onOpen: (String) -> Unit) {
     LazyColumn(
-        contentPadding = PaddingValues(start = 28.dp, top = 4.dp, end = 24.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(
+            start = inset,
+            top = inset,
+            end = inset,
+            bottom = inset + 76.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         items(books, key = { it.bookId }) { book ->
             LibraryBookCard(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(104.dp),
                 onClick = { onOpen(book.bookId) },
             ) {
-                Row(
-                    Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CoverGlyph(book, modifier = Modifier.size(width = 40.dp, height = 56.dp))
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            book.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            bookSubtitle(book),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                BookDetailsRow(book)
             }
         }
     }
 }
 
 @Composable
-private fun BookShelf(books: List<ProgressEntity>, onOpen: (String) -> Unit) {
+private fun BookDetailsRow(book: ProgressEntity) {
+    val cover by rememberCover(book, maxEdge = 384)
+    val linked = book.sourceKind == BookSource.Linked.name
+    val cardBg = MaterialTheme.colorScheme.background
+    Box(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .aspectRatio(2f / 3f),
+            ) {
+                CoverFill(
+                    book = book,
+                    cover = cover,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.horizontalGradient(
+                                colorStops = arrayOf(
+                                    0.4f to Color.Transparent,
+                                    1f to cardBg,
+                                ),
+                            ),
+                        ),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp, end = 16.dp),
+            ) {
+                Text(
+                    book.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    bookSubtitle(book),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (linked) {
+            Icon(
+                Icons.Filled.Link,
+                contentDescription = "Linked file",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(14.dp),
+            )
+        }
+        BookProgressBar(
+            progress = book.readingProgress,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
+}
+
+@Composable
+private fun BookShelf(books: List<ProgressEntity>, inset: Dp, onOpen: (String) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(140.dp),
-        contentPadding = PaddingValues(start = 28.dp, top = 4.dp, end = 24.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(
+            start = inset,
+            top = inset,
+            end = inset,
+            bottom = inset + 76.dp,
+        ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         items(books, key = { it.bookId }) { book ->
             LibraryBookCard(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(2f / 3f),
                 onClick = { onOpen(book.bookId) },
             ) {
-                Column(Modifier.padding(12.dp)) {
-                    CoverGlyph(
-                        book,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(0.72f),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        book.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        sourceLabel(book),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                BookShelfTile(book)
             }
         }
     }
 }
 
 @Composable
-private fun CoverGlyph(book: ProgressEntity, modifier: Modifier = Modifier) {
+private fun BookShelfTile(book: ProgressEntity) {
+    val cover by rememberCover(book, maxEdge = 512)
     val linked = book.sourceKind == BookSource.Linked.name
-    Box(
-        modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            book.title.firstOrNull()?.uppercase() ?: "?",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
+    Box(Modifier.fillMaxSize()) {
+        CoverFill(
+            book = book,
+            cover = cover,
+            modifier = Modifier.fillMaxSize(),
         )
+        Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+            // Fade sits above a solid scrim so darkness always matches title height.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.88f),
+                            ),
+                        ),
+                    ),
+            )
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.88f)),
+            ) {
+                Text(
+                    book.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 8.dp),
+                )
+                BookProgressBar(progress = book.readingProgress)
+            }
+        }
         if (linked) {
             Icon(
                 Icons.Filled.Link,
                 contentDescription = "Linked file",
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                tint = Color.White,
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(4.dp)
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
                     .size(14.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun rememberCover(book: ProgressEntity, maxEdge: Int): androidx.compose.runtime.State<ImageBitmap?> =
+    produceState(initialValue = null, book.bookId, book.storedPath, maxEdge) {
+        value = withContext(Dispatchers.IO) {
+            EpubCover.loadBitmap(File(book.storedPath), maxEdge)?.asImageBitmap()
+        }
+    }
+
+@Composable
+private fun CoverFill(
+    book: ProgressEntity,
+    cover: ImageBitmap?,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier.background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (cover != null) {
+            Image(
+                bitmap = cover,
+                contentDescription = book.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text(
+                book.title.firstOrNull()?.uppercase() ?: "?",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
     }

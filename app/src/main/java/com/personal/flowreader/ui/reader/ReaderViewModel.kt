@@ -325,6 +325,12 @@ class ReaderViewModel(
     private fun persist(locus: Locus) {
         val id = bookId
         if (id.isBlank()) return
+        val doc = _ui.value.doc
+        val items = doc?.items.orEmpty()
+        val readingProgress = when {
+            items.size <= 1 -> 0f
+            else -> locus.flatIndex(doc!!).toFloat() / items.lastIndex
+        }.coerceIn(0f, 1f)
         flow.appScope.launch {
             val row = flow.db.progress().get(id) ?: return@launch
             flow.db.progress().upsert(
@@ -332,6 +338,7 @@ class ReaderViewModel(
                     chapterIndex = locus.chapterIndex,
                     blockIndex = locus.blockIndex,
                     charOffset = locus.charOffset,
+                    readingProgress = readingProgress,
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
