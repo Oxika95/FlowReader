@@ -129,13 +129,18 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_LIBRARY_VIEW] = mode.name }
     }
 
-    suspend fun libraryTabOnce(): LibraryTab =
-        runCatching {
-            LibraryTab.valueOf(store.data.first()[KEY_LIBRARY_TAB] ?: LibraryTab.Files.name)
-        }.getOrDefault(LibraryTab.Files)
+    suspend fun libraryTabIdOnce(): String =
+        store.data.first()[KEY_LIBRARY_TAB] ?: LibraryTabId.ID_FILES
 
-    suspend fun setLibraryTab(tab: LibraryTab) {
-        store.edit { it[KEY_LIBRARY_TAB] = tab.name }
+    suspend fun setLibraryTabId(id: String) {
+        store.edit { it[KEY_LIBRARY_TAB] = id }
+    }
+
+    suspend fun enabledPluginIdsOnce(): Set<String> =
+        decodeIdSet(store.data.first()[KEY_ENABLED_PLUGINS])
+
+    suspend fun setEnabledPluginIds(ids: Set<String>) {
+        store.edit { it[KEY_ENABLED_PLUGINS] = ids.sorted().joinToString(",") }
     }
 
     suspend fun notificationsAskedOnce(): Boolean =
@@ -164,7 +169,11 @@ class SettingsStore(context: Context) {
         private val KEY_GROUP_FILTERS = stringPreferencesKey("group_filters")
         private val KEY_LIBRARY_VIEW = stringPreferencesKey("library_view")
         private val KEY_LIBRARY_TAB = stringPreferencesKey("library_tab")
+        private val KEY_ENABLED_PLUGINS = stringPreferencesKey("enabled_plugins")
         private val KEY_NOTIFICATIONS_ASKED = booleanPreferencesKey("notifications_asked")
+
+        private fun decodeIdSet(raw: String?): Set<String> =
+            raw?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
 
         private fun Preferences.toReaderPrefs() = ReaderPrefs(
             theme = runCatching { ThemeMode.valueOf(this[KEY_THEME] ?: ThemeMode.Oled.name) }

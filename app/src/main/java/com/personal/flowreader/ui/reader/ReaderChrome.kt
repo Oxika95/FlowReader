@@ -7,6 +7,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -71,10 +73,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -82,22 +86,32 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.Build
 import com.personal.flowreader.data.AccentHue
+import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterMatchType
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.ReaderFont
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.data.ThemeMode
@@ -109,12 +123,12 @@ import kotlin.math.roundToInt
 
 internal val ReaderPanelShape = RoundedCornerShape(16.dp)
 internal val ReaderPanelFeather = 20.dp
-/** Left inset of reading text (locus rail gutter). */
-internal val ReaderContentStartPadding = 28.dp
-/** End padding on the reading LazyColumn. */
-internal val ReaderListEndPadding = 20.dp
+/** Left inset of reading text (locus rail gutter); bars are centered in this width. */
+internal val ReaderContentStartPadding = 16.dp
+/** End padding on the reading LazyColumn (right gutter). */
+internal val ReaderListEndPadding = 16.dp
 /** Extra end padding on the paragraph text itself. */
-internal val ReaderTextEndPadding = 4.dp
+internal val ReaderTextEndPadding = 0.dp
 /** Right inset of reading text — panels must land on the same edge as the text column. */
 internal val ReaderContentEndPadding = ReaderListEndPadding + ReaderTextEndPadding
 /** Top/bottom inset for Settings/TOC cards — same scale as the reading-column side gutters. */
@@ -177,7 +191,7 @@ internal fun ReaderPanelSurface(
         Card(
             modifier = Modifier
                 .then(cardInset)
-                .fillMaxWidth()
+                .then(if (matchReaderWidth) Modifier.fillMaxWidth() else Modifier.wrapContentWidth())
                 .then(
                     if (feather > 0.dp) {
                         Modifier.drawBehind {
@@ -220,10 +234,14 @@ internal fun TitleBannerCard(
     title: String,
     chapter: String,
     progress: Float,
+    storedPath: String,
     modifier: Modifier = Modifier,
     onBack: () -> Unit,
     onToc: () -> Unit,
 ) {
+    val cover by rememberReaderCover(storedPath, maxEdge = 512)
+    val cardBg = MaterialTheme.colorScheme.background
+    val canBlur = Build.VERSION.SDK_INT >= 31
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
@@ -231,39 +249,74 @@ internal fun TitleBannerCard(
         exit = fadeOut() + slideOutVertically { -it / 2 },
     ) {
         ReaderPanelSurface(modifier = Modifier.fillMaxWidth(), matchReaderWidth = true) {
-            Column {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                BannerCoverUnderlay(
+                    cover = cover,
+                    blur = canBlur,
+                    cardBg = cardBg,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .padding(bottom = 3.dp)
+                        // Keep cover clear of back / TOC hit targets.
+                        .padding(horizontal = BannerCoverSideInset),
+                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .padding(bottom = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
-                    Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        val textShadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.55f),
+                            offset = Offset(0f, 1f),
+                            blurRadius = 6f,
+                        )
                         Text(
                             title,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.copy(shadow = textShadow),
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
                         )
                         Text(
                             chapter,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.copy(shadow = textShadow),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
                         )
                     }
-                    IconButton(onClick = onToc) {
+                    // Match back control width so title stays centered on the card.
+                    IconButton(
+                        onClick = onToc,
+                        modifier = Modifier.size(36.dp),
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.Toc, contentDescription = "Contents")
                     }
                 }
                 LinearProgressIndicator(
                     progress = { progress.coerceIn(0f, 1f) },
                     modifier = Modifier
+                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .height(3.dp)
                         .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)),
@@ -272,6 +325,58 @@ internal fun TitleBannerCard(
                 )
             }
         }
+    }
+}
+
+/** Horizontal inset so the cover band ends before the side icon buttons. */
+private val BannerCoverSideInset = 48.dp
+
+@Composable
+private fun rememberReaderCover(storedPath: String, maxEdge: Int): androidx.compose.runtime.State<ImageBitmap?> =
+    produceState(initialValue = null, storedPath, maxEdge) {
+        value = if (storedPath.isBlank()) {
+            null
+        } else {
+            withContext(Dispatchers.IO) {
+                EpubCover.loadBitmap(File(storedPath), maxEdge)?.asImageBitmap()
+            }
+        }
+    }
+
+@Composable
+private fun BannerCoverUnderlay(
+    cover: ImageBitmap?,
+    blur: Boolean,
+    cardBg: Color,
+    modifier: Modifier = Modifier,
+) {
+    if (cover == null) return
+    Box(modifier) {
+        Image(
+            bitmap = cover,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (blur) Modifier.blur(6.dp) else Modifier),
+        )
+        // Soft side fades into the card; light center wash for title contrast.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        colorStops = arrayOf(
+                            0f to cardBg,
+                            0.18f to cardBg.copy(alpha = 0.35f),
+                            0.50f to cardBg.copy(alpha = 0.45f),
+                            0.82f to cardBg.copy(alpha = 0.35f),
+                            1f to cardBg,
+                        ),
+                    ),
+                ),
+        )
     }
 }
 
@@ -287,53 +392,64 @@ internal fun MediaControlCard(
     onNext: () -> Unit,
     onSettings: () -> Unit,
 ) {
+    val playSize = 56.dp
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
         enter = fadeIn() + slideInVertically { it / 2 },
         exit = fadeOut() + slideOutVertically { it / 2 },
     ) {
-        FloatingPanel {
-            Box(Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = onPrev) {
-                        Icon(Icons.Default.SkipPrevious, contentDescription = "Previous sentence")
-                    }
-                    FilledIconButton(
-                        onClick = {
-                            if (playing) onPause() else onPlay()
-                        },
-                        modifier = Modifier.size(56.dp),
+        // Outer box sizes to the tall play control; the card itself stays short.
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            FloatingPanel(
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Box(Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (playing) "Pause" else "Play",
-                            modifier = Modifier.size(28.dp),
-                        )
+                        IconButton(onClick = onPrev) {
+                            Icon(Icons.Default.SkipPrevious, contentDescription = "Previous sentence")
+                        }
+                        // Horizontal slot for the overlapping play control; does not set card height.
+                        Spacer(Modifier.width(playSize))
+                        IconButton(onClick = onNext) {
+                            Icon(Icons.Default.SkipNext, contentDescription = "Next sentence")
+                        }
                     }
-                    IconButton(onClick = onNext) {
-                        Icon(Icons.Default.SkipNext, contentDescription = "Next sentence")
+                    IconButton(
+                        onClick = onSettings,
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
-                IconButton(
-                    onClick = onSettings,
-                    modifier = Modifier.align(Alignment.CenterEnd),
-                ) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings")
+                error?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                    )
                 }
             }
-            error?.let {
-                Text(
-                    it,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            FilledIconButton(
+                onClick = {
+                    if (playing) onPause() else onPlay()
+                },
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(playSize),
+            ) {
+                Icon(
+                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (playing) "Pause" else "Play",
+                    modifier = Modifier.size(28.dp),
                 )
             }
         }
@@ -1083,6 +1199,7 @@ internal fun FilterRuleEditorOverlay(
     var title by remember(initial.id, visible) { mutableStateOf(initial.title) }
     var matchType by remember(initial.id, visible) { mutableStateOf(initial.matchType) }
     var wholeWords by remember(initial.id, visible) { mutableStateOf(initial.wholeWords) }
+    var ttsOnly by remember(initial.id, visible) { mutableStateOf(initial.ttsOnly) }
     var pattern by remember(initial.id, visible) { mutableStateOf(initial.pattern) }
     var replacement by remember(initial.id, visible) { mutableStateOf(initial.replacement) }
     var previewMode by remember(initial.id, visible) { mutableStateOf(FilterPreviewMode.ThisRule) }
@@ -1092,6 +1209,7 @@ internal fun FilterRuleEditorOverlay(
         title = title,
         matchType = matchType,
         wholeWords = wholeWords,
+        ttsOnly = ttsOnly,
         pattern = pattern,
         replacement = replacement,
     )
@@ -1204,6 +1322,27 @@ internal fun FilterRuleEditorOverlay(
                     checked = wholeWords && !regexMode,
                     onCheckedChange = { wholeWords = it },
                     enabled = !regexMode,
+                )
+            }
+
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("TTS only", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Apply when speaking, not on screen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = ttsOnly,
+                    onCheckedChange = { ttsOnly = it },
                 )
             }
 

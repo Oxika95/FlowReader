@@ -19,11 +19,14 @@ import android.speech.tts.Voice
 import androidx.core.content.ContextCompat
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.BookDoc
+import com.personal.flowreader.data.Chapter
 import com.personal.flowreader.data.EpubCover
+import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.Sentence
 import com.personal.flowreader.data.SentenceSplitter
 import com.personal.flowreader.data.SettingsStore
+import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsEngines
 import com.personal.flowreader.data.TtsPrefs
@@ -87,9 +90,16 @@ class TtsController(
     /** Volatile: written on Main, read by cache sweeps on IO. */
     @Volatile
     private var sentences: List<Sentence> = emptyList()
+    /** TTS-only filter rules; applied at speak/synthesize time on sentence text. */
+    @Volatile
+    private var speechFilters: List<FilterRule> = emptyList()
     /** Sanitized book id; scopes cache file names so books never share clips. */
     @Volatile
     private var bookKey = ""
+    @Volatile
+    private var attachedBookId = ""
+    @Volatile
+    private var moreProvider: (suspend () -> Boolean)? = null
     @Volatile
     private var index = 0
     private var playJob: Job? = null
@@ -193,7 +203,12 @@ class TtsController(
         }
     }
 
-    fun attach(bookId: String, book: BookDoc, start: Locus) {
+    fun attach(
+        bookId: String,
+        book: BookDoc,
+        start: Locus,
+        speechFilters: List<FilterRule> = emptyList(),
+    ) {
         // Sync teardown so a new book never shares a live player/loop (QuickNovel stop-before-play).
         playGeneration++
         playJob?.cancel()
@@ -205,11 +220,13 @@ class TtsController(
         abandonAudioFocus()
         unregisterNoisyReceiver()
         TtsPlaybackService.stop()
+        attachedBookId = bookId
         bookKey = sanitizeBookKey(bookId)
         bookTitle = book.title
         chapterTitles = book.chapters.map { it.title }
         coverArt?.recycle()
         coverArt = null
+        this.speechFilters = speechFilters
         sentences = SentenceSplitter.split(book)
         index = SentenceSplitter.indexAt(sentences, start)
         val s = sentences.getOrNull(index)
@@ -248,6 +265,45 @@ class TtsController(
                 cover?.recycle()
             }
         }
+    }
+
+    /**
+     * Append chapters to the current book without resetting the playhead.
+     * Sentence indices continue after the existing list so Edge prefetch stays valid.
+     */
+    fun extend(addedChapters: List<Chapter>) {
+        if (addedChapters.isEmpty()) return
+        val offset = chapterTitles.size
+        chapterTitles = chapterTitles + addedChapters.map { it.title }
+        val extra = SentenceSplitter.split(
+            BookDoc(bookTitle, addedChapters),
+        ).map { s -> s.copy(chapterIndex = s.chapterIndex + offset) }
+        if (extra.isEmpty()) return
+        sentences = sentences + extra
+        updateSessionMetadata()
+        if (_state.value.playing) {
+            val n = _state.value.prefetchCount.coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH)
+            for (ahead in 1..n) {
+                startEdgeJob(index + ahead) { prefetch(index + ahead) }
+            }
+        }
+        TtsPlaybackService.refresh()
+    }
+
+    /**
+     * Optional next-chapter loader for plugin streaming. Cleared when [bookId] no longer matches.
+     */
+    fun setMoreProvider(bookId: String, provider: (suspend () -> Boolean)?) {
+        if (provider == null) {
+            if (attachedBookId == bookId) moreProvider = null
+        } else {
+            moreProvider = provider
+        }
+    }
+
+    private suspend fun pullMore(): Boolean {
+        val provider = moreProvider ?: return false
+        return runCatching { provider() }.getOrDefault(false)
     }
 
     /** Drop Edge clips so refiltered text is not spoken from stale audio. */
@@ -353,9 +409,9 @@ class TtsController(
         }
     }
 
-    fun play() {
+    fun play(follow: Boolean? = null) {
         if (sentences.isEmpty()) return
-        scope.launch { startPlayback() }
+        scope.launch { startPlayback(follow) }
     }
 
     fun pause() {
@@ -526,7 +582,7 @@ class TtsController(
      * Readest-style: await previous speak teardown, then start one loop under [playGate].
      * QuickNovel-style: bump generation + stop player before any new MediaPlayer.
      */
-    private suspend fun startPlayback() = playGate.withLock {
+    private suspend fun startPlayback(follow: Boolean? = null) = playGate.withLock {
         if (_state.value.playing && playJob?.isActive == true) return@withLock
         ensureNotificationPermission()
         ensureSession()
@@ -545,7 +601,7 @@ class TtsController(
         _state.update {
             it.copy(
                 playing = true,
-                following = it.autoScrollWithTts,
+                following = follow ?: it.autoScrollWithTts,
                 error = null,
             )
         }
@@ -786,6 +842,9 @@ class TtsController(
             val s = sentences.getOrNull(index) ?: break
             publishSentence()
             val n = _state.value.prefetchCount.coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH)
+            if (sentences.lastIndex - index <= n) {
+                pullMore()
+            }
             for (offset in 1..n) {
                 val target = index + offset
                 startEdgeJob(target) { prefetch(target) }
@@ -804,6 +863,10 @@ class TtsController(
             }
             if (generation != playGeneration) return
             if (index >= sentences.lastIndex) {
+                if (pullMore() && index < sentences.lastIndex) {
+                    index++
+                    continue
+                }
                 _state.update { it.copy(playing = false) }
                 setSessionState(PlaybackState.STATE_STOPPED)
                 abandonAudioFocus()
@@ -819,9 +882,12 @@ class TtsController(
     private suspend fun speak(s: Sentence, generation: Int) {
         when (_state.value.engineKey) {
             TtsEngines.EDGE -> speakEdge(index, generation)
-            else -> speakSystem(s.text)
+            else -> speakSystem(speechText(s.text))
         }
     }
+
+    /** Visible sentence text plus any TTS-only filter transforms. */
+    private fun speechText(text: String): String = TextFilters.applySpeech(text, speechFilters)
 
     private fun startEdgeJob(i: Int, block: suspend () -> Unit) {
         edgeJobs.remove(i)?.cancel()
@@ -881,7 +947,7 @@ class TtsController(
         publishGenerating(i)
         return try {
             val audio = edge.synthesize(
-                text = s.text,
+                text = speechText(s.text),
                 voice = edgeVoiceId(),
                 ratePercent = ratePercent(),
                 pitchPercent = pitchPercent(),

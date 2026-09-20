@@ -14,10 +14,15 @@ import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.data.TxtIngest
+import com.personal.flowreader.library.plugin.royalroad.RoyalRoadHtml
+import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
+import com.personal.flowreader.library.plugin.royalroad.RoyalRoadReadSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 data class ReaderUi(
@@ -26,6 +31,8 @@ data class ReaderUi(
     val locus: Locus = Locus(),
     val error: String? = null,
     val loading: Boolean = true,
+    /** Absolute path of the materialized book file (for cover underlay). */
+    val storedPath: String = "",
     /** Block id → ranges in filtered text tinted as replacements. */
     val replacedRangesByBlockId: Map<String, List<IntRange>> = emptyMap(),
     val filtersGlobal: List<FilterRule> = emptyList(),
@@ -47,6 +54,9 @@ class ReaderViewModel(
     val ui: StateFlow<ReaderUi> = _ui
 
     private var rawDoc: BookDoc? = null
+    private var storedPath: String = ""
+    private var rrSession: RoyalRoadReadSession? = null
+    private val appendMutex = Mutex()
     /** When true, [onCleared] skips [TtsController.pause] so Que handoff can keep audio seamless. */
     @Volatile
     var suppressPauseOnClear: Boolean = false
@@ -59,9 +69,14 @@ class ReaderViewModel(
         try {
             val row = flow.db.progress().get(bookId)
                 ?: throw IllegalArgumentException("Book not found")
+            storedPath = row.storedPath
             val doc = withContext(Dispatchers.IO) {
-                val file = flow.catalog.materialize(row)
-                if (file.extension.equals("txt", true)) TxtIngest.read(file) else EpubIngest.read(file)
+                if (RoyalRoadHtml.isPluginBookId(bookId)) {
+                    loadRoyalRoad(row.sourceUri)
+                } else {
+                    val file = flow.catalog.materialize(row)
+                    if (file.extension.equals("txt", true)) TxtIngest.read(file) else EpubIngest.read(file)
+                }
             }
             rawDoc = doc
             val global = flow.settings.globalFiltersOnce()
@@ -75,12 +90,78 @@ class ReaderViewModel(
                 Locus(row.chapterIndex, row.blockIndex, row.charOffset)
             }
             applyFilters(global, groups, local, locus, invalidateCache = false)
+            if (RoyalRoadHtml.isPluginBookId(bookId)) {
+                tts.setMoreProvider(bookId) { appendRoyalRoadChapter() }
+                viewModelScope.launch { appendRoyalRoadChapter() }
+            }
             if (autoPlay && !sentencesEmpty()) {
                 tts.play()
             }
         } catch (t: Throwable) {
             _ui.value = ReaderUi(error = t.message ?: "Failed to open", loading = false)
         }
+    }
+
+    private suspend fun loadRoyalRoad(sourceUri: String): BookDoc {
+        val session = runCatching { flow.royalRoad.resumeRead(bookId) }.getOrElse {
+            val url = sourceUri.takeIf { it.isNotBlank() }
+                ?: throw it
+            val detail = flow.royalRoad.loadWork(url)
+            flow.royalRoad.startReading(detail, 0)
+        }
+        rrSession = session
+        persistPluginSnapshot(session)
+        session.toc.getOrNull(session.startIndex)?.url?.let { url ->
+            runCatching { flow.royalRoad.syncProgress(session.bookId, url) }
+        }
+        return BookDoc(session.title, session.chapters)
+    }
+
+    private suspend fun persistPluginSnapshot(session: RoyalRoadReadSession) {
+        val text = session.chapters.joinToString("\n\n") { chapter ->
+            buildString {
+                if (chapter.title.isNotBlank()) {
+                    append(chapter.title)
+                    append("\n\n")
+                }
+                append(chapter.blocks.joinToString("\n\n") { it.text })
+            }
+        }
+        flow.catalog.upsertPluginBook(
+            bookId = session.bookId,
+            title = session.title,
+            sourceUri = session.fictionUrl,
+            sourceKind = RoyalRoadPlugin.ID,
+            text = text.ifBlank { session.title },
+        )
+    }
+
+    suspend fun appendRoyalRoadChapter(): Boolean = appendMutex.withLock {
+        val session = rrSession ?: return false
+        val next = withContext(Dispatchers.IO) { flow.royalRoad.appendNext(session) } ?: return false
+        rrSession = next
+        val addedRaw = next.chapters.last()
+        val raw = rawDoc ?: return false
+        rawDoc = raw.copy(chapters = raw.chapters + addedRaw)
+        val merged = TextFilters.merge(
+            _ui.value.filtersGlobal,
+            _ui.value.filtersGroups,
+            _ui.value.filtersLocal,
+        )
+        val filtered = TextFilters.applyVisual(rawDoc!!, merged)
+        val addedFiltered = filtered.doc.chapters.takeLast(1)
+        tts.extend(addedFiltered)
+        _ui.value = _ui.value.copy(
+            doc = filtered.doc,
+            replacedRangesByBlockId = filtered.replacedRangesByBlockId,
+        )
+        withContext(Dispatchers.IO) {
+            persistPluginSnapshot(next)
+            next.toc.getOrNull(next.loadedThrough)?.url?.let { url ->
+                flow.royalRoad.syncProgress(next.bookId, url)
+            }
+        }
+        true
     }
 
     private fun sentencesEmpty(): Boolean {
@@ -116,15 +197,16 @@ class ReaderViewModel(
     ) {
         val raw = rawDoc ?: return
         val merged = TextFilters.merge(global, groups, local)
-        val filtered = TextFilters.apply(raw, merged)
+        val filtered = TextFilters.applyVisual(raw, merged)
         val clamped = clampLocus(locus, filtered.doc)
         if (invalidateCache) tts.invalidateEdgeCache()
-        tts.attach(bookId, filtered.doc, clamped)
+        tts.attach(bookId, filtered.doc, clamped, speechFilters = merged.filter { it.ttsOnly })
         _ui.value = ReaderUi(
             title = filtered.doc.title,
             doc = filtered.doc,
             locus = clamped,
             loading = false,
+            storedPath = storedPath,
             replacedRangesByBlockId = filtered.replacedRangesByBlockId,
             filtersGlobal = global,
             filtersGroups = groups,
@@ -347,6 +429,7 @@ class ReaderViewModel(
 
     override fun onCleared() {
         persistNow()
+        tts.setMoreProvider(bookId, null)
         if (!suppressPauseOnClear) {
             tts.pause()
         }

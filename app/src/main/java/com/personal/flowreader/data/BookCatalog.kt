@@ -138,10 +138,12 @@ class BookCatalog(private val app: FlowApp) {
      *
      * @param inLibrary when true, show on Files; when false, only create progress if needed for Que
      * @param enqueue when true, append a new Que playlist row
+     * @param displayTitle when set, used as the catalog title (plugins). Otherwise first chars of the body.
      */
     suspend fun addText(
         text: String,
         titleHint: String? = null,
+        displayTitle: String? = null,
         inLibrary: Boolean,
         enqueue: Boolean,
     ): TextIngestResult {
@@ -154,8 +156,8 @@ class BookCatalog(private val app: FlowApp) {
         dest.parentFile?.mkdirs()
         dest.writeBytes(bytes)
 
-        // Title from first chars only — does not affect the stored body.
-        val title = SharedTextTitle.from(text, titleHint)
+        val title = displayTitle?.trim()?.takeIf { it.isNotEmpty() }
+            ?: SharedTextTitle.from(text, titleHint)
         val now = System.currentTimeMillis()
         val row = ProgressEntity(
             bookId = id,
@@ -187,6 +189,54 @@ class BookCatalog(private val app: FlowApp) {
             null
         }
         return TextIngestResult(row, queItem)
+    }
+
+    /**
+     * Upsert a plugin-backed book. [bookId] is stable (e.g. `rr:{fictionId}`) so
+     * reopen and TTS streaming resume the same row. Not shown on Files.
+     */
+    suspend fun upsertPluginBook(
+        bookId: String,
+        title: String,
+        sourceUri: String,
+        sourceKind: String,
+        text: String,
+    ): ProgressEntity {
+        val existing = app.db.progress().get(bookId)
+        val safe = bookId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val dest = File(File(app.booksDir, safe).apply { mkdirs() }, "book.txt")
+        dest.writeText(text)
+        val now = System.currentTimeMillis()
+        val row = ProgressEntity(
+            bookId = bookId,
+            title = title,
+            storedPath = dest.absolutePath,
+            sourceUri = sourceUri,
+            sourceKind = sourceKind,
+            chapterIndex = existing?.chapterIndex ?: 0,
+            blockIndex = existing?.blockIndex ?: 0,
+            charOffset = existing?.charOffset ?: 0,
+            updatedAt = now,
+            inLibrary = false,
+            readingProgress = existing?.readingProgress ?: 0f,
+        )
+        app.db.progress().upsert(row)
+        return row
+    }
+
+    suspend fun enqueueExisting(bookId: String): QueItemEntity {
+        app.db.progress().get(bookId)
+            ?: throw IllegalArgumentException("Book not found")
+        val order = app.db.que().maxSortOrder() + 1
+        val item = QueItemEntity(
+            id = UUID.randomUUID().toString(),
+            bookId = bookId,
+            sortOrder = order,
+            addedAt = System.currentTimeMillis(),
+            done = false,
+        )
+        app.db.que().upsert(item)
+        return item
     }
 
     suspend fun add(uri: Uri, source: BookSource): ProgressEntity {

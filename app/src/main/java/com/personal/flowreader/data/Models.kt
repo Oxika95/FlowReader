@@ -154,9 +154,33 @@ enum class LibraryViewMode {
     Shelf,
 }
 
-enum class LibraryTab {
-    Files,
-    Que,
+/** Selected library tab, including plugin ids. Persisted as [persistKey]. */
+sealed class LibraryTabId {
+    abstract val persistKey: String
+
+    data object Files : LibraryTabId() {
+        override val persistKey: String = ID_FILES
+    }
+
+    data object Que : LibraryTabId() {
+        override val persistKey: String = ID_QUE
+    }
+
+    data class Plugin(val pluginId: String) : LibraryTabId() {
+        override val persistKey: String = pluginId
+    }
+
+    companion object {
+        const val ID_FILES = "files"
+        const val ID_QUE = "que"
+
+        fun parse(raw: String?, knownPluginIds: Set<String>): LibraryTabId =
+            when (raw) {
+                null, ID_FILES, "Files" -> Files
+                ID_QUE, "Que" -> Que
+                else -> if (raw in knownPluginIds) Plugin(raw) else Files
+            }
+    }
 }
 
 /** Result of sharing text into the library and/or Que. */

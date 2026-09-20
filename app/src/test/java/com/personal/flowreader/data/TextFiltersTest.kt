@@ -49,6 +49,7 @@ class TextFiltersTest {
                 enabled = false,
                 matchType = FilterMatchType.RegEx,
                 wholeWords = false,
+                ttsOnly = true,
                 pattern = "a+",
                 replacement = "b",
                 order = 2,
@@ -60,9 +61,29 @@ class TextFiltersTest {
         assertEquals("t", decoded[0].title)
         assertEquals(false, decoded[0].enabled)
         assertEquals(FilterMatchType.RegEx, decoded[0].matchType)
+        assertEquals(true, decoded[0].ttsOnly)
         assertEquals("a+", decoded[0].pattern)
         assertEquals("b", decoded[0].replacement)
         assertEquals(2, decoded[0].order)
+    }
+
+    @Test
+    fun ttsOnlySkippedVisuallyButAppliedForSpeech() {
+        val visual = FilterRule(pattern = "foo", replacement = "bar", wholeWords = false)
+        val speech = FilterRule(pattern = "bar", replacement = "baz", wholeWords = false, ttsOnly = true)
+        val doc = BookDoc(
+            title = "t",
+            chapters = listOf(
+                Chapter(
+                    title = "c",
+                    blocks = listOf(Block(id = "b0", kind = BlockKind.Paragraph, text = "foo")),
+                ),
+            ),
+        )
+        val filtered = TextFilters.applyVisual(doc, listOf(visual, speech))
+        assertEquals("bar", filtered.doc.chapters[0].blocks[0].text)
+        assertEquals("baz", TextFilters.applySpeech("bar", listOf(visual, speech)))
+        assertEquals("bar", TextFilters.applySpeech("bar", listOf(visual)))
     }
 
     @Test

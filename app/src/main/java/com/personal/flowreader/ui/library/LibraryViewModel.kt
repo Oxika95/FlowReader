@@ -10,11 +10,13 @@ import com.personal.flowreader.data.BookSource
 import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
-import com.personal.flowreader.data.LibraryTab
+import com.personal.flowreader.data.LibraryTabId
 import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.data.ProgressEntity
 import com.personal.flowreader.data.QueEntry
 import com.personal.flowreader.data.TextFilters
+import com.personal.flowreader.library.plugin.LibraryPluginActions
+import com.personal.flowreader.library.plugin.LibraryPluginRegistry
 import com.personal.flowreader.ui.reader.FilterPreviewMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,9 +28,10 @@ data class LibraryUi(
     val books: List<ProgressEntity> = emptyList(),
     val que: List<QueEntry> = emptyList(),
     val viewMode: LibraryViewMode = LibraryViewMode.List,
-    val tab: LibraryTab = LibraryTab.Files,
+    val tab: LibraryTabId = LibraryTabId.Files,
     val filtersGlobal: List<FilterRule> = emptyList(),
     val filtersGroups: List<FilterRule> = emptyList(),
+    val enabledPluginIds: Set<String> = emptySet(),
     val busy: Boolean = false,
     val message: String? = null,
     val error: String? = null,
@@ -39,14 +42,77 @@ data class LibraryUi(
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val flow = app as FlowApp
     val tts = flow.tts
+    val plugins: LibraryPluginRegistry = flow.plugins
     private val _ui = MutableStateFlow(LibraryUi())
     val ui: StateFlow<LibraryUi> = _ui
+
+    val pluginActions: LibraryPluginActions = object : LibraryPluginActions {
+        override fun ingestAndOpen(title: String, text: String) {
+            ingestPluginText(title, text, enqueue = false, open = true)
+        }
+
+        override fun ingestAndQueue(title: String, text: String) {
+            ingestPluginText(title, text, enqueue = true, open = false)
+        }
+
+        override fun openBook(bookId: String) {
+            _ui.value = _ui.value.copy(
+                busy = false,
+                error = null,
+                pendingOpenBookId = bookId,
+            )
+        }
+
+        override fun queueBook(bookId: String) {
+            viewModelScope.launch {
+                _ui.value = _ui.value.copy(busy = true, error = null, message = null)
+                try {
+                    val row = withContext(Dispatchers.IO) {
+                        flow.catalog.enqueueExisting(bookId)
+                        flow.db.progress().get(bookId)
+                    }
+                    val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
+                    _ui.value = _ui.value.copy(
+                        que = que,
+                        busy = false,
+                        message = "Queued ${row?.title ?: "book"}",
+                    )
+                } catch (t: Throwable) {
+                    _ui.value = _ui.value.copy(
+                        busy = false,
+                        error = t.message ?: "Could not queue book",
+                    )
+                }
+            }
+        }
+
+        override fun setBusy(busy: Boolean) {
+            _ui.value = _ui.value.copy(busy = busy, error = if (busy) null else _ui.value.error)
+        }
+
+        override fun showMessage(text: String) {
+            _ui.value = _ui.value.copy(message = text)
+        }
+
+        override fun showError(text: String) {
+            _ui.value = _ui.value.copy(error = text)
+        }
+    }
 
     init {
         viewModelScope.launch {
             val mode = flow.settings.libraryViewModeOnce()
-            val tab = flow.settings.libraryTabOnce()
-            _ui.value = _ui.value.copy(viewMode = mode, tab = tab)
+            val enabled = flow.settings.enabledPluginIdsOnce()
+                .intersect(flow.plugins.pluginIds)
+            val tab = LibraryTabId.parse(
+                flow.settings.libraryTabIdOnce(),
+                enabled,
+            )
+            _ui.value = _ui.value.copy(
+                viewMode = mode,
+                tab = tab,
+                enabledPluginIds = enabled,
+            )
             refresh()
         }
     }
@@ -66,9 +132,28 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setTab(tab: LibraryTab) {
+    fun setTab(tab: LibraryTabId) {
         _ui.value = _ui.value.copy(tab = tab)
-        viewModelScope.launch { flow.settings.setLibraryTab(tab) }
+        viewModelScope.launch { flow.settings.setLibraryTabId(tab.persistKey) }
+    }
+
+    fun setPluginEnabled(id: String, enabled: Boolean) {
+        if (id !in flow.plugins.pluginIds) return
+        val next = if (enabled) {
+            _ui.value.enabledPluginIds + id
+        } else {
+            _ui.value.enabledPluginIds - id
+        }
+        val tab = when {
+            enabled -> LibraryTabId.Plugin(id)
+            _ui.value.tab == LibraryTabId.Plugin(id) -> LibraryTabId.Files
+            else -> _ui.value.tab
+        }
+        _ui.value = _ui.value.copy(enabledPluginIds = next, tab = tab)
+        viewModelScope.launch {
+            flow.settings.setEnabledPluginIds(next)
+            flow.settings.setLibraryTabId(tab.persistKey)
+        }
     }
 
     fun setViewMode(mode: LibraryViewMode) {
@@ -130,10 +215,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 val books = withContext(Dispatchers.IO) { flow.catalog.list() }
-                flow.settings.setLibraryTab(LibraryTab.Files)
+                flow.settings.setLibraryTabId(LibraryTabId.Files.persistKey)
                 _ui.value = _ui.value.copy(
                     books = books,
-                    tab = LibraryTab.Files,
+                    tab = LibraryTabId.Files,
                     busy = false,
                     message = "Opened ${row.title}",
                     pendingOpenBookId = row.bookId,
@@ -151,6 +236,44 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(pendingOpenBookId = null)
     }
 
+    private fun ingestPluginText(title: String, text: String, enqueue: Boolean, open: Boolean) {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(busy = true, error = null, message = null)
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    flow.catalog.addText(
+                        text = text,
+                        displayTitle = title,
+                        inLibrary = false,
+                        enqueue = enqueue,
+                    )
+                }
+                val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
+                val tab = if (enqueue) LibraryTabId.Que else _ui.value.tab
+                if (enqueue) {
+                    flow.settings.setLibraryTabId(tab.persistKey)
+                }
+                val msg = if (enqueue) {
+                    "Queued ${result.progress.title}"
+                } else {
+                    "Opened ${result.progress.title}"
+                }
+                _ui.value = _ui.value.copy(
+                    que = que,
+                    tab = tab,
+                    busy = false,
+                    message = msg,
+                    pendingOpenBookId = if (open) result.progress.bookId else null,
+                )
+            } catch (t: Throwable) {
+                _ui.value = _ui.value.copy(
+                    busy = false,
+                    error = t.message ?: "Could not import plugin text",
+                )
+            }
+        }
+    }
+
     fun ingestSharedText(text: String, toQue: Boolean) {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(busy = true, error = null, message = null)
@@ -164,8 +287,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val books = withContext(Dispatchers.IO) { flow.catalog.list() }
                 val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
-                val tab = if (toQue) LibraryTab.Que else LibraryTab.Files
-                flow.settings.setLibraryTab(tab)
+                val tab = if (toQue) LibraryTabId.Que else LibraryTabId.Files
+                flow.settings.setLibraryTabId(tab.persistKey)
                 val msg = if (toQue) {
                     "Queued ${result.progress.title}"
                 } else {

@@ -9,15 +9,16 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +35,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -76,7 +78,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -88,13 +92,14 @@ import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.FileAccessAdvice
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
-import com.personal.flowreader.data.LibraryTab
+import com.personal.flowreader.data.LibraryTabId
 import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.data.ProgressEntity
 import com.personal.flowreader.data.QueEntry
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsVoiceOption
+import com.personal.flowreader.library.plugin.LibrarySourcePlugin
 import com.personal.flowreader.ui.reader.AppearanceSettings
 import com.personal.flowreader.ui.reader.AudioSettingsTab
 import com.personal.flowreader.ui.reader.FilterRuleEditorOverlay
@@ -108,6 +113,11 @@ import kotlinx.coroutines.withContext
 
 private const val LibraryFilterPreviewSample =
     "The quick brown fox jumps over the lazy dog. Names like Alice and Bob can be replaced."
+
+private val LibraryTabMinGap = 16.dp
+private val LibraryTabInnerPad = 8.dp
+private val LibraryTabBarHeight = 48.dp
+private val LibraryTabIndicatorHeight = 3.dp
 
 private data class FilterEditorSession(
     val scope: FilterScope,
@@ -145,6 +155,7 @@ fun LibraryScreen(
     val snackbar = remember { SnackbarHostState() }
     var settingsOpen by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf(false) }
+    var addTabOpen by remember { mutableStateOf(false) }
     var filterEditor by remember { mutableStateOf<FilterEditorSession?>(null) }
     var pendingSource by remember { mutableStateOf<BookSource?>(null) }
     val picker = rememberLauncherForActivityResult(PersistableOpenDocument()) { uri: Uri? ->
@@ -167,10 +178,8 @@ fun LibraryScreen(
         vm.consumeError()
     }
 
-    val libraryInset = WindowInsets.statusBarsIgnoringVisibility
-        .asPaddingValues()
-        .calculateTopPadding()
-        .coerceAtLeast(16.dp)
+    // Top clears the status bar; sides use M3 compact screen margin (16dp).
+    val libraryGutter = 16.dp
 
     Box(
         Modifier
@@ -184,39 +193,62 @@ fun LibraryScreen(
         ) {
             LibraryTopBar(
                 tab = ui.tab,
+                plugins = vm.plugins.enabled(ui.enabledPluginIds),
                 viewMode = ui.viewMode,
-                inset = libraryInset,
+                inset = libraryGutter,
+                addTabOpen = addTabOpen,
                 onTab = vm::setTab,
                 onViewMode = vm::setViewMode,
+                onAddTab = { addTabOpen = true },
                 onSettings = { settingsOpen = true },
             )
-            when (ui.tab) {
-                LibraryTab.Files -> FilesTab(
+            when (val tab = ui.tab) {
+                LibraryTabId.Files -> FilesTab(
                     books = ui.books,
                     viewMode = ui.viewMode,
                     busy = ui.busy,
-                    inset = libraryInset,
+                    inset = libraryGutter,
                     onOpen = onOpenBook,
                     modifier = Modifier.weight(1f),
                 )
-                LibraryTab.Que -> QueTab(
+                LibraryTabId.Que -> QueTab(
                     entries = ui.que,
                     busy = ui.busy,
-                    inset = libraryInset,
+                    inset = libraryGutter,
                     onOpen = { entry -> onOpenQue(entry.progress.bookId, entry.item.id) },
                     onRemove = { entry -> vm.removeQue(entry.item.id) },
                     modifier = Modifier.weight(1f),
                 )
+                is LibraryTabId.Plugin -> {
+                    val plugin = vm.plugins.get(tab.pluginId)
+                    if (plugin != null) {
+                        plugin.TabContent(
+                            actions = vm.pluginActions,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        FilesTab(
+                            books = ui.books,
+                            viewMode = ui.viewMode,
+                            busy = ui.busy,
+                            inset = libraryGutter,
+                            onOpen = onOpenBook,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
         }
 
-        if (ui.tab == LibraryTab.Files && !settingsOpen && !addDialog && filterEditor == null) {
+        if (ui.tab == LibraryTabId.Files &&
+            !settingsOpen && !addDialog && !addTabOpen && filterEditor == null
+        ) {
             FilledIconButton(
                 onClick = { if (!ui.busy) addDialog = true },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
-                    .padding(end = libraryInset, bottom = libraryInset)
+                    .padding(end = libraryGutter, bottom = libraryGutter)
                     .size(56.dp),
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Add file", modifier = Modifier.size(28.dp))
@@ -228,7 +260,7 @@ fun LibraryScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
-                .padding(bottom = libraryInset + 64.dp),
+                .padding(bottom = libraryGutter + 64.dp),
         )
 
         if (ui.busy) {
@@ -241,6 +273,17 @@ fun LibraryScreen(
                 CircularProgressIndicator()
             }
         }
+
+        AddTabOverlay(
+            visible = addTabOpen,
+            plugins = vm.plugins.available,
+            enabledIds = ui.enabledPluginIds,
+            onSetEnabled = { id, enabled ->
+                vm.setPluginEnabled(id, enabled)
+                addTabOpen = false
+            },
+            onDismiss = { addTabOpen = false },
+        )
 
         AddBookOverlay(
             visible = addDialog,
@@ -317,13 +360,21 @@ fun LibraryScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LibraryTopBar(
-    tab: LibraryTab,
+    tab: LibraryTabId,
+    plugins: List<LibrarySourcePlugin>,
     viewMode: LibraryViewMode,
     inset: Dp,
-    onTab: (LibraryTab) -> Unit,
+    addTabOpen: Boolean,
+    onTab: (LibraryTabId) -> Unit,
     onViewMode: (LibraryViewMode) -> Unit,
+    onAddTab: () -> Unit,
     onSettings: () -> Unit,
 ) {
+    val tabs = buildList {
+        add(LibraryTabId.Files to "Files")
+        add(LibraryTabId.Que to "Queue")
+        plugins.forEach { add(LibraryTabId.Plugin(it.id) to it.title) }
+    }
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -337,7 +388,7 @@ private fun LibraryTopBar(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
-            if (tab == LibraryTab.Files) {
+            if (tab == LibraryTabId.Files) {
                 IconButton(onClick = { onViewMode(LibraryViewMode.List) }) {
                     Icon(
                         Icons.AutoMirrored.Filled.ViewList,
@@ -365,18 +416,216 @@ private fun LibraryTopBar(
                 Icon(Icons.Filled.Settings, contentDescription = "Settings")
             }
         }
-        val tabIndex = if (tab == LibraryTab.Files) 0 else 1
-        PrimaryTabRow(selectedTabIndex = tabIndex) {
-            Tab(
-                selected = tab == LibraryTab.Files,
-                onClick = { onTab(LibraryTab.Files) },
-                text = { Text("Files") },
+        LibraryTabBar(
+            tabs = tabs,
+            selected = tab,
+            addSelected = addTabOpen,
+            inset = inset,
+            onTab = onTab,
+            onAddTab = onAddTab,
+        )
+    }
+}
+
+@Composable
+private fun LibraryTabBar(
+    tabs: List<Pair<LibraryTabId, String>>,
+    selected: LibraryTabId,
+    addSelected: Boolean,
+    inset: Dp,
+    onTab: (LibraryTabId) -> Unit,
+    onAddTab: () -> Unit,
+) {
+    val scroll = rememberScrollState()
+    val indicator = MaterialTheme.colorScheme.primary
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val innerPadPx = with(density) { LibraryTabInnerPad.roundToPx() }
+        val minWidths = IntArray(tabs.size + 1) { i ->
+            if (i < tabs.size) {
+                measurer.measure(
+                    text = tabs[i].second,
+                    style = labelStyle,
+                    maxLines = 1,
+                    softWrap = false,
+                ).size.width + innerPadPx * 2
+            } else {
+                with(density) { 22.dp.roundToPx() } + innerPadPx * 2
+            }
+        }
+        val layout = LibraryTabSlots.layout(
+            availablePx = constraints.maxWidth,
+            insetPx = with(density) { inset.roundToPx() },
+            gapPx = with(density) { LibraryTabMinGap.roundToPx() },
+            minWidthsPx = minWidths,
+        )
+        Row(
+            modifier = Modifier
+                .height(LibraryTabBarHeight)
+                .padding(horizontal = inset)
+                .then(
+                    if (layout.overflow) {
+                        Modifier.horizontalScroll(scroll)
+                    } else {
+                        Modifier.fillMaxWidth()
+                    },
+                ),
+            horizontalArrangement = Arrangement.spacedBy(LibraryTabMinGap),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            tabs.forEachIndexed { index, (id, label) ->
+                val selectedTab = !addSelected && selected == id
+                LibraryTabHeader(
+                    selected = selectedTab,
+                    onClick = { onTab(id) },
+                    indicator = indicator,
+                    modifier = Modifier
+                        .width(with(density) { layout.slotWidthsPx[index].toDp() })
+                        .fillMaxHeight(),
+                ) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = if (selectedTab) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (selectedTab) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Visible,
+                        )
+                }
+            }
+            LibraryTabHeader(
+                selected = addSelected,
+                onClick = onAddTab,
+                indicator = indicator,
+                modifier = Modifier
+                    .width(with(density) { layout.slotWidthsPx.last().toDp() })
+                    .fillMaxHeight(),
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Add tab",
+                    modifier = Modifier.size(22.dp),
+                    tint = if (addSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+        }
+        HorizontalDivider(
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+    }
+}
+
+@Composable
+private fun LibraryTabHeader(
+    selected: Boolean,
+    onClick: () -> Unit,
+    indicator: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = LibraryTabInnerPad),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(LibraryTabIndicatorHeight)
+                .background(if (selected) indicator else Color.Transparent),
+        )
+    }
+}
+
+@Composable
+private fun AddTabOverlay(
+    visible: Boolean,
+    plugins: List<LibrarySourcePlugin>,
+    enabledIds: Set<String>,
+    onSetEnabled: (String, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ReaderModalScaffold(
+        visible = visible,
+        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
+        onDismiss = onDismiss,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 4.dp, top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Add a tab",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
             )
-            Tab(
-                selected = tab == LibraryTab.Que,
-                onClick = { onTab(LibraryTab.Que) },
-                text = { Text("Que") },
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Filled.Close, contentDescription = "Close")
+            }
+        }
+        Column(
+            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "Plugins",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
             )
+            Text(
+                "Enable a plugin to add its tab next to Files and Queue.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            plugins.forEach { plugin ->
+                val on = plugin.id in enabledIds
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSetEnabled(plugin.id, !on) }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(plugin.title, style = MaterialTheme.typography.bodyLarge)
+                        if (plugin.subtitle.isNotBlank()) {
+                            Text(
+                                plugin.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    TextButton(onClick = { onSetEnabled(plugin.id, !on) }) {
+                        Text(if (on) "Remove" else "Add")
+                    }
+                }
+            }
         }
     }
 }
@@ -578,7 +827,7 @@ private fun QueTab(
         if (entries.isEmpty() && !busy) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "Que is empty.\nShare text to Flow-Que to add items.",
+                    "Queue is empty.\nShare text to Flow-Queue to add items.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

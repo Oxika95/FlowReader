@@ -10,6 +10,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -78,9 +79,11 @@ import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
@@ -128,11 +131,9 @@ private val RailBehindDot = Color(0xFF7A7A7A)
 /** Now-playing snippet card when the spoken block is scrolled out of view. */
 private enum class PlaybackPinEdge { Top, Bottom }
 
-private val PinPadDefault = 24.dp
-/** Clears the title banner when chrome is open. */
-private val PinPadBelowTitleChrome = 128.dp
-/** Clears the media controls when chrome is open. */
-private val PinPadAboveMediaChrome = 132.dp
+/** Gap between stacked chrome / pin cards — matches reader side gutters. */
+private val PinGap = ReaderContentStartPadding
+private val ChromeScreenPad = ReaderContentStartPadding
 
 /** One TTS sentence in a block, with char offsets into the displayed paragraph text. */
 private data class BlockSentence(
@@ -261,14 +262,18 @@ fun ReaderScreen(
     val progress = if (items.size <= 1) 0f else locusIndex.toFloat() / items.lastIndex
 
     /**
-     * Where to park the now-playing chip, or null if the spoken block is still on-screen
-     * (or nothing is playing).
+     * Where to park the edge chip (now-playing snippet or jump-back), or null if the
+     * target block is still on-screen.
      */
     val pinEdge by remember(doc) {
         derivedStateOf {
-            if (!tts.playing) return@derivedStateOf null
-            val s = tts.sentence ?: return@derivedStateOf null
-            val idx = blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@derivedStateOf null
+            val idx = if (tts.playing) {
+                val s = tts.sentence ?: return@derivedStateOf null
+                blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@derivedStateOf null
+            } else {
+                val d = doc ?: return@derivedStateOf null
+                ui.locus.flatIndex(d)
+            }
 
             // Subscribe to scroll position (layoutInfo alone can miss some updates).
             listState.firstVisibleItemIndex
@@ -325,6 +330,21 @@ fun ReaderScreen(
         } finally {
             programmatic = false
         }
+    }
+
+    fun jumpToSavedPosition() {
+        if (items.isEmpty()) return
+        scope.launch { centerItem(locusIndex.coerceIn(0, items.lastIndex)) }
+    }
+
+    /**
+     * Resume TTS at the saved playhead. If that block is off-screen, keep the viewport
+     * where it is (now-playing pin will show) instead of auto-scrolling to it.
+     */
+    fun playResumingSavedPosition() {
+        val playheadOffScreen = pinEdge != null
+        if (playheadOffScreen) suppressFollowScroll = true
+        vm.tts.play(follow = !playheadOffScreen)
     }
 
     // Jump to the saved locus once the book finishes loading.
@@ -708,33 +728,106 @@ fun ReaderScreen(
                     )
                 }
 
-                TitleBannerCard(
-                    visible = overlay == ReaderOverlay.Chrome,
-                    title = ui.title,
-                    chapter = chapterName,
-                    progress = progress,
+                val overlaysQuiet = overlay != ReaderOverlay.Settings && overlay != ReaderOverlay.Toc
+                val showPlayingPin = overlaysQuiet &&
+                    tts.playing &&
+                    tts.snippet.isNotBlank() &&
+                    pinEdge != null
+                val showJumpChip = overlaysQuiet &&
+                    !tts.playing &&
+                    pinEdge != null
+                val edgeChipTop = (showPlayingPin || showJumpChip) && pinEdge == PlaybackPinEdge.Top
+                val edgeChipBottom = (showPlayingPin || showJumpChip) && pinEdge == PlaybackPinEdge.Bottom
+                val chromeOpen = overlay == ReaderOverlay.Chrome
+
+                // Top chrome layer: title + optional edge chip, stacked with a relative [PinGap].
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    onBack = { leave.value() },
-                    onToc = { overlay = ReaderOverlay.Toc },
-                )
+                        .zIndex(8f)
+                        .padding(top = ChromeScreenPad),
+                ) {
+                    TitleBannerCard(
+                        visible = chromeOpen,
+                        title = ui.title,
+                        chapter = chapterName,
+                        progress = progress,
+                        storedPath = ui.storedPath,
+                        modifier = Modifier.fillMaxWidth(),
+                        onBack = { leave.value() },
+                        onToc = { overlay = ReaderOverlay.Toc },
+                    )
+                    if (edgeChipTop) {
+                        if (chromeOpen) Spacer(Modifier.height(PinGap))
+                        val chipMod = Modifier
+                            .fillMaxWidth()
+                            .offset(y = if (chromeOpen) -ReaderPanelFeather else 0.dp)
+                        if (showPlayingPin) {
+                            PlaybackPinCard(
+                                snippet = tts.snippet,
+                                bodyStyle = bodyStyle,
+                                modifier = chipMod,
+                                onTap = {
+                                    onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.SingleTap)
+                                },
+                                onDoubleTap = {
+                                    onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.DoubleTap)
+                                },
+                            )
+                        } else {
+                            JumpToSavedChip(
+                                modifier = chipMod,
+                                onClick = { jumpToSavedPosition() },
+                            )
+                        }
+                    }
+                }
 
-                MediaControlCard(
-                    visible = overlay == ReaderOverlay.Chrome,
-                    playing = tts.playing,
-                    error = tts.error,
+                // Bottom chrome layer: optional edge chip + media, stacked with a relative [PinGap].
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    onPlay = { vm.tts.play() },
-                    onPause = { vm.tts.pause() },
-                    onPrev = { vm.tts.skipPrev() },
-                    onNext = { vm.tts.skipNext() },
-                    onSettings = { overlay = ReaderOverlay.Settings },
-                )
+                        .zIndex(8f)
+                        .padding(bottom = ChromeScreenPad),
+                ) {
+                    if (edgeChipBottom) {
+                        val chipMod = Modifier.fillMaxWidth()
+                        if (showPlayingPin) {
+                            PlaybackPinCard(
+                                snippet = tts.snippet,
+                                bodyStyle = bodyStyle,
+                                modifier = chipMod,
+                                onTap = {
+                                    onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.SingleTap)
+                                },
+                                onDoubleTap = {
+                                    onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.DoubleTap)
+                                },
+                            )
+                        } else {
+                            JumpToSavedChip(
+                                modifier = chipMod,
+                                onClick = { jumpToSavedPosition() },
+                            )
+                        }
+                        if (chromeOpen) Spacer(Modifier.height(PinGap))
+                    }
+                    MediaControlCard(
+                        visible = chromeOpen,
+                        playing = tts.playing,
+                        error = tts.error,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset(y = if (edgeChipBottom && chromeOpen) -ReaderPanelFeather else 0.dp),
+                        onPlay = { playResumingSavedPosition() },
+                        onPause = { vm.tts.pause() },
+                        onPrev = { vm.tts.skipPrev() },
+                        onNext = { vm.tts.skipNext() },
+                        onSettings = { overlay = ReaderOverlay.Settings },
+                    )
+                }
                 }
             }
         }
@@ -838,62 +931,57 @@ fun ReaderScreen(
             },
             onDismiss = { overlay = ReaderOverlay.Hidden },
         )
+    }
+}
 
-        when (val edge = pinEdge) {
-            null -> Unit
-            PlaybackPinEdge.Top, PlaybackPinEdge.Bottom -> {
-                // pinEdge is non-null only when the spoken block is outside the viewport.
-                // User scroll clears follow so auto-center does not pull it back on-screen.
-                val showPin = tts.playing &&
-                    tts.snippet.isNotBlank() &&
-                    overlay != ReaderOverlay.Settings &&
-                    overlay != ReaderOverlay.Toc
-                if (showPin) {
-                    val align = when (edge) {
-                        PlaybackPinEdge.Top -> Alignment.TopCenter
-                        PlaybackPinEdge.Bottom -> Alignment.BottomCenter
-                    }
-                    val chromeOpen = overlay == ReaderOverlay.Chrome
-                    val edgePad = when {
-                        chromeOpen && edge == PlaybackPinEdge.Top -> PinPadBelowTitleChrome
-                        chromeOpen && edge == PlaybackPinEdge.Bottom -> PinPadAboveMediaChrome
-                        else -> PinPadDefault
-                    }
-                    ReaderPanelSurface(
-                        modifier = Modifier
-                            .zIndex(8f)
-                            .align(align)
-                            .padding(vertical = edgePad)
-                            .fillMaxWidth()
-                            .pointerInput(playbackBlockIndex, overlay, selectionActive) {
-                                detectTapGestures(
-                                    onTap = {
-                                        onReaderGesture(
-                                            ReaderTouchTarget.Pin,
-                                            ReaderGestureKind.SingleTap,
-                                        )
-                                    },
-                                    onDoubleTap = {
-                                        onReaderGesture(
-                                            ReaderTouchTarget.Pin,
-                                            ReaderGestureKind.DoubleTap,
-                                        )
-                                    },
-                                )
-                            },
-                        matchReaderWidth = true,
-                    ) {
-                        Text(
-                            tts.snippet,
-                            style = bodyStyle,
-                            color = colors.onBackground,
-                            maxLines = 3,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        )
-                    }
-                }
-            }
+@Composable
+private fun JumpToSavedChip(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        ReaderPanelSurface(
+            modifier = Modifier.clickable(onClick = onClick),
+            matchReaderWidth = false,
+        ) {
+            Text(
+                "Jump back to saved position",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            )
         }
+    }
+}
+
+@Composable
+private fun PlaybackPinCard(
+    snippet: String,
+    bodyStyle: TextStyle,
+    modifier: Modifier = Modifier,
+    onTap: () -> Unit,
+    onDoubleTap: () -> Unit,
+) {
+    ReaderPanelSurface(
+        modifier = modifier.pointerInput(snippet) {
+            detectTapGestures(
+                onTap = { onTap() },
+                onDoubleTap = { onDoubleTap() },
+            )
+        },
+        matchReaderWidth = true,
+        feather = 0.dp,
+    ) {
+        Text(
+            snippet,
+            style = bodyStyle,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 3,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        )
     }
 }
 

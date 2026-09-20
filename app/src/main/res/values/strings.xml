@@ -2,5 +2,5 @@
 <resources>
     <string name="app_name">Flow Reader</string>
     <string name="share_library_label">Flow Reader</string>
-    <string name="share_que_label">Flow-Que</string>
+    <string name="share_que_label">Flow-Queue</string>
 </resources>

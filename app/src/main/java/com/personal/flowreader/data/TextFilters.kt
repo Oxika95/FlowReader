@@ -38,6 +38,8 @@ data class FilterRule(
     val enabled: Boolean = true,
     val matchType: FilterMatchType = FilterMatchType.CaseInsensitive,
     val wholeWords: Boolean = true,
+    /** When true, apply only when synthesizing speech — leave on-screen text unchanged. */
+    val ttsOnly: Boolean = false,
     val pattern: String = "",
     val replacement: String = "",
     val order: Int = 0,
@@ -69,6 +71,17 @@ object TextFilters {
             flags = next.second
         }
         return FilterApplyResult(current, flagsToRanges(flags))
+    }
+
+    /** On-screen book text — skips [FilterRule.ttsOnly] rules. */
+    fun applyVisual(doc: BookDoc, rules: List<FilterRule>): FilteredBookDoc =
+        apply(doc, rules.filter { !it.ttsOnly })
+
+    /** Speech-only transforms for a sentence (or any spoken snippet). */
+    fun applySpeech(text: String, rules: List<FilterRule>): String {
+        val speech = rules.filter { it.ttsOnly && it.enabled && it.pattern.isNotEmpty() }
+        if (speech.isEmpty()) return text
+        return apply(text, speech).text
     }
 
     fun apply(doc: BookDoc, rules: List<FilterRule>): FilteredBookDoc {
@@ -118,6 +131,7 @@ object TextFilters {
                 append("\"enabled\":").append(rule.enabled).append(',')
                 appendJsonField("matchType", rule.matchType.name); append(',')
                 append("\"wholeWords\":").append(rule.wholeWords).append(',')
+                append("\"ttsOnly\":").append(rule.ttsOnly).append(',')
                 appendJsonField("pattern", rule.pattern); append(',')
                 appendJsonField("replacement", rule.replacement); append(',')
                 append("\"order\":").append(rule.order)
@@ -144,6 +158,7 @@ object TextFilters {
                         )
                     }.getOrDefault(FilterMatchType.CaseInsensitive),
                     wholeWords = readJsonBoolean(obj, "wholeWords", true),
+                    ttsOnly = readJsonBoolean(obj, "ttsOnly", false),
                     pattern = readJsonString(obj, "pattern"),
                     replacement = readJsonString(obj, "replacement"),
                     order = readJsonInt(obj, "order", index),

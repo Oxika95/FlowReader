@@ -9,6 +9,9 @@ import com.personal.flowreader.data.MIGRATION_2_3
 import com.personal.flowreader.data.MIGRATION_3_4
 import com.personal.flowreader.data.MIGRATION_4_5
 import com.personal.flowreader.data.SettingsStore
+import com.personal.flowreader.library.plugin.LibraryPluginRegistry
+import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
+import com.personal.flowreader.library.plugin.royalroad.RoyalRoadRepository
 import com.personal.flowreader.tts.TtsController
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +29,10 @@ class FlowApp : Application() {
         private set
     lateinit var catalog: BookCatalog
         private set
+    lateinit var plugins: LibraryPluginRegistry
+        private set
+    lateinit var royalRoad: RoyalRoadRepository
+        private set
 
     /** Survives ViewModel clear so progress can still flush to Room. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -39,5 +46,7 @@ class FlowApp : Application() {
         tts = TtsController(this, settings)
         booksDir = File(filesDir, "books").apply { mkdirs() }
         catalog = BookCatalog(this)
+        royalRoad = RoyalRoadRepository(this)
+        plugins = LibraryPluginRegistry(listOf(RoyalRoadPlugin()))
     }
 }
