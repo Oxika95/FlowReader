@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            FlowTheme(openUi.theme, openUi.accentHue) {
+            FlowTheme(openUi.theme, openUi.accentHue, openUi.uiScale) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
@@ -115,8 +115,10 @@ class MainActivity : ComponentActivity() {
                                 vm = libraryVm,
                                 themeMode = openUi.theme,
                                 accentHue = openUi.accentHue,
+                                uiScale = openUi.uiScale,
                                 onTheme = { openVm.setTheme(it) },
                                 onAccentHue = { openVm.setAccentHue(it) },
+                                onUiScale = { openVm.setUiScale(it) },
                                 onOpenBook = { id -> nav.navigate("reader/$id") },
                                 onOpenQue = { bookId, queId ->
                                     nav.navigate("reader/$bookId/que/$queId")
@@ -200,12 +202,14 @@ private fun ReaderRoute(
         queId = queId,
         themeMode = openUi.theme,
         accentHue = openUi.accentHue,
+        uiScale = openUi.uiScale,
         fontScale = openUi.fontScale,
         fontFamily = openUi.fontFamily,
         lineSpacing = openUi.lineSpacing,
         orientation = openUi.orientation,
         onTheme = { openVm.setTheme(it) },
         onAccentHue = { openVm.setAccentHue(it) },
+        onUiScale = { openVm.setUiScale(it) },
         onFontScale = { openVm.setFontScale(it) },
         onFontFamily = { openVm.setFontFamily(it) },
         onLineSpacing = { openVm.setLineSpacing(it) },

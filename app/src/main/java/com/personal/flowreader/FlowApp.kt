@@ -8,6 +8,7 @@ import com.personal.flowreader.data.MIGRATION_1_2
 import com.personal.flowreader.data.MIGRATION_2_3
 import com.personal.flowreader.data.MIGRATION_3_4
 import com.personal.flowreader.data.MIGRATION_4_5
+import com.personal.flowreader.data.MIGRATION_5_6
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.library.plugin.LibraryPluginRegistry
 import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
@@ -17,6 +18,7 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class FlowApp : Application() {
     lateinit var db: AppDatabase
@@ -40,7 +42,7 @@ class FlowApp : Application() {
     override fun onCreate() {
         super.onCreate()
         db = Room.databaseBuilder(this, AppDatabase::class.java, "flow.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .build()
         settings = SettingsStore(this)
         tts = TtsController(this, settings)
@@ -48,5 +50,20 @@ class FlowApp : Application() {
         catalog = BookCatalog(this)
         royalRoad = RoyalRoadRepository(this)
         plugins = LibraryPluginRegistry(listOf(RoyalRoadPlugin()))
+        appScope.launch { sweepStaleCache() }
+    }
+
+    /** Drop crashed import temps and leftover filter preview clips. */
+    private fun sweepStaleCache() {
+        val cache = cacheDir
+        val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
+        cache.listFiles()?.forEach { file ->
+            val name = file.name
+            val staleImport = name.startsWith("import-") && file.lastModified() < cutoff
+            val preview = name == "filter_preview.mp3"
+            if (staleImport || preview) {
+                runCatching { file.deleteRecursively() }
+            }
+        }
     }
 }

@@ -12,6 +12,7 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -115,89 +116,89 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
             val meta = withContext(Dispatchers.IO) {
                 repo.libraryMetas(books.map { it.bookId })
             }
-            _ui.value = _ui.value.copy(books = books, libraryMeta = meta, listBookIds = listIds)
+            _ui.update { it.copy(books = books, libraryMeta = meta, listBookIds = listIds) }
         }
     }
 
     fun setLibraryList(kind: RoyalRoadListKind) {
         val ids = repo.membershipBookIds(kind)
-        _ui.value = _ui.value.copy(libraryList = kind, listBookIds = ids, error = null)
+        _ui.update { it.copy(libraryList = kind, listBookIds = ids, error = null) }
     }
 
     fun setRemoteQuery(value: String) {
-        _ui.value = _ui.value.copy(remoteQuery = value)
+        _ui.update { it.copy(remoteQuery = value) }
     }
 
     fun setUrlDraft(value: String) {
-        _ui.value = _ui.value.copy(urlDraft = value)
+        _ui.update { it.copy(urlDraft = value) }
     }
 
     fun setEmailDraft(value: String) {
-        _ui.value = _ui.value.copy(emailDraft = value)
+        _ui.update { it.copy(emailDraft = value) }
     }
 
     fun setPasswordDraft(value: String) {
-        _ui.value = _ui.value.copy(passwordDraft = value)
+        _ui.update { it.copy(passwordDraft = value) }
     }
 
     fun setShowLogin(show: Boolean) {
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             showLogin = show,
             showAccount = if (show) false else _ui.value.showAccount,
             error = if (show) null else _ui.value.error,
-        )
+        ) }
     }
 
     fun setShowAdd(show: Boolean) {
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             showAdd = show,
             fiction = if (show) null else _ui.value.fiction,
             searchResults = if (show) _ui.value.searchResults else emptyList(),
             remoteQuery = if (show) _ui.value.remoteQuery else "",
             urlDraft = if (show) _ui.value.urlDraft else "",
             error = if (show) null else _ui.value.error,
-        )
+        ) }
     }
 
     fun setShowAccount(show: Boolean) {
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             showAccount = show,
             error = if (show) null else _ui.value.error,
-        )
+        ) }
     }
 
     fun setShowSyncChoice(show: Boolean) {
-        _ui.value = _ui.value.copy(showSyncChoice = show)
+        _ui.update { it.copy(showSyncChoice = show) }
     }
 
     fun consumeError() {
-        _ui.value = _ui.value.copy(error = null)
+        _ui.update { it.copy(error = null) }
     }
 
     fun consumeMessage() {
-        _ui.value = _ui.value.copy(message = null)
+        _ui.update { it.copy(message = null) }
     }
 
     fun searchRemote() {
         val q = _ui.value.remoteQuery.trim()
         if (q.isEmpty()) {
-            _ui.value = _ui.value.copy(error = "Enter a title to search")
+            _ui.update { it.copy(error = "Enter a title to search") }
             return
         }
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null)
+            _ui.update { it.copy(busy = true, error = null) }
             try {
                 val works = withContext(Dispatchers.IO) { repo.search(q) }
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     searchResults = works,
                     busy = false,
                     fiction = null,
-                )
+                ) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Search failed",
-                )
+                ) }
             }
         }
     }
@@ -205,7 +206,7 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
     fun openUrl() {
         val raw = _ui.value.urlDraft.trim()
         if (raw.isEmpty()) {
-            _ui.value = _ui.value.copy(error = "Paste a Royal Road fiction or chapter URL")
+            _ui.update { it.copy(error = "Paste a Royal Road fiction or chapter URL") }
             return
         }
         openFictionUrl(raw)
@@ -255,7 +256,7 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
     private fun unbookmarkStory(kind: RoyalRoadListKind) {
         val story = _ui.value.story ?: return
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null)
+            _ui.update { it.copy(busy = true, error = null) }
             try {
                 withContext(Dispatchers.IO) {
                     repo.forgetListed(story.bookId, kind)
@@ -264,18 +265,18 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     runCatching { loadOrRefreshSplash(story.bookId, network = false) }.getOrNull()
                 }
                 refreshLocal()
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     story = splash ?: story.copy(listedIn = story.listedIn - kind),
                     message = "Removed ${story.title} from ${kind.label}",
-                )
+                ) }
                 // Stay on current tab; refresh its membership ids.
                 setLibraryList(_ui.value.libraryList)
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not update list",
-                )
+                ) }
             }
         }
     }
@@ -286,7 +287,7 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
         preferDetail: SourceWorkDetail?,
     ) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null)
+            _ui.update { it.copy(busy = true, error = null) }
             try {
                 val remote = withContext(Dispatchers.IO) {
                     bookmarkAndPersistToc(work, kind, preferDetail = preferDetail)
@@ -302,7 +303,7 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     null
                 }
                 refreshLocal()
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     showAdd = false,
                     fiction = null,
@@ -312,24 +313,24 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     } else {
                         "Saved ${work.title} to ${kind.label}"
                     },
-                )
+                ) }
                 setLibraryList(kind)
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not add story",
-                )
+                ) }
             }
         }
     }
 
     fun closeFiction() {
-        _ui.value = _ui.value.copy(fiction = null)
+        _ui.update { it.copy(fiction = null) }
     }
 
     fun openStory(bookId: String) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null, showAdd = false)
+            _ui.update { it.copy(busy = true, error = null, showAdd = false) }
             try {
                 val splash = withContext(Dispatchers.IO) { loadOrRefreshSplash(bookId) }
                 val pinStart = withContext(Dispatchers.IO) {
@@ -341,57 +342,57 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     pinStart != null -> pinStart
                     else -> 0
                 }.coerceIn(0, (splash.chapterCount - 1).coerceAtLeast(0))
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     story = splash,
                     partialStartDraft = (start + 1).toString(),
                     partialStartIndex = start,
                     cacheLevelDraft = maxOf(splash.prefetchAhead, splash.keepBehind).toString(),
-                )
+                ) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not open story",
-                )
+                ) }
             }
         }
     }
 
     fun closeStory() {
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             story = null,
             downloadProgress = null,
             showDownload = false,
             downloadPane = RoyalRoadDownloadPane.Menu,
-        )
+        ) }
     }
 
     fun openDownloadOptions() {
         val story = _ui.value.story ?: return
         // Keep the start chapter already chosen on this splash; only seed cache level.
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             showDownload = true,
             downloadPane = RoyalRoadDownloadPane.Menu,
             partialCountDraft = "",
             cacheLevelDraft = maxOf(story.prefetchAhead, story.keepBehind).toString(),
             error = null,
-        )
+        ) }
     }
 
     fun closeDownloadOptions() {
         resolvePartialStartDraft()
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             showDownload = false,
             downloadPane = RoyalRoadDownloadPane.Menu,
             downloadProgress = null,
-        )
+        ) }
     }
 
     fun setDownloadPane(pane: RoyalRoadDownloadPane) {
         if (pane == RoyalRoadDownloadPane.Partial) {
             resolvePartialStartDraft()
         }
-        _ui.value = _ui.value.copy(downloadPane = pane, error = null)
+        _ui.update { it.copy(downloadPane = pane, error = null) }
     }
 
     fun setPartialStartDraft(value: String) {
@@ -401,11 +402,11 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
             if (story == null || story.chapterCount <= 0) 0
             else (n - 1).coerceIn(0, story.chapterCount - 1)
         }
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             partialStartDraft = digits,
             // Keep last valid index for download until draft is resolved; blank keeps prior.
             partialStartIndex = index ?: _ui.value.partialStartIndex,
-        )
+        ) }
     }
 
     /** Empty / invalid start draft becomes chapter 1. */
@@ -417,18 +418,18 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
             parsed == null || parsed < 1 -> 0
             else -> (parsed - 1).coerceIn(0, last)
         }
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             partialStartDraft = (index + 1).toString(),
             partialStartIndex = index,
-        )
+        ) }
     }
 
     fun setPartialCountDraft(value: String) {
-        _ui.value = _ui.value.copy(partialCountDraft = value.filter { it.isDigit() }.take(5))
+        _ui.update { it.copy(partialCountDraft = value.filter { it.isDigit() }.take(5)) }
     }
 
     fun setCacheLevelDraft(value: String) {
-        _ui.value = _ui.value.copy(cacheLevelDraft = value.filter { it.isDigit() }.take(4))
+        _ui.update { it.copy(cacheLevelDraft = value.filter { it.isDigit() }.take(4)) }
         persistCacheLevelIfComplete()
     }
 
@@ -446,9 +447,9 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     loadOrRefreshSplash(story.bookId, network = false)
                 }
                 refreshLocal()
-                _ui.value = _ui.value.copy(story = refreshed)
+                _ui.update { it.copy(story = refreshed) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(error = t.message ?: "Could not update cache level")
+                _ui.update { it.copy(error = t.message ?: "Could not update cache level") }
             }
         }
     }
@@ -456,7 +457,7 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
     fun downloadAllChapters() {
         val story = _ui.value.story ?: return
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null, downloadProgress = 0 to story.chapterCount)
+            _ui.update { it.copy(busy = true, error = null, downloadProgress = 0 to story.chapterCount) }
             try {
                 val count = withContext(Dispatchers.IO) {
                     repo.downloadAllChapters(
@@ -464,25 +465,25 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                         fictionUrl = story.fictionUrl,
                         locusChapter = story.chapterIndex,
                     ) { done, total ->
-                        _ui.value = _ui.value.copy(downloadProgress = done to total)
+                        _ui.update { it.copy(downloadProgress = done to total) }
                     }
                 }
                 val refreshed = withContext(Dispatchers.IO) { loadOrRefreshSplash(story.bookId, network = false) }
                 refreshLocal()
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     story = refreshed,
                     downloadProgress = null,
                     showDownload = false,
                     downloadPane = RoyalRoadDownloadPane.Menu,
                     message = "Downloaded $count / ${refreshed.chapterCount} chapters",
-                )
+                ) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     downloadProgress = null,
                     error = t.message ?: "Download failed",
-                )
+                ) }
             }
         }
     }
@@ -496,14 +497,14 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
             .coerceIn(0, (story.chapterCount - 1).coerceAtLeast(0))
         viewModelScope.launch {
             // Move locus to the download start first so the strip and cache window follow it.
-            _ui.value = _ui.value.copy(
+            _ui.update { it.copy(
                 busy = true,
                 error = null,
                 downloadProgress = 0 to 1,
                 story = story.copy(chapterIndex = startIndex),
                 partialStartIndex = startIndex,
                 partialStartDraft = (startIndex + 1).toString(),
-            )
+            ) }
             try {
                 val count = withContext(Dispatchers.IO) {
                     val row = flow.db.progress().get(story.bookId)
@@ -523,12 +524,12 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                         countCap = cap,
                         fictionUrl = story.fictionUrl,
                     ) { done, total ->
-                        _ui.value = _ui.value.copy(downloadProgress = done to total)
+                        _ui.update { it.copy(downloadProgress = done to total) }
                     }
                 }
                 val refreshed = withContext(Dispatchers.IO) { loadOrRefreshSplash(story.bookId, network = false) }
                 refreshLocal()
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     story = refreshed,
                     partialStartIndex = startIndex,
@@ -537,13 +538,13 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     showDownload = false,
                     downloadPane = RoyalRoadDownloadPane.Menu,
                     message = "Cached $count / ${refreshed.chapterCount} chapters",
-                )
+                ) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     downloadProgress = null,
                     error = t.message ?: "Partial download failed",
-                )
+                ) }
             }
         }
     }
@@ -556,23 +557,18 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
         resolvePartialStartDraft()
         val level = _ui.value.cacheLevelDraft.toIntOrNull()?.takeIf { it > 0 }
         if (level == null) {
-            _ui.value = _ui.value.copy(
+            _ui.update { it.copy(
                 error = "Set Cache level to how many chapters to download.",
-            )
+            ) }
             return
         }
         downloadPartialChapters(countCapOverride = level)
     }
 
-    /** @deprecated Use [openDownloadOptions] — kept name for older call sites during transition. */
-    fun downloadStoryChapters() {
-        openDownloadOptions()
-    }
-
     /** Tap library card: open reader at saved progress (no info splash). */
     fun readBook(actions: LibraryPluginActions, bookId: String) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null, story = null)
+            _ui.update { it.copy(busy = true, error = null, story = null) }
             actions.setBusy(true)
             try {
                 withContext(Dispatchers.IO) {
@@ -623,14 +619,14 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 refreshLocal()
-                _ui.value = _ui.value.copy(busy = false)
+                _ui.update { it.copy(busy = false) }
                 actions.setBusy(false)
                 actions.openBook(bookId)
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not open fiction",
-                )
+                ) }
                 actions.setBusy(false)
                 actions.showError(t.message ?: "Could not open fiction")
             }
@@ -640,7 +636,7 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
     fun readStory(actions: LibraryPluginActions, startIndex: Int? = null) {
         val story = _ui.value.story ?: return
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null)
+            _ui.update { it.copy(busy = true, error = null) }
             actions.setBusy(true)
             try {
                 withContext(Dispatchers.IO) {
@@ -680,14 +676,14 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 refreshLocal()
-                _ui.value = _ui.value.copy(busy = false, story = null)
+                _ui.update { it.copy(busy = false, story = null) }
                 actions.setBusy(false)
                 actions.openBook(story.bookId)
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not open fiction",
-                )
+                ) }
                 actions.setBusy(false)
                 actions.showError(t.message ?: "Could not open fiction")
             }
@@ -697,21 +693,21 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshStoryToc() {
         val story = _ui.value.story ?: return
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null)
+            _ui.update { it.copy(busy = true, error = null) }
             try {
                 withContext(Dispatchers.IO) { repo.refreshToc(story.bookId) }
                 val refreshed = withContext(Dispatchers.IO) { loadOrRefreshSplash(story.bookId, network = false) }
                 refreshLocal()
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     story = refreshed,
                     message = "Updated chapter list (${refreshed.chapterCount})",
-                )
+                ) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not refresh chapter list",
-                )
+                ) }
             }
         }
     }
@@ -719,7 +715,7 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteStory() {
         val story = _ui.value.story ?: return
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null)
+            _ui.update { it.copy(busy = true, error = null) }
             try {
                 withContext(Dispatchers.IO) {
                     flow.catalog.removePluginMembership(story.bookId)
@@ -727,23 +723,23 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     repo.deleteLocalSession(story.bookId)
                 }
                 refreshLocal()
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     story = null,
                     message = "Removed ${story.title}",
-                )
+                ) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not remove story",
-                )
+                ) }
             }
         }
     }
 
     private fun openFictionUrl(url: String) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null)
+            _ui.update { it.copy(busy = true, error = null) }
             try {
                 val splash = withContext(Dispatchers.IO) {
                     val page = repo.loadFictionPage(url)
@@ -766,7 +762,7 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 refreshLocal()
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     showAdd = false,
                     fiction = null,
@@ -775,12 +771,12 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     partialStartDraft = (splash.chapterIndex + 1).toString(),
                     partialStartIndex = splash.chapterIndex,
                     cacheLevelDraft = maxOf(splash.prefetchAhead, splash.keepBehind).toString(),
-                )
+                ) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not load fiction",
-                )
+                ) }
             }
         }
     }
@@ -788,7 +784,7 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
     fun openChapter(actions: LibraryPluginActions, startIndex: Int) {
         val detail = _ui.value.fiction ?: return
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null)
+            _ui.update { it.copy(busy = true, error = null) }
             actions.setBusy(true)
             try {
                 val session = withContext(Dispatchers.IO) {
@@ -846,21 +842,38 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     started
                 }
                 refreshLocal()
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     showAdd = false,
                     fiction = null,
-                )
+                ) }
                 actions.setBusy(false)
                 actions.openBook(session.bookId)
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not open fiction",
-                )
+                ) }
                 actions.setBusy(false)
                 actions.showError(t.message ?: "Could not open fiction")
             }
+        }
+    }
+
+
+    private fun handleIoError(t: Throwable, fallback: String) {
+        if (t is RoyalRoadAuthExpired) {
+            _ui.update {
+                it.copy(
+                    busy = false,
+                    loggedIn = false,
+                    showLogin = true,
+                    showAccount = false,
+                    error = t.message ?: "Sign in to Royal Road again.",
+                )
+            }
+        } else {
+            _ui.update { it.copy(busy = false, error = t.message ?: fallback) }
         }
     }
 
@@ -868,14 +881,14 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
         val email = _ui.value.emailDraft.trim()
         val password = _ui.value.passwordDraft
         if (email.isEmpty() || password.isEmpty()) {
-            _ui.value = _ui.value.copy(error = "Email and password are required")
+            _ui.update { it.copy(error = "Email and password are required") }
             return
         }
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null)
+            _ui.update { it.copy(busy = true, error = null) }
             try {
                 withContext(Dispatchers.IO) { repo.login(email, password) }
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     loggedIn = true,
                     loginEmail = email,
@@ -883,12 +896,9 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
                     showLogin = false,
                     showAccount = true,
                     showSyncChoice = true,
-                )
+                ) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
-                    busy = false,
-                    error = t.message ?: "Sign in failed",
-                )
+                handleIoError(t, "Sign in failed")
             }
         }
     }
@@ -896,39 +906,39 @@ class RoyalRoadViewModel(app: Application) : AndroidViewModel(app) {
     fun logout() {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repo.logout() }
-            _ui.value = _ui.value.copy(
+            _ui.update { it.copy(
                 loggedIn = false,
                 loginEmail = "",
                 emailDraft = "",
                 passwordDraft = "",
                 showSyncChoice = false,
                 showAccount = false,
-            )
+            ) }
         }
     }
 
     fun syncFollows(mode: FollowsSyncMode) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null, showSyncChoice = false)
+            _ui.update { it.copy(busy = true, error = null, showSyncChoice = false) }
             try {
                 withContext(Dispatchers.IO) {
                     val remote = repo.fetchAllFollows()
                     applyFollows(remote, mode)
                 }
                 refreshLocal()
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     message = when (mode) {
                         FollowsSyncMode.Merge -> "Merged follows into library"
                         FollowsSyncMode.Overwrite -> "Replaced library with follows"
                     },
                     showAccount = false,
-                )
+                ) }
             } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
+                _ui.update { it.copy(
                     busy = false,
                     error = t.message ?: "Could not sync follows",
-                )
+                ) }
             }
         }
     }

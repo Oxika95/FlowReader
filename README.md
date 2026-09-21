@@ -7,7 +7,7 @@ Open an EPUB or TXT, read, listen.
 ## What works
 
 - **Library** — Files tab (list or shelf). Import a copy or reference in place via the system file picker. No all-files access.
-- **Que** — share plain text to **Flow-Que** and it stacks in order. While listening, the reader marks the item done and moves to the next unfinished one on its own. Share to **Flow Reader** instead and it lands as a normal library file.
+- **Queue** — share plain text to **Flow-Queue** and it stacks in order. While listening, the reader marks the item done and moves to the next unfinished one on its own. Share to **Flow Reader** instead and it lands as a normal library file.
 - **Reader** — reflow text, theme / accent / font / spacing, Edge or system TTS, text filters (Global / Groups / Local).
 
 URLs and PDF are later. PDF especially needs a different page viewer, not this reflow path.

@@ -99,13 +99,22 @@ object EpubIngest {
     private fun ZipFile.entryText(name: String): String {
         val entry = getEntry(name) ?: getEntry(name.trimStart('/'))
             ?: throw IllegalArgumentException("Missing $name")
+        if (entry.size > MAX_ENTRY_BYTES || entry.compressedSize > MAX_ENTRY_BYTES) {
+            throw IllegalArgumentException("EPUB entry too large: $name")
+        }
         return getInputStream(entry).bufferedReader().use { it.readText() }
     }
 
     private fun ZipFile.entryTextOrNull(name: String): String? {
         val entry = getEntry(name) ?: getEntry(name.trimStart('/')) ?: return null
+        if (entry.size > MAX_ENTRY_BYTES || entry.compressedSize > MAX_ENTRY_BYTES) {
+            return null
+        }
         return getInputStream(entry).bufferedReader().use { it.readText() }
     }
+
+    /** Cap per-entry reads so a malformed EPUB cannot OOM the process. */
+    private const val MAX_ENTRY_BYTES = 16L * 1024L * 1024L
 }
 
 object TxtIngest {

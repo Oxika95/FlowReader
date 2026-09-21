@@ -1,7 +1,10 @@
 package com.personal.flowreader.tts
 
+import java.io.ByteArrayOutputStream
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -14,7 +17,7 @@ import kotlin.coroutines.resumeWithException
 data class EdgeAudio(val mp3: ByteArray)
 
 class EdgeTtsClient(
-    private val http: OkHttpClient = OkHttpClient(),
+    private val http: OkHttpClient = defaultHttp(),
 ) {
     suspend fun synthesize(
         text: String,
@@ -22,6 +25,27 @@ class EdgeTtsClient(
         lang: String = "en-US",
         ratePercent: Int = 0,
         pitchPercent: Int = 0,
+    ): EdgeAudio {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) {
+            throw IllegalArgumentException("Nothing to synthesize.")
+        }
+        if (trimmed.length > MAX_UTTERANCE_CHARS) {
+            throw IllegalArgumentException(
+                "Utterance too long (${trimmed.length} chars; max $MAX_UTTERANCE_CHARS).",
+            )
+        }
+        return withTimeout(SYNTH_TIMEOUT_MS) {
+            synthesizeOnce(trimmed, voice, lang, ratePercent, pitchPercent)
+        }
+    }
+
+    private suspend fun synthesizeOnce(
+        text: String,
+        voice: String,
+        lang: String,
+        ratePercent: Int,
+        pitchPercent: Int,
     ): EdgeAudio = suspendCancellableCoroutine { cont ->
         val id = UUID.randomUUID().toString().replace("-", "")
         val url = EdgeHandshake.url(id, System.currentTimeMillis() / 1000)
@@ -35,7 +59,8 @@ class EdgeTtsClient(
             .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
             .build()
 
-        val audio = ArrayList<Byte>()
+        // Primitive byte buffer — ArrayList<Byte> boxes every sample (~16x heap).
+        val audio = ByteArrayOutputStream(16 * 1024)
         val ws = http.newWebSocket(
             request,
             object : WebSocketListener() {
@@ -71,8 +96,10 @@ class EdgeTtsClient(
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     if (text.contains("Path:turn.end") || text.contains("Path: turn.end")) {
                         webSocket.close(1000, null)
-                        if (audio.isEmpty()) {
-                            if (cont.isActive) cont.resumeWithException(IllegalStateException("No audio data received."))
+                        if (audio.size() == 0) {
+                            if (cont.isActive) {
+                                cont.resumeWithException(IllegalStateException("No audio data received."))
+                            }
                         } else if (cont.isActive) {
                             cont.resume(EdgeAudio(audio.toByteArray()))
                         }
@@ -85,7 +112,16 @@ class EdgeTtsClient(
                     val headerLen = ((arr[0].toInt() and 0xFF) shl 8) or (arr[1].toInt() and 0xFF)
                     val start = 2 + headerLen
                     if (arr.size > start) {
-                        for (i in start until arr.size) audio += arr[i]
+                        if (audio.size() + (arr.size - start) > MAX_AUDIO_BYTES) {
+                            webSocket.cancel()
+                            if (cont.isActive) {
+                                cont.resumeWithException(
+                                    IllegalStateException("Edge audio exceeded $MAX_AUDIO_BYTES bytes."),
+                                )
+                            }
+                            return
+                        }
+                        audio.write(arr, start, arr.size - start)
                     }
                 }
 
@@ -95,5 +131,17 @@ class EdgeTtsClient(
             },
         )
         cont.invokeOnCancellation { ws.cancel() }
+    }
+
+    companion object {
+        const val MAX_UTTERANCE_CHARS = 4_000
+        const val MAX_AUDIO_BYTES = 8 * 1024 * 1024
+        private const val SYNTH_TIMEOUT_MS = 45_000L
+
+        private fun defaultHttp(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .build()
     }
 }

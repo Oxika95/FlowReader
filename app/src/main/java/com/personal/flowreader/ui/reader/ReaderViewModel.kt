@@ -18,6 +18,9 @@ import com.personal.flowreader.library.plugin.royalroad.RoyalRoadHtml
 import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
 import com.personal.flowreader.library.plugin.royalroad.RoyalRoadReadSession
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -65,8 +68,52 @@ class ReaderViewModel(
     @Volatile
     var suppressPauseOnClear: Boolean = false
 
+    private data class PendingProgress(
+        val chapterIndex: Int,
+        val blockIndex: Int,
+        val charOffset: Int,
+        val readingProgress: Float,
+        val updatedAt: Long,
+    )
+
+    /** Conflated so rapid scroll keeps only the newest locus. */
+    private val progressWrites = Channel<PendingProgress>(Channel.CONFLATED)
+    private var progressWriter: Job? = null
+
     init {
+        progressWriter = flow.appScope.launch { runProgressWriter() }
         viewModelScope.launch { load() }
+    }
+
+    private suspend fun runProgressWriter() {
+        val id = bookId
+        if (id.isBlank()) return
+        for (pending in progressWrites) {
+            // Debounce: wait briefly; CONFLATED channel drops intermediates.
+            delay(300)
+            var latest = pending
+            while (true) {
+                val next = progressWrites.tryReceive().getOrNull() ?: break
+                latest = next
+            }
+            val row = flow.db.progress().get(id) ?: continue
+            // Ignore stale writes that would rewind a newer on-disk locus.
+            if (row.updatedAt > latest.updatedAt) continue
+            flow.db.progress().upsert(
+                row.copy(
+                    chapterIndex = latest.chapterIndex,
+                    blockIndex = latest.blockIndex,
+                    charOffset = latest.charOffset,
+                    readingProgress = latest.readingProgress,
+                    updatedAt = latest.updatedAt,
+                ),
+            )
+            if (RoyalRoadHtml.isPluginBookId(id)) {
+                runCatching {
+                    flow.royalRoad.maintainChapterCache(id, latest.chapterIndex)
+                }
+            }
+        }
     }
 
     private suspend fun load() {
@@ -477,10 +524,10 @@ class ReaderViewModel(
 
     /** Flush current UI locus using app scope so it survives ViewModel teardown. */
     fun persistNow() {
-        persist(_ui.value.locus)
+        persist(_ui.value.locus, flush = true)
     }
 
-    private fun persist(locus: Locus) {
+    private fun persist(locus: Locus, flush: Boolean = false) {
         val id = bookId
         if (id.isBlank()) return
         val doc = _ui.value.doc
@@ -496,27 +543,40 @@ class ReaderViewModel(
         } else {
             locus.chapterIndex
         }
-        flow.appScope.launch {
-            val row = flow.db.progress().get(id) ?: return@launch
-            flow.db.progress().upsert(
-                row.copy(
-                    chapterIndex = absoluteChapter,
-                    blockIndex = locus.blockIndex,
-                    charOffset = locus.charOffset,
-                    readingProgress = readingProgress,
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            )
-            if (RoyalRoadHtml.isPluginBookId(id)) {
-                runCatching {
-                    flow.royalRoad.maintainChapterCache(id, absoluteChapter)
+        val pending = PendingProgress(
+            chapterIndex = absoluteChapter,
+            blockIndex = locus.blockIndex,
+            charOffset = locus.charOffset,
+            readingProgress = readingProgress,
+            updatedAt = System.currentTimeMillis(),
+        )
+        if (flush) {
+            flow.appScope.launch {
+                val row = flow.db.progress().get(id) ?: return@launch
+                if (row.updatedAt > pending.updatedAt) return@launch
+                flow.db.progress().upsert(
+                    row.copy(
+                        chapterIndex = pending.chapterIndex,
+                        blockIndex = pending.blockIndex,
+                        charOffset = pending.charOffset,
+                        readingProgress = pending.readingProgress,
+                        updatedAt = pending.updatedAt,
+                    ),
+                )
+                if (RoyalRoadHtml.isPluginBookId(id)) {
+                    runCatching {
+                        flow.royalRoad.maintainChapterCache(id, pending.chapterIndex)
+                    }
                 }
             }
+        } else {
+            progressWrites.trySend(pending)
         }
     }
 
     override fun onCleared() {
         persistNow()
+        progressWrites.close()
         tts.setMoreProvider(bookId, null)
         if (!suppressPauseOnClear) {
             tts.pause()

@@ -64,7 +64,7 @@ class RoyalRoadMembershipStoreTest {
     }
 
     @Test
-    fun migrateUnlistedToFollowOnlyWhenMissingFile() {
+    fun migrateUnlistedToFollowWhenMissingOrEmptyFile() {
         val root = File.createTempFile("rr-migrate", "").let {
             it.delete()
             it.mkdirs()
@@ -73,9 +73,14 @@ class RoyalRoadMembershipStoreTest {
         try {
             RoyalRoadMembershipStore.migrateUnlistedToFollow(root, listOf("rr:1", "rr:2"))
             assertEquals(setOf("rr:1", "rr:2"), RoyalRoadMembershipStore.bookIds(root, RoyalRoadListKind.Follow))
-            // Existing file: do not re-seed new catalog ids automatically.
+            // Existing non-empty file: do not re-seed new catalog ids automatically.
             RoyalRoadMembershipStore.migrateUnlistedToFollow(root, listOf("rr:1", "rr:2", "rr:3"))
             assertEquals(setOf("rr:1", "rr:2"), RoyalRoadMembershipStore.bookIds(root, RoyalRoadListKind.Follow))
+
+            // Empty file should re-seed.
+            RoyalRoadMembershipStore.file(root, RoyalRoadListKind.Follow).writeText("")
+            RoyalRoadMembershipStore.migrateUnlistedToFollow(root, listOf("rr:9"))
+            assertEquals(setOf("rr:9"), RoyalRoadMembershipStore.bookIds(root, RoyalRoadListKind.Follow))
         } finally {
             root.deleteRecursively()
         }

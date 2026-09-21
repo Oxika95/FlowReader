@@ -16,6 +16,7 @@ private val Context.settingsDataStore: DataStore<Preferences> by preferencesData
 data class ReaderPrefs(
     val theme: ThemeMode = ThemeMode.Oled,
     val accentHue: Float = AccentHue.DEFAULT,
+    val uiScale: Float = UiScale.DEFAULT,
     val fontScale: Float = 1f,
     val fontFamily: ReaderFont = ReaderFont.Sans,
     val lineSpacing: Float = 1f,
@@ -33,12 +34,27 @@ data class TtsPrefs(
     val doubleTapPlay: Boolean = true,
     /** When true, the list keeps the spoken block centered until the user scrolls away. */
     val autoScrollWithTts: Boolean = true,
+    /** Quiet AudioTrack noise underlay while playing (helps some car head units). */
+    val keepAliveUnderlay: Boolean = false,
+    /** Edge: decode sentence MP3s into one continuous PCM AudioTrack. */
+    val continuousPcmPlayback: Boolean = false,
+    /** Extra pause after each spoken sentence (0–1000 ms). */
+    val sentenceGapMs: Int = DEFAULT_SENTENCE_GAP_MS,
 ) {
     companion object {
         const val DEFAULT_EDGE_VOICE = "en-US-AndrewNeural"
         const val DEFAULT_PREFETCH = 2
         const val MIN_PREFETCH = 1
         const val MAX_PREFETCH = 10
+        const val DEFAULT_SENTENCE_GAP_MS = 0
+        const val MIN_SENTENCE_GAP_MS = 0
+        const val MAX_SENTENCE_GAP_MS = 1000
+        const val SENTENCE_GAP_STEP_MS = 50
+
+        fun coerceSentenceGapMs(ms: Int): Int {
+            val clamped = ms.coerceIn(MIN_SENTENCE_GAP_MS, MAX_SENTENCE_GAP_MS)
+            return (clamped / SENTENCE_GAP_STEP_MS) * SENTENCE_GAP_STEP_MS
+        }
     }
 }
 
@@ -56,6 +72,10 @@ class SettingsStore(context: Context) {
         store.edit {
             it[KEY_ACCENT_HUE] = hue.coerceIn(AccentHue.MIN, AccentHue.MAX)
         }
+    }
+
+    suspend fun setUiScale(scale: Float) {
+        store.edit { it[KEY_UI_SCALE] = UiScale.coerce(scale) }
     }
 
     suspend fun setFontScale(scale: Float) {
@@ -102,6 +122,18 @@ class SettingsStore(context: Context) {
 
     suspend fun setAutoScrollWithTts(enabled: Boolean) {
         store.edit { it[KEY_TTS_AUTO_SCROLL] = enabled }
+    }
+
+    suspend fun setKeepAliveUnderlay(enabled: Boolean) {
+        store.edit { it[KEY_TTS_KEEP_ALIVE] = enabled }
+    }
+
+    suspend fun setContinuousPcmPlayback(enabled: Boolean) {
+        store.edit { it[KEY_TTS_CONTINUOUS_PCM] = enabled }
+    }
+
+    suspend fun setSentenceGapMs(ms: Int) {
+        store.edit { it[KEY_TTS_SENTENCE_GAP_MS] = TtsPrefs.coerceSentenceGapMs(ms) }
     }
 
     suspend fun globalFiltersOnce(): List<FilterRule> =
@@ -154,6 +186,7 @@ class SettingsStore(context: Context) {
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_ACCENT = stringPreferencesKey("accent") // legacy enum name
         private val KEY_ACCENT_HUE = floatPreferencesKey("accent_hue")
+        private val KEY_UI_SCALE = floatPreferencesKey("ui_scale")
         private val KEY_FONT_SCALE = floatPreferencesKey("font_scale")
         private val KEY_FONT_FAMILY = stringPreferencesKey("font_family")
         private val KEY_LINE_SPACING = floatPreferencesKey("line_spacing")
@@ -165,6 +198,9 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_PREFETCH = intPreferencesKey("tts_prefetch")
         private val KEY_TTS_DOUBLE_TAP_PLAY = booleanPreferencesKey("tts_double_tap_play")
         private val KEY_TTS_AUTO_SCROLL = booleanPreferencesKey("tts_auto_scroll")
+        private val KEY_TTS_KEEP_ALIVE = booleanPreferencesKey("tts_keep_alive")
+        private val KEY_TTS_CONTINUOUS_PCM = booleanPreferencesKey("tts_continuous_pcm")
+        private val KEY_TTS_SENTENCE_GAP_MS = intPreferencesKey("tts_sentence_gap_ms")
         private val KEY_GLOBAL_FILTERS = stringPreferencesKey("global_filters")
         private val KEY_GROUP_FILTERS = stringPreferencesKey("group_filters")
         private val KEY_LIBRARY_VIEW = stringPreferencesKey("library_view")
@@ -179,6 +215,7 @@ class SettingsStore(context: Context) {
             theme = runCatching { ThemeMode.valueOf(this[KEY_THEME] ?: ThemeMode.Oled.name) }
                 .getOrDefault(ThemeMode.Oled),
             accentHue = resolveAccentHue(),
+            uiScale = UiScale.coerce(this[KEY_UI_SCALE] ?: UiScale.DEFAULT),
             fontScale = this[KEY_FONT_SCALE] ?: 1f,
             fontFamily = runCatching {
                 ReaderFont.valueOf(this[KEY_FONT_FAMILY] ?: ReaderFont.Sans.name)
@@ -212,6 +249,11 @@ class SettingsStore(context: Context) {
                 .coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH),
             doubleTapPlay = this[KEY_TTS_DOUBLE_TAP_PLAY] ?: true,
             autoScrollWithTts = this[KEY_TTS_AUTO_SCROLL] ?: true,
+            keepAliveUnderlay = this[KEY_TTS_KEEP_ALIVE] ?: false,
+            continuousPcmPlayback = this[KEY_TTS_CONTINUOUS_PCM] ?: false,
+            sentenceGapMs = TtsPrefs.coerceSentenceGapMs(
+                this[KEY_TTS_SENTENCE_GAP_MS] ?: TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
+            ),
         )
     }
 }

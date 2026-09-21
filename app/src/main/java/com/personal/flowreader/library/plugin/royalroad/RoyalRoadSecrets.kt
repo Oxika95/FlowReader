@@ -8,54 +8,77 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 
-/** Encrypted email/password + cookies for Royal Road. Falls back to private prefs if Keystore fails. */
+/**
+ * Cookies (+ optional remembered email for the login form) for Royal Road.
+ * Passwords are never persisted. Fail closed if EncryptedSharedPreferences is unavailable
+ * (no plaintext fallback): sign-in is disabled until encryption works.
+ */
 class RoyalRoadSecrets(context: Context) {
-    private val prefs: SharedPreferences = try {
-        val key = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-        EncryptedSharedPreferences.create(
-            PREFS,
-            key,
-            context,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
-    } catch (_: Throwable) {
-        context.getSharedPreferences("${PREFS}_fallback", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences?
+    private val disabledReason: String?
+
+    init {
+        // Wipe any leftover plaintext fallback from older builds.
+        runCatching {
+            context.getSharedPreferences("${PREFS}_fallback", Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .apply()
+        }
+        var loaded: SharedPreferences? = null
+        var reason: String? = null
+        try {
+            val key = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+            loaded = EncryptedSharedPreferences.create(
+                PREFS,
+                key,
+                context,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+            // Migration: drop any password left from older builds.
+            if (loaded.contains(KEY_PASSWORD)) {
+                loaded.edit().remove(KEY_PASSWORD).apply()
+            }
+        } catch (t: Throwable) {
+            reason = "Encrypted storage unavailable; Royal Road sign-in is disabled."
+        }
+        prefs = loaded
+        disabledReason = reason
     }
 
-    fun email(): String = prefs.getString(KEY_EMAIL, "").orEmpty()
+    fun isAvailable(): Boolean = prefs != null
 
-    fun password(): String = prefs.getString(KEY_PASSWORD, "").orEmpty()
+    fun unavailableMessage(): String =
+        disabledReason ?: "Royal Road sign-in is unavailable."
 
-    fun hasCredentials(): Boolean = email().isNotBlank() && password().isNotBlank()
+    private fun prefsOrNull(): SharedPreferences? = prefs
 
-    fun isLoggedIn(): Boolean = prefs.getBoolean(KEY_LOGGED_IN, false)
+    fun email(): String = prefsOrNull()?.getString(KEY_EMAIL, "").orEmpty()
+
+    fun isLoggedIn(): Boolean = prefsOrNull()?.getBoolean(KEY_LOGGED_IN, false) == true
 
     fun setLoggedIn(value: Boolean) {
-        prefs.edit().putBoolean(KEY_LOGGED_IN, value).apply()
+        prefsOrNull()?.edit()?.putBoolean(KEY_LOGGED_IN, value)?.apply()
     }
 
-    fun saveCredentials(email: String, password: String) {
-        prefs.edit()
-            .putString(KEY_EMAIL, email)
-            .putString(KEY_PASSWORD, password)
-            .apply()
+    /** Remember email for the login form only — never the password. */
+    fun saveEmail(email: String) {
+        prefsOrNull()?.edit()?.putString(KEY_EMAIL, email.trim())?.apply()
     }
 
-    fun clearCredentials() {
-        prefs.edit()
-            .remove(KEY_EMAIL)
-            .remove(KEY_PASSWORD)
-            .apply()
+    fun clearEmail() {
+        prefsOrNull()?.edit()?.remove(KEY_EMAIL)?.apply()
     }
 
     fun loadCookies(): List<Cookie> {
-        val blob = prefs.getString(KEY_COOKIES, "").orEmpty()
+        val blob = prefsOrNull()?.getString(KEY_COOKIES, "").orEmpty()
         if (blob.isBlank()) return emptyList()
         return blob.lineSequence().mapNotNull { parseCookie(it) }.toList()
     }
 
     fun saveCookies(cookies: List<Cookie>) {
+        val p = prefsOrNull() ?: return
         val blob = cookies.joinToString("\n") { cookie ->
             listOf(
                 cookie.name,
@@ -68,15 +91,19 @@ class RoyalRoadSecrets(context: Context) {
                 cookie.hostOnly.toString(),
             ).joinToString("\t")
         }
-        prefs.edit().putString(KEY_COOKIES, blob).apply()
+        p.edit().putString(KEY_COOKIES, blob).apply()
     }
 
     fun clearCookies() {
-        prefs.edit().remove(KEY_COOKIES).apply()
+        prefsOrNull()?.edit()?.remove(KEY_COOKIES)?.apply()
     }
 
     fun clearAll() {
-        prefs.edit().clear().apply()
+        prefsOrNull()?.edit()?.clear()?.apply()
+    }
+
+    fun requireAvailable() {
+        if (prefs == null) throw IllegalStateException(unavailableMessage())
     }
 
     private fun parseCookie(line: String): Cookie? {
@@ -107,6 +134,9 @@ class RoyalRoadSecrets(context: Context) {
         private const val KEY_LOGGED_IN = "logged_in"
     }
 }
+
+/** Session expired or protected page requires a fresh sign-in. */
+class RoyalRoadAuthExpired(message: String = "Sign in to Royal Road again.") : Exception(message)
 
 class PersistentCookieJar(private val secrets: RoyalRoadSecrets) : CookieJar {
     private val lock = Any()

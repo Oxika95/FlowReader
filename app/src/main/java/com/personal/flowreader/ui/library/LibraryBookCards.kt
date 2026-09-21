@@ -48,13 +48,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import com.personal.flowreader.data.BookSource
 import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.data.ProgressEntity
 import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
 import com.personal.flowreader.ui.reader.ReaderPanelShape
+import com.personal.flowreader.ui.theme.FlowTokens
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -73,7 +73,12 @@ fun LibraryBooksPane(
 ) {
     Box(modifier.fillMaxSize()) {
         if (books.isEmpty() && !busy) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = inset),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
                     emptyMessage,
                     style = MaterialTheme.typography.bodyLarge,
@@ -102,16 +107,16 @@ fun LibraryBookList(
             start = inset,
             top = inset,
             end = inset,
-            bottom = inset + 76.dp,
+            bottom = inset + FlowTokens.FabClearance,
         ),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.M),
         modifier = Modifier.fillMaxSize(),
     ) {
         items(books, key = { it.bookId }) { book ->
             LibraryBookCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(104.dp),
+                    .height(FlowTokens.Comp.ListRow),
                 onClick = { onOpen(book.bookId) },
                 onLongClick = onLongOpen?.let { handler -> { handler(book.bookId) } },
             ) {
@@ -129,22 +134,22 @@ fun LibraryBookShelf(
     onLongOpen: ((String) -> Unit)? = null,
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(140.dp),
+        columns = GridCells.Adaptive(FlowTokens.Comp.GridMinCell),
         contentPadding = PaddingValues(
             start = inset,
             top = inset,
             end = inset,
-            bottom = inset + 76.dp,
+            bottom = inset + FlowTokens.FabClearance,
         ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.M),
+        verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.M),
         modifier = Modifier.fillMaxSize(),
     ) {
         items(books, key = { it.bookId }) { book ->
             LibraryBookCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(2f / 3f),
+                    .aspectRatio(FlowTokens.CoverAspect),
                 onClick = { onOpen(book.bookId) },
                 onLongClick = onLongOpen?.let { handler -> { handler(book.bookId) } },
             ) {
@@ -177,8 +182,8 @@ private fun LibraryBookCard(
         ),
         shape = ReaderPanelShape,
         colors = CardDefaults.cardColors(containerColor = bg, contentColor = onBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = FlowTokens.Radius.None),
+        border = BorderStroke(FlowTokens.Stroke.Hairline, MaterialTheme.colorScheme.outlineVariant),
     ) {
         content()
     }
@@ -186,14 +191,10 @@ private fun LibraryBookCard(
 
 @Composable
 private fun BookProgressBar(progress: Float, modifier: Modifier = Modifier) {
-    LinearProgressIndicator(
-        progress = { progress.coerceIn(0f, 1f) },
-        modifier = modifier
-            .fillMaxWidth()
-            .height(3.dp)
-            .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)),
-        color = MaterialTheme.colorScheme.primary,
-        trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
+    com.personal.flowreader.ui.common.BookProgressBar(
+        progress = progress,
+        modifier = modifier,
+        variant = com.personal.flowreader.ui.common.BookProgressVariant.Standard,
     )
 }
 
@@ -206,13 +207,13 @@ private fun LibraryBookDetailsRow(book: ProgressEntity, subtitle: String) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = 3.dp),
+                .padding(bottom = FlowTokens.Comp.ProgressBar),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .aspectRatio(2f / 3f),
+                    .aspectRatio(FlowTokens.CoverAspect),
             ) {
                 LibraryCoverFill(
                     book = book,
@@ -235,7 +236,7 @@ private fun LibraryBookDetailsRow(book: ProgressEntity, subtitle: String) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp, end = 16.dp),
+                    .padding(start = FlowTokens.Space.M, end = FlowTokens.Space.L),
             ) {
                 Text(
                     book.title,
@@ -259,8 +260,8 @@ private fun LibraryBookDetailsRow(book: ProgressEntity, subtitle: String) {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .size(14.dp),
+                    .padding(FlowTokens.Space.S)
+                    .size(FlowTokens.Icon.S),
             )
         }
         BookProgressBar(
@@ -284,12 +285,12 @@ private fun LibraryBookShelfTile(book: ProgressEntity) {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(36.dp)
+                    .height(FlowTokens.ShelfGradientHeight)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.Black.copy(alpha = 0.88f),
+                                FlowTokens.CoverBandBlack,
                             ),
                         ),
                     ),
@@ -297,16 +298,21 @@ private fun LibraryBookShelfTile(book: ProgressEntity) {
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.88f)),
+                    .background(FlowTokens.CoverBandBlack),
             ) {
                 Text(
                     book.title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.primary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 8.dp),
+                    modifier = Modifier.padding(
+                        start = FlowTokens.Space.M,
+                        end = FlowTokens.Space.M,
+                        top = FlowTokens.Space.Hair,
+                        bottom = FlowTokens.Space.S,
+                    ),
                 )
                 BookProgressBar(progress = book.readingProgress)
             }
@@ -318,8 +324,8 @@ private fun LibraryBookShelfTile(book: ProgressEntity) {
                 tint = Color.White,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .size(14.dp),
+                    .padding(FlowTokens.Space.S)
+                    .size(FlowTokens.Icon.S),
             )
         }
     }

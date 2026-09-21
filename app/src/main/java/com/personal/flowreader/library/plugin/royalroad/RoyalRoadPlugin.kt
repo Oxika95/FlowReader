@@ -100,19 +100,16 @@ import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.library.plugin.LibrarySourcePlugin
 import com.personal.flowreader.library.plugin.SourceWork
+import com.personal.flowreader.ui.common.FlowTabMetrics
+import com.personal.flowreader.ui.common.FlowTabSlotHeader
 import com.personal.flowreader.ui.library.LibraryBooksPane
 import com.personal.flowreader.ui.library.LibraryTabSlots
 import com.personal.flowreader.ui.library.loadLibraryCoverBitmap
 import com.personal.flowreader.ui.reader.ReaderModalScaffold
 import com.personal.flowreader.ui.reader.ReaderPanelFeather
+import com.personal.flowreader.ui.theme.FlowTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
-private val RrSubTabMinGap = 16.dp
-private val RrSubTabInnerPad = 8.dp
-private val RrSubTabBarHeight = 48.dp
-private val RrSubTabIndicatorHeight = 3.dp
-private val RrSubTabInset = 16.dp
 
 class RoyalRoadPlugin : LibrarySourcePlugin {
     override val id: String = ID
@@ -197,7 +194,7 @@ internal fun RoyalRoadTabBody(
                 books = ui.visibleBooks,
                 viewMode = viewMode,
                 busy = ui.busy,
-                inset = 16.dp,
+                inset = FlowTokens.ScreenGutter,
                 emptyMessage = emptyMessage,
                 onOpen = { bookId -> vm.readBook(actions, bookId) },
                 onLongOpen = vm::openStory,
@@ -222,10 +219,10 @@ internal fun RoyalRoadTabBody(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
-                    .padding(end = 16.dp, bottom = 16.dp)
-                    .size(56.dp),
+                    .padding(end = FlowTokens.Space.L, bottom = FlowTokens.Space.L)
+                    .size(FlowTokens.FabSize),
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Add story", modifier = Modifier.size(28.dp))
+                Icon(Icons.Filled.Add, contentDescription = "Add story", modifier = Modifier.size(FlowTokens.FabIcon))
             }
         }
     }
@@ -246,7 +243,7 @@ private fun RoyalRoadListTabs(
     val labelStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
     val kinds = RoyalRoadListKind.entries
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val innerPadPx = with(density) { RrSubTabInnerPad.roundToPx() }
+        val innerPadPx = with(density) { FlowTabMetrics.InnerPad.roundToPx() }
         val minWidths = IntArray(kinds.size + 1) { i ->
             if (i < kinds.size) {
                 measurer.measure(
@@ -256,19 +253,20 @@ private fun RoyalRoadListTabs(
                     softWrap = false,
                 ).size.width + innerPadPx * 2
             } else {
+                // Account tab min slot: keep literal (not Icon.L) — width math, not icon size.
                 with(density) { 22.dp.roundToPx() } + innerPadPx * 2
             }
         }
         val layout = LibraryTabSlots.layout(
             availablePx = constraints.maxWidth,
-            insetPx = with(density) { RrSubTabInset.roundToPx() },
-            gapPx = with(density) { RrSubTabMinGap.roundToPx() },
+            insetPx = with(density) { FlowTokens.ScreenGutter.roundToPx() },
+            gapPx = with(density) { FlowTabMetrics.MinGap.roundToPx() },
             minWidthsPx = minWidths,
         )
         Row(
             modifier = Modifier
-                .height(RrSubTabBarHeight)
-                .padding(horizontal = RrSubTabInset)
+                .height(FlowTabMetrics.BarHeight)
+                .padding(horizontal = FlowTokens.ScreenGutter)
                 .then(
                     if (layout.overflow) {
                         Modifier.horizontalScroll(scroll)
@@ -276,18 +274,20 @@ private fun RoyalRoadListTabs(
                         Modifier.fillMaxWidth()
                     },
                 ),
-            horizontalArrangement = Arrangement.spacedBy(RrSubTabMinGap),
+            horizontalArrangement = Arrangement.spacedBy(FlowTabMetrics.MinGap),
             verticalAlignment = Alignment.Bottom,
         ) {
             kinds.forEachIndexed { index, kind ->
                 val selectedTab = !accountSelected && selected == kind
-                RoyalRoadSubTabHeader(
+                FlowTabSlotHeader(
                     selected = selectedTab,
                     onClick = { onSelect(kind) },
                     indicator = indicator,
                     modifier = Modifier
                         .width(with(density) { layout.slotWidthsPx[index].toDp() })
                         .fillMaxHeight(),
+                    innerPad = FlowTabMetrics.InnerPad,
+                    indicatorHeight = FlowTabMetrics.IndicatorHeight,
                 ) {
                     Text(
                         kind.label,
@@ -304,18 +304,20 @@ private fun RoyalRoadListTabs(
                     )
                 }
             }
-            RoyalRoadSubTabHeader(
+            FlowTabSlotHeader(
                 selected = accountSelected,
                 onClick = onAccount,
                 indicator = indicator,
                 modifier = Modifier
                     .width(with(density) { layout.slotWidthsPx.last().toDp() })
                     .fillMaxHeight(),
+                innerPad = FlowTabMetrics.InnerPad,
+                indicatorHeight = FlowTabMetrics.IndicatorHeight,
             ) {
                 Icon(
                     Icons.Filled.Person,
                     contentDescription = if (loggedIn) "Account" else "Sign in",
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(FlowTokens.Icon.L),
                     tint = if (accountSelected) {
                         MaterialTheme.colorScheme.primary
                     } else {
@@ -327,36 +329,6 @@ private fun RoyalRoadListTabs(
         HorizontalDivider(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
             color = MaterialTheme.colorScheme.outlineVariant,
-        )
-    }
-}
-
-@Composable
-private fun RoyalRoadSubTabHeader(
-    selected: Boolean,
-    onClick: () -> Unit,
-    indicator: Color,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Column(
-        modifier = modifier.clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = RrSubTabInnerPad),
-            contentAlignment = Alignment.Center,
-        ) {
-            content()
-        }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(RrSubTabIndicatorHeight)
-                .background(if (selected) indicator else Color.Transparent),
         )
     }
 }
@@ -414,84 +386,102 @@ internal fun RoyalRoadOverlays(
     )
 
     if (ui.showLogin) {
-        AlertDialog(
-            onDismissRequest = { if (!ui.busy) vm.setShowLogin(false) },
-            title = { Text("Royal Road sign in") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Optional. Sign in to sync your followed stories into this tab.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OutlinedTextField(
-                        value = ui.emailDraft,
-                        onValueChange = vm::setEmailDraft,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Email") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Email,
-                            imeAction = ImeAction.Next,
-                        ),
-                    )
-                    OutlinedTextField(
-                        value = ui.passwordDraft,
-                        onValueChange = vm::setPasswordDraft,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Password") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Done,
-                        ),
-                        keyboardActions = KeyboardActions(onDone = { vm.login() }),
-                    )
-                    ui.error?.takeIf { ui.showLogin }?.let { err ->
-                        Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = vm::login, enabled = !ui.busy) { Text("Sign in") }
-            },
-            dismissButton = {
+        ReaderModalScaffold(
+            visible = true,
+            contentPadding = PaddingValues(FlowTokens.ModalBodyPadding),
+            onDismiss = { if (!ui.busy) vm.setShowLogin(false) },
+            scrimAlpha = FlowTokens.ScrimStandard,
+        ) {
+            Text(
+                "Royal Road sign in",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            Text(
+                "Optional. Sign in to sync your followed stories into this tab. " +
+                    "Password is not stored — only session cookies.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(FlowTokens.Space.M))
+            OutlinedTextField(
+                value = ui.emailDraft,
+                onValueChange = vm::setEmailDraft,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Email") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Next,
+                ),
+            )
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            OutlinedTextField(
+                value = ui.passwordDraft,
+                onValueChange = vm::setPasswordDraft,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Password") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { vm.login() }),
+            )
+            ui.error?.takeIf { ui.showLogin }?.let { err ->
+                Spacer(Modifier.height(FlowTokens.Space.S))
+                Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(FlowTokens.Space.L))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
                 TextButton(onClick = { vm.setShowLogin(false) }, enabled = !ui.busy) {
                     Text("Cancel")
                 }
-            },
-        )
+                TextButton(onClick = vm::login, enabled = !ui.busy) { Text("Sign in") }
+            }
+        }
     }
 
     if (ui.showSyncChoice) {
-        AlertDialog(
-            onDismissRequest = { if (!ui.busy) vm.setShowSyncChoice(false) },
-            title = { Text("Sync follows") },
-            text = {
-                Text(
-                    "Merge keeps stories you added locally. Overwrite makes this tab match your Royal Road follows.",
-                )
-            },
-            confirmButton = {
+        ReaderModalScaffold(
+            visible = true,
+            contentPadding = PaddingValues(FlowTokens.ModalBodyPadding),
+            onDismiss = { if (!ui.busy) vm.setShowSyncChoice(false) },
+            scrimAlpha = FlowTokens.ScrimStandard,
+        ) {
+            Text(
+                "Sync follows",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            Text(
+                "Merge keeps stories you added locally. Overwrite makes this tab match your Royal Road follows.",
+            )
+            Spacer(Modifier.height(FlowTokens.Space.L))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(
+                    onClick = { vm.setShowSyncChoice(false) },
+                    enabled = !ui.busy,
+                ) { Text("Cancel") }
+                TextButton(
+                    onClick = { vm.syncFollows(FollowsSyncMode.Overwrite) },
+                    enabled = !ui.busy,
+                ) { Text("Overwrite") }
                 TextButton(
                     onClick = { vm.syncFollows(FollowsSyncMode.Merge) },
                     enabled = !ui.busy,
                 ) { Text("Merge") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(
-                        onClick = { vm.syncFollows(FollowsSyncMode.Overwrite) },
-                        enabled = !ui.busy,
-                    ) { Text("Overwrite") }
-                    TextButton(
-                        onClick = { vm.setShowSyncChoice(false) },
-                        enabled = !ui.busy,
-                    ) { Text("Cancel") }
-                }
-            },
-        )
+            }
+        }
     }
 }
 
@@ -508,7 +498,11 @@ private fun AddStoryOverlay(
 ) {
     ReaderModalScaffold(
         visible = visible,
-        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
+        contentPadding = PaddingValues(
+            start = FlowTokens.ModalOuterPadding,
+            end = FlowTokens.ModalOuterPadding,
+            bottom = FlowTokens.ModalOuterPadding,
+        ),
         onDismiss = onDismiss,
     ) {
         Column(Modifier.fillMaxWidth()) {
@@ -516,21 +510,25 @@ private fun AddStoryOverlay(
                 "Add from Royal Road",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = FlowTokens.Space.L, vertical = FlowTokens.Space.S),
             )
             Text(
                 "Search the site or paste a fiction URL. Opening a story shows its cover card — " +
                     "then choose Follow, Favorite, or Read Later.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                modifier = Modifier.padding(
+                    start = FlowTokens.Space.L,
+                    end = FlowTokens.Space.L,
+                    bottom = FlowTokens.Space.S,
+                ),
             )
             OutlinedTextField(
                 value = ui.remoteQuery,
                 onValueChange = onRemoteQuery,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = FlowTokens.Space.L),
                 label = { Text("Title on Royal Road") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -546,7 +544,7 @@ private fun AddStoryOverlay(
                 onValueChange = onUrl,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = FlowTokens.Space.L, vertical = FlowTokens.Space.S),
                 label = { Text("Fiction or chapter URL") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
@@ -558,7 +556,7 @@ private fun AddStoryOverlay(
             ui.error?.takeIf { ui.showAdd }?.let { err ->
                 Text(
                     err,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    modifier = Modifier.padding(horizontal = FlowTokens.Space.L),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -568,7 +566,7 @@ private fun AddStoryOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(enabled = !ui.busy) { onOpenResult(work) }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = FlowTokens.Space.L, vertical = FlowTokens.Space.M),
                 ) {
                     Text(work.title, style = MaterialTheme.typography.titleMedium)
                     val sub = listOf(work.author, work.latestChapter)
@@ -600,7 +598,7 @@ private fun AccountOverlay(
 ) {
     ReaderModalScaffold(
         visible = visible,
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(FlowTokens.ModalBodyPadding),
         onDismiss = onDismiss,
     ) {
         Text(
@@ -612,12 +610,12 @@ private fun AccountOverlay(
             "Local stories stay on this device. Sync imports your follows when you choose.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+            modifier = Modifier.padding(top = FlowTokens.Space.S, bottom = FlowTokens.Space.L),
         )
         if (ui.loggedIn) {
             Text(ui.loginEmail.ifBlank { "Signed in" }, style = MaterialTheme.typography.bodyLarge)
             TextButton(onClick = onSync, enabled = !ui.busy) {
-                Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.padding(end = FlowTokens.Space.S))
                 Text("Sync follows")
             }
             TextButton(onClick = onLogout, enabled = !ui.busy) { Text("Sign out") }
@@ -653,22 +651,22 @@ private fun StorySplashOverlay(
     val cardBg = MaterialTheme.colorScheme.background
     ReaderModalScaffold(
         visible = visible && story != null,
-        contentPadding = PaddingValues(0.dp),
+        contentPadding = PaddingValues(FlowTokens.Radius.None),
         onDismiss = onDismiss,
         feather = ReaderPanelFeather,
-        scrimAlpha = 0.66f,
+        scrimAlpha = FlowTokens.ScrimHero,
     ) {
         if (story == null) return@ReaderModalScaffold
         val art = cover
-        val onCoverMuted = Color.White.copy(alpha = 0.78f)
+        val onCoverMuted = FlowTokens.CoverMutedWhite
         Column(Modifier.fillMaxWidth()) {
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(art?.let { it.width.toFloat() / it.height.toFloat() } ?: (2f / 3f)),
+                    .aspectRatio(art?.let { it.width.toFloat() / it.height.toFloat() } ?: FlowTokens.CoverAspect),
             ) {
                 // Cap synopsis so title/meta/offline + description stay within the cover.
-                val synopsisMaxHeight = (maxHeight * 0.42f).coerceAtLeast(40.dp)
+                val synopsisMaxHeight = (maxHeight * 0.42f).coerceAtLeast(FlowTokens.Comp.ButtonSecondary)
                 if (art != null) {
                     Image(
                         bitmap = art,
@@ -677,7 +675,7 @@ private fun StorySplashOverlay(
                         alignment = Alignment.Center,
                         modifier = Modifier
                             .fillMaxSize()
-                            .then(if (canBlur) Modifier.blur(6.dp) else Modifier),
+                            .then(if (canBlur) Modifier.blur(FlowTokens.CoverBlur) else Modifier),
                     )
                 } else {
                     Box(
@@ -691,12 +689,12 @@ private fun StorySplashOverlay(
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .height(72.dp)
+                            .height(FlowTokens.CoverGradientHeight)
                             .background(
                                 Brush.verticalGradient(
                                     colors = listOf(
                                         Color.Transparent,
-                                        Color.Black.copy(alpha = 0.88f),
+                                        FlowTokens.CoverBandBlack,
                                     ),
                                 ),
                             ),
@@ -704,14 +702,19 @@ private fun StorySplashOverlay(
                     Column(
                         Modifier
                             .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.88f))
-                            .padding(start = 16.dp, end = 8.dp, top = 4.dp),
+                            .background(FlowTokens.CoverBandBlack)
+                            .padding(
+                                start = FlowTokens.Space.L,
+                                end = FlowTokens.Space.S,
+                                top = FlowTokens.Space.XS,
+                            ),
                     ) {
                         Column(Modifier.fillMaxWidth()) {
                             Text(
                                 story.title,
                                 style = MaterialTheme.typography.titleLarge.copy(
-                                    lineHeight = MaterialTheme.typography.titleLarge.fontSize * 1.15f,
+                                    lineHeight = MaterialTheme.typography.titleLarge.fontSize *
+                                        FlowTokens.SplashTitleLineHeight,
                                 ),
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -723,7 +726,7 @@ private fun StorySplashOverlay(
                                     story.author,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.White,
-                                    modifier = Modifier.padding(top = 2.dp),
+                                    modifier = Modifier.padding(top = FlowTokens.Space.Hair),
                                 )
                             }
                         }
@@ -738,7 +741,7 @@ private fun StorySplashOverlay(
                                 stats,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = onCoverMuted,
-                                modifier = Modifier.padding(top = 4.dp, end = 8.dp),
+                                modifier = Modifier.padding(top = FlowTokens.Space.XS, end = FlowTokens.Space.S),
                             )
                         }
                         if (story.tags.isNotEmpty()) {
@@ -748,7 +751,7 @@ private fun StorySplashOverlay(
                                 color = MaterialTheme.colorScheme.primary,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 4.dp, end = 8.dp),
+                                modifier = Modifier.padding(top = FlowTokens.Space.XS, end = FlowTokens.Space.S),
                             )
                         }
                         if (story.synopsis.isNotBlank()) {
@@ -761,7 +764,11 @@ private fun StorySplashOverlay(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(max = synopsisMaxHeight)
-                                    .padding(top = 4.dp, end = 8.dp, bottom = 4.dp),
+                                    .padding(
+                                        top = FlowTokens.Space.XS,
+                                        end = FlowTokens.Space.S,
+                                        bottom = FlowTokens.Space.XS,
+                                    ),
                             )
                         }
                         ChapterCacheStrip(
@@ -770,16 +777,16 @@ private fun StorySplashOverlay(
                             cachedIndices = story.cachedIndices,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 8.dp)
-                                .height(10.dp),
+                                .padding(top = FlowTokens.Space.S)
+                                .height(FlowTokens.Space.M),
                         )
                     }
                 }
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 10.dp, end = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(top = FlowTokens.Space.M, end = FlowTokens.Space.M),
+                    verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     RoyalRoadListKind.entries.forEach { kind ->
@@ -824,8 +831,8 @@ private fun StorySplashOverlay(
                 Modifier
                     .fillMaxWidth()
                     .background(cardBg)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                    .padding(horizontal = FlowTokens.Space.S, vertical = FlowTokens.Space.S),
+                verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.XS),
             ) {
                 val dl = ui.downloadProgress
                 Text(
@@ -837,7 +844,7 @@ private fun StorySplashOverlay(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
                 )
                 CompositionLocalProvider(
                     LocalMinimumInteractiveComponentSize provides Dp.Unspecified,
@@ -845,16 +852,19 @@ private fun StorySplashOverlay(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            .padding(horizontal = FlowTokens.Space.XS),
+                        horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.XS),
                     ) {
                         OutlinedButton(
                             onClick = onDownload,
                             enabled = !ui.busy && story.chapterCount > 0,
                             modifier = Modifier
                                 .weight(1f)
-                                .height(36.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                .height(FlowTokens.SplashSecondaryButtonHeight),
+                            contentPadding = PaddingValues(
+                                horizontal = FlowTokens.Space.XS,
+                                vertical = FlowTokens.Radius.None,
+                            ),
                         ) {
                             Text("Download", maxLines = 1, style = MaterialTheme.typography.labelLarge)
                         }
@@ -863,8 +873,11 @@ private fun StorySplashOverlay(
                             enabled = !ui.busy,
                             modifier = Modifier
                                 .weight(1f)
-                                .height(36.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                .height(FlowTokens.SplashSecondaryButtonHeight),
+                            contentPadding = PaddingValues(
+                                horizontal = FlowTokens.Space.XS,
+                                vertical = FlowTokens.Radius.None,
+                            ),
                         ) {
                             Text("Refresh", maxLines = 1, style = MaterialTheme.typography.labelLarge)
                         }
@@ -873,8 +886,11 @@ private fun StorySplashOverlay(
                             enabled = !ui.busy,
                             modifier = Modifier
                                 .weight(1f)
-                                .height(36.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                .height(FlowTokens.SplashSecondaryButtonHeight),
+                            contentPadding = PaddingValues(
+                                horizontal = FlowTokens.Space.XS,
+                                vertical = FlowTokens.Radius.None,
+                            ),
                         ) {
                             Text("Delete", maxLines = 1, style = MaterialTheme.typography.labelLarge)
                         }
@@ -884,9 +900,12 @@ private fun StorySplashOverlay(
                         enabled = !ui.busy && story.chapterCount > 0,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 4.dp)
-                            .height(40.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                            .padding(horizontal = FlowTokens.Space.XS)
+                            .height(FlowTokens.SplashPrimaryButtonHeight),
+                        contentPadding = PaddingValues(
+                            horizontal = FlowTokens.Space.L,
+                            vertical = FlowTokens.Radius.None,
+                        ),
                     ) {
                         Text("Read")
                     }
@@ -896,7 +915,7 @@ private fun StorySplashOverlay(
                         err,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 8.dp),
+                        modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
                     )
                 }
             }
@@ -918,8 +937,8 @@ private fun SplashCircleIconButton(
     val ring = if (selected) accent else Color.White.copy(alpha = 0.55f)
     Box(
         modifier = Modifier
-            .size(34.dp)
-            .border(1.dp, ring, CircleShape)
+            .size(FlowTokens.Icon.Hero)
+            .border(FlowTokens.Stroke.Hairline, ring, CircleShape)
             .background(bg, CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -928,7 +947,7 @@ private fun SplashCircleIconButton(
             icon,
             contentDescription = contentDescription,
             tint = tint.copy(alpha = if (enabled) 1f else 0.38f),
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(FlowTokens.Icon.M),
         )
     }
 }
@@ -966,10 +985,13 @@ private fun DownloadOptionsOverlay(
     }
     ReaderModalScaffold(
         visible = visible && story != null,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(
+            horizontal = FlowTokens.Space.M,
+            vertical = FlowTokens.Space.S,
+        ),
         onDismiss = onDismiss,
         feather = ReaderPanelFeather,
-        scrimAlpha = 0.66f,
+        scrimAlpha = FlowTokens.ScrimHero,
     ) {
         if (story == null) return@ReaderModalScaffold
         when (ui.downloadPane) {
@@ -978,21 +1000,27 @@ private fun DownloadOptionsOverlay(
                     "Download",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(
+                        horizontal = FlowTokens.Space.S,
+                        vertical = FlowTokens.Space.S,
+                    ),
                 )
                 Text(
                     "Streaming keeps a small window around your reading position. " +
                         "Pin chapters here for offline reading.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(
+                        horizontal = FlowTokens.Space.S,
+                        vertical = FlowTokens.Space.XS,
+                    ),
                 )
                 Button(
                     onClick = onDownloadAll,
                     enabled = !ui.busy && story.chapterCount > 0,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                        .padding(horizontal = FlowTokens.Space.XS, vertical = FlowTokens.Space.XS),
                 ) {
                     Text("Download all")
                 }
@@ -1010,7 +1038,7 @@ private fun DownloadOptionsOverlay(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                        .padding(horizontal = FlowTokens.Space.XS, vertical = FlowTokens.Space.XS),
                 )
                 AnimatedVisibility(
                     visible = settingsExpanded,
@@ -1035,14 +1063,20 @@ private fun DownloadOptionsOverlay(
                     "Partial download",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(
+                        horizontal = FlowTokens.Space.S,
+                        vertical = FlowTokens.Space.S,
+                    ),
                 )
                 Text(
                     "Pins and downloads from the configured start chapter through the end, " +
                         "or a chapter count cap if set.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(
+                        horizontal = FlowTokens.Space.S,
+                        vertical = FlowTokens.Space.XS,
+                    ),
                 )
                 val startTitle = story.toc.getOrNull(ui.partialStartIndex)?.title.orEmpty()
                 Text(
@@ -1052,14 +1086,17 @@ private fun DownloadOptionsOverlay(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(
+                        horizontal = FlowTokens.Space.S,
+                        vertical = FlowTokens.Space.XS,
+                    ),
                 )
                 OutlinedTextField(
                     value = ui.partialCountDraft,
                     onValueChange = onPartialCount,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                        .padding(horizontal = FlowTokens.Space.XS, vertical = FlowTokens.Space.XS),
                     label = { Text("Chapter count (blank = through end)") },
                     supportingText = {
                         Text("Leave blank to download from the start chapter to the latest chapter.")
@@ -1072,7 +1109,7 @@ private fun DownloadOptionsOverlay(
                     enabled = !ui.busy && story.chapterCount > 0,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                        .padding(horizontal = FlowTokens.Space.XS, vertical = FlowTokens.Space.XS),
                 ) {
                     Text("Download range")
                 }
@@ -1089,7 +1126,10 @@ private fun DownloadOptionsOverlay(
                 "Working $done / $total",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.padding(
+                    horizontal = FlowTokens.Space.S,
+                    vertical = FlowTokens.Space.XS,
+                ),
             )
         }
         ui.error?.takeIf { ui.showDownload }?.let { err ->
@@ -1097,7 +1137,10 @@ private fun DownloadOptionsOverlay(
                 err,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.padding(
+                    horizontal = FlowTokens.Space.S,
+                    vertical = FlowTokens.Space.XS,
+                ),
             )
         }
     }
@@ -1116,8 +1159,8 @@ private fun PartialDownloadSplitButton(
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
         Row(
             modifier = modifier
-                .height(40.dp)
-                .border(1.dp, outline, shape),
+                .height(FlowTokens.Comp.ButtonPrimary)
+                .border(FlowTokens.Stroke.Hairline, outline, shape),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -1131,11 +1174,11 @@ private fun PartialDownloadSplitButton(
                 modifier = Modifier
                     .weight(1f)
                     .clickable(enabled = enabled, onClick = onPartial)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = FlowTokens.Space.L, vertical = FlowTokens.Space.M),
                 maxLines = 1,
             )
             VerticalDivider(
-                modifier = Modifier.height(24.dp),
+                modifier = Modifier.height(FlowTokens.Icon.L),
                 color = outline,
             )
             Icon(
@@ -1148,8 +1191,8 @@ private fun PartialDownloadSplitButton(
                 },
                 modifier = Modifier
                     .clickable(enabled = enabled, onClick = onSettings)
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .size(20.dp),
+                    .padding(horizontal = FlowTokens.Space.M, vertical = FlowTokens.Space.S)
+                    .size(FlowTokens.Icon.M),
             )
         }
     }
@@ -1178,10 +1221,14 @@ private fun PartialCacheSettingsPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 4.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(horizontal = FlowTokens.Space.XS, vertical = FlowTokens.Space.XS)
+            .border(
+                FlowTokens.Stroke.Hairline,
+                MaterialTheme.colorScheme.outlineVariant,
+                RoundedCornerShape(FlowTokens.Radius.M),
+            )
+            .padding(horizontal = FlowTokens.Space.S, vertical = FlowTokens.Space.S),
+        verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.M),
     ) {
         Text(
             "Cache settings",
@@ -1242,17 +1289,18 @@ private fun OutlinedFieldWithInfo(
             enabled = true,
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            border = BorderStroke(FlowTokens.Stroke.Hairline, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .offset(x = 2.dp, y = (-6).dp)
-                .size(22.dp),
+                // One-off badge nudge; keep raw offset rather than forcing CoverBlur.
+                .offset(x = FlowTokens.Space.Hair, y = (-6).dp)
+                .size(FlowTokens.Icon.L),
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                 Icon(
                     Icons.Filled.Info,
                     contentDescription = "About $label",
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(FlowTokens.Icon.S),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1314,7 +1362,7 @@ private fun ChapterCacheStrip(
                 }
             }
 
-            val markW = max(slot, 3.dp.toPx())
+            val markW = max(slot, FlowTokens.Comp.ProgressBar.toPx())
             val markH = size.height
             val markX = (locus * slot + (slot - markW) / 2f).coerceIn(0f, size.width - markW)
             drawRect(
@@ -1326,7 +1374,7 @@ private fun ChapterCacheStrip(
     )
 }
 
-private val CacheBehindGray = Color(0xFF8A8A8A)
+private val CacheBehindGray = FlowTokens.NeutralCacheGray
 
 private fun formatCount(value: Long): String = when {
     value >= 1_000_000 -> String.format("%.1fM", value / 1_000_000.0)

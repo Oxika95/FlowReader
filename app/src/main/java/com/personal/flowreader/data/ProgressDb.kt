@@ -3,6 +3,7 @@ package com.personal.flowreader.data
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -34,7 +35,13 @@ data class BookFiltersEntity(
     val rulesJson: String,
 )
 
-@Entity(tableName = "que_items")
+@Entity(
+    tableName = "que_items",
+    indices = [
+        Index(value = ["bookId"]),
+        Index(value = ["sortOrder", "done"]),
+    ],
+)
 data class QueItemEntity(
     @PrimaryKey val id: String,
     val bookId: String,
@@ -65,8 +72,8 @@ interface ProgressDao {
     )
     suspend fun pluginLibrary(sourceKind: String): List<ProgressEntity>
 
-    @Query("SELECT * FROM progress ORDER BY updatedAt DESC")
-    suspend fun all(): List<ProgressEntity>
+    @Query("SELECT * FROM progress WHERE bookId IN (:ids)")
+    suspend fun getMany(ids: List<String>): List<ProgressEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(row: ProgressEntity)
@@ -106,6 +113,12 @@ interface QueDao {
 
     @Query("DELETE FROM que_items WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("DELETE FROM que_items WHERE bookId = :bookId")
+    suspend fun deleteForBook(bookId: String)
+
+    @Query("SELECT * FROM que_items WHERE bookId = :bookId")
+    suspend fun forBook(bookId: String): List<QueItemEntity>
 
     @Query(
         "SELECT * FROM que_items WHERE sortOrder > :afterOrder AND done = 0 " +
@@ -155,9 +168,18 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_que_items_bookId ON que_items(bookId)")
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_que_items_sort_done ON que_items(sortOrder, done)",
+        )
+    }
+}
+
 @Database(
     entities = [ProgressEntity::class, BookFiltersEntity::class, QueItemEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

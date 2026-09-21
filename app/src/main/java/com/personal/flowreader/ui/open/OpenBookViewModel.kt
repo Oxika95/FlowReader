@@ -8,6 +8,7 @@ import com.personal.flowreader.data.AccentHue
 import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.ThemeMode
+import com.personal.flowreader.data.UiScale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -15,6 +16,7 @@ import kotlinx.coroutines.launch
 data class OpenUi(
     val theme: ThemeMode = ThemeMode.Oled,
     val accentHue: Float = AccentHue.DEFAULT,
+    val uiScale: Float = UiScale.DEFAULT,
     val fontScale: Float = 1f,
     val fontFamily: ReaderFont = ReaderFont.Sans,
     val lineSpacing: Float = 1f,
@@ -32,6 +34,7 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
             _ui.value = _ui.value.copy(
                 theme = prefs.theme,
                 accentHue = prefs.accentHue,
+                uiScale = prefs.uiScale,
                 fontScale = prefs.fontScale,
                 fontFamily = prefs.fontFamily,
                 lineSpacing = prefs.lineSpacing,
@@ -49,6 +52,12 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
         val value = hue.coerceIn(AccentHue.MIN, AccentHue.MAX)
         _ui.value = _ui.value.copy(accentHue = value)
         viewModelScope.launch { flow.settings.setAccentHue(value) }
+    }
+
+    fun setUiScale(scale: Float) {
+        val value = UiScale.coerce(scale)
+        _ui.value = _ui.value.copy(uiScale = value)
+        viewModelScope.launch { flow.settings.setUiScale(value) }
     }
 
     fun setFontScale(scale: Float) {

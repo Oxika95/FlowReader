@@ -105,6 +105,8 @@ import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.SentenceSplitter
 import com.personal.flowreader.data.ThemeMode
+import com.personal.flowreader.ui.settings.FilterEditorSession
+import com.personal.flowreader.ui.theme.FlowTokens
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -112,13 +114,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 /** Loading pulse — independent of accent. */
 private val RailLoading = Color(0xFF6A6A6A)
 private val RailLoadingBright = Color(0xFF8A8A8A)
+/** Scroll fade mask height — gesture/visual constant, not on spacing ramp. */
 private val EdgeFade = 96.dp
 /** Full left margin from screen edge to text; bars are centered in this gutter. */
 private val RailGutterWidth = ReaderContentStartPadding
 /** Hit strip for Android-style swipe-left back gesture. */
 private val RightEdgeBackWidth = 24.dp
 private val RailDotRadius = 1.25.dp
-private val RailDotStep = 4.dp
+private val RailDotStep = FlowTokens.Space.XS
 /** Loading pill matches cache-dot diameter. */
 private val RailBarWidth = RailDotRadius * 2
 private val RailCurrentBarWidth = 7.dp
@@ -126,7 +129,12 @@ private const val RailForceRegenHoldMs = 3_000L
 /** Loading solid → cache window (dots) after Edge audio lands. */
 private const val RailReadyRevealMs = 1_500
 /** Behind (before) cache dots — neutral gray. Ahead uses soft accent (secondary). */
-private val RailBehindDot = Color(0xFF7A7A7A)
+private val RailBehindDot = FlowTokens.NeutralCacheGray
+/** LazyColumn top/bottom content pad (16 + 12). */
+private val ReaderListVerticalPad = FlowTokens.Space.L + FlowTokens.Space.M
+/** Edge-band tap targets — gesture constants, not on spacing ramp. */
+private val EdgeBandTopHeight = 56.dp
+private val EdgeBandBottomHeight = 72.dp
 
 /** Now-playing snippet card when the spoken block is scrolled out of view. */
 private enum class PlaybackPinEdge { Top, Bottom }
@@ -142,24 +150,20 @@ private data class BlockSentence(
     val end: Int,
 )
 
-private data class FilterEditorSession(
-    val scope: FilterScope,
-    val rule: FilterRule,
-    val isNew: Boolean,
-)
-
 @Composable
 fun ReaderScreen(
     vm: ReaderViewModel,
     queId: String? = null,
     themeMode: ThemeMode,
     accentHue: Float,
+    uiScale: Float,
     fontScale: Float,
     fontFamily: ReaderFont,
     lineSpacing: Float,
     orientation: ReaderOrientation,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
+    onUiScale: (Float) -> Unit,
     onFontScale: (Float) -> Unit,
     onFontFamily: (ReaderFont) -> Unit,
     onLineSpacing: (Float) -> Unit,
@@ -543,10 +547,10 @@ fun ReaderScreen(
                                         )
                                     },
                                 contentPadding = PaddingValues(
-                                    start = 0.dp,
+                                    start = FlowTokens.Radius.None,
                                     end = ReaderListEndPadding,
-                                    top = 28.dp,
-                                    bottom = 28.dp,
+                                    top = ReaderListVerticalPad,
+                                    bottom = ReaderListVerticalPad,
                                 ),
                             ) {
                                 itemsIndexed(items, key = { _, it -> it.block.id }) { index, item ->
@@ -583,7 +587,7 @@ fun ReaderScreen(
                                             if (start < end) {
                                                 addStyle(
                                                     SpanStyle(
-                                                        background = Color(0x66FFC107),
+                                                        background = MaterialTheme.colorScheme.primary.copy(alpha = 0.40f),
                                                         fontWeight = FontWeight.Medium,
                                                     ),
                                                     start,
@@ -615,7 +619,7 @@ fun ReaderScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .height(IntrinsicSize.Min)
-                                                .padding(vertical = 10.dp),
+                                                .padding(vertical = FlowTokens.Space.M),
                                         ) {
                                             LocusRail(
                                                 modifier = Modifier
@@ -688,7 +692,7 @@ fun ReaderScreen(
                                                     },
                                             )
                                         }
-                                        Spacer(Modifier.height(4.dp))
+                                        Spacer(Modifier.height(FlowTokens.Space.XS))
                                     }
                                 }
                             }
@@ -701,7 +705,7 @@ fun ReaderScreen(
                         Modifier
                             .align(Alignment.TopCenter)
                             .fillMaxWidth()
-                            .height(56.dp)
+                            .height(EdgeBandTopHeight)
                             .pointerInput(overlay, selectionActive) {
                                 detectTapGestures(
                                     onTap = {
@@ -717,7 +721,7 @@ fun ReaderScreen(
                         Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
-                            .height(72.dp)
+                            .height(EdgeBandBottomHeight)
                             .pointerInput(overlay, selectionActive) {
                                 detectTapGestures(
                                     onTap = {
@@ -765,7 +769,7 @@ fun ReaderScreen(
                         if (chromeOpen) Spacer(Modifier.height(PinGap))
                         val chipMod = Modifier
                             .fillMaxWidth()
-                            .offset(y = if (chromeOpen) -ReaderPanelFeather else 0.dp)
+                            .offset(y = if (chromeOpen) -ReaderPanelFeather else FlowTokens.Radius.None)
                         if (showPlayingPin) {
                             PlaybackPinCard(
                                 snippet = tts.snippet,
@@ -823,7 +827,7 @@ fun ReaderScreen(
                         error = tts.error,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .offset(y = if (edgeChipBottom && chromeOpen) -ReaderPanelFeather else 0.dp),
+                            .offset(y = if (edgeChipBottom && chromeOpen) -ReaderPanelFeather else FlowTokens.Radius.None),
                         onPlay = { playResumingSavedPosition() },
                         onPause = { vm.tts.pause() },
                         onPrev = { vm.tts.skipPrev() },
@@ -839,6 +843,7 @@ fun ReaderScreen(
             visible = overlay == ReaderOverlay.Settings && filterEditor == null,
             themeMode = themeMode,
             accentHue = accentHue,
+            uiScale = uiScale,
             fontScale = fontScale,
             fontFamily = fontFamily,
             lineSpacing = lineSpacing,
@@ -852,11 +857,15 @@ fun ReaderScreen(
             prefetchCount = tts.prefetchCount,
             doubleTapPlay = tts.doubleTapPlay,
             autoScrollWithTts = tts.autoScrollWithTts,
+            keepAliveUnderlay = tts.keepAliveUnderlay,
+            continuousPcmPlayback = tts.continuousPcmPlayback,
+            sentenceGapMs = tts.sentenceGapMs,
             filtersGlobal = ui.filtersGlobal,
             filtersGroups = ui.filtersGroups,
             filtersLocal = ui.filtersLocal,
             onTheme = onTheme,
             onAccentHue = onAccentHue,
+            onUiScale = onUiScale,
             onFontScale = onFontScale,
             onFontFamily = onFontFamily,
             onLineSpacing = onLineSpacing,
@@ -868,6 +877,9 @@ fun ReaderScreen(
             onPrefetchCount = { vm.tts.setPrefetchCount(it) },
             onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
             onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
+            onKeepAliveUnderlay = { vm.tts.setKeepAliveUnderlay(it) },
+            onContinuousPcmPlayback = { vm.tts.setContinuousPcmPlayback(it) },
+            onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
             onAddFilter = { scope ->
                 filterEditor = FilterEditorSession(
                     scope = scope,
@@ -959,7 +971,10 @@ private fun JumpToSavedChip(
                 "Jump back to saved position",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.padding(
+                    horizontal = FlowTokens.Space.M,
+                    vertical = FlowTokens.Space.S,
+                ),
             )
         }
     }
@@ -981,14 +996,17 @@ private fun PlaybackPinCard(
             )
         },
         matchReaderWidth = true,
-        feather = 0.dp,
+        feather = FlowTokens.Radius.None,
     ) {
         Text(
             snippet,
             style = bodyStyle,
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 3,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(
+                horizontal = FlowTokens.Space.L,
+                vertical = FlowTokens.Space.M,
+            ),
         )
     }
 }
@@ -1322,22 +1340,29 @@ private fun RailSegmentMark(
 private fun rememberImmersiveSystemBars(): () -> Unit {
     val view = LocalView.current
     DisposableEffect(view) {
-        val window = (view.context as Activity).window
-        val controller = WindowCompat.getInsetsController(window, view)
-        val previous = controller.systemBarsBehavior
-        controller.hide(WindowInsetsCompat.Type.systemBars())
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        onDispose {
-            controller.show(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior = previous
+        val activity = view.context as? Activity
+        if (activity != null) {
+            val window = activity.window
+            val controller = WindowCompat.getInsetsController(window, view)
+            val previous = controller.systemBarsBehavior
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            onDispose {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = previous
+            }
+        } else {
+            onDispose { }
         }
     }
     return remember(view) {
         {
-            val window = (view.context as Activity).window
-            WindowCompat.getInsetsController(window, view)
-                .show(WindowInsetsCompat.Type.systemBars())
+            val activity = view.context as? Activity
+            if (activity != null) {
+                WindowCompat.getInsetsController(activity.window, view)
+                    .show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 }

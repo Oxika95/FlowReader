@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.gestures.scrollBy
@@ -41,6 +42,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -113,7 +115,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import android.os.Build
 import com.personal.flowreader.data.AccentHue
 import com.personal.flowreader.data.EpubCover
@@ -132,17 +133,19 @@ import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
+import com.personal.flowreader.data.UiScale
+import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.accentPrimary
 import kotlin.math.roundToInt
 
-internal val ReaderPanelShape = RoundedCornerShape(16.dp)
-internal val ReaderPanelFeather = 20.dp
+internal val ReaderPanelShape = FlowTokens.PanelShape
+internal val ReaderPanelFeather = FlowTokens.Icon.M
 /** Left inset of reading text (locus rail gutter); bars are centered in this width. */
-internal val ReaderContentStartPadding = 16.dp
+internal val ReaderContentStartPadding = FlowTokens.ScreenGutter
 /** End padding on the reading LazyColumn (right gutter). */
-internal val ReaderListEndPadding = 16.dp
+internal val ReaderListEndPadding = FlowTokens.ScreenGutter
 /** Extra end padding on the paragraph text itself. */
-internal val ReaderTextEndPadding = 0.dp
+internal val ReaderTextEndPadding = FlowTokens.Radius.None
 /** Right inset of reading text — panels must land on the same edge as the text column. */
 internal val ReaderContentEndPadding = ReaderListEndPadding + ReaderTextEndPadding
 /** Top/bottom inset for Settings/TOC cards — same scale as the reading-column side gutters. */
@@ -207,9 +210,9 @@ internal fun ReaderPanelSurface(
                 .then(cardInset)
                 .then(if (matchReaderWidth) Modifier.fillMaxWidth() else Modifier.wrapContentWidth())
                 .then(
-                    if (feather > 0.dp) {
+                    if (feather > FlowTokens.Radius.None) {
                         Modifier.drawBehind {
-                            drawReaderPanelFeather(bg, 16.dp, feather)
+                            drawReaderPanelFeather(bg, FlowTokens.PanelRadius, feather)
                         }
                     } else {
                         Modifier
@@ -220,8 +223,8 @@ internal fun ReaderPanelSurface(
                 containerColor = bg,
                 contentColor = onBg,
             ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            border = BorderStroke(1.dp, outline),
+            elevation = CardDefaults.cardElevation(defaultElevation = FlowTokens.Radius.None),
+            border = BorderStroke(FlowTokens.Stroke.Hairline, outline),
         ) {
             content()
         }
@@ -231,7 +234,10 @@ internal fun ReaderPanelSurface(
 @Composable
 internal fun FloatingPanel(
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    contentPadding: PaddingValues = PaddingValues(
+        horizontal = FlowTokens.Space.M,
+        vertical = FlowTokens.Space.M,
+    ),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     ReaderPanelSurface(modifier = modifier, matchReaderWidth = true) {
@@ -270,31 +276,31 @@ internal fun TitleBannerCard(
                     cardBg = cardBg,
                     modifier = Modifier
                         .matchParentSize()
-                        .padding(bottom = 3.dp)
+                        .padding(bottom = FlowTokens.Comp.ProgressBar)
                         // Keep cover clear of back / TOC hit targets.
                         .padding(horizontal = BannerCoverSideInset),
                 )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                        .padding(bottom = 3.dp),
+                        .padding(horizontal = FlowTokens.Space.S, vertical = FlowTokens.Space.S)
+                        .padding(bottom = FlowTokens.Comp.ProgressBar),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(
                         onClick = onBack,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(FlowTokens.Icon.Hero),
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(FlowTokens.Icon.M),
                         )
                     }
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 4.dp),
+                            .padding(horizontal = FlowTokens.Space.XS),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         val textShadow = Shadow(
@@ -322,7 +328,7 @@ internal fun TitleBannerCard(
                     // Match back control width so title stays centered on the card.
                     IconButton(
                         onClick = onToc,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(FlowTokens.Icon.Hero),
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Toc, contentDescription = "Contents")
                     }
@@ -332,8 +338,13 @@ internal fun TitleBannerCard(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)),
+                        .height(FlowTokens.Comp.ProgressBar)
+                        .clip(
+                            RoundedCornerShape(
+                                bottomStart = FlowTokens.Radius.L,
+                                bottomEnd = FlowTokens.Radius.L,
+                            ),
+                        ),
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
                 )
@@ -342,8 +353,8 @@ internal fun TitleBannerCard(
     }
 }
 
-/** Horizontal inset so the cover band ends before the side icon buttons. */
-private val BannerCoverSideInset = 48.dp
+/** Horizontal inset so the cover band ends before the side icon buttons (matches primary control). */
+private val BannerCoverSideInset = FlowTokens.Comp.ButtonPrimary
 
 @Composable
 private fun rememberReaderCover(storedPath: String, maxEdge: Int): androidx.compose.runtime.State<ImageBitmap?> =
@@ -352,7 +363,33 @@ private fun rememberReaderCover(storedPath: String, maxEdge: Int): androidx.comp
             null
         } else {
             withContext(Dispatchers.IO) {
-                EpubCover.loadBitmap(File(storedPath), maxEdge)?.asImageBitmap()
+                // Prefer sidecar cover (plugin books), then EPUB embedded cover.
+                val file = File(storedPath)
+                val sidecar = file.parentFile?.let { dir ->
+                    listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp")
+                        .map { File(dir, it) }
+                        .firstOrNull { it.exists() && it.length() > 0L }
+                }
+                when {
+                    sidecar != null -> {
+                        android.graphics.BitmapFactory.decodeFile(sidecar.absolutePath)
+                            ?.let { bmp ->
+                                val scaled = if (maxOf(bmp.width, bmp.height) > maxEdge) {
+                                    val scale = maxEdge.toFloat() / maxOf(bmp.width, bmp.height)
+                                    android.graphics.Bitmap.createScaledBitmap(
+                                        bmp,
+                                        (bmp.width * scale).toInt().coerceAtLeast(1),
+                                        (bmp.height * scale).toInt().coerceAtLeast(1),
+                                        true,
+                                    ).also { if (it !== bmp) bmp.recycle() }
+                                } else {
+                                    bmp
+                                }
+                                scaled.asImageBitmap()
+                            }
+                    }
+                    else -> EpubCover.loadBitmap(file, maxEdge)?.asImageBitmap()
+                }
             }
         }
     }
@@ -373,7 +410,7 @@ private fun BannerCoverUnderlay(
             alignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxSize()
-                .then(if (blur) Modifier.blur(6.dp) else Modifier),
+                .then(if (blur) Modifier.blur(FlowTokens.CoverBlur) else Modifier),
         )
         // Soft side fades into the card; light center wash for title contrast.
         Box(
@@ -406,7 +443,7 @@ internal fun MediaControlCard(
     onNext: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val playSize = 56.dp
+    val playSize = FlowTokens.Comp.Fab
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
@@ -419,7 +456,10 @@ internal fun MediaControlCard(
             contentAlignment = Alignment.Center,
         ) {
             FloatingPanel(
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                contentPadding = PaddingValues(
+                    horizontal = FlowTokens.Space.S,
+                    vertical = FlowTokens.Radius.None,
+                ),
             ) {
                 Box(Modifier.fillMaxWidth()) {
                     Row(
@@ -448,7 +488,10 @@ internal fun MediaControlCard(
                         it,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(
+                            horizontal = FlowTokens.Space.XS,
+                            vertical = FlowTokens.Space.XS,
+                        ),
                     )
                 }
             }
@@ -463,7 +506,7 @@ internal fun MediaControlCard(
                 Icon(
                     if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (playing) "Pause" else "Play",
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(FlowTokens.Icon.XL),
                 )
             }
         }
@@ -486,9 +529,9 @@ internal fun ReaderModalScaffold(
     fillMaxCardHeight: Boolean = false,
     centerContent: Boolean = false,
     contentScrollable: Boolean = true,
-    /** Soft halo drawn outside the card border; 0.dp keeps the hard-edged card. */
-    feather: Dp = 0.dp,
-    scrimAlpha: Float = 0.42f,
+    /** Soft halo drawn outside the card border; Radius.None keeps the hard-edged card. */
+    feather: Dp = FlowTokens.Radius.None,
+    scrimAlpha: Float = FlowTokens.ScrimStandard,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BackHandler(enabled = visible, onBack = onDismiss)
@@ -600,7 +643,10 @@ internal fun TocOverlay(
 
     ReaderModalScaffold(
         visible = visible,
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(
+            horizontal = FlowTokens.ModalOuterPadding,
+            vertical = FlowTokens.ModalOuterPadding,
+        ),
         onDismiss = onDismiss,
         fillMaxCardHeight = true,
         contentScrollable = false,
@@ -615,7 +661,7 @@ internal fun TocOverlay(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp),
+                    .padding(start = FlowTokens.ModalTitleStart),
             )
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Default.Close, contentDescription = "Close contents")
@@ -646,11 +692,14 @@ internal fun TocOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onChapter(index) }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(
+                            horizontal = FlowTokens.Space.L,
+                            vertical = FlowTokens.Space.L,
+                        ),
                 )
                 if (index < chapters.lastIndex) {
                     HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 12.dp),
+                        modifier = Modifier.padding(horizontal = FlowTokens.Space.M),
                         color = MaterialTheme.colorScheme.outlineVariant,
                     )
                 }
@@ -665,6 +714,7 @@ internal fun SettingsOverlay(
     visible: Boolean,
     themeMode: ThemeMode,
     accentHue: Float,
+    uiScale: Float,
     fontScale: Float,
     fontFamily: ReaderFont,
     lineSpacing: Float,
@@ -678,11 +728,15 @@ internal fun SettingsOverlay(
     prefetchCount: Int,
     doubleTapPlay: Boolean,
     autoScrollWithTts: Boolean,
+    keepAliveUnderlay: Boolean,
+    continuousPcmPlayback: Boolean,
+    sentenceGapMs: Int,
     filtersGlobal: List<FilterRule>,
     filtersGroups: List<FilterRule>,
     filtersLocal: List<FilterRule>,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
+    onUiScale: (Float) -> Unit,
     onFontScale: (Float) -> Unit,
     onFontFamily: (ReaderFont) -> Unit,
     onLineSpacing: (Float) -> Unit,
@@ -694,6 +748,9 @@ internal fun SettingsOverlay(
     onPrefetchCount: (Int) -> Unit,
     onDoubleTapPlay: (Boolean) -> Unit,
     onAutoScrollWithTts: (Boolean) -> Unit,
+    onKeepAliveUnderlay: (Boolean) -> Unit,
+    onContinuousPcmPlayback: (Boolean) -> Unit,
+    onSentenceGapMs: (Int) -> Unit,
     onAddFilter: (FilterScope) -> Unit,
     onEditFilter: (FilterScope, FilterRule) -> Unit,
     onSetFilterEnabled: (FilterScope, String, Boolean) -> Unit,
@@ -703,13 +760,17 @@ internal fun SettingsOverlay(
 
     ReaderModalScaffold(
         visible = visible,
-        contentPadding = PaddingValues(bottom = 8.dp),
+        contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 8.dp, end = 4.dp, top = 4.dp),
+                .padding(
+                    start = FlowTokens.ModalHeaderStart,
+                    end = FlowTokens.ModalHeaderEnd,
+                    top = FlowTokens.ModalHeaderTop,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -718,7 +779,7 @@ internal fun SettingsOverlay(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp),
+                    .padding(start = FlowTokens.ModalTitleStart),
             )
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Default.Close, contentDescription = "Close settings")
@@ -746,19 +807,24 @@ internal fun SettingsOverlay(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
+                .padding(
+                    horizontal = FlowTokens.Pad.CardIn,
+                    vertical = FlowTokens.Pad.CardIn,
+                ),
         ) {
             when (tab) {
                 0 -> {
                     LayoutSettingsTab(
                         themeMode = themeMode,
                         accentHue = accentHue,
+                        uiScale = uiScale,
                         fontScale = fontScale,
                         fontFamily = fontFamily,
                         lineSpacing = lineSpacing,
                         orientation = orientation,
                         onTheme = onTheme,
                         onAccentHue = onAccentHue,
+                        onUiScale = onUiScale,
                         onFontScale = onFontScale,
                         onFontFamily = onFontFamily,
                         onLineSpacing = onLineSpacing,
@@ -779,6 +845,9 @@ internal fun SettingsOverlay(
                         prefetchCount = prefetchCount,
                         doubleTapPlay = doubleTapPlay,
                         autoScrollWithTts = autoScrollWithTts,
+                        keepAliveUnderlay = keepAliveUnderlay,
+                        continuousPcmPlayback = continuousPcmPlayback,
+                        sentenceGapMs = sentenceGapMs,
                         onEngine = onEngine,
                         onVoice = onVoice,
                         onSpeed = onSpeed,
@@ -786,6 +855,9 @@ internal fun SettingsOverlay(
                         onPrefetchCount = onPrefetchCount,
                         onDoubleTapPlay = onDoubleTapPlay,
                         onAutoScrollWithTts = onAutoScrollWithTts,
+                        onKeepAliveUnderlay = onKeepAliveUnderlay,
+                        onContinuousPcmPlayback = onContinuousPcmPlayback,
+                        onSentenceGapMs = onSentenceGapMs,
                     )
                     SettingsLocationNote(
                         "Speed, pitch, and playback options are only available while reading.",
@@ -813,12 +885,17 @@ internal fun SettingsOverlay(
 internal fun AppearanceSettings(
     themeMode: ThemeMode,
     accentHue: Float,
+    uiScale: Float,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
+    onUiScale: (Float) -> Unit,
 ) {
     var accentDragging by remember { mutableStateOf(false) }
     var localAccent by remember { mutableFloatStateOf(accentHue) }
     val shownAccent = if (accentDragging) localAccent else accentHue
+    var scaleDragging by remember { mutableStateOf(false) }
+    var localScale by remember { mutableFloatStateOf(uiScale) }
+    val shownScale = if (scaleDragging) localScale else uiScale
 
     SettingsLabel("Theme")
     ChipRow {
@@ -831,7 +908,7 @@ internal fun AppearanceSettings(
         }
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(FlowTokens.Space.M))
     SettingsLabel("Accent color")
     val chromaColors = remember(themeMode) {
         List(13) { i ->
@@ -841,14 +918,14 @@ internal fun AppearanceSettings(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 4.dp, bottom = 2.dp),
+            .padding(top = FlowTokens.Space.XS, bottom = FlowTokens.Space.Hair),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(22.dp)
+                .height(FlowTokens.Comp.AccentTrack)
                 .align(Alignment.Center)
-                .clip(RoundedCornerShape(11.dp))
+                .clip(CircleShape)
                 .background(Brush.horizontalGradient(chromaColors)),
         )
         Slider(
@@ -873,18 +950,49 @@ internal fun AppearanceSettings(
             ),
         )
     }
+
+    Spacer(Modifier.height(FlowTokens.Space.M))
+    SettingsLabel("UI scale")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Small", style = MaterialTheme.typography.labelSmall)
+        Slider(
+            value = shownScale,
+            onValueChange = {
+                scaleDragging = true
+                localScale = it
+            },
+            onValueChangeFinished = {
+                scaleDragging = false
+                onUiScale(localScale)
+            },
+            valueRange = UiScale.MIN..UiScale.MAX,
+            steps = ((UiScale.MAX - UiScale.MIN) / UiScale.STEP).toInt() - 1,
+            modifier = Modifier.weight(1f).padding(horizontal = FlowTokens.Space.S),
+        )
+        Text(
+            "${(shownScale * 100f).roundToInt()}%",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
+            textAlign = TextAlign.End,
+        )
+    }
 }
 
 @Composable
 private fun LayoutSettingsTab(
     themeMode: ThemeMode,
     accentHue: Float,
+    uiScale: Float,
     fontScale: Float,
     fontFamily: ReaderFont,
     lineSpacing: Float,
     orientation: ReaderOrientation,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
+    onUiScale: (Float) -> Unit,
     onFontScale: (Float) -> Unit,
     onFontFamily: (ReaderFont) -> Unit,
     onLineSpacing: (Float) -> Unit,
@@ -893,11 +1001,13 @@ private fun LayoutSettingsTab(
     AppearanceSettings(
         themeMode = themeMode,
         accentHue = accentHue,
+        uiScale = uiScale,
         onTheme = onTheme,
         onAccentHue = onAccentHue,
+        onUiScale = onUiScale,
     )
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(FlowTokens.Space.M))
     SettingsLabel("Font")
     ChipRow {
         ReaderFont.entries.forEach { font ->
@@ -909,7 +1019,7 @@ private fun LayoutSettingsTab(
         }
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(FlowTokens.Space.M))
     SettingsLabel("Font size")
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -920,12 +1030,12 @@ private fun LayoutSettingsTab(
             value = fontScale,
             onValueChange = onFontScale,
             valueRange = 0.85f..1.75f,
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+            modifier = Modifier.weight(1f).padding(horizontal = FlowTokens.Space.S),
         )
-        Text("Aa", fontSize = 22.sp, fontWeight = FontWeight.Medium)
+        Text("Aa", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium)
     }
 
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(FlowTokens.Space.S))
     SettingsLabel("Spacing")
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -936,12 +1046,12 @@ private fun LayoutSettingsTab(
             value = lineSpacing,
             onValueChange = onLineSpacing,
             valueRange = 0.85f..1.8f,
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+            modifier = Modifier.weight(1f).padding(horizontal = FlowTokens.Space.S),
         )
         Text("Loose", style = MaterialTheme.typography.labelSmall)
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(FlowTokens.Space.M))
     SettingsLabel("Orientation")
     ChipRow {
         ReaderOrientation.entries.forEach { mode ->
@@ -966,6 +1076,9 @@ internal fun AudioSettingsTab(
     prefetchCount: Int = 1,
     doubleTapPlay: Boolean = false,
     autoScrollWithTts: Boolean = false,
+    keepAliveUnderlay: Boolean = false,
+    continuousPcmPlayback: Boolean = false,
+    sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     onEngine: (String) -> Unit,
     onVoice: (String) -> Unit,
     onSpeed: (Float) -> Unit = {},
@@ -973,6 +1086,9 @@ internal fun AudioSettingsTab(
     onPrefetchCount: (Int) -> Unit = {},
     onDoubleTapPlay: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
+    onKeepAliveUnderlay: (Boolean) -> Unit = {},
+    onContinuousPcmPlayback: (Boolean) -> Unit = {},
+    onSentenceGapMs: (Int) -> Unit = {},
     compact: Boolean = false,
 ) {
     var engineOpen by remember { mutableStateOf(false) }
@@ -980,12 +1096,19 @@ internal fun AudioSettingsTab(
     var speedDragging by remember { mutableStateOf(false) }
     var pitchDragging by remember { mutableStateOf(false) }
     var prefetchDragging by remember { mutableStateOf(false) }
+    var gapDragging by remember { mutableStateOf(false) }
     var localSpeed by remember { mutableFloatStateOf(speed) }
     var localPitch by remember { mutableFloatStateOf(pitch) }
     var localPrefetch by remember { mutableFloatStateOf(prefetchCount.toFloat()) }
+    var localGap by remember { mutableFloatStateOf(sentenceGapMs.toFloat()) }
     val shownSpeed = if (speedDragging) localSpeed else speed
     val shownPitch = if (pitchDragging) localPitch else pitch
     val shownPrefetch = if (prefetchDragging) localPrefetch.roundToInt() else prefetchCount
+    val shownGap = if (gapDragging) {
+        TtsPrefs.coerceSentenceGapMs(localGap.roundToInt())
+    } else {
+        sentenceGapMs
+    }
 
     val engineLabel = engines.firstOrNull { it.key == engineKey }?.label ?: engineKey
     val voiceLabel = voices.firstOrNull { it.id == voiceId }?.label
@@ -1003,7 +1126,7 @@ internal fun AudioSettingsTab(
             readOnly = true,
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(engineOpen) },
-            shape = RoundedCornerShape(16.dp),
+            shape = FlowTokens.PanelShape,
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable),
@@ -1024,7 +1147,7 @@ internal fun AudioSettingsTab(
         }
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(FlowTokens.Space.M))
     SettingsLabel("Voice")
     ExposedDropdownMenuBox(
         expanded = voiceOpen,
@@ -1036,7 +1159,7 @@ internal fun AudioSettingsTab(
             readOnly = true,
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(voiceOpen) },
-            shape = RoundedCornerShape(16.dp),
+            shape = FlowTokens.PanelShape,
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable),
@@ -1058,7 +1181,7 @@ internal fun AudioSettingsTab(
     }
 
     if (!compact) {
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(FlowTokens.Space.M))
         SettingsLabel("Speed")
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1080,11 +1203,12 @@ internal fun AudioSettingsTab(
         Text(
             "${"%.2f".format(shownSpeed).trimEnd('0').trimEnd('.')}×",
             style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.width(48.dp),
+            modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
+            textAlign = TextAlign.End,
         )
     }
 
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(FlowTokens.Space.S))
     SettingsLabel("Pitch")
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1106,11 +1230,12 @@ internal fun AudioSettingsTab(
         Text(
             "${"%.2f".format(shownPitch).trimEnd('0').trimEnd('.')}",
             style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.width(48.dp),
+            modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
+            textAlign = TextAlign.End,
         )
     }
 
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(FlowTokens.Space.S))
     SettingsLabel("Pre-cache sentences")
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1133,23 +1258,67 @@ internal fun AudioSettingsTab(
         Text(
             "$shownPrefetch",
             style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.width(48.dp),
+            modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
+            textAlign = TextAlign.End,
         )
     }
 
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(FlowTokens.Space.S))
+    SettingsLabel("Pause between sentences")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Slider(
+            value = if (gapDragging) localGap else sentenceGapMs.toFloat(),
+            onValueChange = {
+                gapDragging = true
+                localGap = it
+            },
+            onValueChangeFinished = {
+                onSentenceGapMs(TtsPrefs.coerceSentenceGapMs(localGap.roundToInt()))
+                gapDragging = false
+            },
+            valueRange = TtsPrefs.MIN_SENTENCE_GAP_MS.toFloat()..TtsPrefs.MAX_SENTENCE_GAP_MS.toFloat(),
+            steps = (TtsPrefs.MAX_SENTENCE_GAP_MS - TtsPrefs.MIN_SENTENCE_GAP_MS) /
+                TtsPrefs.SENTENCE_GAP_STEP_MS - 1,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            "${shownGap} ms",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
+            textAlign = TextAlign.End,
+        )
+    }
+
+    Spacer(Modifier.height(FlowTokens.Space.L))
     AudioToggleRow(
         title = "Auto-scroll with playback",
         subtitle = "Keep the spoken text centered until you scroll away",
         checked = autoScrollWithTts,
         onCheckedChange = onAutoScrollWithTts,
     )
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(FlowTokens.Space.S))
         AudioToggleRow(
             title = "Double-tap starts playback",
             subtitle = "Unavailable on body text while selection is on — use play controls",
             checked = doubleTapPlay,
             onCheckedChange = onDoubleTapPlay,
+        )
+    Spacer(Modifier.height(FlowTokens.Space.S))
+        AudioToggleRow(
+            title = "Keep audio alive",
+            subtitle = "Quiet underlay while playing (helps some car systems)",
+            checked = keepAliveUnderlay,
+            onCheckedChange = onKeepAliveUnderlay,
+        )
+    Spacer(Modifier.height(FlowTokens.Space.S))
+        AudioToggleRow(
+            title = "Continuous PCM playback",
+            subtitle = "Single audio stream from sentence clips (Edge)",
+            checked = continuousPcmPlayback,
+            onCheckedChange = onContinuousPcmPlayback,
         )
     }
 }
@@ -1184,7 +1353,7 @@ internal fun FiltersSettingsTab(
         }
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(FlowTokens.Space.M))
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -1196,8 +1365,8 @@ internal fun FiltersSettingsTab(
             modifier = Modifier.weight(1f),
         )
         TextButton(onClick = { onAdd(scope) }) {
-            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(FlowTokens.Icon.M))
+            Spacer(Modifier.width(FlowTokens.Space.XS))
             Text("Add")
         }
     }
@@ -1207,7 +1376,7 @@ internal fun FiltersSettingsTab(
             "No filters yet. Add a rule to replace text in the reader and TTS.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier.padding(vertical = FlowTokens.Space.S),
         )
     } else {
         rules.sortedBy { it.order }.forEach { rule ->
@@ -1225,7 +1394,7 @@ internal fun FiltersSettingsTab(
         "Enabled $enabledCount of ${rules.size}",
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 12.dp),
+        modifier = Modifier.padding(top = FlowTokens.Space.M),
     )
 }
 
@@ -1241,10 +1410,10 @@ private fun FilterRuleRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
+            .padding(vertical = FlowTokens.Space.M),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+        Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.S)) {
             Text(
                 title,
                 style = MaterialTheme.typography.bodyLarge,
@@ -1317,13 +1486,17 @@ internal fun FilterRuleEditorOverlay(
 
     ReaderModalScaffold(
         visible = visible,
-        contentPadding = PaddingValues(bottom = 8.dp),
+        contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 8.dp, end = 4.dp, top = 4.dp),
+                .padding(
+                    start = FlowTokens.ModalHeaderStart,
+                    end = FlowTokens.ModalHeaderEnd,
+                    top = FlowTokens.ModalHeaderTop,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -1332,7 +1505,7 @@ internal fun FilterRuleEditorOverlay(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp),
+                    .padding(start = FlowTokens.ModalTitleStart),
             )
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Default.Close, contentDescription = "Close")
@@ -1342,18 +1515,21 @@ internal fun FilterRuleEditorOverlay(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(
+                    horizontal = FlowTokens.Pad.CardIn,
+                    vertical = FlowTokens.Space.S,
+                ),
         ) {
             SettingsLabel("Title (optional)")
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = FlowTokens.PanelShape,
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(FlowTokens.Space.M))
             SettingsLabel("Type")
             ExposedDropdownMenuBox(
                 expanded = typeOpen,
@@ -1365,7 +1541,7 @@ internal fun FilterRuleEditorOverlay(
                     readOnly = true,
                     singleLine = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeOpen) },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = FlowTokens.PanelShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .menuAnchor(MenuAnchorType.PrimaryNotEditable),
@@ -1386,14 +1562,14 @@ internal fun FilterRuleEditorOverlay(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(FlowTokens.Space.S))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = FlowTokens.Space.XS),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
                     Text("Whole words only", style = MaterialTheme.typography.bodyLarge)
                     Text(
                         if (regexMode) "Not used for RegEx" else "Match complete words",
@@ -1408,14 +1584,14 @@ internal fun FilterRuleEditorOverlay(
                 )
             }
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(FlowTokens.Space.XS))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = FlowTokens.Space.XS),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
                     Text("TTS only", style = MaterialTheme.typography.bodyLarge)
                     Text(
                         "Apply when speaking, not on screen",
@@ -1429,7 +1605,7 @@ internal fun FilterRuleEditorOverlay(
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(FlowTokens.Space.S))
             SettingsLabel("Find")
             OutlinedTextField(
                 value = pattern,
@@ -1437,11 +1613,11 @@ internal fun FilterRuleEditorOverlay(
                 singleLine = true,
                 isError = patternError != null,
                 supportingText = patternError?.let { { Text(it) } },
-                shape = RoundedCornerShape(16.dp),
+                shape = FlowTokens.PanelShape,
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(FlowTokens.Space.S))
             SettingsLabel("Replace with")
             OutlinedTextField(
                 value = replacement,
@@ -1456,11 +1632,11 @@ internal fun FilterRuleEditorOverlay(
                         Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak replacement")
                     }
                 },
-                shape = RoundedCornerShape(16.dp),
+                shape = FlowTokens.PanelShape,
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(FlowTokens.Space.L))
             SettingsLabel("Preview")
             ChipRow {
                 FilterPreviewMode.entries.forEach { mode ->
@@ -1471,22 +1647,22 @@ internal fun FilterRuleEditorOverlay(
                     )
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(FlowTokens.Space.S))
             FilterSampleField(
                 annotated = sampleAnnotated,
                 plain = preview.text,
                 onSpeak = onSpeak,
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(FlowTokens.Space.L))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (onDelete != null) {
                     TextButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(FlowTokens.Icon.M))
+                        Spacer(Modifier.width(FlowTokens.Space.XS))
                         Text("Delete")
                     }
                 }
@@ -1511,7 +1687,7 @@ private fun FilterSampleField(
     onSpeak: (String) -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(16.dp)
+    val shape = FlowTokens.PanelShape
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextFieldDefaults.DecorationBox(
             value = plain.ifEmpty { " " },
@@ -1540,10 +1716,10 @@ private fun FilterSampleField(
             },
             colors = OutlinedTextFieldDefaults.colors(),
             contentPadding = OutlinedTextFieldDefaults.contentPadding(
-                start = 16.dp,
-                end = 16.dp,
-                top = 16.dp,
-                bottom = 16.dp,
+                start = FlowTokens.Space.L,
+                end = FlowTokens.Space.L,
+                top = FlowTokens.Space.L,
+                bottom = FlowTokens.Space.L,
             ),
             container = {
                 OutlinedTextFieldDefaults.Container(
@@ -1568,10 +1744,10 @@ private fun AudioToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 4.dp),
+            .padding(vertical = FlowTokens.Space.XS),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+        Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
             Text(text = title, style = MaterialTheme.typography.bodyLarge)
             Text(
                 text = subtitle,
@@ -1585,7 +1761,7 @@ private fun AudioToggleRow(
 
 @Composable
 internal fun SettingsLocationNote(text: String) {
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(FlowTokens.Space.L))
     Text(
         "* $text",
         style = MaterialTheme.typography.bodySmall,
@@ -1599,14 +1775,14 @@ internal fun SettingsLabel(text: String) {
         text,
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = 6.dp),
+        modifier = Modifier.padding(bottom = FlowTokens.Space.S),
     )
 }
 
 @Composable
 internal fun ChipRow(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
         content = content,
     )
 }

@@ -87,22 +87,15 @@ import com.personal.flowreader.ui.reader.AppearanceSettings
 import com.personal.flowreader.ui.reader.AudioSettingsTab
 import com.personal.flowreader.ui.reader.FilterRuleEditorOverlay
 import com.personal.flowreader.ui.reader.FiltersSettingsTab
+import com.personal.flowreader.ui.common.FlowTabMetrics
+import com.personal.flowreader.ui.common.FlowTabSlotHeader
 import com.personal.flowreader.ui.reader.ReaderModalScaffold
 import com.personal.flowreader.ui.reader.SettingsLocationNote
+import com.personal.flowreader.ui.settings.FilterEditorSession
+import com.personal.flowreader.ui.theme.FlowTokens
 
 private const val LibraryFilterPreviewSample =
     "The quick brown fox jumps over the lazy dog. Names like Alice and Bob can be replaced."
-
-private val LibraryTabMinGap = 16.dp
-private val LibraryTabInnerPad = 8.dp
-private val LibraryTabBarHeight = 48.dp
-private val LibraryTabIndicatorHeight = 3.dp
-
-private data class FilterEditorSession(
-    val scope: FilterScope,
-    val rule: FilterRule,
-    val isNew: Boolean,
-)
 
 private val BookMimeTypes = arrayOf("application/epub+zip", "text/plain", "*/*")
 
@@ -124,8 +117,10 @@ fun LibraryScreen(
     vm: LibraryViewModel,
     themeMode: ThemeMode,
     accentHue: Float,
+    uiScale: Float,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
+    onUiScale: (Float) -> Unit,
     onOpenBook: (String) -> Unit,
     onOpenQue: (bookId: String, queId: String) -> Unit,
 ) {
@@ -159,7 +154,7 @@ fun LibraryScreen(
     }
 
     // Top clears the status bar; sides use M3 compact screen margin (16dp).
-    val libraryGutter = 16.dp
+    val libraryGutter = FlowTokens.ScreenGutter
     val context = LocalContext.current
 
     Box(
@@ -211,15 +206,21 @@ fun LibraryScreen(
                             viewMode = ui.viewMode,
                         )
                     } else {
-                        LibraryBooksPane(
-                            books = ui.books,
-                            viewMode = ui.viewMode,
-                            busy = ui.busy,
-                            inset = libraryGutter,
-                            emptyMessage = "No books yet.\nTap + to add an EPUB or TXT.",
-                            onOpen = onOpenBook,
-                            modifier = Modifier.weight(1f),
-                        )
+                        // Plugin tab selected but plugin missing — clear selection rather than
+                        // silently rendering the Files list under the wrong tab.
+                        LaunchedEffect(tab) {
+                            vm.setTab(LibraryTabId.Files)
+                        }
+                        Box(
+                            Modifier.weight(1f).fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "Plugin unavailable",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -235,9 +236,13 @@ fun LibraryScreen(
                     .align(Alignment.BottomEnd)
                     .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
                     .padding(end = libraryGutter, bottom = libraryGutter)
-                    .size(56.dp),
+                    .size(FlowTokens.Comp.Fab),
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Add file", modifier = Modifier.size(28.dp))
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Add file",
+                    modifier = Modifier.size(FlowTokens.Comp.FabIcon),
+                )
             }
         }
 
@@ -260,12 +265,12 @@ fun LibraryScreen(
                     .align(Alignment.BottomEnd)
                     .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
                     .padding(end = libraryGutter, bottom = libraryGutter)
-                    .size(56.dp),
+                    .size(FlowTokens.Comp.Fab),
             ) {
                 Icon(
                     Icons.Filled.ContentPaste,
                     contentDescription = "Add from clipboard",
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(FlowTokens.Comp.FabIcon),
                 )
             }
         }
@@ -275,7 +280,7 @@ fun LibraryScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
-                .padding(bottom = libraryGutter + 64.dp),
+                .padding(bottom = libraryGutter + FlowTokens.Comp.SnackbarFabLift),
         )
 
         if (ui.busy) {
@@ -336,6 +341,7 @@ fun LibraryScreen(
             visible = settingsOpen && filterEditor == null,
             themeMode = themeMode,
             accentHue = accentHue,
+            uiScale = uiScale,
             engineKey = tts.engineKey,
             voiceId = tts.voiceId,
             engines = tts.engines,
@@ -344,6 +350,7 @@ fun LibraryScreen(
             filtersGroups = ui.filtersGroups,
             onTheme = onTheme,
             onAccentHue = onAccentHue,
+            onUiScale = onUiScale,
             onEngine = { vm.tts.setEngine(it) },
             onVoice = { vm.tts.setVoice(it) },
             onAddFilter = { scope ->
@@ -474,7 +481,7 @@ private fun LibraryTabBar(
     val measurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val innerPadPx = with(density) { LibraryTabInnerPad.roundToPx() }
+        val innerPadPx = with(density) { FlowTabMetrics.InnerPad.roundToPx() }
         val minWidths = IntArray(tabs.size + 1) { i ->
             if (i < tabs.size) {
                 measurer.measure(
@@ -490,12 +497,12 @@ private fun LibraryTabBar(
         val layout = LibraryTabSlots.layout(
             availablePx = constraints.maxWidth,
             insetPx = with(density) { inset.roundToPx() },
-            gapPx = with(density) { LibraryTabMinGap.roundToPx() },
+            gapPx = with(density) { FlowTabMetrics.MinGap.roundToPx() },
             minWidthsPx = minWidths,
         )
         Row(
             modifier = Modifier
-                .height(LibraryTabBarHeight)
+                .height(FlowTabMetrics.BarHeight)
                 .padding(horizontal = inset)
                 .then(
                     if (layout.overflow) {
@@ -504,18 +511,20 @@ private fun LibraryTabBar(
                         Modifier.fillMaxWidth()
                     },
                 ),
-            horizontalArrangement = Arrangement.spacedBy(LibraryTabMinGap),
+            horizontalArrangement = Arrangement.spacedBy(FlowTabMetrics.MinGap),
             verticalAlignment = Alignment.Bottom,
         ) {
             tabs.forEachIndexed { index, (id, label) ->
                 val selectedTab = !addSelected && selected == id
-                LibraryTabHeader(
+                FlowTabSlotHeader(
                     selected = selectedTab,
                     onClick = { onTab(id) },
                     indicator = indicator,
                     modifier = Modifier
                         .width(with(density) { layout.slotWidthsPx[index].toDp() })
                         .fillMaxHeight(),
+                    innerPad = FlowTabMetrics.InnerPad,
+                    indicatorHeight = FlowTabMetrics.IndicatorHeight,
                 ) {
                         Text(
                             label,
@@ -532,13 +541,15 @@ private fun LibraryTabBar(
                         )
                 }
             }
-            LibraryTabHeader(
+            FlowTabSlotHeader(
                 selected = addSelected,
                 onClick = onAddTab,
                 indicator = indicator,
                 modifier = Modifier
                     .width(with(density) { layout.slotWidthsPx.last().toDp() })
                     .fillMaxHeight(),
+                innerPad = FlowTabMetrics.InnerPad,
+                indicatorHeight = FlowTabMetrics.IndicatorHeight,
             ) {
                 Icon(
                     Icons.Filled.Add,
@@ -560,36 +571,6 @@ private fun LibraryTabBar(
 }
 
 @Composable
-private fun LibraryTabHeader(
-    selected: Boolean,
-    onClick: () -> Unit,
-    indicator: Color,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Column(
-        modifier = modifier.clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = LibraryTabInnerPad),
-            contentAlignment = Alignment.Center,
-        ) {
-            content()
-        }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(LibraryTabIndicatorHeight)
-                .background(if (selected) indicator else Color.Transparent),
-        )
-    }
-}
-
-@Composable
 private fun AddTabOverlay(
     visible: Boolean,
     plugins: List<LibrarySourcePlugin>,
@@ -599,13 +580,21 @@ private fun AddTabOverlay(
 ) {
     ReaderModalScaffold(
         visible = visible,
-        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
+        contentPadding = PaddingValues(
+            start = FlowTokens.ModalOuterPadding,
+            end = FlowTokens.ModalOuterPadding,
+            bottom = FlowTokens.ModalOuterPadding,
+        ),
         onDismiss = onDismiss,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 8.dp, end = 4.dp, top = 4.dp),
+                .padding(
+                    start = FlowTokens.ModalHeaderStart,
+                    end = FlowTokens.ModalHeaderEnd,
+                    top = FlowTokens.ModalHeaderTop,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -614,15 +603,18 @@ private fun AddTabOverlay(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp),
+                    .padding(start = FlowTokens.ModalTitleStart),
             )
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Filled.Close, contentDescription = "Close")
             }
         }
         Column(
-            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.padding(
+                horizontal = FlowTokens.ModalBodyPadding,
+                vertical = FlowTokens.Space.S,
+            ),
+            verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
         ) {
             Text(
                 "Plugins",
@@ -640,7 +632,7 @@ private fun AddTabOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onSetEnabled(plugin.id, !on) }
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = FlowTokens.Space.S),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -668,6 +660,7 @@ private fun LibrarySettingsOverlay(
     visible: Boolean,
     themeMode: ThemeMode,
     accentHue: Float,
+    uiScale: Float,
     engineKey: String,
     voiceId: String,
     engines: List<TtsEngineOption>,
@@ -676,6 +669,7 @@ private fun LibrarySettingsOverlay(
     filtersGroups: List<FilterRule>,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
+    onUiScale: (Float) -> Unit,
     onEngine: (String) -> Unit,
     onVoice: (String) -> Unit,
     onAddFilter: (FilterScope) -> Unit,
@@ -686,13 +680,17 @@ private fun LibrarySettingsOverlay(
     var tab by remember { mutableIntStateOf(0) }
     ReaderModalScaffold(
         visible = visible,
-        contentPadding = PaddingValues(bottom = 8.dp),
+        contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 8.dp, end = 4.dp, top = 4.dp),
+                .padding(
+                    start = FlowTokens.ModalHeaderStart,
+                    end = FlowTokens.ModalHeaderEnd,
+                    top = FlowTokens.ModalHeaderTop,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -701,7 +699,7 @@ private fun LibrarySettingsOverlay(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp),
+                    .padding(start = FlowTokens.ModalTitleStart),
             )
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Filled.Close, contentDescription = "Close settings")
@@ -715,15 +713,17 @@ private fun LibrarySettingsOverlay(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
+                .padding(horizontal = FlowTokens.Space.M, vertical = FlowTokens.Space.M),
         ) {
             when (tab) {
                 0 -> {
                     AppearanceSettings(
                         themeMode = themeMode,
                         accentHue = accentHue,
+                        uiScale = uiScale,
                         onTheme = onTheme,
                         onAccentHue = onAccentHue,
+                        onUiScale = onUiScale,
                     )
                     SettingsLocationNote(
                         "Font, spacing, and orientation are in the reader.",
@@ -771,13 +771,21 @@ private fun AddBookOverlay(
 ) {
     ReaderModalScaffold(
         visible = visible,
-        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
+        contentPadding = PaddingValues(
+            start = FlowTokens.ModalOuterPadding,
+            end = FlowTokens.ModalOuterPadding,
+            bottom = FlowTokens.ModalOuterPadding,
+        ),
         onDismiss = onDismiss,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 8.dp, end = 4.dp, top = 4.dp),
+                .padding(
+                    start = FlowTokens.ModalHeaderStart,
+                    end = FlowTokens.ModalHeaderEnd,
+                    top = FlowTokens.ModalHeaderTop,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -786,15 +794,18 @@ private fun AddBookOverlay(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp),
+                    .padding(start = FlowTokens.ModalTitleStart),
             )
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Filled.Close, contentDescription = "Close")
             }
         }
         Column(
-            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.padding(
+                horizontal = FlowTokens.ModalBodyPadding,
+                vertical = FlowTokens.Space.S,
+            ),
+            verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.M),
         ) {
             Text(FileAccessAdvice.forSdk(), style = MaterialTheme.typography.bodyMedium)
             Text(
@@ -830,7 +841,12 @@ private fun QueTab(
 ) {
     Box(modifier.fillMaxSize()) {
         if (entries.isEmpty() && !busy) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = inset),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
                     "Queue is empty.\nPaste from the clipboard or share text to Flow-Queue.",
                     style = MaterialTheme.typography.bodyLarge,
@@ -843,7 +859,7 @@ private fun QueTab(
                     start = inset,
                     top = inset,
                     end = inset,
-                    bottom = inset,
+                    bottom = inset + FlowTokens.FabClearance,
                 ),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -874,7 +890,12 @@ private fun QueLineItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen)
-            .padding(start = 4.dp, top = 12.dp, bottom = 12.dp, end = 0.dp),
+            .padding(
+                start = FlowTokens.Space.XS,
+                top = FlowTokens.Pad.RowV,
+                bottom = FlowTokens.Pad.RowV,
+                end = FlowTokens.Radius.None,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -890,13 +911,13 @@ private fun QueLineItem(
                 "Done",
                 style = MaterialTheme.typography.labelMedium,
                 color = muted,
-                modifier = Modifier.padding(end = 4.dp),
+                modifier = Modifier.padding(end = FlowTokens.Space.XS),
             )
         }
         IconButton(onClick = onRemove) {
             Icon(
                 Icons.Filled.Delete,
-                contentDescription = "Remove from Que",
+                contentDescription = "Remove from Queue",
                 tint = muted,
             )
         }

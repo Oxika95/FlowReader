@@ -166,7 +166,26 @@ class RoyalRoadRepository(
                 coverUrl = page.coverUrl,
             ),
         )
+        // Evict chapter bodies whose URL at this index changed (inserts/reorders).
+        reconcileChapterCache(dir, existing?.toc.orEmpty(), page.chapters)
         return session
+    }
+
+    private fun reconcileChapterCache(
+        dir: File,
+        oldToc: List<ChapterLink>,
+        newToc: List<ChapterLink>,
+    ) {
+        val oldUrls = oldToc.map { it.url }
+        for (i in newToc.indices) {
+            val oldUrl = oldUrls.getOrNull(i)
+            if (oldUrl != null && oldUrl != newToc[i].url) {
+                RoyalRoadSessionStore.deleteChapter(dir, i)
+            }
+        }
+        for (i in newToc.size until oldUrls.size) {
+            RoyalRoadSessionStore.deleteChapter(dir, i)
+        }
     }
 
     fun libraryMeta(bookId: String): RoyalRoadLibraryMeta? {
@@ -384,65 +403,67 @@ class RoyalRoadRepository(
             throw IllegalArgumentException("Sign in to update Royal Road lists")
         }
         val form = RoyalRoadHtml.bookmarkForm(html, fictionUrl, kind.bookmarkType)
-            ?: return true // Already bookmarked or button absent
-        acquireRateLimit()
-        val body = FormBody.Builder()
-            .add("type", form.type)
-            .add("__RequestVerificationToken", form.token)
-            .build()
-        val request = browserRequest(form.actionUrl, referer = fictionUrl)
-            .post(body)
-            .build()
-        val code = withContext(Dispatchers.IO) {
-            http.newCall(request).execute().use { response ->
-                response.body?.close()
-                response.code
+            ?: return false // Already bookmarked / form absent — do not claim success
+        return withRateLimit {
+            val body = FormBody.Builder()
+                .add("type", form.type)
+                .add("__RequestVerificationToken", form.token)
+                .build()
+            val request = browserRequest(form.actionUrl, referer = fictionUrl)
+                .post(body)
+                .build()
+            val code = withContext(Dispatchers.IO) {
+                http.newCall(request).execute().use { response ->
+                    response.body?.string()
+                    response.code
+                }
             }
+            lastPageUrl = fictionUrl
+            if (code !in 200..399) {
+                throw IllegalArgumentException("Could not update Royal Road list (HTTP $code)")
+            }
+            true
         }
-        lastFetchAt = System.currentTimeMillis()
-        lastPageUrl = fictionUrl
-        if (code !in 200..399) {
-            throw IllegalArgumentException("Could not update Royal Road list (HTTP $code)")
-        }
-        return true
     }
 
     suspend fun followOnSite(fictionUrl: String): Boolean =
         setBookmarkOnSite(fictionUrl, RoyalRoadListKind.Follow)
 
     override suspend fun login(username: String, password: String) {
+        secrets.requireAvailable()
         val loginUrl = RoyalRoadHtml.loginUrl()
-        val html = get(loginUrl, referer = RoyalRoadHtml.ORIGIN, allowRelogin = false)
+        val html = get(loginUrl, referer = RoyalRoadHtml.ORIGIN, allowAuthCheck = false)
         val token = RoyalRoadHtml.loginToken(html)
             ?: throw IllegalArgumentException("Could not read Royal Road login form")
-        acquireRateLimit()
-        val body = FormBody.Builder()
-            .add("Email", username.trim())
-            .add("Password", password)
-            .add("Remember", "true")
-            .add("ReturnUrl", "/")
-            .add("__RequestVerificationToken", token)
-            .build()
-        val request = browserRequest(loginUrl, referer = loginUrl)
-            .post(body)
-            .build()
-        val result = withContext(Dispatchers.IO) {
-            http.newCall(request).execute().use { response ->
-                val text = response.body?.string().orEmpty()
-                val location = response.request.url.toString()
-                Triple(response.code, location, text)
+        val page = withRateLimit {
+            val body = FormBody.Builder()
+                .add("Email", username.trim())
+                .add("Password", password)
+                .add("Remember", "true")
+                .add("ReturnUrl", "/")
+                .add("__RequestVerificationToken", token)
+                .build()
+            val request = browserRequest(loginUrl, referer = loginUrl)
+                .post(body)
+                .build()
+            withContext(Dispatchers.IO) {
+                http.newCall(request).execute().use { response ->
+                    val text = response.body?.string().orEmpty()
+                    val location = response.request.url.toString()
+                    lastPageUrl = location
+                    Triple(response.code, location, text)
+                }
             }
         }
-        lastFetchAt = System.currentTimeMillis()
-        lastPageUrl = result.second
-        val page = result.third
-        val location = result.second
+        val location = page.second
+        val body = page.third
         val ok = !location.contains("/account/login", ignoreCase = true) ||
-            RoyalRoadHtml.isLoggedIn(page)
-        if (!ok || RoyalRoadHtml.looksLikeLoginPage(page)) {
+            RoyalRoadHtml.isLoggedIn(body)
+        if (!ok || RoyalRoadHtml.looksLikeLoginPage(body)) {
             throw IllegalArgumentException("Sign in failed. Check email and password.")
         }
-        secrets.saveCredentials(username.trim(), password)
+        // Cookies only — never persist the password.
+        secrets.saveEmail(username.trim())
         secrets.setLoggedIn(true)
     }
 
@@ -450,7 +471,7 @@ class RoyalRoadRepository(
         jar.clear()
         secrets.clearAll()
         runCatching {
-            get("${RoyalRoadHtml.ORIGIN}/account/logout", referer = lastPageUrl, allowRelogin = false)
+            get("${RoyalRoadHtml.ORIGIN}/account/logout", referer = lastPageUrl, allowAuthCheck = false)
         }
     }
 
@@ -502,8 +523,12 @@ class RoyalRoadRepository(
             val detail = loadWork(session.fictionUrl)
             session = session.copy(toc = detail.chapters.map { ChapterLink(it.title, it.url) })
         }
-        val target = session.loadedThrough.coerceAtLeast(session.startIndex)
-        return loadThrough(session, target)
+        // Only hydrate the current reading chapter into memory — never 0..loadedThrough.
+        val target = session.startIndex.coerceIn(0, (session.toc.size - 1).coerceAtLeast(0))
+        session = session.copy(chapters = emptyList(), loadedThrough = target - 1)
+        val loaded = loadThrough(session, target)
+        runCatching { maintainChapterCache(loaded.bookId, target) }
+        return loaded
     }
 
     /**
@@ -572,37 +597,33 @@ class RoyalRoadRepository(
     private suspend fun get(
         url: String,
         referer: String,
-        allowRelogin: Boolean = true,
+        allowAuthCheck: Boolean = true,
     ): String {
-        acquireRateLimit()
-        val html = executeGet(url, referer)
+        val html = withRateLimit { executeGet(url, referer) }
         lastPageUrl = url
-        if (allowRelogin &&
+        if (allowAuthCheck &&
             !url.contains("/account/login", ignoreCase = true) &&
-            RoyalRoadHtml.looksLikeLoginPage(html) &&
-            secrets.hasCredentials()
+            RoyalRoadHtml.looksLikeLoginPage(html)
         ) {
-            login(secrets.email(), secrets.password())
-            acquireRateLimit()
-            val again = executeGet(url, referer)
-            lastPageUrl = url
-            return again
+            secrets.setLoggedIn(false)
+            throw RoyalRoadAuthExpired()
         }
         return html
     }
 
     private suspend fun getBytes(url: String, referer: String): ByteArray? {
-        acquireRateLimit()
-        val request = browserRequest(url, referer)
-            .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-            .get()
-            .build()
-        return withContext(Dispatchers.IO) {
-            http.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                response.body?.bytes()
+        return withRateLimit {
+            val request = browserRequest(url, referer)
+                .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+                .get()
+                .build()
+            withContext(Dispatchers.IO) {
+                http.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    response.body?.bytes()
+                }
             }
-        }.also { lastFetchAt = System.currentTimeMillis() }
+        }
     }
 
     private suspend fun executeGet(url: String, referer: String): String {
@@ -614,7 +635,7 @@ class RoyalRoadRepository(
                 }
                 response.body?.string().orEmpty()
             }
-        }.also { lastFetchAt = System.currentTimeMillis() }
+        }
     }
 
     private fun browserRequest(url: String, referer: String): Request.Builder =
@@ -629,10 +650,13 @@ class RoyalRoadRepository(
             .header("Upgrade-Insecure-Requests", "1")
             .header("Referer", referer.ifBlank { RoyalRoadHtml.ORIGIN })
 
-    private suspend fun acquireRateLimit() {
-        rate.withLock {
-            val wait = lastFetchAt + minIntervalMs - System.currentTimeMillis()
-            if (wait > 0) delay(wait)
+    /** Hold the mutex across the whole request so concurrent callers cannot burst. */
+    private suspend fun <T> withRateLimit(block: suspend () -> T): T = rate.withLock {
+        val wait = lastFetchAt + minIntervalMs - System.currentTimeMillis()
+        if (wait > 0) delay(wait)
+        try {
+            block()
+        } finally {
             lastFetchAt = System.currentTimeMillis()
         }
     }

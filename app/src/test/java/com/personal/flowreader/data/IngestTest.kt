@@ -96,4 +96,22 @@ class SentenceSplitterTest {
         val i = SentenceSplitter.indexAt(s, Locus(0, 0, s[1].start))
         assertEquals(1, i)
     }
+
+    @Test
+    fun capsVeryLongBlock() {
+        val long = "a".repeat(SentenceSplitter.MAX_SENTENCE_CHARS + 200)
+        val doc = TxtIngest.readText("t", long)
+        val s = SentenceSplitter.split(doc)
+        assertTrue(s.size >= 2)
+        assertTrue(s.all { it.text.length <= SentenceSplitter.MAX_SENTENCE_CHARS })
+    }
+
+    @Test
+    fun coversFullBlockTextAcrossSplits() {
+        val text = "Hello world. Next one. Third!"
+        val doc = TxtIngest.readText("t", text)
+        val s = SentenceSplitter.split(doc)
+        assertEquals(text.length, s.last().end)
+        assertEquals(0, s.first().start)
+    }
 }

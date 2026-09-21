@@ -39,6 +39,8 @@ class TtsPlaybackService : Service() {
             ACTION_PLAY -> tts()?.play()
             ACTION_PAUSE -> tts()?.pause()
             ACTION_STOP -> {
+                // Stop playback first — leaving the engine running with no card is worse.
+                tts()?.stop()
                 stopForegroundAndSelf()
                 return START_NOT_STICKY
             }

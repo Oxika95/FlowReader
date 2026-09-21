@@ -76,12 +76,19 @@ object RoyalRoadMembershipStore {
     }
 
     /**
-     * One-time: if the follows membership file is missing, seed Follow from the plugin catalog
-     * (legacy installs before multi-list membership).
+     * Seed Follow from the plugin catalog when the Follow file is missing OR empty
+     * (legacy installs before multi-list membership, and wiped empty files).
      */
     fun migrateUnlistedToFollow(root: File, catalogBookIds: Collection<String>) {
         if (catalogBookIds.isEmpty()) return
-        if (file(root, RoyalRoadListKind.Follow).exists()) return
+        val followFile = file(root, RoyalRoadListKind.Follow)
+        if (followFile.exists() && followFile.length() > 0L) return
+        // Also skip if any other list already has membership.
+        val anyListed = RoyalRoadListKind.entries.any { kind ->
+            val f = file(root, kind)
+            f.exists() && f.length() > 0L
+        }
+        if (anyListed && followFile.exists()) return
         val items = catalogBookIds.map { bookId ->
             val fictionId = bookId.removePrefix("rr:")
             FictionListItem(

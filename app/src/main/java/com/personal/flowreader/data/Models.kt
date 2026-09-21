@@ -87,6 +87,17 @@ object AccentHue {
     const val MAX = 360f
 }
 
+/** App-wide chrome / layout scale applied via LocalDensity. */
+object UiScale {
+    const val DEFAULT = 1.10f
+    const val MIN = 0.75f
+    const val MAX = 1.25f
+    const val STEP = 0.05f
+
+    fun coerce(value: Float): Float =
+        value.coerceIn(MIN, MAX)
+}
+
 enum class ReaderFont {
     Sans,
     Serif,

@@ -5,10 +5,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import com.personal.flowreader.data.AccentHue
 import com.personal.flowreader.data.ThemeMode
+import com.personal.flowreader.data.UiScale
 
 private val LightBase = lightColorScheme()
 /** Neutral charcoal dark — no Material purple tint on surfaces. */
@@ -129,7 +134,15 @@ fun schemeFor(mode: ThemeMode, accentHue: Float = AccentHue.DEFAULT): ColorSchem
 fun FlowTheme(
     mode: ThemeMode,
     accentHue: Float = AccentHue.DEFAULT,
+    uiScale: Float = UiScale.DEFAULT,
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(colorScheme = schemeFor(mode, accentHue), content = content)
+    val base = LocalDensity.current
+    val scale = UiScale.coerce(uiScale)
+    val scaled = remember(base.density, base.fontScale, scale) {
+        Density(base.density * scale, base.fontScale)
+    }
+    CompositionLocalProvider(LocalDensity provides scaled) {
+        MaterialTheme(colorScheme = schemeFor(mode, accentHue), content = content)
+    }
 }

@@ -100,8 +100,11 @@ class BookCatalog(private val app: FlowApp) {
 
     suspend fun listQue(): List<QueEntry> {
         val items = app.db.que().all()
+        if (items.isEmpty()) return emptyList()
+        val byId = app.db.progress().getMany(items.map { it.bookId }.distinct())
+            .associateBy { it.bookId }
         return items.mapNotNull { item ->
-            val progress = app.db.progress().get(item.bookId) ?: return@mapNotNull null
+            val progress = byId[item.bookId] ?: return@mapNotNull null
             QueEntry(item, progress)
         }
     }
@@ -294,7 +297,7 @@ class BookCatalog(private val app: FlowApp) {
      */
     suspend fun removePluginMembership(bookId: String) {
         val progress = app.db.progress().get(bookId) ?: return
-        app.db.que().all().filter { it.bookId == bookId }.forEach { app.db.que().delete(it.id) }
+        app.db.que().deleteForBook(bookId)
         File(progress.storedPath).parentFile?.deleteRecursively()
         app.db.progress().delete(bookId)
         app.db.bookFilters().delete(bookId)

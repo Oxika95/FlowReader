@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy fullBackupContent for API < 31. Keep in sync with data_extraction_rules.xml. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="royalroad_secret.xml" />
+    <exclude domain="sharedpref" path="royalroad_secret_fallback.xml" />
+    <exclude domain="file" path="plugins/royalroad/" />
+</full-backup-content>

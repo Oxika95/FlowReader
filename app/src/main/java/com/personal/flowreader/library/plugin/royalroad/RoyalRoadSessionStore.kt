@@ -70,7 +70,7 @@ object RoyalRoadSessionStore {
                 appendLine("v1")
                 appendLine("bookId=${session.bookId}")
                 appendLine("fictionId=${session.fictionId}")
-                appendLine("fictionUrl=${session.fictionUrl}")
+                appendLine("fictionUrl=${escape(session.fictionUrl)}")
                 appendLine("title=${escape(session.title)}")
                 appendLine("author=${escape(session.author)}")
                 appendLine("startIndex=${session.startIndex}")
@@ -81,7 +81,7 @@ object RoyalRoadSessionStore {
             },
         )
         File(dir, "toc.txt").writeText(
-            session.toc.joinToString("\n") { "${escape(it.title)}\t${it.url}" },
+            session.toc.joinToString("\n") { "${escape(it.title)}\t${escape(it.url)}" },
         )
     }
 
@@ -202,7 +202,7 @@ object RoyalRoadSessionStore {
         val toc = tocFile.readLines().mapNotNull { line ->
             val i = line.indexOf('\t')
             if (i < 0) return@mapNotNull null
-            ChapterLink(title = unescape(line.substring(0, i)), url = line.substring(i + 1))
+            ChapterLink(title = unescape(line.substring(0, i)), url = unescape(line.substring(i + 1)))
         }
         if (toc.isEmpty()) return null
         val start = fields["startIndex"]?.toIntOrNull() ?: 0
