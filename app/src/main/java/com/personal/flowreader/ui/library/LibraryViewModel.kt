@@ -310,12 +310,44 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Queue the current clipboard text (same path as share-to-Flow-Queue). */
+    fun queueFromClipboard(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) {
+            _ui.value = _ui.value.copy(error = "Clipboard is empty")
+            return
+        }
+        ingestSharedText(trimmed, toQue = true)
+    }
+
     fun removeQue(id: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { flow.catalog.removeQue(id) }
             val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
             val books = withContext(Dispatchers.IO) { flow.catalog.list() }
             _ui.value = _ui.value.copy(que = que, books = books)
+        }
+    }
+
+    fun removeFromLibrary(bookId: String) {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(busy = true, error = null)
+            try {
+                withContext(Dispatchers.IO) { flow.catalog.removeFromLibrary(bookId) }
+                val books = withContext(Dispatchers.IO) { flow.catalog.list() }
+                val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
+                _ui.value = _ui.value.copy(
+                    books = books,
+                    que = que,
+                    busy = false,
+                    message = "Removed from library",
+                )
+            } catch (t: Throwable) {
+                _ui.value = _ui.value.copy(
+                    busy = false,
+                    error = t.message ?: "Could not remove book",
+                )
+            }
         }
     }
 

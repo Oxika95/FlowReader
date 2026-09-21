@@ -12,20 +12,22 @@ object EpubCover {
     private val CACHED_NAMES = listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp", "cover.gif")
 
     /**
-     * Returns a downscaled cover bitmap for media notifications, or null if none.
-     * Caches extracted bytes as `cover.*` beside [epub].
+     * Returns a downscaled cover bitmap for media notifications / title banner, or null if none.
+     * Uses a sibling `cover.*` when present (plugin books, cached EPUB extracts), otherwise
+     * extracts from an EPUB and caches beside the file.
      */
     fun loadBitmap(epub: File, maxEdge: Int = 512): Bitmap? {
-        if (!epub.exists() || !epub.extension.equals("epub", ignoreCase = true)) return null
+        if (!epub.exists()) return null
+        siblingCover(epub)?.let { return decodeScaled(it, maxEdge) }
+        if (!epub.extension.equals("epub", ignoreCase = true)) return null
         val cached = ensureCached(epub) ?: return null
         return decodeScaled(cached, maxEdge)
     }
 
     fun ensureCached(epub: File): File? {
+        siblingCover(epub)?.let { return it }
+        if (!epub.extension.equals("epub", ignoreCase = true)) return null
         val dir = epub.parentFile ?: return null
-        CACHED_NAMES.map { File(dir, it) }.firstOrNull { it.exists() && it.length() > 0L }?.let {
-            return it
-        }
         val extracted = extractBytes(epub) ?: return null
         val ext = extensionFor(extracted)
         val out = File(dir, "cover.$ext")
@@ -35,6 +37,12 @@ object EpubCover {
         } catch (_: Throwable) {
             null
         }
+    }
+
+    private fun siblingCover(bookFile: File): File? {
+        val dir = bookFile.parentFile ?: return null
+        return CACHED_NAMES.map { File(dir, it) }
+            .firstOrNull { it.exists() && it.length() > 0L }
     }
 
     /** Drop cached cover files so a refreshed EPUB can re-extract. */

@@ -2,6 +2,7 @@ package com.personal.flowreader.library.plugin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.personal.flowreader.data.LibraryViewMode
 
 /**
  * Compile-time library plugin. Registers a tab and optionally acts as a web source.
@@ -14,7 +15,19 @@ interface LibrarySourcePlugin {
     val enabled: Boolean get() = true
 
     @Composable
-    fun TabContent(actions: LibraryPluginActions, modifier: Modifier)
+    fun TabContent(
+        actions: LibraryPluginActions,
+        modifier: Modifier,
+        viewMode: LibraryViewMode,
+    )
+
+    /**
+     * Full-screen overlays drawn above the library chrome (tabs/top bar), same layer as
+     * Library Settings. Default is empty.
+     */
+    @Composable
+    fun OverlayContent(actions: LibraryPluginActions) {
+    }
 }
 
 /** Bridge from a plugin tab into the library host. Does not alter Files/Queue UI. */
@@ -33,6 +46,7 @@ data class SourceWork(
     val url: String,
     val author: String = "",
     val latestChapter: String = "",
+    val coverUrl: String = "",
 )
 
 data class SourceChapterRef(
@@ -47,6 +61,11 @@ data class SourceWorkDetail(
     val synopsis: String = "",
     val chapters: List<SourceChapterRef>,
     val fictionId: String = "",
+    val tags: List<String> = emptyList(),
+    val views: Long? = null,
+    val ratingLabel: String = "",
+    val status: String = "",
+    val coverUrl: String = "",
 )
 
 data class SourceChapter(

@@ -22,12 +22,12 @@ import okhttp3.Request
 
 class RoyalRoadRepository(
     context: Context,
-    private val minIntervalMs: Long = 500L,
+    private val minIntervalMs: Long = 700L,
     filesDir: File = File(context.applicationContext.filesDir, "plugins/royalroad"),
     secrets: RoyalRoadSecrets = RoyalRoadSecrets(context.applicationContext),
     http: OkHttpClient? = null,
 ) : SourceRepository {
-    private val root = filesDir
+    private val root = filesDir.apply { mkdirs() }
     private val secrets = secrets
     private val jar = PersistentCookieJar(this.secrets)
     private val http: OkHttpClient = http ?: OkHttpClient.Builder()
@@ -38,46 +38,299 @@ class RoyalRoadRepository(
         .build()
     private val rate = Mutex()
     private var lastFetchAt = 0L
+    /** Last in-site URL used as Referer for the next request. */
+    private var lastPageUrl: String = RoyalRoadHtml.ORIGIN
 
     fun email(): String = secrets.email()
 
     fun isLoggedIn(): Boolean = secrets.isLoggedIn()
 
+    fun sessionRoot(): File = root
+
     override suspend fun search(query: String): List<SourceWork> {
-        val html = get(RoyalRoadHtml.searchUrl(query))
-        return RoyalRoadHtml.parseFictionList(html, RoyalRoadHtml.searchUrl(query)).map { it.toWork() }
+        val url = RoyalRoadHtml.searchUrl(query)
+        val html = get(url, referer = RoyalRoadHtml.ORIGIN)
+        return RoyalRoadHtml.parseFictionList(html, url).map { it.toWork() }
     }
 
     override suspend fun browse(page: Int, order: String?): List<SourceWork> {
         val url = RoyalRoadHtml.browseUrl(order.orEmpty(), page)
-        val html = get(url)
+        val html = get(url, referer = lastPageUrl)
         return RoyalRoadHtml.parseFictionList(html, url).map { it.toWork() }
     }
 
-    override suspend fun follows(): List<SourceWork> {
-        val url = RoyalRoadHtml.followsUrl()
-        val html = get(url)
-        val items = RoyalRoadHtml.parseFictionList(html, url)
-        if (items.isEmpty() && RoyalRoadHtml.looksLikeLoginPage(html)) {
-            throw IllegalArgumentException("Sign in to see follows")
+    override suspend fun follows(): List<SourceWork> = fetchAllFollows().map { it.toWork() }
+
+    /** Paginated follows fetch. Sequential; caches membership on success. */
+    suspend fun fetchAllFollows(): List<FictionListItem> {
+        val all = ArrayList<FictionListItem>()
+        var page = 1
+        var referer = RoyalRoadHtml.ORIGIN
+        while (page <= MAX_FOLLOWS_PAGES) {
+            val url = RoyalRoadHtml.followsUrl(page)
+            val html = get(url, referer = referer)
+            if (RoyalRoadHtml.looksLikeLoginPage(html)) {
+                throw IllegalArgumentException("Sign in to sync follows")
+            }
+            val items = RoyalRoadHtml.parseFictionList(html, url)
+            if (items.isEmpty()) break
+            all += items
+            referer = url
+            page++
         }
-        return items.map { it.toWork() }
+        RoyalRoadMembershipStore.write(root, all, RoyalRoadListKind.Follow)
+        return all
     }
 
-    override suspend fun loadWork(url: String): SourceWorkDetail {
+    fun cachedFollows(): List<FictionListItem> =
+        RoyalRoadMembershipStore.read(root, RoyalRoadListKind.Follow)
+
+    fun membershipBookIds(kind: RoyalRoadListKind): Set<String> =
+        RoyalRoadMembershipStore.bookIds(root, kind)
+
+    fun membershipKinds(bookId: String): Set<RoyalRoadListKind> =
+        RoyalRoadListKind.entries.filter { bookId in membershipBookIds(it) }.toSet()
+
+    fun rememberListed(item: FictionListItem, kind: RoyalRoadListKind) {
+        RoyalRoadMembershipStore.upsert(root, item, kind)
+    }
+
+    fun forgetListed(bookId: String, kind: RoyalRoadListKind) {
+        RoyalRoadMembershipStore.remove(root, bookId, kind)
+    }
+
+    fun rememberFollowed(item: FictionListItem) {
+        rememberListed(item, RoyalRoadListKind.Follow)
+    }
+
+    fun migrateUnlistedMembership(catalogBookIds: Collection<String>) {
+        RoyalRoadMembershipStore.migrateUnlistedToFollow(root, catalogBookIds)
+    }
+
+    fun removeMembership(bookId: String) {
+        RoyalRoadMembershipStore.removeFromAll(root, bookId)
+    }
+
+    override suspend fun loadWork(url: String): SourceWorkDetail = loadFictionPage(url).toDetail()
+
+    suspend fun loadFictionPage(url: String): FictionPage {
         val trimmed = url.trim()
         val fictionUrl = if (RoyalRoadHtml.isChapterUrl(trimmed)) {
             RoyalRoadHtml.fictionUrlFrom(trimmed) ?: trimmed
         } else {
             trimmed
         }
-        val html = get(fictionUrl)
-        val page = RoyalRoadHtml.parseFictionPage(html, fictionUrl)
-        return page.toDetail()
+        val html = get(fictionUrl, referer = lastPageUrl)
+        return RoyalRoadHtml.parseFictionPage(html, fictionUrl)
+    }
+
+    /**
+     * Persist full ToC + splash metadata without downloading chapter bodies.
+     * Preserves [RoyalRoadReadSession.loadedThrough] and cached chapter files.
+     */
+    suspend fun ensureSessionToc(page: FictionPage): RoyalRoadReadSession {
+        val fictionId = page.fictionId.ifBlank {
+            RoyalRoadHtml.fictionId(page.url)
+        } ?: throw IllegalArgumentException("Could not determine fiction id")
+        if (page.chapters.isEmpty()) {
+            throw IllegalArgumentException("This fiction has no chapters")
+        }
+        val dir = RoyalRoadSessionStore.dir(root, fictionId)
+        val existing = RoyalRoadSessionStore.read(root, fictionId)
+        val session = RoyalRoadReadSession(
+            bookId = RoyalRoadHtml.bookIdFor(fictionId),
+            fictionId = fictionId,
+            fictionUrl = page.url,
+            title = page.title,
+            author = page.author,
+            toc = page.chapters,
+            startIndex = existing?.startIndex ?: 0,
+            loadedThrough = existing?.loadedThrough ?: -1,
+            chapters = emptyList(),
+            prefetchAhead = existing?.prefetchAhead ?: RoyalRoadCachePolicy.DEFAULT_AHEAD,
+            keepBehind = existing?.keepBehind ?: RoyalRoadCachePolicy.DEFAULT_BEHIND,
+            pinnedRanges = RoyalRoadSessionStore.clipPinnedRanges(
+                existing?.pinnedRanges.orEmpty(),
+                page.chapters.size,
+            ),
+        )
+        RoyalRoadSessionStore.writeMeta(dir, session)
+        RoyalRoadSessionStore.writeSplash(
+            dir,
+            RoyalRoadSplashMeta(
+                synopsis = page.synopsis,
+                tags = page.tags,
+                views = page.views,
+                ratingLabel = page.ratingLabel,
+                status = page.status,
+                coverUrl = page.coverUrl,
+            ),
+        )
+        return session
+    }
+
+    fun libraryMeta(bookId: String): RoyalRoadLibraryMeta? {
+        val fictionId = bookId.removePrefix("rr:")
+        return RoyalRoadSessionStore.libraryMeta(root, fictionId)
+    }
+
+    fun libraryMetas(bookIds: Collection<String>): Map<String, RoyalRoadLibraryMeta> =
+        bookIds.mapNotNull { id -> libraryMeta(id)?.let { id to it } }.toMap()
+
+    fun readSplashBundle(bookId: String): Pair<RoyalRoadReadSession, RoyalRoadSplashMeta?>? {
+        val fictionId = bookId.removePrefix("rr:")
+        val session = RoyalRoadSessionStore.read(root, fictionId) ?: return null
+        val splash = RoyalRoadSessionStore.readSplash(RoyalRoadSessionStore.dir(root, fictionId))
+        return session to splash
+    }
+
+    /** Download every missing chapter body for [bookId]. Pins the full ToC, then maintains. */
+    suspend fun downloadAllChapters(
+        bookId: String,
+        fictionUrl: String? = null,
+        locusChapter: Int = 0,
+        onProgress: (downloaded: Int, total: Int) -> Unit = { _, _ -> },
+    ): Int {
+        val session = ensureSessionForDownload(bookId, fictionUrl)
+        val last = session.toc.lastIndex
+        if (last < 0) return 0
+        updatePinnedRanges(bookId, listOf(0..last))
+        return maintainChapterCache(bookId, locusChapter.coerceIn(0, last), onProgress)
+    }
+
+    /**
+     * Pin and download from [startIndex] through end of ToC, or [startIndex] + [countCap] - 1
+     * when [countCap] is non-null and positive. Cache window locus is [startIndex].
+     */
+    suspend fun downloadPartialChapters(
+        bookId: String,
+        startIndex: Int,
+        countCap: Int? = null,
+        fictionUrl: String? = null,
+        onProgress: (downloaded: Int, total: Int) -> Unit = { _, _ -> },
+    ): Int {
+        val session = ensureSessionForDownload(bookId, fictionUrl)
+        if (session.toc.isEmpty()) return 0
+        val start = startIndex.coerceIn(0, session.toc.lastIndex)
+        val end = if (countCap != null && countCap > 0) {
+            (start + countCap - 1).coerceAtMost(session.toc.lastIndex)
+        } else {
+            session.toc.lastIndex
+        }
+        if (end < start) return RoyalRoadSessionStore.cachedChapterCount(
+            RoyalRoadSessionStore.dir(root, session.fictionId),
+            session.toc.size,
+        )
+        // Replace pins with this range so older partials (e.g. from chapter 1) do not linger.
+        updatePinnedRanges(bookId, listOf(start..end))
+        // Cache window is centered on the download start (locus), not prior reading progress.
+        return maintainChapterCache(
+            bookId,
+            start,
+            onProgress,
+        )
+    }
+
+    fun updateCacheWindow(bookId: String, prefetchAhead: Int, keepBehind: Int) {
+        val fictionId = bookId.removePrefix("rr:")
+        val existing = RoyalRoadSessionStore.read(root, fictionId) ?: return
+        val dir = RoyalRoadSessionStore.dir(root, fictionId)
+        RoyalRoadSessionStore.writeMeta(
+            dir,
+            existing.copy(
+                prefetchAhead = prefetchAhead.coerceAtLeast(0),
+                keepBehind = keepBehind.coerceAtLeast(0),
+                chapters = emptyList(),
+            ),
+        )
+    }
+
+    private fun updatePinnedRanges(bookId: String, ranges: List<IntRange>) {
+        val fictionId = bookId.removePrefix("rr:")
+        val existing = RoyalRoadSessionStore.read(root, fictionId) ?: return
+        val dir = RoyalRoadSessionStore.dir(root, fictionId)
+        val clipped = RoyalRoadSessionStore.clipPinnedRanges(ranges, existing.toc.size)
+        RoyalRoadSessionStore.writeMeta(
+            dir,
+            existing.copy(pinnedRanges = clipped, chapters = emptyList()),
+        )
+    }
+
+    /**
+     * Ensure every chapter in the stream window ∪ pins is on disk; prune the rest.
+     * Returns the final cached chapter count.
+     */
+    suspend fun maintainChapterCache(
+        bookId: String,
+        locusChapter: Int,
+        onProgress: (downloaded: Int, total: Int) -> Unit = { _, _ -> },
+    ): Int {
+        val fictionId = bookId.removePrefix("rr:")
+        val session = RoyalRoadSessionStore.read(root, fictionId)
+            ?: throw IllegalArgumentException("Story session missing")
+        if (session.toc.isEmpty()) return 0
+        val dir = RoyalRoadSessionStore.dir(root, fictionId)
+        val desired = RoyalRoadSessionStore.desiredChapterIndices(
+            locus = locusChapter,
+            tocSize = session.toc.size,
+            policy = session.cachePolicy,
+        )
+        val total = desired.size
+        var downloaded = desired.count { RoyalRoadSessionStore.hasChapter(dir, it) }
+        onProgress(downloaded, total.coerceAtLeast(1))
+        for (i in desired.sorted()) {
+            if (RoyalRoadSessionStore.hasChapter(dir, i)) continue
+            val ref = session.toc.getOrNull(i) ?: continue
+            val fetched = loadChapter(ref.url)
+            RoyalRoadSessionStore.writeChapter(dir, i, fetched.title, fetched.text)
+            if (i > session.loadedThrough) {
+                session.loadedThrough = i
+                RoyalRoadSessionStore.writeMeta(dir, session.copy(chapters = emptyList()))
+            }
+            downloaded++
+            onProgress(downloaded, total.coerceAtLeast(1))
+        }
+        RoyalRoadSessionStore.pruneChaptersOutside(dir, session.toc.size, desired)
+        return RoyalRoadSessionStore.cachedChapterCount(dir, session.toc.size)
+    }
+
+    fun cachedChapterIndices(bookId: String): Set<Int> {
+        val fictionId = bookId.removePrefix("rr:")
+        val session = RoyalRoadSessionStore.read(root, fictionId) ?: return emptySet()
+        val dir = RoyalRoadSessionStore.dir(root, fictionId)
+        return RoyalRoadSessionStore.cachedChapterIndices(dir, session.toc.size)
+    }
+
+    private suspend fun ensureSessionForDownload(
+        bookId: String,
+        fictionUrl: String?,
+    ): RoyalRoadReadSession {
+        val fictionId = bookId.removePrefix("rr:")
+        var session = RoyalRoadSessionStore.read(root, fictionId)
+        if (session == null || session.toc.isEmpty()) {
+            val url = fictionUrl?.takeIf { it.isNotBlank() }
+                ?: session?.fictionUrl?.takeIf { it.isNotBlank() }
+                ?: throw IllegalArgumentException("Story session missing")
+            session = ensureSessionToc(loadFictionPage(url))
+        }
+        return session
+    }
+
+    suspend fun refreshToc(bookId: String): RoyalRoadReadSession {
+        val fictionId = bookId.removePrefix("rr:")
+        val existing = RoyalRoadSessionStore.read(root, fictionId)
+        val url = existing?.fictionUrl?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("No fiction URL for refresh")
+        return ensureSessionToc(loadFictionPage(url))
+    }
+
+    fun deleteLocalSession(bookId: String) {
+        RoyalRoadSessionStore.deleteSession(root, bookId.removePrefix("rr:"))
     }
 
     override suspend fun loadChapter(url: String): SourceChapter {
-        val html = get(url)
+        val fiction = RoyalRoadHtml.fictionUrlFrom(url) ?: lastPageUrl
+        val html = get(url, referer = fiction)
         val inner = RoyalRoadHtml.chapterInnerHtml(html)
             ?: throw IllegalArgumentException(
                 "Could not find chapter text. Royal Road markup may have changed.",
@@ -99,16 +352,67 @@ class RoyalRoadRepository(
         val chapterUrl = if (RoyalRoadHtml.isChapterUrl(trimmed)) {
             trimmed
         } else {
-            val fictionHtml = get(trimmed)
+            val fictionHtml = get(trimmed, referer = lastPageUrl)
             RoyalRoadHtml.firstChapterUrl(fictionHtml, trimmed)
                 ?: throw IllegalArgumentException("Could not find a chapter list on this page")
         }
         return loadChapter(chapterUrl)
     }
 
+    /**
+     * Download a cover image once. Returns null if [coverUrl] is blank or the
+     * destination already has a cover (skip). Single-flight with other GETs.
+     */
+    suspend fun downloadCover(coverUrl: String, destBookPath: String): ByteArray? {
+        if (coverUrl.isBlank()) return null
+        val dir = File(destBookPath).parentFile ?: return null
+        val existing = listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp")
+            .map { File(dir, it) }
+            .any { it.exists() && it.length() > 0L }
+        if (existing) return null
+        return getBytes(coverUrl, referer = lastPageUrl)
+    }
+
+    /**
+     * Bookmark a fiction on royalroad.com when signed in (`follow`, `favorite`, or `readlater`).
+     * No-op (returns false) if not logged in. Throws if logged in but the form fails.
+     */
+    suspend fun setBookmarkOnSite(fictionUrl: String, kind: RoyalRoadListKind): Boolean {
+        if (!isLoggedIn()) return false
+        val html = get(fictionUrl, referer = lastPageUrl)
+        if (RoyalRoadHtml.looksLikeLoginPage(html)) {
+            throw IllegalArgumentException("Sign in to update Royal Road lists")
+        }
+        val form = RoyalRoadHtml.bookmarkForm(html, fictionUrl, kind.bookmarkType)
+            ?: return true // Already bookmarked or button absent
+        acquireRateLimit()
+        val body = FormBody.Builder()
+            .add("type", form.type)
+            .add("__RequestVerificationToken", form.token)
+            .build()
+        val request = browserRequest(form.actionUrl, referer = fictionUrl)
+            .post(body)
+            .build()
+        val code = withContext(Dispatchers.IO) {
+            http.newCall(request).execute().use { response ->
+                response.body?.close()
+                response.code
+            }
+        }
+        lastFetchAt = System.currentTimeMillis()
+        lastPageUrl = fictionUrl
+        if (code !in 200..399) {
+            throw IllegalArgumentException("Could not update Royal Road list (HTTP $code)")
+        }
+        return true
+    }
+
+    suspend fun followOnSite(fictionUrl: String): Boolean =
+        setBookmarkOnSite(fictionUrl, RoyalRoadListKind.Follow)
+
     override suspend fun login(username: String, password: String) {
         val loginUrl = RoyalRoadHtml.loginUrl()
-        val html = get(loginUrl, allowRelogin = false)
+        val html = get(loginUrl, referer = RoyalRoadHtml.ORIGIN, allowRelogin = false)
         val token = RoyalRoadHtml.loginToken(html)
             ?: throw IllegalArgumentException("Could not read Royal Road login form")
         acquireRateLimit()
@@ -119,11 +423,7 @@ class RoyalRoadRepository(
             .add("ReturnUrl", "/")
             .add("__RequestVerificationToken", token)
             .build()
-        val request = Request.Builder()
-            .url(loginUrl)
-            .header("User-Agent", USER_AGENT)
-            .header("Accept", "text/html,application/xhtml+xml")
-            .header("Referer", loginUrl)
+        val request = browserRequest(loginUrl, referer = loginUrl)
             .post(body)
             .build()
         val result = withContext(Dispatchers.IO) {
@@ -133,6 +433,8 @@ class RoyalRoadRepository(
                 Triple(response.code, location, text)
             }
         }
+        lastFetchAt = System.currentTimeMillis()
+        lastPageUrl = result.second
         val page = result.third
         val location = result.second
         val ok = !location.contains("/account/login", ignoreCase = true) ||
@@ -147,12 +449,15 @@ class RoyalRoadRepository(
     override suspend fun logout() {
         jar.clear()
         secrets.clearAll()
-        runCatching { get("${RoyalRoadHtml.ORIGIN}/account/logout", allowRelogin = false) }
+        runCatching {
+            get("${RoyalRoadHtml.ORIGIN}/account/logout", referer = lastPageUrl, allowRelogin = false)
+        }
     }
 
     override suspend fun syncProgress(workId: String, chapterUrl: String) {
         if (chapterUrl.isBlank()) return
-        runCatching { get(chapterUrl) }
+        val fiction = RoyalRoadHtml.fictionUrlFrom(chapterUrl) ?: lastPageUrl
+        runCatching { get(chapterUrl, referer = fiction) }
     }
 
     suspend fun startReading(detail: SourceWorkDetail, startIndex: Int): RoyalRoadReadSession {
@@ -164,6 +469,7 @@ class RoyalRoadRepository(
         }
         val start = startIndex.coerceIn(0, detail.chapters.lastIndex)
         val dir = RoyalRoadSessionStore.dir(root, fictionId)
+        val existing = RoyalRoadSessionStore.read(root, fictionId)
         val session = RoyalRoadReadSession(
             bookId = RoyalRoadHtml.bookIdFor(fictionId),
             fictionId = fictionId,
@@ -174,9 +480,17 @@ class RoyalRoadRepository(
             startIndex = start,
             loadedThrough = start - 1,
             chapters = emptyList(),
+            prefetchAhead = existing?.prefetchAhead ?: RoyalRoadCachePolicy.DEFAULT_AHEAD,
+            keepBehind = existing?.keepBehind ?: RoyalRoadCachePolicy.DEFAULT_BEHIND,
+            pinnedRanges = RoyalRoadSessionStore.clipPinnedRanges(
+                existing?.pinnedRanges.orEmpty(),
+                detail.chapters.size,
+            ),
         )
         RoyalRoadSessionStore.writeMeta(dir, session)
-        return loadThrough(session, start)
+        val loaded = loadThrough(session, start)
+        maintainChapterCache(loaded.bookId, start)
+        return loaded
     }
 
     suspend fun resumeRead(bookId: String): RoyalRoadReadSession {
@@ -192,9 +506,39 @@ class RoyalRoadRepository(
         return loadThrough(session, target)
     }
 
+    /**
+     * Re-open the stream at an absolute ToC index (for reader ToC jumps).
+     * Loads that chapter into memory and maintains the disk cache window around it.
+     */
+    suspend fun seekToChapter(bookId: String, absoluteIndex: Int): RoyalRoadReadSession {
+        val fictionId = bookId.removePrefix("rr:")
+        val existing = RoyalRoadSessionStore.read(root, fictionId)
+            ?: throw IllegalArgumentException("Royal Road session missing")
+        if (existing.toc.isEmpty()) {
+            throw IllegalArgumentException("Story ToC missing")
+        }
+        val start = absoluteIndex.coerceIn(0, existing.toc.lastIndex)
+        val session = existing.copy(
+            startIndex = start,
+            loadedThrough = start - 1,
+            chapters = emptyList(),
+        )
+        session.chapters = emptyList()
+        session.loadedThrough = start - 1
+        val dir = RoyalRoadSessionStore.dir(root, fictionId)
+        RoyalRoadSessionStore.writeMeta(dir, session)
+        val loaded = loadThrough(session, start)
+        maintainChapterCache(loaded.bookId, start)
+        return loaded
+    }
+
     suspend fun appendNext(session: RoyalRoadReadSession): RoyalRoadReadSession? {
         val next = session.nextIndex() ?: return null
-        return loadThrough(session, next)
+        val loaded = loadThrough(session, next)
+        // Prefetch one ahead of the newly loaded chapter when the window allows.
+        val locus = next
+        runCatching { maintainChapterCache(loaded.bookId, locus) }
+        return loaded
     }
 
     private suspend fun loadThrough(session: RoyalRoadReadSession, through: Int): RoyalRoadReadSession {
@@ -217,14 +561,22 @@ class RoyalRoadRepository(
             loaded += chapter
             session.loadedThrough = i
             session.chapters = loaded.toList()
-            RoyalRoadSessionStore.writeMeta(dir, session)
+            RoyalRoadSessionStore.writeMeta(
+                dir,
+                session.copy(chapters = emptyList()),
+            )
         }
         return session
     }
 
-    private suspend fun get(url: String, allowRelogin: Boolean = true): String {
+    private suspend fun get(
+        url: String,
+        referer: String,
+        allowRelogin: Boolean = true,
+    ): String {
         acquireRateLimit()
-        val html = executeGet(url)
+        val html = executeGet(url, referer)
+        lastPageUrl = url
         if (allowRelogin &&
             !url.contains("/account/login", ignoreCase = true) &&
             RoyalRoadHtml.looksLikeLoginPage(html) &&
@@ -232,18 +584,29 @@ class RoyalRoadRepository(
         ) {
             login(secrets.email(), secrets.password())
             acquireRateLimit()
-            return executeGet(url)
+            val again = executeGet(url, referer)
+            lastPageUrl = url
+            return again
         }
         return html
     }
 
-    private suspend fun executeGet(url: String): String {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", USER_AGENT)
-            .header("Accept", "text/html,application/xhtml+xml")
-            .header("Referer", RoyalRoadHtml.ORIGIN)
+    private suspend fun getBytes(url: String, referer: String): ByteArray? {
+        acquireRateLimit()
+        val request = browserRequest(url, referer)
+            .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+            .get()
             .build()
+        return withContext(Dispatchers.IO) {
+            http.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                response.body?.bytes()
+            }
+        }.also { lastFetchAt = System.currentTimeMillis() }
+    }
+
+    private suspend fun executeGet(url: String, referer: String): String {
+        val request = browserRequest(url, referer).get().build()
         return withContext(Dispatchers.IO) {
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
@@ -251,8 +614,20 @@ class RoyalRoadRepository(
                 }
                 response.body?.string().orEmpty()
             }
-        }
+        }.also { lastFetchAt = System.currentTimeMillis() }
     }
+
+    private fun browserRequest(url: String, referer: String): Request.Builder =
+        Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            )
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Upgrade-Insecure-Requests", "1")
+            .header("Referer", referer.ifBlank { RoyalRoadHtml.ORIGIN })
 
     private suspend fun acquireRateLimit() {
         rate.withLock {
@@ -263,8 +638,10 @@ class RoyalRoadRepository(
     }
 
     companion object {
+        private const val MAX_FOLLOWS_PAGES = 50
+        /** Generic Chrome-on-Android UA; no app name. */
         private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 13; Flow Reader) AppleWebKit/537.36 " +
+            "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
         fun blocksFromPlain(text: String, chapterIndex: Int): List<Block> {
@@ -284,6 +661,7 @@ private fun FictionListItem.toWork() = SourceWork(
     url = url,
     author = author,
     latestChapter = latestChapter,
+    coverUrl = coverUrl,
 )
 
 private fun FictionPage.toDetail() = SourceWorkDetail(
@@ -293,4 +671,9 @@ private fun FictionPage.toDetail() = SourceWorkDetail(
     synopsis = synopsis,
     chapters = chapters.map { SourceChapterRef(it.title, it.url) },
     fictionId = fictionId,
+    tags = tags,
+    views = views,
+    ratingLabel = ratingLabel,
+    status = status,
+    coverUrl = coverUrl,
 )

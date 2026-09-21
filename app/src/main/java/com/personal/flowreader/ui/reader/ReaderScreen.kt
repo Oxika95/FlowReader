@@ -252,13 +252,16 @@ fun ReaderScreen(
         }
     }
 
-    val chapterIndex = ui.locus.chapterIndex
-    val chapterName = doc?.chapters?.getOrNull(chapterIndex)?.title
+    val chapterIndex = ui.tocIndex
+    val chapterName = ui.tocTitles.getOrNull(chapterIndex)
         ?.ifBlank { null }
+        ?: doc?.chapters?.getOrNull(ui.locus.chapterIndex)?.title?.ifBlank { null }
         ?: "Chapter ${chapterIndex + 1}"
-    val chapters = doc?.chapters?.mapIndexed { i, ch ->
-        ch.title.ifBlank { "Chapter ${i + 1}" }
-    }.orEmpty()
+    val chapters = ui.tocTitles.ifEmpty {
+        doc?.chapters?.mapIndexed { i, ch ->
+            ch.title.ifBlank { "Chapter ${i + 1}" }
+        }.orEmpty()
+    }
     val progress = if (items.size <= 1) 0f else locusIndex.toFloat() / items.lastIndex
 
     /**
@@ -921,13 +924,18 @@ fun ReaderScreen(
             onChapter = { ci ->
                 overlay = ReaderOverlay.Hidden
                 suppressFollowScroll = true
-                vm.jumpToChapter(ci)
-                val target = doc?.let { d ->
-                    var i = 0
-                    for (c in 0 until ci) i += d.chapters[c].blocks.size
-                    i
-                } ?: 0
-                scope.launch { centerItem(target) }
+                scope.launch {
+                    vm.jumpToChapter(ci)
+                    // After RR seek the loaded stream starts at relative 0; otherwise map ToC → doc.
+                    val d = vm.ui.value.doc
+                    val target = d?.let { doc ->
+                        val rel = vm.ui.value.locus.chapterIndex.coerceIn(0, doc.chapters.lastIndex)
+                        var i = 0
+                        for (c in 0 until rel) i += doc.chapters[c].blocks.size
+                        i
+                    } ?: 0
+                    centerItem(target)
+                }
             },
             onDismiss = { overlay = ReaderOverlay.Hidden },
         )

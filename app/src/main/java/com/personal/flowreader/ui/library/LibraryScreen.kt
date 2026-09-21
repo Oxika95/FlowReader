@@ -1,12 +1,11 @@
 package com.personal.flowreader.ui.library
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -17,9 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,29 +28,22 @@ import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarHost
@@ -67,17 +57,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -88,13 +73,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.personal.flowreader.data.BookSource
-import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.FileAccessAdvice
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.LibraryTabId
 import com.personal.flowreader.data.LibraryViewMode
-import com.personal.flowreader.data.ProgressEntity
 import com.personal.flowreader.data.QueEntry
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.data.TtsEngineOption
@@ -105,11 +88,7 @@ import com.personal.flowreader.ui.reader.AudioSettingsTab
 import com.personal.flowreader.ui.reader.FilterRuleEditorOverlay
 import com.personal.flowreader.ui.reader.FiltersSettingsTab
 import com.personal.flowreader.ui.reader.ReaderModalScaffold
-import com.personal.flowreader.ui.reader.ReaderPanelShape
 import com.personal.flowreader.ui.reader.SettingsLocationNote
-import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 private const val LibraryFilterPreviewSample =
     "The quick brown fox jumps over the lazy dog. Names like Alice and Bob can be replaced."
@@ -158,6 +137,7 @@ fun LibraryScreen(
     var addTabOpen by remember { mutableStateOf(false) }
     var filterEditor by remember { mutableStateOf<FilterEditorSession?>(null) }
     var pendingSource by remember { mutableStateOf<BookSource?>(null) }
+    var filesSplashId by remember { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(PersistableOpenDocument()) { uri: Uri? ->
         val source = pendingSource
         pendingSource = null
@@ -180,6 +160,7 @@ fun LibraryScreen(
 
     // Top clears the status bar; sides use M3 compact screen margin (16dp).
     val libraryGutter = 16.dp
+    val context = LocalContext.current
 
     Box(
         Modifier
@@ -203,12 +184,14 @@ fun LibraryScreen(
                 onSettings = { settingsOpen = true },
             )
             when (val tab = ui.tab) {
-                LibraryTabId.Files -> FilesTab(
+                LibraryTabId.Files -> LibraryBooksPane(
                     books = ui.books,
                     viewMode = ui.viewMode,
                     busy = ui.busy,
                     inset = libraryGutter,
+                    emptyMessage = "No books yet.\nTap + to add an EPUB or TXT.",
                     onOpen = onOpenBook,
+                    onLongOpen = { bookId -> filesSplashId = bookId },
                     modifier = Modifier.weight(1f),
                 )
                 LibraryTabId.Que -> QueTab(
@@ -225,13 +208,15 @@ fun LibraryScreen(
                         plugin.TabContent(
                             actions = vm.pluginActions,
                             modifier = Modifier.weight(1f),
+                            viewMode = ui.viewMode,
                         )
                     } else {
-                        FilesTab(
+                        LibraryBooksPane(
                             books = ui.books,
                             viewMode = ui.viewMode,
                             busy = ui.busy,
                             inset = libraryGutter,
+                            emptyMessage = "No books yet.\nTap + to add an EPUB or TXT.",
                             onOpen = onOpenBook,
                             modifier = Modifier.weight(1f),
                         )
@@ -241,7 +226,8 @@ fun LibraryScreen(
         }
 
         if (ui.tab == LibraryTabId.Files &&
-            !settingsOpen && !addDialog && !addTabOpen && filterEditor == null
+            !settingsOpen && !addDialog && !addTabOpen && filterEditor == null &&
+            filesSplashId == null
         ) {
             FilledIconButton(
                 onClick = { if (!ui.busy) addDialog = true },
@@ -252,6 +238,35 @@ fun LibraryScreen(
                     .size(56.dp),
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Add file", modifier = Modifier.size(28.dp))
+            }
+        }
+
+        if (ui.tab == LibraryTabId.Que &&
+            !settingsOpen && !addDialog && !addTabOpen && filterEditor == null
+        ) {
+            FilledIconButton(
+                onClick = {
+                    if (ui.busy) return@FilledIconButton
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val text = cm.primaryClip
+                        ?.takeIf { it.itemCount > 0 }
+                        ?.getItemAt(0)
+                        ?.coerceToText(context)
+                        ?.toString()
+                        .orEmpty()
+                    vm.queueFromClipboard(text)
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
+                    .padding(end = libraryGutter, bottom = libraryGutter)
+                    .size(56.dp),
+            ) {
+                Icon(
+                    Icons.Filled.ContentPaste,
+                    contentDescription = "Add from clipboard",
+                    modifier = Modifier.size(28.dp),
+                )
             }
         }
 
@@ -299,6 +314,23 @@ fun LibraryScreen(
             },
             onDismiss = { addDialog = false },
         )
+
+        val splashBook = filesSplashId?.let { id -> ui.books.find { it.bookId == id } }
+        LaunchedEffect(filesSplashId, splashBook) {
+            if (filesSplashId != null && splashBook == null) filesSplashId = null
+        }
+        FilesBookSplash(
+            book = splashBook,
+            busy = ui.busy,
+            onDismiss = { filesSplashId = null },
+            onOpen = onOpenBook,
+            onRemove = vm::removeFromLibrary,
+        )
+
+        // Plugin overlays sit above tabs/top bar (same layer as Settings).
+        (ui.tab as? LibraryTabId.Plugin)?.let { pluginTab ->
+            vm.plugins.get(pluginTab.pluginId)?.OverlayContent(actions = vm.pluginActions)
+        }
 
         LibrarySettingsOverlay(
             visible = settingsOpen && filterEditor == null,
@@ -388,7 +420,7 @@ private fun LibraryTopBar(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
-            if (tab == LibraryTabId.Files) {
+            if (tab == LibraryTabId.Files || tab is LibraryTabId.Plugin) {
                 IconButton(onClick = { onViewMode(LibraryViewMode.List) }) {
                     Icon(
                         Icons.AutoMirrored.Filled.ViewList,
@@ -788,33 +820,6 @@ private fun AddBookOverlay(
 }
 
 @Composable
-private fun FilesTab(
-    books: List<ProgressEntity>,
-    viewMode: LibraryViewMode,
-    busy: Boolean,
-    inset: Dp,
-    onOpen: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(modifier.fillMaxSize()) {
-        if (books.isEmpty() && !busy) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "No books yet.\nTap + to add an EPUB or TXT.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            when (viewMode) {
-                LibraryViewMode.List -> BookList(books, inset, onOpen)
-                LibraryViewMode.Shelf -> BookShelf(books, inset, onOpen)
-            }
-        }
-    }
-}
-
-@Composable
 private fun QueTab(
     entries: List<QueEntry>,
     busy: Boolean,
@@ -827,7 +832,7 @@ private fun QueTab(
         if (entries.isEmpty() && !busy) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "Queue is empty.\nShare text to Flow-Queue to add items.",
+                    "Queue is empty.\nPaste from the clipboard or share text to Flow-Queue.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -896,264 +901,4 @@ private fun QueLineItem(
             )
         }
     }
-}
-
-@Composable
-private fun LibraryBookCard(
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    val bg = MaterialTheme.colorScheme.background
-    val onBg = MaterialTheme.colorScheme.onBackground
-    Card(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = ReaderPanelShape,
-        colors = CardDefaults.cardColors(containerColor = bg, contentColor = onBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        content()
-    }
-}
-
-@Composable
-private fun BookProgressBar(progress: Float, modifier: Modifier = Modifier) {
-    LinearProgressIndicator(
-        progress = { progress.coerceIn(0f, 1f) },
-        modifier = modifier
-            .fillMaxWidth()
-            .height(3.dp)
-            .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)),
-        color = MaterialTheme.colorScheme.primary,
-        trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
-    )
-}
-
-@Composable
-private fun BookList(books: List<ProgressEntity>, inset: Dp, onOpen: (String) -> Unit) {
-    LazyColumn(
-        contentPadding = PaddingValues(
-            start = inset,
-            top = inset,
-            end = inset,
-            bottom = inset + 76.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        items(books, key = { it.bookId }) { book ->
-            LibraryBookCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(104.dp),
-                onClick = { onOpen(book.bookId) },
-            ) {
-                BookDetailsRow(book)
-            }
-        }
-    }
-}
-
-@Composable
-private fun BookDetailsRow(book: ProgressEntity) {
-    val cover by rememberCover(book, maxEdge = 384)
-    val linked = book.sourceKind == BookSource.Linked.name
-    val cardBg = MaterialTheme.colorScheme.background
-    Box(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(2f / 3f),
-            ) {
-                CoverFill(
-                    book = book,
-                    cover = cover,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.horizontalGradient(
-                                colorStops = arrayOf(
-                                    0.4f to Color.Transparent,
-                                    1f to cardBg,
-                                ),
-                            ),
-                        ),
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 12.dp, end = 16.dp),
-            ) {
-                Text(
-                    book.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    bookSubtitle(book),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        if (linked) {
-            Icon(
-                Icons.Filled.Link,
-                contentDescription = "Linked file",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .size(14.dp),
-            )
-        }
-        BookProgressBar(
-            progress = book.readingProgress,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
-    }
-}
-
-@Composable
-private fun BookShelf(books: List<ProgressEntity>, inset: Dp, onOpen: (String) -> Unit) {
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(140.dp),
-        contentPadding = PaddingValues(
-            start = inset,
-            top = inset,
-            end = inset,
-            bottom = inset + 76.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        items(books, key = { it.bookId }) { book ->
-            LibraryBookCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(2f / 3f),
-                onClick = { onOpen(book.bookId) },
-            ) {
-                BookShelfTile(book)
-            }
-        }
-    }
-}
-
-@Composable
-private fun BookShelfTile(book: ProgressEntity) {
-    val cover by rememberCover(book, maxEdge = 512)
-    val linked = book.sourceKind == BookSource.Linked.name
-    Box(Modifier.fillMaxSize()) {
-        CoverFill(
-            book = book,
-            cover = cover,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
-            // Fade sits above a solid scrim so darkness always matches title height.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(36.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.88f),
-                            ),
-                        ),
-                    ),
-            )
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.88f)),
-            ) {
-                Text(
-                    book.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 8.dp),
-                )
-                BookProgressBar(progress = book.readingProgress)
-            }
-        }
-        if (linked) {
-            Icon(
-                Icons.Filled.Link,
-                contentDescription = "Linked file",
-                tint = Color.White,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .size(14.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun rememberCover(book: ProgressEntity, maxEdge: Int): androidx.compose.runtime.State<ImageBitmap?> =
-    produceState(initialValue = null, book.bookId, book.storedPath, maxEdge) {
-        value = withContext(Dispatchers.IO) {
-            EpubCover.loadBitmap(File(book.storedPath), maxEdge)?.asImageBitmap()
-        }
-    }
-
-@Composable
-private fun CoverFill(
-    book: ProgressEntity,
-    cover: ImageBitmap?,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier.background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (cover != null) {
-            Image(
-                bitmap = cover,
-                contentDescription = book.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Text(
-                book.title.firstOrNull()?.uppercase() ?: "?",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-    }
-}
-
-private fun sourceLabel(book: ProgressEntity): String =
-    runCatching { BookSource.valueOf(book.sourceKind).label }
-        .getOrDefault(BookSource.Imported.label)
-
-private fun bookSubtitle(book: ProgressEntity): String {
-    val source = sourceLabel(book)
-    val whenRead = DateUtils.getRelativeTimeSpanString(
-        book.updatedAt,
-        System.currentTimeMillis(),
-        DateUtils.MINUTE_IN_MILLIS,
-    )
-    return "$source · $whenRead"
 }

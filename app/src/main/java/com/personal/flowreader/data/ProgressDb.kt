@@ -60,6 +60,11 @@ interface ProgressDao {
     @Query("SELECT * FROM progress WHERE inLibrary = 1 ORDER BY updatedAt DESC")
     suspend fun library(): List<ProgressEntity>
 
+    @Query(
+        "SELECT * FROM progress WHERE sourceKind = :sourceKind ORDER BY updatedAt DESC",
+    )
+    suspend fun pluginLibrary(sourceKind: String): List<ProgressEntity>
+
     @Query("SELECT * FROM progress ORDER BY updatedAt DESC")
     suspend fun all(): List<ProgressEntity>
 

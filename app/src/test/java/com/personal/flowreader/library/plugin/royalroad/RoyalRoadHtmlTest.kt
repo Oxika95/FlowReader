@@ -166,6 +166,7 @@ class RoyalRoadHtmlTest {
         val list = """
             <html><body>
             <div class="fiction-list-item">
+              <figure><img data-type="cover" src="https://cdn.example/cover.jpg" alt="Cover"/></figure>
               <h2 class="fiction-title"><a href="/fiction/21220/mother-of-learning">Mother of Learning</a></h2>
               <div class="stats"><span>109 Chapters</span></div>
             </div>
@@ -175,6 +176,7 @@ class RoyalRoadHtmlTest {
         assertEquals(1, items.size)
         assertEquals("Mother of Learning", items[0].title)
         assertTrue(items[0].url.contains("/fiction/21220/"))
+        assertEquals("https://cdn.example/cover.jpg", items[0].coverUrl)
 
         val page = """
             <html><body>
@@ -210,5 +212,109 @@ class RoyalRoadHtmlTest {
         assertEquals("login-token", RoyalRoadHtml.loginToken(html))
         assertEquals("rr:21220", RoyalRoadHtml.bookIdFor("21220"))
         assertTrue(RoyalRoadHtml.isPluginBookId("rr:21220"))
+    }
+
+    @Test
+    fun bookmarkFormFromFictionPage() {
+        val pageUrl = "https://www.royalroad.com/fiction/21220/mother-of-learning"
+        val html = """
+            <html><body>
+            <form action="/fictions/setbookmark/21220" method="post">
+              <input name="type" value="follow" />
+              <input name="__RequestVerificationToken" value="follow-token" />
+            </form>
+            <form action="/fictions/setbookmark/21220" method="post">
+              <input name="type" value="favorite" />
+              <input name="__RequestVerificationToken" value="fav-token" />
+            </form>
+            <form action="/fictions/setbookmark/21220" method="post">
+              <input name="type" value="readlater" />
+              <input name="__RequestVerificationToken" value="later-token" />
+            </form>
+            </body></html>
+        """.trimIndent()
+        val follow = RoyalRoadHtml.bookmarkForm(html, pageUrl, "follow")
+        assertEquals("https://www.royalroad.com/fictions/setbookmark/21220", follow!!.actionUrl)
+        assertEquals("follow-token", follow.token)
+        assertEquals("follow", follow.type)
+        val fav = RoyalRoadHtml.bookmarkForm(html, pageUrl, "favorite")
+        assertEquals("fav-token", fav!!.token)
+        assertEquals("favorite", fav.type)
+        val later = RoyalRoadHtml.bookmarkForm(html, pageUrl, "readlater")
+        assertEquals("later-token", later!!.token)
+    }
+
+    @Test
+    fun followFormFromFictionPage() {
+        val pageUrl = "https://www.royalroad.com/fiction/21220/mother-of-learning"
+        val html = """
+            <html><body>
+            <form action="/fictions/setbookmark/21220" method="post">
+              <input name="type" value="follow" />
+              <input name="__RequestVerificationToken" value="follow-token" />
+            </form>
+            <form action="/fictions/setbookmark/21220" method="post">
+              <input name="type" value="favorite" />
+              <input name="__RequestVerificationToken" value="fav-token" />
+            </form>
+            </body></html>
+        """.trimIndent()
+        val form = RoyalRoadHtml.followForm(html, pageUrl)
+        assertEquals("https://www.royalroad.com/fictions/setbookmark/21220", form!!.actionUrl)
+        assertEquals("follow-token", form.token)
+    }
+
+    @Test
+    fun followFormAbsentWhenAlreadyFollowing() {
+        val html = """
+            <html><body>
+            <button class="btn-primary">Unfollow</button>
+            </body></html>
+        """.trimIndent()
+        assertNull(
+            RoyalRoadHtml.followForm(
+                html,
+                "https://www.royalroad.com/fiction/1/demo",
+            ),
+        )
+    }
+
+    @Test
+    fun parseFictionPageCapturesTagsViewsRatingAndToC() {
+        val pageUrl = "https://www.royalroad.com/fiction/1/demo"
+        val html = """
+            <html><head><link rel="canonical" href="$pageUrl" /></head><body>
+            <div class="fic-header">
+              <h1>Demo Fiction</h1>
+              <h4 class="font-white"><span><a href="/profile/1">Author Name</a></span></h4>
+              <div class="cover-art-container"><img src="/covers/demo.jpg" /></div>
+            </div>
+            <div class="col-md-8"><div class="margin-bottom-10"><span class="label">Ongoing</span></div></div>
+            <ul class="list-unstyled">
+              <li>Pages: 10</li>
+              <li>12,345</li>
+            </ul>
+            <span class="font-red-sunglo" data-content="4.55/5"></span>
+            <span class="tags"><a>Fantasy</a><a>Adventure</a></span>
+            <div class="description"><div class="hidden-content"><p>A short synopsis.</p></div></div>
+            <script>
+            window.chapters = [
+              {"id":1,"title":"Chapter 1","url":"/fiction/1/demo/chapter/1/c1"},
+              {"id":2,"title":"Chapter 2","url":"/fiction/1/demo/chapter/2/c2"}
+            ];
+            </script>
+            </body></html>
+        """.trimIndent()
+        val page = RoyalRoadHtml.parseFictionPage(html, pageUrl)
+        assertEquals("Demo Fiction", page.title)
+        assertEquals("Author Name", page.author)
+        assertEquals("A short synopsis.", page.synopsis)
+        assertEquals(listOf("Fantasy", "Adventure"), page.tags)
+        assertEquals(12345L, page.views)
+        assertEquals("4.55 / 5", page.ratingLabel)
+        assertEquals("Ongoing", page.status)
+        assertEquals(2, page.chapters.size)
+        assertEquals("Chapter 1", page.chapters[0].title)
+        assertTrue(page.coverUrl.contains("demo.jpg"))
     }
 }

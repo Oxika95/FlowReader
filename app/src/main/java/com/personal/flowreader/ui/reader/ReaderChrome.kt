@@ -1,5 +1,6 @@
 package com.personal.flowreader.ui.reader
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,7 +20,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,6 +36,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -69,6 +80,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,6 +88,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -111,6 +124,7 @@ import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.ReaderFont
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.TextFilters
@@ -459,14 +473,25 @@ internal fun MediaControlCard(
 /**
  * Scrim + centered scrolling card shared by the Settings and TOC modals: tap the scrim to
  * dismiss, taps inside the card are swallowed, and the card never outgrows the viewport.
+ *
+ * When [fillMaxCardHeight] is true the panel stretches to the available height (full-screen
+ * splash). When [centerContent] is also true, short content is centered vertically in that panel.
+ * Set [contentScrollable] to false when the caller manages its own scroll (e.g. pinned header).
  */
 @Composable
 internal fun ReaderModalScaffold(
     visible: Boolean,
     contentPadding: PaddingValues,
     onDismiss: () -> Unit,
+    fillMaxCardHeight: Boolean = false,
+    centerContent: Boolean = false,
+    contentScrollable: Boolean = true,
+    /** Soft halo drawn outside the card border; 0.dp keeps the hard-edged card. */
+    feather: Dp = 0.dp,
+    scrimAlpha: Float = 0.42f,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    BackHandler(enabled = visible, onBack = onDismiss)
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(),
@@ -475,15 +500,19 @@ internal fun ReaderModalScaffold(
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f))
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = onDismiss,
-                ),
+                )
+                // Status/navigation bars are hidden in the reader, so this is a no-op there and
+                // keeps the card clear of the bars anywhere they are showing (e.g. the library).
+                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Vertical)),
             contentAlignment = Alignment.Center,
         ) {
-            val maxCardHeight = maxHeight - ReaderOverlayVerticalPad * 2
+            // Leave room for the halo so a feathered card still clears the screen edges.
+            val maxCardHeight = maxHeight - (ReaderOverlayVerticalPad + feather) * 2
             AnimatedVisibility(
                 visible = visible,
                 enter = fadeIn() + scaleIn(initialScale = 0.96f),
@@ -493,21 +522,44 @@ internal fun ReaderModalScaffold(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = maxCardHeight)
-                        .wrapContentHeight()
+                        .then(
+                            if (fillMaxCardHeight) Modifier.fillMaxHeight()
+                            else Modifier.wrapContentHeight(),
+                        )
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = {},
                         ),
                     matchReaderWidth = true,
-                    feather = 0.dp,
+                    feather = feather,
                 ) {
+                    val scrollState = rememberScrollState()
                     Column(
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(max = maxCardHeight)
-                            .verticalScroll(rememberScrollState())
+                            .then(
+                                if (fillMaxCardHeight) Modifier.height(maxCardHeight)
+                                else Modifier.heightIn(max = maxCardHeight),
+                            )
+                            .then(
+                                if (contentScrollable) {
+                                    Modifier.verticalScroll(
+                                        scrollState,
+                                        // Keep layout scrollable for measurement, but only accept
+                                        // drag/fling when content actually overflows the card.
+                                        enabled = scrollState.maxValue > 0,
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            )
                             .padding(contentPadding),
+                        verticalArrangement = if (centerContent) {
+                            Arrangement.Center
+                        } else {
+                            Arrangement.Top
+                        },
                         content = content,
                     )
                 }
@@ -524,10 +576,34 @@ internal fun TocOverlay(
     onChapter: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    val safeIndex = if (chapters.isEmpty()) {
+        0
+    } else {
+        chapterIndex.coerceIn(0, chapters.lastIndex)
+    }
+
+    LaunchedEffect(visible, safeIndex, chapters.size) {
+        if (!visible || chapters.isEmpty()) return@LaunchedEffect
+        // Wait until the list has a real viewport so centering math is valid.
+        snapshotFlow { listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset }
+            .first { it > 0 }
+        listState.scrollToItem(safeIndex)
+        val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == safeIndex }
+            ?: return@LaunchedEffect
+        val viewport = listState.layoutInfo
+        val viewportCenter =
+            (viewport.viewportStartOffset + viewport.viewportEndOffset) / 2
+        val itemCenter = item.offset + item.size / 2
+        listState.scrollBy((itemCenter - viewportCenter).toFloat())
+    }
+
     ReaderModalScaffold(
         visible = visible,
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
         onDismiss = onDismiss,
+        fillMaxCardHeight = true,
+        contentScrollable = false,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -545,32 +621,39 @@ internal fun TocOverlay(
                 Icon(Icons.Default.Close, contentDescription = "Close contents")
             }
         }
-        chapters.forEachIndexed { index, name ->
-            Text(
-                name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (index == chapterIndex) {
-                    FontWeight.SemiBold
-                } else {
-                    FontWeight.Normal
-                },
-                color = if (index == chapterIndex) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onBackground
-                },
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onChapter(index) }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-            )
-            if (index < chapters.lastIndex) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant,
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
+            itemsIndexed(chapters, key = { index, _ -> index }) { index, name ->
+                Text(
+                    name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (index == safeIndex) {
+                        FontWeight.SemiBold
+                    } else {
+                        FontWeight.Normal
+                    },
+                    color = if (index == safeIndex) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onBackground
+                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onChapter(index) }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                 )
+                if (index < chapters.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                }
             }
         }
     }

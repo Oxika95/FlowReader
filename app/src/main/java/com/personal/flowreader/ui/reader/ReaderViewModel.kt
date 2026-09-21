@@ -38,6 +38,10 @@ data class ReaderUi(
     val filtersGlobal: List<FilterRule> = emptyList(),
     val filtersGroups: List<FilterRule> = emptyList(),
     val filtersLocal: List<FilterRule> = emptyList(),
+    /** Full ToC titles (RR uses saved session ToC; otherwise [doc] chapters). */
+    val tocTitles: List<String> = emptyList(),
+    /** Absolute ToC index for the current locus highlight. */
+    val tocIndex: Int = 0,
 )
 
 class ReaderViewModel(
@@ -86,6 +90,10 @@ class ReaderViewModel(
             // file that was already finished does not immediately re-emit bookFinished.
             val locus = if (autoPlay) {
                 Locus()
+            } else if (rrSession != null) {
+                // Progress stores absolute ToC chapter; BookDoc chapters are relative to startIndex.
+                val rel = (row.chapterIndex - rrSession!!.startIndex).coerceAtLeast(0)
+                Locus(rel, row.blockIndex, row.charOffset)
             } else {
                 Locus(row.chapterIndex, row.blockIndex, row.charOffset)
             }
@@ -118,7 +126,10 @@ class ReaderViewModel(
     }
 
     private suspend fun persistPluginSnapshot(session: RoyalRoadReadSession) {
-        val text = session.chapters.joinToString("\n\n") { chapter ->
+        // Keep book.txt to the stream window so it does not grow without bound.
+        val window = (session.keepBehind + 1 + session.prefetchAhead).coerceAtLeast(1)
+        val slice = session.chapters.takeLast(window)
+        val text = slice.joinToString("\n\n") { chapter ->
             buildString {
                 if (chapter.title.isNotBlank()) {
                     append(chapter.title)
@@ -151,14 +162,20 @@ class ReaderViewModel(
         val filtered = TextFilters.applyVisual(rawDoc!!, merged)
         val addedFiltered = filtered.doc.chapters.takeLast(1)
         tts.extend(addedFiltered)
+        val tocTitles = tocTitlesFor(next, filtered.doc)
         _ui.value = _ui.value.copy(
             doc = filtered.doc,
             replacedRangesByBlockId = filtered.replacedRangesByBlockId,
+            tocTitles = tocTitles,
+            tocIndex = tocIndexFor(next, _ui.value.locus, tocTitles.size),
         )
         withContext(Dispatchers.IO) {
             persistPluginSnapshot(next)
             next.toc.getOrNull(next.loadedThrough)?.url?.let { url ->
                 flow.royalRoad.syncProgress(next.bookId, url)
+            }
+            runCatching {
+                flow.royalRoad.maintainChapterCache(next.bookId, next.loadedThrough)
             }
         }
         true
@@ -201,6 +218,7 @@ class ReaderViewModel(
         val clamped = clampLocus(locus, filtered.doc)
         if (invalidateCache) tts.invalidateEdgeCache()
         tts.attach(bookId, filtered.doc, clamped, speechFilters = merged.filter { it.ttsOnly })
+        val tocTitles = tocTitlesFor(rrSession, filtered.doc)
         _ui.value = ReaderUi(
             title = filtered.doc.title,
             doc = filtered.doc,
@@ -211,7 +229,33 @@ class ReaderViewModel(
             filtersGlobal = global,
             filtersGroups = groups,
             filtersLocal = local,
+            tocTitles = tocTitles,
+            tocIndex = tocIndexFor(rrSession, clamped, tocTitles.size),
         )
+    }
+
+    private fun tocTitlesFor(session: RoyalRoadReadSession?, doc: BookDoc): List<String> {
+        if (session != null && session.toc.isNotEmpty()) {
+            return session.toc.mapIndexed { i, link ->
+                link.title.ifBlank { "Chapter ${i + 1}" }
+            }
+        }
+        return doc.chapters.mapIndexed { i, ch ->
+            ch.title.ifBlank { "Chapter ${i + 1}" }
+        }
+    }
+
+    private fun tocIndexFor(
+        session: RoyalRoadReadSession?,
+        locus: Locus,
+        tocSize: Int,
+    ): Int {
+        if (tocSize <= 0) return 0
+        return if (session != null) {
+            (session.startIndex + locus.chapterIndex).coerceIn(0, tocSize - 1)
+        } else {
+            locus.chapterIndex.coerceIn(0, tocSize - 1)
+        }
     }
 
     private fun reapply(
@@ -383,10 +427,38 @@ class ReaderViewModel(
     private fun nextOrder(rules: List<FilterRule>): Int =
         (rules.maxOfOrNull { it.order } ?: -1) + 1
 
-    fun jumpToChapter(chapterIndex: Int) {
+    suspend fun jumpToChapter(chapterIndex: Int) {
+        val session = rrSession
+        if (session != null) {
+            seekRoyalRoadChapter(chapterIndex)
+            return
+        }
         val doc = _ui.value.doc ?: return
         val ci = chapterIndex.coerceIn(0, doc.chapters.lastIndex)
         jumpTo(Locus(ci, 0, 0))
+    }
+
+    private suspend fun seekRoyalRoadChapter(absoluteIndex: Int) {
+        val loaded = withContext(Dispatchers.IO) {
+            flow.royalRoad.seekToChapter(bookId, absoluteIndex)
+        }
+        rrSession = loaded
+        rawDoc = BookDoc(loaded.title, loaded.chapters)
+        withContext(Dispatchers.IO) {
+            persistPluginSnapshot(loaded)
+            loaded.toc.getOrNull(loaded.startIndex)?.url?.let { url ->
+                runCatching { flow.royalRoad.syncProgress(loaded.bookId, url) }
+            }
+        }
+        applyFilters(
+            _ui.value.filtersGlobal,
+            _ui.value.filtersGroups,
+            _ui.value.filtersLocal,
+            locus = Locus(0, 0, 0),
+            invalidateCache = true,
+        )
+        // Persist absolute progress at the seek target.
+        persist(_ui.value.locus)
     }
 
     fun jumpTo(locus: Locus) {
@@ -395,7 +467,11 @@ class ReaderViewModel(
     }
 
     fun onLocus(locus: Locus) {
-        _ui.value = _ui.value.copy(locus = locus)
+        val tocTitles = _ui.value.tocTitles
+        _ui.value = _ui.value.copy(
+            locus = locus,
+            tocIndex = tocIndexFor(rrSession, locus, tocTitles.size),
+        )
         persist(locus)
     }
 
@@ -413,17 +489,29 @@ class ReaderViewModel(
             items.size <= 1 -> 0f
             else -> locus.flatIndex(doc!!).toFloat() / items.lastIndex
         }.coerceIn(0f, 1f)
+        // RR sessions start at an absolute ToC index; store absolute chapter for cache/splash.
+        val session = rrSession
+        val absoluteChapter = if (session != null) {
+            (session.startIndex + locus.chapterIndex).coerceIn(0, (session.toc.size - 1).coerceAtLeast(0))
+        } else {
+            locus.chapterIndex
+        }
         flow.appScope.launch {
             val row = flow.db.progress().get(id) ?: return@launch
             flow.db.progress().upsert(
                 row.copy(
-                    chapterIndex = locus.chapterIndex,
+                    chapterIndex = absoluteChapter,
                     blockIndex = locus.blockIndex,
                     charOffset = locus.charOffset,
                     readingProgress = readingProgress,
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
+            if (RoyalRoadHtml.isPluginBookId(id)) {
+                runCatching {
+                    flow.royalRoad.maintainChapterCache(id, absoluteChapter)
+                }
+            }
         }
     }
 

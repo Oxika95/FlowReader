@@ -94,6 +94,10 @@ class BookCatalog(private val app: FlowApp) {
 
     suspend fun list(): List<ProgressEntity> = app.db.progress().library()
 
+    /** Plugin tab membership (e.g. Royal Road). Not shown on Files. */
+    suspend fun listPlugin(sourceKind: String): List<ProgressEntity> =
+        app.db.progress().pluginLibrary(sourceKind)
+
     suspend fun listQue(): List<QueEntry> {
         val items = app.db.que().all()
         return items.mapNotNull { item ->
@@ -203,8 +207,7 @@ class BookCatalog(private val app: FlowApp) {
         text: String,
     ): ProgressEntity {
         val existing = app.db.progress().get(bookId)
-        val safe = bookId.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val dest = File(File(app.booksDir, safe).apply { mkdirs() }, "book.txt")
+        val dest = pluginBookFile(bookId)
         dest.writeText(text)
         val now = System.currentTimeMillis()
         val row = ProgressEntity(
@@ -222,6 +225,105 @@ class BookCatalog(private val app: FlowApp) {
         )
         app.db.progress().upsert(row)
         return row
+    }
+
+    /**
+     * Add a plugin fiction to its tab catalog without downloading chapters.
+     * Preserves existing reading progress and chapter cache on disk.
+     */
+    suspend fun upsertPluginCatalogEntry(
+        bookId: String,
+        title: String,
+        sourceUri: String,
+        sourceKind: String,
+        coverBytes: ByteArray? = null,
+    ): ProgressEntity {
+        val existing = app.db.progress().get(bookId)
+        val dest = pluginBookFile(bookId)
+        if (!dest.exists() || dest.length() == 0L) {
+            dest.writeText(title)
+        }
+        if (coverBytes != null && coverBytes.isNotEmpty()) {
+            writePluginCover(dest, coverBytes)
+        }
+        val now = System.currentTimeMillis()
+        val row = ProgressEntity(
+            bookId = bookId,
+            title = title.ifBlank { existing?.title.orEmpty() }.ifBlank { "Royal Road" },
+            storedPath = dest.absolutePath,
+            sourceUri = sourceUri.ifBlank { existing?.sourceUri.orEmpty() },
+            sourceKind = sourceKind,
+            chapterIndex = existing?.chapterIndex ?: 0,
+            blockIndex = existing?.blockIndex ?: 0,
+            charOffset = existing?.charOffset ?: 0,
+            updatedAt = now,
+            inLibrary = false,
+            readingProgress = existing?.readingProgress ?: 0f,
+        )
+        app.db.progress().upsert(row)
+        return row
+    }
+
+    /**
+     * Remove a book from the Files tab. If Que still references it, only clears
+     * [ProgressEntity.inLibrary]. Otherwise deletes progress, filters, and the
+     * imported/cache file tree (never the user's original SAF document).
+     */
+    suspend fun removeFromLibrary(bookId: String) {
+        val progress = app.db.progress().get(bookId) ?: return
+        if (app.db.que().countForBook(bookId) > 0) {
+            app.db.progress().upsert(
+                progress.copy(inLibrary = false, updatedAt = System.currentTimeMillis()),
+            )
+            return
+        }
+        val kind = runCatching { BookSource.valueOf(progress.sourceKind) }
+            .getOrDefault(BookSource.Imported)
+        val stored = File(progress.storedPath)
+        when (kind) {
+            BookSource.Imported -> stored.parentFile?.deleteRecursively()
+            BookSource.Linked -> stored.parentFile?.deleteRecursively()
+        }
+        app.db.progress().delete(bookId)
+        app.db.bookFilters().delete(bookId)
+    }
+
+    /**
+     * Remove a plugin book from its tab. Keeps chapter cache under the plugin
+     * files dir so a later re-add can resume. Drops Que rows for this book.
+     */
+    suspend fun removePluginMembership(bookId: String) {
+        val progress = app.db.progress().get(bookId) ?: return
+        app.db.que().all().filter { it.bookId == bookId }.forEach { app.db.que().delete(it.id) }
+        File(progress.storedPath).parentFile?.deleteRecursively()
+        app.db.progress().delete(bookId)
+        app.db.bookFilters().delete(bookId)
+    }
+
+    fun pluginCoverFile(storedPath: String): File? {
+        val dir = File(storedPath).parentFile ?: return null
+        return listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp")
+            .map { File(dir, it) }
+            .firstOrNull { it.exists() && it.length() > 0L }
+    }
+
+    private fun pluginBookFile(bookId: String): File {
+        val safe = bookId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        return File(File(app.booksDir, safe).apply { mkdirs() }, "book.txt")
+    }
+
+    private fun writePluginCover(bookFile: File, bytes: ByteArray) {
+        val dir = bookFile.parentFile ?: return
+        listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp").forEach { name ->
+            File(dir, name).delete()
+        }
+        val ext = when {
+            bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() -> "jpg"
+            bytes.size >= 8 && bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() -> "png"
+            bytes.size >= 12 && bytes.copyOfRange(0, 4).contentEquals("RIFF".toByteArray()) -> "webp"
+            else -> "jpg"
+        }
+        File(dir, "cover.$ext").writeBytes(bytes)
     }
 
     suspend fun enqueueExisting(bookId: String): QueItemEntity {

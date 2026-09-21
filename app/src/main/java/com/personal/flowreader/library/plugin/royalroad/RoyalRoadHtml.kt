@@ -138,7 +138,17 @@ object RoyalRoadHtml {
                 ?.text()
                 ?.trim()
                 .orEmpty()
-            FictionListItem(title = title, url = href, author = author, latestChapter = latest)
+            val cover = item.selectFirst("img[data-type=cover], figure img, img.img-responsive")
+                ?.attr("abs:src")
+                ?.takeIf { it.isNotBlank() && !it.contains("nocover", ignoreCase = true) }
+                .orEmpty()
+            FictionListItem(
+                title = title,
+                url = href,
+                author = author,
+                latestChapter = latest,
+                coverUrl = cover,
+            )
         }
     }
 
@@ -153,7 +163,7 @@ object RoyalRoadHtml {
             ?.trim()
             .orEmpty()
             .ifBlank { "Royal Road" }
-        val author = doc.selectFirst("div.fic-header h4 a, h4.font-white a")
+        val author = doc.selectFirst("div.fic-header h4 a, h4.font-white a, h4.font-white > span > a")
             ?.text()
             ?.trim()
             .orEmpty()
@@ -165,6 +175,29 @@ object RoyalRoadHtml {
         val chapters = windowChapters(pageHtml, canonical).ifEmpty {
             legacyChapterLinks(pageHtml, canonical)
         }
+        val tags = doc.select("span.tags > a").map { it.text().trim() }.filter { it.isNotEmpty() }
+        val status = doc.select("div.col-md-8 > div.margin-bottom-10 > span.label, span.label")
+            .map { it.text().trim() }
+            .firstOrNull { it.isNotEmpty() }
+            .orEmpty()
+        val views = doc.select("ul.list-unstyled > li")
+            .getOrNull(1)
+            ?.text()
+            ?.replace(",", "")
+            ?.replace(".", "")
+            ?.filter { it.isDigit() }
+            ?.toLongOrNull()
+        val ratingAttr = doc.selectFirst("span.font-red-sunglo")?.attr("data-content")
+            ?.takeIf { it.isNotBlank() }
+        val ratingLabel = ratingAttr
+            ?.substringBefore('/')
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "$it / 5" }
+            .orEmpty()
+        val coverUrl = doc.selectFirst(
+            "div.fic-header img, .cover-art-container img, img.thumbnail",
+        )?.attr("abs:src")?.takeIf { it.isNotBlank() }.orEmpty()
         return FictionPage(
             title = title,
             url = canonical,
@@ -172,6 +205,11 @@ object RoyalRoadHtml {
             synopsis = synopsis,
             fictionId = fictionId(canonical).orEmpty(),
             chapters = chapters,
+            tags = tags,
+            views = views,
+            ratingLabel = ratingLabel,
+            status = status,
+            coverUrl = coverUrl,
         )
     }
 
@@ -184,6 +222,32 @@ object RoyalRoadHtml {
                 ?.attr("value")
                 ?.takeIf { it.isNotBlank() }
     }
+
+    /**
+     * Bookmark form on a fiction page for [type] (`follow`, `favorite`, or `readlater`).
+     * Returns null if the form is not present (already bookmarked / logged out markup).
+     */
+    fun bookmarkForm(pageHtml: String, pageUrl: String, type: String): FollowForm? {
+        val wanted = type.trim().lowercase()
+        if (wanted.isEmpty()) return null
+        val doc = Jsoup.parse(pageHtml, pageUrl)
+        val form = doc.select("form[action*=/fictions/setbookmark/]").firstOrNull { el ->
+            el.selectFirst("input[name=type][value=$wanted]") != null
+        } ?: return null
+        val action = form.attr("abs:action").ifBlank {
+            resolve(pageUrl, form.attr("action")).orEmpty()
+        }.takeIf { it.isNotBlank() } ?: return null
+        val token = form.selectFirst("input[name=__RequestVerificationToken]")
+            ?.attr("value")
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        return FollowForm(actionUrl = action, token = token, type = wanted)
+    }
+
+    /** @deprecated Prefer [bookmarkForm] with type `follow`. */
+    fun followForm(pageHtml: String, pageUrl: String): FollowForm? =
+        bookmarkForm(pageHtml, pageUrl, "follow")
+
 
     fun isLoggedIn(html: String): Boolean {
         val id = USER_ID.find(html)?.groupValues?.get(1)
@@ -328,6 +392,13 @@ data class FictionListItem(
     val url: String,
     val author: String = "",
     val latestChapter: String = "",
+    val coverUrl: String = "",
+)
+
+data class FollowForm(
+    val actionUrl: String,
+    val token: String,
+    val type: String = "follow",
 )
 
 data class FictionPage(
@@ -337,6 +408,11 @@ data class FictionPage(
     val synopsis: String = "",
     val fictionId: String = "",
     val chapters: List<ChapterLink>,
+    val tags: List<String> = emptyList(),
+    val views: Long? = null,
+    val ratingLabel: String = "",
+    val status: String = "",
+    val coverUrl: String = "",
 )
 
 data class ChapterLink(
