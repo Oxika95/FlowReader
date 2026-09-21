@@ -20,7 +20,10 @@ data class OpenUi(
     val fontScale: Float = 1f,
     val fontFamily: ReaderFont = ReaderFont.Sans,
     val lineSpacing: Float = 1f,
+    val justifyText: Boolean = false,
     val orientation: ReaderOrientation = ReaderOrientation.Auto,
+    val showChapterHeadingsInBody: Boolean = false,
+    val keepScreenAwake: Boolean = false,
 )
 
 class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
@@ -38,7 +41,10 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
                 fontScale = prefs.fontScale,
                 fontFamily = prefs.fontFamily,
                 lineSpacing = prefs.lineSpacing,
+                justifyText = prefs.justifyText,
                 orientation = prefs.orientation,
+                showChapterHeadingsInBody = prefs.showChapterHeadingsInBody,
+                keepScreenAwake = prefs.keepScreenAwake,
             )
         }
     }
@@ -77,8 +83,23 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { flow.settings.setLineSpacing(value) }
     }
 
+    fun setJustifyText(enabled: Boolean) {
+        _ui.value = _ui.value.copy(justifyText = enabled)
+        viewModelScope.launch { flow.settings.setJustifyText(enabled) }
+    }
+
     fun setOrientation(orientation: ReaderOrientation) {
         _ui.value = _ui.value.copy(orientation = orientation)
         viewModelScope.launch { flow.settings.setOrientation(orientation) }
+    }
+
+    fun setShowChapterHeadingsInBody(enabled: Boolean) {
+        _ui.value = _ui.value.copy(showChapterHeadingsInBody = enabled)
+        viewModelScope.launch { flow.settings.setShowChapterHeadingsInBody(enabled) }
+    }
+
+    fun setKeepScreenAwake(enabled: Boolean) {
+        _ui.value = _ui.value.copy(keepScreenAwake = enabled)
+        viewModelScope.launch { flow.settings.setKeepScreenAwake(enabled) }
     }
 }

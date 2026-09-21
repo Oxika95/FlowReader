@@ -58,12 +58,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -82,10 +85,10 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.zIndex
 import kotlin.math.abs
@@ -132,6 +135,8 @@ private const val RailReadyRevealMs = 1_500
 private val RailBehindDot = FlowTokens.NeutralCacheGray
 /** LazyColumn top/bottom content pad (16 + 12). */
 private val ReaderListVerticalPad = FlowTokens.Space.L + FlowTokens.Space.M
+/** Horizontal inset for TTS highlight pills (matches typical line-box pad). */
+private val HighlightSidePad = 4.dp
 /** Edge-band tap targets — gesture constants, not on spacing ramp. */
 private val EdgeBandTopHeight = 56.dp
 private val EdgeBandBottomHeight = 72.dp
@@ -160,14 +165,20 @@ fun ReaderScreen(
     fontScale: Float,
     fontFamily: ReaderFont,
     lineSpacing: Float,
+    justifyText: Boolean,
     orientation: ReaderOrientation,
+    showChapterHeadingsInBody: Boolean,
+    keepScreenAwake: Boolean,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
     onUiScale: (Float) -> Unit,
     onFontScale: (Float) -> Unit,
     onFontFamily: (ReaderFont) -> Unit,
     onLineSpacing: (Float) -> Unit,
+    onJustifyText: (Boolean) -> Unit,
     onOrientation: (ReaderOrientation) -> Unit,
+    onShowChapterHeadingsInBody: (Boolean) -> Unit,
+    onKeepScreenAwake: (Boolean) -> Unit,
     onBack: () -> Unit,
     onAdvanceQue: (bookId: String, queId: String) -> Unit = { _, _ -> },
 ) {
@@ -183,6 +194,11 @@ fun ReaderScreen(
     var suppressFollowScroll by remember { mutableStateOf(false) }
     var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
     val view = LocalView.current
+    DisposableEffect(keepScreenAwake, view) {
+        val previous = view.keepScreenOn
+        view.keepScreenOn = keepScreenAwake
+        onDispose { view.keepScreenOn = previous }
+    }
     var selectionActive by remember { mutableStateOf(false) }
     var selectionEpoch by remember { mutableIntStateOf(0) }
     val textToolbar = remember(view) {
@@ -193,12 +209,16 @@ fun ReaderScreen(
         selectionActive = false
         selectionEpoch++
     }
-    val items = doc?.items.orEmpty()
+    val items = remember(doc, showChapterHeadingsInBody) {
+        doc?.readingItems(includeChapterTitles = showChapterHeadingsInBody).orEmpty()
+    }
     val allSentences = remember(doc) { doc?.let { SentenceSplitter.split(it) }.orEmpty() }
     /** (chapter, block) → flat item index; the reader looks this up on every frame. */
-    val blockIndexOf = remember(doc) {
+    val blockIndexOf = remember(items) {
         buildMap(items.size) {
-            items.forEachIndexed { i, item -> put(item.chapterIndex to item.blockIndex, i) }
+            items.forEachIndexed { i, item ->
+                if (!item.isChapterTitle) put(item.chapterIndex to item.blockIndex, i)
+            }
         }
     }
     // Only computed while paused, and only when the locus actually moves.
@@ -251,7 +271,7 @@ fun ReaderScreen(
             if (s != null && tts.playing && tts.following && tts.autoScrollWithTts) {
                 blockIndexOf[s.chapterIndex to s.blockIndex] ?: 0
             } else {
-                ui.locus.flatIndex(doc ?: return@derivedStateOf 0)
+                blockIndexOf[ui.locus.chapterIndex to ui.locus.blockIndex] ?: 0
             }
         }
     }
@@ -272,14 +292,14 @@ fun ReaderScreen(
      * Where to park the edge chip (now-playing snippet or jump-back), or null if the
      * target block is still on-screen.
      */
-    val pinEdge by remember(doc) {
+    val pinEdge by remember(doc, items, blockIndexOf) {
         derivedStateOf {
             val idx = if (tts.playing) {
                 val s = tts.sentence ?: return@derivedStateOf null
                 blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@derivedStateOf null
             } else {
-                val d = doc ?: return@derivedStateOf null
-                ui.locus.flatIndex(d)
+                blockIndexOf[ui.locus.chapterIndex to ui.locus.blockIndex]
+                    ?: return@derivedStateOf null
             }
 
             // Subscribe to scroll position (layoutInfo alone can miss some updates).
@@ -357,7 +377,8 @@ fun ReaderScreen(
     // Jump to the saved locus once the book finishes loading.
     LaunchedEffect(doc, ui.loading) {
         if (doc == null || ui.loading || restoredScroll || items.isEmpty()) return@LaunchedEffect
-        val target = ui.locus.flatIndex(doc).coerceIn(0, items.lastIndex)
+        val target = (blockIndexOf[ui.locus.chapterIndex to ui.locus.blockIndex] ?: 0)
+            .coerceIn(0, items.lastIndex)
         programmatic = true
         try {
             listState.scrollItemToCenter(target)
@@ -475,10 +496,15 @@ fun ReaderScreen(
         ReaderFont.Serif -> FontFamily.Serif
         ReaderFont.Mono -> FontFamily.Monospace
     }
+    // Material bodyLarge defaults to 0.5.sp letterSpacing. With TextAlign.Justify,
+    // Compose still reserves that trailing per-glyph spacing on each line, so the
+    // glyphs stop ~n*ls short of the right edge (looks like extra right padding).
     val bodyStyle = MaterialTheme.typography.bodyLarge.copy(
         fontFamily = typeface,
         fontSize = MaterialTheme.typography.bodyLarge.fontSize * fontScale,
         lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * fontScale * lineSpacing,
+        textAlign = if (justifyText) TextAlign.Justify else TextAlign.Start,
+        letterSpacing = if (justifyText) 0.sp else MaterialTheme.typography.bodyLarge.letterSpacing,
     )
     val headingStyle = MaterialTheme.typography.headlineSmall.copy(
         fontFamily = typeface,
@@ -560,6 +586,23 @@ fun ReaderScreen(
                                         sentence.chapterIndex == item.chapterIndex &&
                                         sentence.blockIndex == item.blockIndex &&
                                         tts.playing
+                                    val sentenceRange: IntRange? =
+                                        if (highlight) sentence!!.start until sentence.end else null
+                                    val wordRange: IntRange? = when {
+                                        !highlight -> null
+                                        else -> {
+                                            val spoken = sentence!!
+                                            val word = tts.wordHighlight
+                                            if (word != null &&
+                                                word.first >= spoken.start &&
+                                                word.last < spoken.end
+                                            ) {
+                                                word
+                                            } else {
+                                                null
+                                            }
+                                        }
+                                    }
                                     val blockSentences = remember(allSentences, item.chapterIndex, item.blockIndex) {
                                         allSentences.mapIndexedNotNull { si, s ->
                                             if (s.chapterIndex == item.chapterIndex && s.blockIndex == item.blockIndex) {
@@ -571,6 +614,8 @@ fun ReaderScreen(
                                     }
                                     var textLayout by remember(item.block.id) { mutableStateOf<TextLayoutResult?>(null) }
                                     val replacedRanges = ui.replacedRangesByBlockId[item.block.id].orEmpty()
+                                    val sentenceHighlightColor = colors.secondary.copy(alpha = 0.40f)
+                                    val wordHighlightColor = colors.primary.copy(alpha = 0.40f)
                                     val text = buildAnnotatedString {
                                         val raw = item.block.text
                                         append(raw)
@@ -581,26 +626,14 @@ fun ReaderScreen(
                                                 addStyle(SpanStyle(color = colors.secondary), start, end)
                                             }
                                         }
-                                        if (highlight) {
-                                            val start = sentence!!.start.coerceIn(0, raw.length)
-                                            val end = sentence.end.coerceIn(start, raw.length)
-                                            if (start < end) {
-                                                addStyle(
-                                                    SpanStyle(
-                                                        background = MaterialTheme.colorScheme.primary.copy(alpha = 0.40f),
-                                                        fontWeight = FontWeight.Medium,
-                                                    ),
-                                                    start,
-                                                    end,
-                                                )
-                                            }
-                                        }
                                     }
                                     val style = when (item.block.kind) {
                                         BlockKind.Heading -> headingStyle
                                         BlockKind.Quote, BlockKind.Paragraph -> bodyStyle
                                     }
                                     // Gaps: single-tap chrome / clear. Double-tap play stays on Text.
+                                    // Rail occupies the left gutter; list end pad is the right gutter —
+                                    // same ContentStart/ContentEnd the chrome cards use.
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -640,7 +673,30 @@ fun ReaderScreen(
                                                 onTextLayout = { textLayout = it },
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    .padding(end = ReaderTextEndPadding)
+                                                    .fillMaxWidth()
+                                                    .drawBehind {
+                                                        val layout = textLayout ?: return@drawBehind
+                                                        val radius = 6.dp.toPx()
+                                                        val pad = HighlightSidePad.toPx()
+                                                        sentenceRange?.let {
+                                                            drawTtsHighlightRange(
+                                                                layout,
+                                                                it,
+                                                                sentenceHighlightColor,
+                                                                pad,
+                                                                radius,
+                                                            )
+                                                        }
+                                                        wordRange?.let {
+                                                            drawTtsHighlightRange(
+                                                                layout,
+                                                                it,
+                                                                wordHighlightColor,
+                                                                pad,
+                                                                radius,
+                                                            )
+                                                        }
+                                                    }
                                                     .pointerInput(
                                                         blockSentences,
                                                         overlay,
@@ -660,6 +716,20 @@ fun ReaderScreen(
                                                                     ReaderTouchTarget.BodyText,
                                                                     ReaderGestureKind.DoubleTap,
                                                                 ) {
+                                                                    if (item.isChapterTitle) {
+                                                                        suppressFollowScroll = true
+                                                                        vm.jumpTo(
+                                                                            Locus(item.chapterIndex, 0, 0),
+                                                                        )
+                                                                        if (tts.doubleTapPlay) {
+                                                                            vm.tts.play()
+                                                                        }
+                                                                        scope.launch { centerItem(index) }
+                                                                        if (overlay == ReaderOverlay.Hidden) {
+                                                                            toggleChrome()
+                                                                        }
+                                                                        return@onReaderGesture
+                                                                    }
                                                                     val layout = textLayout
                                                                     val sentence = if (layout != null) {
                                                                         sentenceAtPosition(
@@ -745,6 +815,15 @@ fun ReaderScreen(
                     pinEdge != null
                 val edgeChipTop = (showPlayingPin || showJumpChip) && pinEdge == PlaybackPinEdge.Top
                 val edgeChipBottom = (showPlayingPin || showJumpChip) && pinEdge == PlaybackPinEdge.Bottom
+                val pinWordRange = run {
+                    val spoken = tts.sentence ?: return@run null
+                    val word = tts.wordHighlight ?: return@run null
+                    if (word.first < spoken.start || word.last >= spoken.end) return@run null
+                    val localStart = word.first - spoken.start
+                    val localEndExclusive = word.last + 1 - spoken.start
+                    if (localStart >= localEndExclusive) null
+                    else localStart until localEndExclusive
+                }
                 val chromeOpen = overlay == ReaderOverlay.Chrome
 
                 // Top chrome layer: title + optional edge chip, stacked with a relative [PinGap].
@@ -774,6 +853,7 @@ fun ReaderScreen(
                             PlaybackPinCard(
                                 snippet = tts.snippet,
                                 bodyStyle = bodyStyle,
+                                wordRangeInSnippet = pinWordRange,
                                 modifier = chipMod,
                                 onTap = {
                                     onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.SingleTap)
@@ -805,6 +885,7 @@ fun ReaderScreen(
                             PlaybackPinCard(
                                 snippet = tts.snippet,
                                 bodyStyle = bodyStyle,
+                                wordRangeInSnippet = pinWordRange,
                                 modifier = chipMod,
                                 onTap = {
                                     onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.SingleTap)
@@ -847,7 +928,10 @@ fun ReaderScreen(
             fontScale = fontScale,
             fontFamily = fontFamily,
             lineSpacing = lineSpacing,
+            justifyText = justifyText,
             orientation = orientation,
+            showChapterHeadingsInBody = showChapterHeadingsInBody,
+            keepScreenAwake = keepScreenAwake,
             engineKey = tts.engineKey,
             voiceId = tts.voiceId,
             engines = tts.engines,
@@ -869,7 +953,10 @@ fun ReaderScreen(
             onFontScale = onFontScale,
             onFontFamily = onFontFamily,
             onLineSpacing = onLineSpacing,
+            onJustifyText = onJustifyText,
             onOrientation = onOrientation,
+            onShowChapterHeadingsInBody = onShowChapterHeadingsInBody,
+            onKeepScreenAwake = onKeepScreenAwake,
             onEngine = { vm.tts.setEngine(it) },
             onVoice = { vm.tts.setVoice(it) },
             onSpeed = { vm.tts.setSpeed(it) },
@@ -938,14 +1025,11 @@ fun ReaderScreen(
                 suppressFollowScroll = true
                 scope.launch {
                     vm.jumpToChapter(ci)
-                    // After RR seek the loaded stream starts at relative 0; otherwise map ToC → doc.
-                    val d = vm.ui.value.doc
-                    val target = d?.let { doc ->
-                        val rel = vm.ui.value.locus.chapterIndex.coerceIn(0, doc.chapters.lastIndex)
-                        var i = 0
-                        for (c in 0 until rel) i += doc.chapters[c].blocks.size
-                        i
-                    } ?: 0
+                    // After RR seek the loaded stream starts at relative 0; otherwise map ToC → list.
+                    val rel = vm.ui.value.locus.chapterIndex
+                    val target = items.indexOfFirst { it.chapterIndex == rel }
+                        .takeIf { it >= 0 }
+                        ?: 0
                     centerItem(target)
                 }
             },
@@ -984,10 +1068,16 @@ private fun JumpToSavedChip(
 private fun PlaybackPinCard(
     snippet: String,
     bodyStyle: TextStyle,
+    wordRangeInSnippet: IntRange?,
     modifier: Modifier = Modifier,
     onTap: () -> Unit,
     onDoubleTap: () -> Unit,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val sentenceHighlightColor = colors.secondary.copy(alpha = 0.40f)
+    val wordHighlightColor = colors.primary.copy(alpha = 0.40f)
+    val sentenceRange = 0 until snippet.length
+    var textLayout by remember(snippet) { mutableStateOf<TextLayoutResult?>(null) }
     ReaderPanelSurface(
         modifier = modifier.pointerInput(snippet) {
             detectTapGestures(
@@ -997,16 +1087,97 @@ private fun PlaybackPinCard(
         },
         matchReaderWidth = true,
         feather = FlowTokens.Radius.None,
+        borderColor = colors.secondary,
     ) {
         Text(
             snippet,
             style = bodyStyle,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = colors.onBackground,
             maxLines = 3,
-            modifier = Modifier.padding(
-                horizontal = FlowTokens.Space.L,
-                vertical = FlowTokens.Space.M,
-            ),
+            onTextLayout = { textLayout = it },
+            modifier = Modifier
+                .padding(
+                    horizontal = FlowTokens.Space.L,
+                    vertical = FlowTokens.Space.M,
+                )
+                .drawBehind {
+                    val layout = textLayout ?: return@drawBehind
+                    val radius = 6.dp.toPx()
+                    val pad = HighlightSidePad.toPx()
+                    drawTtsHighlightRange(layout, sentenceRange, sentenceHighlightColor, pad, radius)
+                    wordRangeInSnippet?.let {
+                        drawTtsHighlightRange(layout, it, wordHighlightColor, pad, radius)
+                    }
+                },
+        )
+    }
+}
+
+/** Rounded TTS highlight pills; clamps to visible lines (e.g. pin card maxLines). */
+private fun DrawScope.drawTtsHighlightRange(
+    layout: TextLayoutResult,
+    range: IntRange,
+    color: Color,
+    pad: Float,
+    radius: Float,
+) {
+    val len = layout.layoutInput.text.length
+    if (len <= 0 || layout.lineCount <= 0) return
+    val start = range.first.coerceIn(0, len)
+    val endExclusive = (range.last + 1).coerceIn(start, len)
+    if (start >= endExclusive) return
+    val lastLine = layout.lineCount - 1
+    val startLine = layout.getLineForOffset(start).coerceIn(0, lastLine)
+    val endLine = layout.getLineForOffset((endExclusive - 1).coerceAtLeast(start))
+        .coerceIn(startLine, lastLine)
+    for (line in startLine..endLine) {
+        val lineStart = maxOf(layout.getLineStart(line), start)
+        val lineEndExclusive = minOf(
+            layout.getLineEnd(line, visibleEnd = true),
+            endExclusive,
+        )
+        if (lineStart >= lineEndExclusive) continue
+        val lastChar = (lineEndExclusive - 1).coerceIn(0, len - 1)
+        val firstChar = lineStart.coerceIn(0, len - 1)
+
+        // Glyph boxes respect justified inter-word spacing; getHorizontalPosition at the
+        // exclusive line end can land on the next line and collapse the rect.
+        val startBox = layout.getBoundingBox(firstChar)
+        val endBox = layout.getBoundingBox(lastChar)
+        var left = minOf(startBox.left, endBox.left)
+        var right = maxOf(startBox.right, endBox.right)
+        if (right <= left) {
+            left = layout.getHorizontalPosition(firstChar, usePrimaryDirection = true)
+            right = layout.getHorizontalPosition(lineEndExclusive, usePrimaryDirection = true)
+            if (right < left) {
+                val tmp = left
+                left = right
+                right = tmp
+            }
+        }
+
+        // Full-line spans snap to the justified line edges (edge-to-edge).
+        val fullStart = layout.getLineStart(line)
+        val fullEnd = layout.getLineEnd(line, visibleEnd = true)
+        if (lineStart <= fullStart && lineEndExclusive >= fullEnd) {
+            left = layout.getLineLeft(line)
+            right = layout.getLineRight(line)
+        }
+
+        val l = left - pad
+        val r = right + pad
+        val rect = Rect(
+            left = l.coerceAtLeast(0f),
+            top = layout.getLineTop(line),
+            right = r.coerceAtMost(size.width),
+            bottom = layout.getLineBottom(line),
+        )
+        if (rect.width <= 0f || rect.height <= 0f) continue
+        drawRoundRect(
+            color = color,
+            topLeft = rect.topLeft,
+            size = rect.size,
+            cornerRadius = CornerRadius(radius, radius),
         )
     }
 }

@@ -22,9 +22,44 @@ data class BookDoc(
     val chapters: List<Chapter>,
 ) {
     val items: List<ReaderItem> by lazy {
-        chapters.flatMapIndexed { chapterIndex, chapter ->
-            chapter.blocks.mapIndexed { blockIndex, block ->
-                ReaderItem(chapterIndex, blockIndex, block)
+        readingItems(includeChapterTitles = false)
+    }
+
+    /**
+     * Flat reading list. When [includeChapterTitles] is true, inserts each non-blank
+     * chapter title as a heading row (skipped when the chapter already opens with that heading).
+     */
+    fun readingItems(includeChapterTitles: Boolean): List<ReaderItem> {
+        if (!includeChapterTitles) {
+            return chapters.flatMapIndexed { chapterIndex, chapter ->
+                chapter.blocks.mapIndexed { blockIndex, block ->
+                    ReaderItem(chapterIndex, blockIndex, block)
+                }
+            }
+        }
+        return chapters.flatMapIndexed { chapterIndex, chapter ->
+            buildList {
+                val title = chapter.title.trim()
+                val first = chapter.blocks.firstOrNull()
+                val alreadyPresent = first != null &&
+                    first.kind == BlockKind.Heading &&
+                    first.text.trim().equals(title, ignoreCase = true)
+                if (title.isNotEmpty() && !alreadyPresent) {
+                    add(
+                        ReaderItem(
+                            chapterIndex = chapterIndex,
+                            blockIndex = ReaderItem.CHAPTER_TITLE_BLOCK,
+                            block = Block(
+                                id = "chapter-title-$chapterIndex",
+                                kind = BlockKind.Heading,
+                                text = chapter.title,
+                            ),
+                        ),
+                    )
+                }
+                chapter.blocks.forEachIndexed { blockIndex, block ->
+                    add(ReaderItem(chapterIndex, blockIndex, block))
+                }
             }
         }
     }
@@ -34,7 +69,14 @@ data class ReaderItem(
     val chapterIndex: Int,
     val blockIndex: Int,
     val block: Block,
-)
+) {
+    val isChapterTitle: Boolean get() = blockIndex == CHAPTER_TITLE_BLOCK
+
+    companion object {
+        /** Synthetic body row for [Chapter.title]; not a real block index. */
+        const val CHAPTER_TITLE_BLOCK = -1
+    }
+}
 
 data class Locus(
     val chapterIndex: Int = 0,

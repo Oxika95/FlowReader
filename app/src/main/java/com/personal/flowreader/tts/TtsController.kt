@@ -77,6 +77,11 @@ data class TtsUiState(
     val sentenceIndex: Int = 0,
     val snippet: String = "",
     val error: String? = null,
+    /**
+     * Absolute char range in the current sentence's block for word-level Edge highlight.
+     * Drawn as a full-accent layer on top of the desaturated sentence highlight.
+     */
+    val wordHighlight: IntRange? = null,
     /** Edge MP3 already on disk for these sentence indices. */
     val readySentenceIndices: Set<Int> = emptySet(),
     /** Edge synthesize currently in flight. */
@@ -92,6 +97,19 @@ class TtsController(
     private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
     private val keepAlive = AudioKeepAlive()
     private val pcmPlayer = PcmSentencePlayer()
+    /** Edge word boundaries keyed by sentence index for the attached book/voice. */
+    private val wordBoundariesBySentence = ConcurrentHashMap<Int, List<EdgeWordBoundary>>()
+    /** Polls AudioTrack playback head for word highlight (PCM path). */
+    private var wordTrackJob: Job? = null
+    /** Hearable timeline marks: playback head ≥ startWriteFrame → this sentence/seed. */
+    private val wordSegments = ArrayList<WordSegment>()
+    private val wordSegmentsLock = Any()
+
+    private data class WordSegment(
+        val sentenceIndex: Int,
+        val startWriteFrame: Long,
+        val seedSec: Double,
+    )
 
     /** Volatile: written on Main, read by cache sweeps on IO. */
     @Volatile
@@ -241,6 +259,7 @@ class TtsController(
         this.speechFilters = speechFilters
         sentences = emptyList()
         index = 0
+        wordBoundariesBySentence.clear()
         _state.update {
             it.copy(
                 playing = false,
@@ -249,6 +268,7 @@ class TtsController(
                 sentenceIndex = 0,
                 snippet = "",
                 error = null,
+                wordHighlight = null,
                 readySentenceIndices = emptySet(),
                 generatingSentenceIndices = emptySet(),
             )
@@ -527,6 +547,8 @@ class TtsController(
     }
 
     fun setContinuousPcmPlayback(enabled: Boolean) {
+        // Negative sentence offset requires PCM; ignore attempts to turn it off.
+        if (!enabled && _state.value.sentenceGapMs < 0) return
         if (enabled == _state.value.continuousPcmPlayback) return
         _state.update { it.copy(continuousPcmPlayback = enabled) }
         scope.launch { settings.setContinuousPcmPlayback(enabled) }
@@ -535,9 +557,23 @@ class TtsController(
 
     fun setSentenceGapMs(ms: Int) {
         val value = TtsPrefs.coerceSentenceGapMs(ms)
-        if (value == _state.value.sentenceGapMs) return
-        _state.update { it.copy(sentenceGapMs = value) }
-        scope.launch { settings.setSentenceGapMs(value) }
+        val prev = _state.value.sentenceGapMs
+        val prevPcm = _state.value.continuousPcmPlayback
+        if (value == prev) return
+        val forcePcm = value < 0
+        _state.update {
+            it.copy(
+                sentenceGapMs = value,
+                continuousPcmPlayback = if (forcePcm) true else it.continuousPcmPlayback,
+            )
+        }
+        scope.launch {
+            settings.setSentenceGapMs(value)
+            if (forcePcm && !prevPcm) {
+                settings.setContinuousPcmPlayback(true)
+            }
+        }
+        if (_state.value.playing && forcePcm && !prevPcm) restartLoop()
     }
 
     /**
@@ -551,6 +587,8 @@ class TtsController(
             pausePlayback(PlaybackState.STATE_PAUSED)
             edgeJobs[i]?.cancel()
             cacheFile(i).delete()
+            wordsCacheFile(i).delete()
+            wordBoundariesBySentence.remove(i)
             _state.update {
                 it.copy(
                     readySentenceIndices = it.readySentenceIndices - i,
@@ -959,6 +997,7 @@ class TtsController(
                     delay(gapMs.toLong())
                 }
             }
+            // Negative gap (overlap) is applied inside speakEdge / PcmSentencePlayer.
             if (generation != playGeneration) return
             if (index >= sentences.lastIndex) {
                 if (pullMore() && index < sentences.lastIndex) {
@@ -1027,10 +1066,38 @@ class TtsController(
         if (!f.exists() || f.length() == 0L) {
             throw IllegalStateException("Unable to play audio")
         }
-        if (_state.value.continuousPcmPlayback) {
-            pcmPlayer.play(f) { generation == playGeneration }
+        ensureWordBoundariesLoaded(i)
+        val usePcm = _state.value.continuousPcmPlayback || _state.value.sentenceGapMs < 0
+        if (usePcm) {
+            ensurePcmWordTracking()
+            val overlapMs = (-_state.value.sentenceGapMs).coerceAtLeast(0)
+            var nextFile: File? = null
+            if (overlapMs > 0 && i < sentences.lastIndex) {
+                synthesizeToCache(i + 1, force = false)
+                if (generation != playGeneration) return
+                ensureWordBoundariesLoaded(i + 1)
+                val n = cacheFile(i + 1)
+                if (n.exists() && n.length() > 0L) nextFile = n
+            }
+            pcmPlayer.play(
+                file = f,
+                generationActive = { generation == playGeneration },
+                nextFile = nextFile,
+                overlapMs = overlapMs,
+                onHearableStart = { seed ->
+                    pushWordSegment(i, pcmPlayer.writtenFrames(), seed)
+                },
+                onOverlapNextStart = {
+                    pushWordSegment(i + 1, pcmPlayer.writtenFrames(), seedSec = 0.0)
+                },
+            )
         } else {
-            playFile(f, generation)
+            stopPcmWordTracking()
+            beginWordHighlight(i, mediaTimeSec = 0.0)
+            playFile(f, generation, sentenceIndex = i)
+        }
+        if (generation == playGeneration && !usePcm) {
+            clearWordHighlight()
         }
     }
 
@@ -1042,11 +1109,17 @@ class TtsController(
         if (_state.value.engineKey != TtsEngines.EDGE) return false
         val s = sentences.getOrNull(i) ?: return false
         val f = cacheFile(i)
+        val wordsFile = wordsCacheFile(i)
         if (!force && f.exists() && f.length() > 0L) {
+            ensureWordBoundariesLoaded(i)
             publishReady(i)
             return true
         }
-        if (force) f.delete()
+        if (force) {
+            f.delete()
+            wordsFile.delete()
+            wordBoundariesBySentence.remove(i)
+        }
         publishGenerating(i)
         return try {
             val audio = edge.synthesize(
@@ -1056,6 +1129,8 @@ class TtsController(
                 pitchPercent = pitchPercent(),
             )
             writeAtomically(f, audio.mp3)
+            writeWordBoundaries(wordsFile, audio.boundaries)
+            wordBoundariesBySentence[i] = audio.boundaries
             publishReady(i)
             true
         } catch (e: CancellationException) {
@@ -1067,7 +1142,7 @@ class TtsController(
         }
     }
 
-    private suspend fun playFile(file: File, generation: Int) = playbackMutex.withLock {
+    private suspend fun playFile(file: File, generation: Int, sentenceIndex: Int) = playbackMutex.withLock {
         if (generation != playGeneration) return@withLock
         // QuickNovel EdgeTtsPlayer: always tear down previous player before start.
         releasePlayer()
@@ -1107,6 +1182,17 @@ class TtsController(
             try {
                 // Edge bakes the rate into the MP3 — resampling here would double it.
                 mp.start()
+                // ~rAF cadence like Readest's requestAnimationFrame word tracker.
+                scope.launch {
+                    var lastRange: IntRange? = null
+                    while (cont.isActive && generation == playGeneration && player === mp) {
+                        val posMs = runCatching { mp.currentPosition }.getOrDefault(0)
+                        updateWordHighlight(sentenceIndex, posMs / 1000.0)
+                        val now = _state.value.wordHighlight
+                        if (now != lastRange) lastRange = now
+                        delay(16)
+                    }
+                }
             } catch (t: Throwable) {
                 releasePlayer()
                 if (cont.isActive) cont.resumeWithException(t)
@@ -1137,12 +1223,16 @@ class TtsController(
     private fun interruptClipPlayback() {
         releasePlayer()
         pcmPlayer.cancel()
+        stopPcmWordTracking()
+        clearWordHighlight()
     }
 
     private fun stopSessionAudio() {
         releasePlayer()
         pcmPlayer.release()
         keepAlive.stop()
+        stopPcmWordTracking()
+        clearWordHighlight()
     }
 
     private fun syncKeepAlive() {
@@ -1153,7 +1243,155 @@ class TtsController(
         }
     }
 
+    private fun beginWordHighlight(sentenceIndex: Int, mediaTimeSec: Double) {
+        updateWordHighlight(sentenceIndex, mediaTimeSec)
+    }
+
+    private fun pushWordSegment(sentenceIndex: Int, startWriteFrame: Long, seedSec: Double) {
+        synchronized(wordSegmentsLock) {
+            wordSegments.add(WordSegment(sentenceIndex, startWriteFrame, seedSec))
+            // Keep a small window; older marks are past the playhead.
+            if (wordSegments.size > 32) {
+                wordSegments.subList(0, wordSegments.size - 24).clear()
+            }
+        }
+    }
+
+    private fun ensurePcmWordTracking() {
+        if (wordTrackJob?.isActive == true) return
+        wordTrackJob = scope.launch {
+            var lastSi = -1
+            var lastIdx = -1
+            while (isActive && _state.value.playing) {
+                val rate = pcmPlayer.sampleRateHz()
+                if (rate > 0) {
+                    val head = pcmPlayer.playbackHeadFrames()
+                    val seg = synchronized(wordSegmentsLock) {
+                        var best: WordSegment? = null
+                        for (s in wordSegments) {
+                            if (s.startWriteFrame <= head) best = s else break
+                        }
+                        best ?: wordSegments.firstOrNull()
+                    }
+                    if (seg != null) {
+                        val played = (head - seg.startWriteFrame).coerceAtLeast(0L)
+                        val sec = seg.seedSec + played.toDouble() / rate
+                        val boundaries = wordBoundariesBySentence[seg.sentenceIndex].orEmpty()
+                        val idx = if (boundaries.isEmpty()) {
+                            -1
+                        } else {
+                            WordHighlight.findBoundaryIndexAtTime(boundaries, sec)
+                        }
+                        if (seg.sentenceIndex != lastSi || idx != lastIdx) {
+                            lastSi = seg.sentenceIndex
+                            lastIdx = idx
+                            updateWordHighlight(seg.sentenceIndex, sec)
+                        }
+                    }
+                }
+                delay(16)
+            }
+        }
+    }
+
+    private fun stopPcmWordTracking() {
+        wordTrackJob?.cancel()
+        wordTrackJob = null
+        synchronized(wordSegmentsLock) { wordSegments.clear() }
+    }
+
+    private fun updateWordHighlight(sentenceIndex: Int, mediaTimeSec: Double) {
+        val sentence = sentences.getOrNull(sentenceIndex) ?: run {
+            clearWordHighlight()
+            return
+        }
+        val boundaries = wordBoundariesBySentence[sentenceIndex].orEmpty()
+        val range = WordHighlight.highlightRangeInBlock(sentence, boundaries, mediaTimeSec)
+        val current = _state.value.wordHighlight
+        if (range == current) return
+        _state.update { it.copy(wordHighlight = range) }
+    }
+
+    private fun clearWordHighlight() {
+        if (_state.value.wordHighlight == null) return
+        _state.update { it.copy(wordHighlight = null) }
+    }
+
+    private fun ensureWordBoundariesLoaded(i: Int) {
+        if (wordBoundariesBySentence.containsKey(i)) return
+        val file = wordsCacheFile(i)
+        if (!file.exists()) {
+            wordBoundariesBySentence[i] = emptyList()
+            return
+        }
+        wordBoundariesBySentence[i] = readWordBoundaries(file)
+    }
+
+    private fun wordsCacheFile(i: Int): File =
+        File(cacheDir, "b${bookKey}_s${i}_${voiceCacheKey()}.words.json")
+
+    private fun writeWordBoundaries(file: File, boundaries: List<EdgeWordBoundary>) {
+        val json = buildString {
+            append('[')
+            boundaries.forEachIndexed { idx, b ->
+                if (idx > 0) append(',')
+                append('{')
+                append("\"offset\":").append(b.offset).append(',')
+                append("\"duration\":").append(b.duration).append(',')
+                append("\"text\":")
+                appendJsonString(b.text)
+                append('}')
+            }
+            append(']')
+        }
+        writeAtomically(file, json.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun readWordBoundaries(file: File): List<EdgeWordBoundary> {
+        return try {
+            val raw = file.readText(Charsets.UTF_8)
+            val arr = org.json.JSONArray(raw)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val text = obj.optString("text")
+                    if (text.isEmpty()) continue
+                    add(
+                        EdgeWordBoundary(
+                            offset = obj.optLong("offset", 0L),
+                            duration = obj.optLong("duration", 0L),
+                            text = text,
+                        ),
+                    )
+                }
+            }
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    private fun StringBuilder.appendJsonString(value: String): StringBuilder {
+        append('"')
+        for (ch in value) {
+            when (ch) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> if (ch.code < 0x20) {
+                    append("\\u%04x".format(ch.code))
+                } else {
+                    append(ch)
+                }
+            }
+        }
+        append('"')
+        return this
+    }
+
     private suspend fun speakSystem(text: String) {
+        clearWordHighlight()
         val enginePkg = when (val key = _state.value.engineKey) {
             TtsEngines.SYSTEM_DEFAULT -> null
             else -> key
@@ -1404,6 +1642,7 @@ class TtsController(
     private suspend fun clearEdgeCache() {
         cancelEdgeJobs()
         clearAudioStatus()
+        wordBoundariesBySentence.clear()
         withContext(Dispatchers.IO) {
             cacheDir.listFiles()?.forEach { it.delete() }
         }

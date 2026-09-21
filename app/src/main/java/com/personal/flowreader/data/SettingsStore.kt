@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
+import kotlin.math.roundToInt
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "flow_settings")
 
@@ -20,7 +21,13 @@ data class ReaderPrefs(
     val fontScale: Float = 1f,
     val fontFamily: ReaderFont = ReaderFont.Sans,
     val lineSpacing: Float = 1f,
+    /** When true, body text is justified edge-to-edge. */
+    val justifyText: Boolean = false,
     val orientation: ReaderOrientation = ReaderOrientation.Auto,
+    /** When true, each chapter title appears as a heading in the reading body. */
+    val showChapterHeadingsInBody: Boolean = false,
+    /** When true, the reader keeps the display on while open. */
+    val keepScreenAwake: Boolean = false,
 )
 
 data class TtsPrefs(
@@ -38,7 +45,7 @@ data class TtsPrefs(
     val keepAliveUnderlay: Boolean = false,
     /** Edge: decode sentence MP3s into one continuous PCM AudioTrack. */
     val continuousPcmPlayback: Boolean = false,
-    /** Extra pause after each spoken sentence (0–1000 ms). */
+    /** Extra pause (+) or overlap (−) after each spoken sentence (−1000…1000 ms). */
     val sentenceGapMs: Int = DEFAULT_SENTENCE_GAP_MS,
 ) {
     companion object {
@@ -47,13 +54,15 @@ data class TtsPrefs(
         const val MIN_PREFETCH = 1
         const val MAX_PREFETCH = 10
         const val DEFAULT_SENTENCE_GAP_MS = 0
-        const val MIN_SENTENCE_GAP_MS = 0
+        const val MIN_SENTENCE_GAP_MS = -1000
         const val MAX_SENTENCE_GAP_MS = 1000
         const val SENTENCE_GAP_STEP_MS = 50
 
         fun coerceSentenceGapMs(ms: Int): Int {
             val clamped = ms.coerceIn(MIN_SENTENCE_GAP_MS, MAX_SENTENCE_GAP_MS)
-            return (clamped / SENTENCE_GAP_STEP_MS) * SENTENCE_GAP_STEP_MS
+            val stepped = ((clamped.toFloat() / SENTENCE_GAP_STEP_MS).roundToInt()
+                * SENTENCE_GAP_STEP_MS)
+            return stepped.coerceIn(MIN_SENTENCE_GAP_MS, MAX_SENTENCE_GAP_MS)
         }
     }
 }
@@ -90,8 +99,20 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_LINE_SPACING] = spacing }
     }
 
+    suspend fun setJustifyText(enabled: Boolean) {
+        store.edit { it[KEY_JUSTIFY_TEXT] = enabled }
+    }
+
     suspend fun setOrientation(orientation: ReaderOrientation) {
         store.edit { it[KEY_ORIENTATION] = orientation.name }
+    }
+
+    suspend fun setShowChapterHeadingsInBody(enabled: Boolean) {
+        store.edit { it[KEY_SHOW_CHAPTER_HEADINGS] = enabled }
+    }
+
+    suspend fun setKeepScreenAwake(enabled: Boolean) {
+        store.edit { it[KEY_KEEP_SCREEN_AWAKE] = enabled }
     }
 
     suspend fun setEngine(key: String) {
@@ -190,7 +211,10 @@ class SettingsStore(context: Context) {
         private val KEY_FONT_SCALE = floatPreferencesKey("font_scale")
         private val KEY_FONT_FAMILY = stringPreferencesKey("font_family")
         private val KEY_LINE_SPACING = floatPreferencesKey("line_spacing")
+        private val KEY_JUSTIFY_TEXT = booleanPreferencesKey("justify_text")
         private val KEY_ORIENTATION = stringPreferencesKey("orientation")
+        private val KEY_SHOW_CHAPTER_HEADINGS = booleanPreferencesKey("show_chapter_headings")
+        private val KEY_KEEP_SCREEN_AWAKE = booleanPreferencesKey("keep_screen_awake")
         private val KEY_TTS_ENGINE = stringPreferencesKey("tts_engine")
         private val KEY_TTS_VOICE = stringPreferencesKey("tts_voice")
         private val KEY_TTS_SPEED = floatPreferencesKey("tts_speed")
@@ -221,9 +245,12 @@ class SettingsStore(context: Context) {
                 ReaderFont.valueOf(this[KEY_FONT_FAMILY] ?: ReaderFont.Sans.name)
             }.getOrDefault(ReaderFont.Sans),
             lineSpacing = this[KEY_LINE_SPACING] ?: 1f,
+            justifyText = this[KEY_JUSTIFY_TEXT] ?: false,
             orientation = runCatching {
                 ReaderOrientation.valueOf(this[KEY_ORIENTATION] ?: ReaderOrientation.Auto.name)
             }.getOrDefault(ReaderOrientation.Auto),
+            showChapterHeadingsInBody = this[KEY_SHOW_CHAPTER_HEADINGS] ?: false,
+            keepScreenAwake = this[KEY_KEEP_SCREEN_AWAKE] ?: false,
         )
 
         private fun Preferences.resolveAccentHue(): Float {
@@ -250,7 +277,12 @@ class SettingsStore(context: Context) {
             doubleTapPlay = this[KEY_TTS_DOUBLE_TAP_PLAY] ?: true,
             autoScrollWithTts = this[KEY_TTS_AUTO_SCROLL] ?: true,
             keepAliveUnderlay = this[KEY_TTS_KEEP_ALIVE] ?: false,
-            continuousPcmPlayback = this[KEY_TTS_CONTINUOUS_PCM] ?: false,
+            continuousPcmPlayback = (this[KEY_TTS_CONTINUOUS_PCM] ?: false).let { pcm ->
+                val gap = TtsPrefs.coerceSentenceGapMs(
+                    this[KEY_TTS_SENTENCE_GAP_MS] ?: TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
+                )
+                if (gap < 0) true else pcm
+            },
             sentenceGapMs = TtsPrefs.coerceSentenceGapMs(
                 this[KEY_TTS_SENTENCE_GAP_MS] ?: TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
             ),

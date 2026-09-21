@@ -11,10 +11,21 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
+import org.json.JSONObject
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-data class EdgeAudio(val mp3: ByteArray)
+/** Edge `audio.metadata` WordBoundary (offsets in 100-ns ticks). */
+data class EdgeWordBoundary(
+    val offset: Long,
+    val duration: Long,
+    val text: String,
+)
+
+data class EdgeAudio(
+    val mp3: ByteArray,
+    val boundaries: List<EdgeWordBoundary> = emptyList(),
+)
 
 class EdgeTtsClient(
     private val http: OkHttpClient = defaultHttp(),
@@ -59,8 +70,8 @@ class EdgeTtsClient(
             .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
             .build()
 
-        // Primitive byte buffer — ArrayList<Byte> boxes every sample (~16x heap).
         val audio = ByteArrayOutputStream(16 * 1024)
+        val boundaries = ArrayList<EdgeWordBoundary>()
         val ws = http.newWebSocket(
             request,
             object : WebSocketListener() {
@@ -71,7 +82,7 @@ class EdgeTtsClient(
                         append("Path: speech.config\r\n")
                         append("X-Timestamp: $date\r\n\r\n")
                         append(
-                            """{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":false,"wordBoundaryEnabled":false},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}""",
+                            """{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":false,"wordBoundaryEnabled":true},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}""",
                         )
                     }
                     val escaped = text
@@ -94,14 +105,24 @@ class EdgeTtsClient(
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    if (text.contains("Path:turn.end") || text.contains("Path: turn.end")) {
-                        webSocket.close(1000, null)
-                        if (audio.size() == 0) {
-                            if (cont.isActive) {
-                                cont.resumeWithException(IllegalStateException("No audio data received."))
+                    val path = headerPath(text)
+                    when {
+                        path.equals("audio.metadata", ignoreCase = true) -> {
+                            boundaries += parseAudioMetadataBody(messageBody(text))
+                        }
+                        path.equals("turn.end", ignoreCase = true) ||
+                            text.contains("Path:turn.end") ||
+                            text.contains("Path: turn.end") -> {
+                            webSocket.close(1000, null)
+                            if (audio.size() == 0) {
+                                if (cont.isActive) {
+                                    cont.resumeWithException(
+                                        IllegalStateException("No audio data received."),
+                                    )
+                                }
+                            } else if (cont.isActive) {
+                                cont.resume(EdgeAudio(audio.toByteArray(), boundaries.toList()))
                             }
-                        } else if (cont.isActive) {
-                            cont.resume(EdgeAudio(audio.toByteArray()))
                         }
                     }
                 }
@@ -137,6 +158,57 @@ class EdgeTtsClient(
         const val MAX_UTTERANCE_CHARS = 4_000
         const val MAX_AUDIO_BYTES = 8 * 1024 * 1024
         private const val SYNTH_TIMEOUT_MS = 45_000L
+
+        fun parseAudioMetadataBody(body: String): List<EdgeWordBoundary> {
+            if (body.isBlank()) return emptyList()
+            return try {
+                val root = JSONObject(body)
+                val meta = root.optJSONArray("Metadata") ?: return emptyList()
+                buildList {
+                    for (i in 0 until meta.length()) {
+                        val entry = meta.optJSONObject(i) ?: continue
+                        if (entry.optString("Type") != "WordBoundary") continue
+                        val data = entry.optJSONObject("Data") ?: continue
+                        val offset = data.optLong("Offset", -1L)
+                        if (offset < 0L) continue
+                        val textObj = data.optJSONObject("text")
+                        val word = textObj?.optString("Text").orEmpty()
+                        if (word.isEmpty()) continue
+                        add(
+                            EdgeWordBoundary(
+                                offset = offset,
+                                duration = data.optLong("Duration", 0L),
+                                text = word,
+                            ),
+                        )
+                    }
+                }
+            } catch (_: Throwable) {
+                emptyList()
+            }
+        }
+
+        private fun headerPath(message: String): String {
+            for (line in message.lineSequence()) {
+                val trimmed = line.trim()
+                if (trimmed.isEmpty()) break
+                val idx = trimmed.indexOf(':')
+                if (idx <= 0) continue
+                val key = trimmed.substring(0, idx).trim()
+                if (key.equals("Path", ignoreCase = true)) {
+                    return trimmed.substring(idx + 1).trim()
+                }
+            }
+            return ""
+        }
+
+        private fun messageBody(message: String): String {
+            val sep = message.indexOf("\r\n\r\n")
+            if (sep >= 0) return message.substring(sep + 4)
+            val sep2 = message.indexOf("\n\n")
+            if (sep2 >= 0) return message.substring(sep2 + 2)
+            return ""
+        }
 
         private fun defaultHttp(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)

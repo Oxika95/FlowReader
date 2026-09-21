@@ -189,10 +189,10 @@ internal fun ReaderPanelSurface(
     feather: Dp = ReaderPanelFeather,
     /** Align solid card width with the ereader text column. */
     matchReaderWidth: Boolean = false,
+    borderColor: Color = MaterialTheme.colorScheme.outlineVariant,
     content: @Composable () -> Unit,
 ) {
     val bg = MaterialTheme.colorScheme.background
-    val outline = MaterialTheme.colorScheme.outlineVariant
     val onBg = MaterialTheme.colorScheme.onBackground
     val cardInset = if (matchReaderWidth) {
         Modifier.padding(
@@ -224,7 +224,7 @@ internal fun ReaderPanelSurface(
                 contentColor = onBg,
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = FlowTokens.Radius.None),
-            border = BorderStroke(FlowTokens.Stroke.Hairline, outline),
+            border = BorderStroke(FlowTokens.Stroke.Hairline, borderColor),
         ) {
             content()
         }
@@ -238,9 +238,15 @@ internal fun FloatingPanel(
         horizontal = FlowTokens.Space.M,
         vertical = FlowTokens.Space.M,
     ),
+    /** Soft halo outside the border; None keeps a hard edge aligned with reading text. */
+    feather: Dp = ReaderPanelFeather,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    ReaderPanelSurface(modifier = modifier, matchReaderWidth = true) {
+    ReaderPanelSurface(
+        modifier = modifier,
+        matchReaderWidth = true,
+        feather = feather,
+    ) {
         Column(
             modifier = Modifier.padding(contentPadding),
             content = content,
@@ -268,7 +274,11 @@ internal fun TitleBannerCard(
         enter = fadeIn() + slideInVertically { -it / 2 },
         exit = fadeOut() + slideOutVertically { -it / 2 },
     ) {
-        ReaderPanelSurface(modifier = Modifier.fillMaxWidth(), matchReaderWidth = true) {
+        ReaderPanelSurface(
+            modifier = Modifier.fillMaxWidth(),
+            matchReaderWidth = true,
+            feather = FlowTokens.Radius.None,
+        ) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 BannerCoverUnderlay(
                     cover = cover,
@@ -460,6 +470,8 @@ internal fun MediaControlCard(
                     horizontal = FlowTokens.Space.S,
                     vertical = FlowTokens.Radius.None,
                 ),
+                // Hard edge so the border lines up with the reading column (no side halo).
+                feather = FlowTokens.Radius.None,
             ) {
                 Box(Modifier.fillMaxWidth()) {
                     Row(
@@ -718,7 +730,10 @@ internal fun SettingsOverlay(
     fontScale: Float,
     fontFamily: ReaderFont,
     lineSpacing: Float,
+    justifyText: Boolean,
     orientation: ReaderOrientation,
+    showChapterHeadingsInBody: Boolean,
+    keepScreenAwake: Boolean,
     engineKey: String,
     voiceId: String,
     engines: List<TtsEngineOption>,
@@ -740,7 +755,10 @@ internal fun SettingsOverlay(
     onFontScale: (Float) -> Unit,
     onFontFamily: (ReaderFont) -> Unit,
     onLineSpacing: (Float) -> Unit,
+    onJustifyText: (Boolean) -> Unit,
     onOrientation: (ReaderOrientation) -> Unit,
+    onShowChapterHeadingsInBody: (Boolean) -> Unit,
+    onKeepScreenAwake: (Boolean) -> Unit,
     onEngine: (String) -> Unit,
     onVoice: (String) -> Unit,
     onSpeed: (Float) -> Unit,
@@ -821,14 +839,20 @@ internal fun SettingsOverlay(
                         fontScale = fontScale,
                         fontFamily = fontFamily,
                         lineSpacing = lineSpacing,
+                        justifyText = justifyText,
                         orientation = orientation,
+                        showChapterHeadingsInBody = showChapterHeadingsInBody,
+                        keepScreenAwake = keepScreenAwake,
                         onTheme = onTheme,
                         onAccentHue = onAccentHue,
                         onUiScale = onUiScale,
                         onFontScale = onFontScale,
                         onFontFamily = onFontFamily,
                         onLineSpacing = onLineSpacing,
+                        onJustifyText = onJustifyText,
                         onOrientation = onOrientation,
+                        onShowChapterHeadingsInBody = onShowChapterHeadingsInBody,
+                        onKeepScreenAwake = onKeepScreenAwake,
                     )
                     SettingsLocationNote(
                         "Font, spacing, and orientation are only available while reading.",
@@ -989,14 +1013,20 @@ private fun LayoutSettingsTab(
     fontScale: Float,
     fontFamily: ReaderFont,
     lineSpacing: Float,
+    justifyText: Boolean,
     orientation: ReaderOrientation,
+    showChapterHeadingsInBody: Boolean,
+    keepScreenAwake: Boolean,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
     onUiScale: (Float) -> Unit,
     onFontScale: (Float) -> Unit,
     onFontFamily: (ReaderFont) -> Unit,
     onLineSpacing: (Float) -> Unit,
+    onJustifyText: (Boolean) -> Unit,
     onOrientation: (ReaderOrientation) -> Unit,
+    onShowChapterHeadingsInBody: (Boolean) -> Unit,
+    onKeepScreenAwake: (Boolean) -> Unit,
 ) {
     AppearanceSettings(
         themeMode = themeMode,
@@ -1062,6 +1092,28 @@ private fun LayoutSettingsTab(
             )
         }
     }
+
+    Spacer(Modifier.height(FlowTokens.Space.L))
+    AudioToggleRow(
+        title = "Justify text",
+        subtitle = "Stretch each line of body text from edge to edge",
+        checked = justifyText,
+        onCheckedChange = onJustifyText,
+    )
+    Spacer(Modifier.height(FlowTokens.Space.S))
+    AudioToggleRow(
+        title = "Chapter headings in body",
+        subtitle = "Show each chapter title in the reading text",
+        checked = showChapterHeadingsInBody,
+        onCheckedChange = onShowChapterHeadingsInBody,
+    )
+    Spacer(Modifier.height(FlowTokens.Space.S))
+    AudioToggleRow(
+        title = "Keep screen awake",
+        subtitle = "Prevent the display from sleeping while reading",
+        checked = keepScreenAwake,
+        onCheckedChange = onKeepScreenAwake,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1109,6 +1161,7 @@ internal fun AudioSettingsTab(
     } else {
         sentenceGapMs
     }
+    val pcmLockedByOverlap = shownGap < 0
 
     val engineLabel = engines.firstOrNull { it.key == engineKey }?.label ?: engineKey
     val voiceLabel = voices.firstOrNull { it.id == voiceId }?.label
@@ -1264,7 +1317,7 @@ internal fun AudioSettingsTab(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.S))
-    SettingsLabel("Pause between sentences")
+    SettingsLabel("Sentence offset")
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -1285,7 +1338,7 @@ internal fun AudioSettingsTab(
             modifier = Modifier.weight(1f),
         )
         Text(
-            "${shownGap} ms",
+            formatSentenceGapLabel(shownGap),
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
             textAlign = TextAlign.End,
@@ -1316,9 +1369,14 @@ internal fun AudioSettingsTab(
     Spacer(Modifier.height(FlowTokens.Space.S))
         AudioToggleRow(
             title = "Continuous PCM playback",
-            subtitle = "Single audio stream from sentence clips (Edge)",
-            checked = continuousPcmPlayback,
+            subtitle = if (pcmLockedByOverlap) {
+                "Required while sentence offset is negative"
+            } else {
+                "Single audio stream from sentence clips (Edge)"
+            },
+            checked = continuousPcmPlayback || pcmLockedByOverlap,
             onCheckedChange = onContinuousPcmPlayback,
+            enabled = !pcmLockedByOverlap,
         )
     }
 }
@@ -1739,24 +1797,51 @@ private fun AudioToggleRow(
     subtitle: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
+    val titleColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    val subtitleColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .then(
+                if (enabled) {
+                    Modifier.clickable { onCheckedChange(!checked) }
+                } else {
+                    Modifier
+                },
+            )
             .padding(vertical = FlowTokens.Space.XS),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Text(text = title, style = MaterialTheme.typography.bodyLarge, color = titleColor)
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = subtitleColor,
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+        )
     }
+}
+
+private fun formatSentenceGapLabel(ms: Int): String = when {
+    ms > 0 -> "+$ms ms"
+    ms < 0 -> "$ms ms"
+    else -> "0 ms"
 }
 
 @Composable
