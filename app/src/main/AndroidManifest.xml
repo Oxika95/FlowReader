@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name=".FlowApp"
@@ -62,13 +63,22 @@
             </intent-filter>
         </activity>
 
+        <!-- Share ingress: route / floating chooser before MainActivity. -->
+        <activity
+            android:name=".share.ShareIngressActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.FlowReader.Translucent"
+            android:taskAffinity=""
+            android:launchMode="singleInstance" />
+
         <!-- Share target: import shared text into the Files library. -->
         <activity-alias
             android:name=".ShareLibraryAlias"
             android:exported="true"
             android:icon="@drawable/ic_launcher"
             android:label="@string/share_library_label"
-            android:targetActivity=".MainActivity">
+            android:targetActivity=".share.ShareIngressActivity">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -82,7 +92,7 @@
             android:exported="true"
             android:icon="@drawable/ic_launcher"
             android:label="@string/share_que_label"
-            android:targetActivity=".MainActivity">
+            android:targetActivity=".share.ShareIngressActivity">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

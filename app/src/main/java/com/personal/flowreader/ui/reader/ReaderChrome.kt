@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -131,7 +133,11 @@ import com.personal.flowreader.data.ReaderFont
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.data.ThemeMode
@@ -836,6 +842,10 @@ internal fun SettingsOverlay(
     onDismiss: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
+    val ruleEditor = remember { com.personal.flowreader.ui.settings.DomainRuleEditorState() }
+    androidx.compose.runtime.LaunchedEffect(visible) {
+        if (!visible) ruleEditor.request = null
+    }
 
     ReaderModalScaffold(
         visible = visible,
@@ -865,7 +875,7 @@ internal fun SettingsOverlay(
             }
         }
 
-        val primaryTabs = listOf("Layout", "Audio", "Filters")
+        val primaryTabs = listOf("Layout", "Audio", "Filters", "Import")
         PrimaryTabRow(selectedTabIndex = tab) {
             primaryTabs.forEachIndexed { index, label ->
                 Tab(
@@ -935,7 +945,7 @@ internal fun SettingsOverlay(
                         onSentenceGapMs = onSentenceGapMs,
                     )
                 }
-                else -> {
+                2 -> {
                     FiltersSettingsTab(
                         filtersGlobal = filtersGlobal,
                         filtersGroups = filtersGroups,
@@ -946,9 +956,81 @@ internal fun SettingsOverlay(
                         onSetEnabled = onSetFilterEnabled,
                     )
                 }
+                else -> {
+                    SharingSettingsHost(ruleEditor)
+                }
             }
         }
     }
+
+    if (visible) {
+        com.personal.flowreader.ui.settings.DomainRuleEditorHost(ruleEditor)
+    }
+}
+
+@Composable
+private fun SharingSettingsHost(ruleEditor: com.personal.flowreader.ui.settings.DomainRuleEditorState) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val app = context.applicationContext as com.personal.flowreader.FlowApp
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var prefs by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(com.personal.flowreader.share.SharePrefs())
+    }
+    var rules by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(emptyList<com.personal.flowreader.share.ShareDomainRule>())
+    }
+    var overlayOk by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(
+            com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context),
+        )
+    }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        prefs = withContext(Dispatchers.IO) { app.settings.shareOnce() }
+        rules = withContext(Dispatchers.IO) { app.settings.shareDomainRulesOnce() }
+        overlayOk = com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context)
+    }
+    androidx.compose.runtime.LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            overlayOk = com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context)
+        }
+    }
+    com.personal.flowreader.ui.settings.SharingSettingsTab(
+        prefs = prefs,
+        rules = rules,
+        overlayAllowed = overlayOk,
+        plugins = app.plugins.available.map {
+            com.personal.flowreader.ui.settings.SharePluginOption(it.id, it.title)
+        },
+        editorState = ruleEditor,
+        onShowQue = { enabled ->
+            prefs = prefs.copy(showQueInShareSheet = enabled)
+            app.appScope.launch {
+                app.settings.setShowQueInShareSheet(enabled)
+                com.personal.flowreader.share.ShareQueAliasController.setEnabled(app, enabled)
+            }
+        },
+        onManualOverride = { enabled ->
+            val mode = if (enabled) {
+                com.personal.flowreader.share.ShareAskMode.Ask
+            } else {
+                com.personal.flowreader.share.ShareAskMode.Auto
+            }
+            prefs = prefs.copy(askMode = mode)
+            app.appScope.launch { app.settings.setShareAskMode(mode) }
+            if (enabled &&
+                !com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context)
+            ) {
+                context.startActivity(
+                    com.personal.flowreader.share.ShareOverlayPermission.settingsIntent(context),
+                )
+            }
+            overlayOk = com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context)
+        },
+        onSaveRules = { next ->
+            rules = next
+            app.appScope.launch { app.settings.setShareDomainRules(next) }
+        },
+    )
 }
 
 @Composable
@@ -2018,7 +2100,7 @@ private fun formatSentenceGapLabel(ms: Int): String = when {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsSubTabRow(
+internal fun SettingsSubTabRow(
     selectedTabIndex: Int,
     labels: List<String>,
     onTabSelected: (Int) -> Unit,
@@ -2055,10 +2137,13 @@ internal fun SettingsLabel(text: String) {
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ChipRow(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
-    Row(
+internal fun ChipRow(content: @Composable () -> Unit) {
+    FlowRow(
         horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
-        content = content,
-    )
+        verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
+    ) {
+        content()
+    }
 }

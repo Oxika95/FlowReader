@@ -82,6 +82,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -96,6 +97,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.library.plugin.LibrarySourcePlugin
@@ -152,10 +154,18 @@ internal fun RoyalRoadTabBody(
 ) {
     val ui by vm.ui.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val app = LocalContext.current.applicationContext as FlowApp
+    val pendingShareUrl by app.pendingRoyalRoadShareUrl.collectAsState()
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             vm.refreshLocal()
         }
+    }
+    LaunchedEffect(pendingShareUrl) {
+        val url = pendingShareUrl ?: return@LaunchedEffect
+        app.pendingRoyalRoadShareUrl.value = null
+        vm.setUrlDraft(url)
+        vm.openUrl()
     }
     LaunchedEffect(ui.message) {
         val msg = ui.message ?: return@LaunchedEffect

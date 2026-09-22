@@ -9,6 +9,10 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.personal.flowreader.share.ShareAskMode
+import com.personal.flowreader.share.ShareDomainRule
+import com.personal.flowreader.share.ShareDomainRules
+import com.personal.flowreader.share.SharePrefs
 import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
 
@@ -203,6 +207,35 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_NOTIFICATIONS_ASKED] = asked }
     }
 
+    suspend fun shareOnce(): SharePrefs {
+        val p = store.data.first()
+        return SharePrefs(
+            showQueInShareSheet = p[KEY_SHARE_SHOW_QUE] ?: true,
+            askMode = runCatching {
+                ShareAskMode.valueOf(p[KEY_SHARE_ASK_MODE] ?: ShareAskMode.Ask.name)
+            }.getOrDefault(ShareAskMode.Ask),
+        )
+    }
+
+    suspend fun setShowQueInShareSheet(enabled: Boolean) {
+        store.edit { it[KEY_SHARE_SHOW_QUE] = enabled }
+    }
+
+    suspend fun setShareAskMode(mode: ShareAskMode) {
+        store.edit { it[KEY_SHARE_ASK_MODE] = mode.name }
+    }
+
+    suspend fun shareDomainRulesOnce(): List<ShareDomainRule> {
+        val raw = store.data.first()[KEY_SHARE_DOMAIN_RULES]
+        if (raw.isNullOrBlank()) return ShareDomainRules.seed()
+        val decoded = ShareDomainRules.decode(raw)
+        return decoded.ifEmpty { ShareDomainRules.seed() }
+    }
+
+    suspend fun setShareDomainRules(rules: List<ShareDomainRule>) {
+        store.edit { it[KEY_SHARE_DOMAIN_RULES] = ShareDomainRules.encode(rules) }
+    }
+
     companion object {
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_ACCENT = stringPreferencesKey("accent") // legacy enum name
@@ -231,6 +264,9 @@ class SettingsStore(context: Context) {
         private val KEY_LIBRARY_TAB = stringPreferencesKey("library_tab")
         private val KEY_ENABLED_PLUGINS = stringPreferencesKey("enabled_plugins")
         private val KEY_NOTIFICATIONS_ASKED = booleanPreferencesKey("notifications_asked")
+        private val KEY_SHARE_SHOW_QUE = booleanPreferencesKey("share_show_que")
+        private val KEY_SHARE_ASK_MODE = stringPreferencesKey("share_ask_mode")
+        private val KEY_SHARE_DOMAIN_RULES = stringPreferencesKey("share_domain_rules")
 
         private fun decodeIdSet(raw: String?): Set<String> =
             raw?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()

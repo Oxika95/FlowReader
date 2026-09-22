@@ -199,7 +199,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isIncomingIntent(intent: Intent?): Boolean =
-        intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_VIEW
+        intent?.action == Intent.ACTION_SEND ||
+            intent?.action == Intent.ACTION_VIEW ||
+            intent?.action == com.personal.flowreader.share.ShareDispatch.ACTION_EXECUTE
 }
 
 @androidx.compose.runtime.Composable

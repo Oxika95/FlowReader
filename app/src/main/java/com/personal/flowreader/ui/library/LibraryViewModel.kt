@@ -17,6 +17,9 @@ import com.personal.flowreader.data.QueEntry
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.library.plugin.LibraryPluginRegistry
+import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
+import com.personal.flowreader.share.ShareDispatch
+import com.personal.flowreader.share.WebPageIngest
 import com.personal.flowreader.ui.reader.FilterPreviewMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -168,38 +171,149 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun handleIncomingIntent(intent: Intent?): Boolean {
         if (intent == null) return false
         when (intent.action) {
+            ShareDispatch.ACTION_EXECUTE -> {
+                executeShareIntent(intent)
+                return true
+            }
             Intent.ACTION_VIEW -> {
                 val uri = intent.data ?: return false
                 openExternalUri(uri)
                 return true
             }
             Intent.ACTION_SEND -> {
-                val component = intent.component?.className.orEmpty()
-                // Aliases: text → library or Que. Direct SEND with a stream → open file.
+                // Text shares go through ShareIngressActivity; file SEND still lands here.
                 @Suppress("DEPRECATION")
                 val stream = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-                if (stream != null && !component.contains("ShareQueAlias") &&
-                    !component.contains("ShareLibraryAlias")
-                ) {
+                if (stream != null) {
                     openExternalUri(stream)
                     return true
                 }
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
                 if (text.isEmpty()) {
-                    if (stream != null) {
-                        openExternalUri(stream)
-                        return true
-                    }
                     _ui.value = _ui.value.copy(error = "Nothing to share")
                     return true
                 }
-                // File-like SEND of plain text without alias: treat as open if it looks like a URI stream only
-                val toQue = component.endsWith("ShareQueAlias")
-                ingestSharedText(text, toQue = toQue)
+                // Fallback if something still delivers text SEND to MainActivity.
+                ingestSharedText(text, toQue = intent.component?.className?.endsWith("ShareQueAlias") == true)
                 return true
             }
             else -> return false
         }
+    }
+
+    fun executeShareIntent(intent: Intent) {
+        val kind = intent.getStringExtra(ShareDispatch.EXTRA_KIND) ?: return
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(busy = true, error = null, message = null)
+            try {
+                when (kind) {
+                    ShareDispatch.KIND_FILES -> {
+                        val text = intent.getStringExtra(ShareDispatch.EXTRA_TEXT).orEmpty()
+                        val title = intent.getStringExtra(ShareDispatch.EXTRA_TITLE)
+                        val result = withContext(Dispatchers.IO) {
+                            flow.catalog.addText(
+                                text = text,
+                                titleHint = title,
+                                inLibrary = true,
+                                enqueue = false,
+                            )
+                        }
+                        refreshAfterIngest(LibraryTabId.Files, "Added ${result.progress.title}")
+                    }
+                    ShareDispatch.KIND_QUEUE -> {
+                        val text = intent.getStringExtra(ShareDispatch.EXTRA_TEXT).orEmpty()
+                        val title = intent.getStringExtra(ShareDispatch.EXTRA_TITLE)
+                        val result = withContext(Dispatchers.IO) {
+                            flow.catalog.addText(
+                                text = text,
+                                titleHint = title,
+                                inLibrary = false,
+                                enqueue = true,
+                            )
+                        }
+                        refreshAfterIngest(LibraryTabId.Que, "Queued ${result.progress.title}")
+                    }
+                    ShareDispatch.KIND_CRAWL -> {
+                        val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
+                        val toQue = intent.getBooleanExtra(ShareDispatch.EXTRA_TO_QUE, false)
+                        val contentCss = intent.getStringExtra(ShareDispatch.EXTRA_SELECTOR)
+                        val titleCss = intent.getStringExtra(ShareDispatch.EXTRA_TITLE_CSS)
+                        val removeCss = intent.getStringExtra(ShareDispatch.EXTRA_REMOVE_CSS)
+                        val article = withContext(Dispatchers.IO) {
+                            WebPageIngest.fetchArticle(url, contentCss, titleCss, removeCss)
+                        }
+                        val result = withContext(Dispatchers.IO) {
+                            flow.catalog.addText(
+                                text = article.text,
+                                titleHint = article.title,
+                                inLibrary = !toQue,
+                                enqueue = toQue,
+                            )
+                        }
+                        val tab = if (toQue) LibraryTabId.Que else LibraryTabId.Files
+                        val msg = if (toQue) "Queued ${result.progress.title}" else "Added ${result.progress.title}"
+                        refreshAfterIngest(tab, msg)
+                    }
+                    ShareDispatch.KIND_RR_PLUGIN -> {
+                        val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
+                        flow.pendingRoyalRoadShareUrl.value = url
+                        val enabled = withContext(Dispatchers.IO) {
+                            flow.settings.enabledPluginIdsOnce()
+                        }.toMutableSet().also { it.add(RoyalRoadPlugin.ID) }
+                        withContext(Dispatchers.IO) {
+                            flow.settings.setEnabledPluginIds(enabled)
+                            flow.settings.setLibraryTabId(RoyalRoadPlugin.ID)
+                        }
+                        _ui.value = _ui.value.copy(
+                            enabledPluginIds = enabled,
+                            tab = LibraryTabId.Plugin(RoyalRoadPlugin.ID),
+                            busy = false,
+                            message = "Opening Royal Road…",
+                        )
+                    }
+                    ShareDispatch.KIND_RR_SIMPLE -> {
+                        val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
+                        val toQue = intent.getBooleanExtra(ShareDispatch.EXTRA_TO_QUE, true)
+                        val chapter = withContext(Dispatchers.IO) {
+                            flow.royalRoad.fetchOneChapter(url)
+                        }
+                        val result = withContext(Dispatchers.IO) {
+                            flow.catalog.addText(
+                                text = chapter.text,
+                                titleHint = chapter.title,
+                                inLibrary = !toQue,
+                                enqueue = toQue,
+                            )
+                        }
+                        val tab = if (toQue) LibraryTabId.Que else LibraryTabId.Files
+                        val msg = if (toQue) {
+                            "Queued ${result.progress.title}"
+                        } else {
+                            "Added ${result.progress.title}"
+                        }
+                        refreshAfterIngest(tab, msg)
+                    }
+                }
+            } catch (t: Throwable) {
+                _ui.value = _ui.value.copy(
+                    busy = false,
+                    error = t.message ?: "Could not handle shared content",
+                )
+            }
+        }
+    }
+
+    private suspend fun refreshAfterIngest(tab: LibraryTabId, message: String) {
+        val books = withContext(Dispatchers.IO) { flow.catalog.list() }
+        val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
+        withContext(Dispatchers.IO) { flow.settings.setLibraryTabId(tab.persistKey) }
+        _ui.value = _ui.value.copy(
+            books = books,
+            que = que,
+            tab = tab,
+            busy = false,
+            message = message,
+        )
     }
 
     /** Import or link an external book URI, then request the reader to open it. */

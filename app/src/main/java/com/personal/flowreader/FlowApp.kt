@@ -18,6 +18,7 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 class FlowApp : Application() {
@@ -50,8 +51,16 @@ class FlowApp : Application() {
         catalog = BookCatalog(this)
         royalRoad = RoyalRoadRepository(this)
         plugins = LibraryPluginRegistry(listOf(RoyalRoadPlugin()))
-        appScope.launch { sweepStaleCache() }
+        appScope.launch {
+            sweepStaleCache()
+            val showQue = settings.shareOnce().showQueInShareSheet
+            com.personal.flowreader.share.ShareQueAliasController.setEnabled(this@FlowApp, showQue)
+        }
     }
+
+    /** Consumed by Royal Road tab when share router opens a fiction/chapter URL. */
+    val pendingRoyalRoadShareUrl = MutableStateFlow<String?>(null)
+
 
     /** Drop crashed import temps and leftover filter preview clips. */
     private fun sweepStaleCache() {
