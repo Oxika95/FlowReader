@@ -20,15 +20,15 @@ enum class FilterMatchType {
 
 enum class FilterScope {
     Global,
-    Local,
     Groups,
+    Local,
     ;
 
     val label: String
         get() = when (this) {
             Global -> "Global"
-            Local -> "Local"
             Groups -> "Groups"
+            Local -> "Local"
         }
 }
 

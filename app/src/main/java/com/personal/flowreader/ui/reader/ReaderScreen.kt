@@ -77,6 +77,7 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
@@ -147,6 +148,24 @@ private enum class PlaybackPinEdge { Top, Bottom }
 /** Gap between stacked chrome / pin cards — matches reader side gutters. */
 private val PinGap = ReaderContentStartPadding
 private val ChromeScreenPad = ReaderContentStartPadding
+/**
+ * Each [ReaderPanelSurface] reserves [ReaderPanelFeather] above and below the solid card.
+ * When stacking two feathered cards, collapse both feathers in *layout* (not [Modifier.offset])
+ * so solid borders sit [PinGap] apart without leaving empty space under a bottom-aligned stack.
+ */
+private val ChromeStackFeatherCollapse = ReaderPanelFeather * 2
+
+private fun Modifier.chromeStackCollapse(enabled: Boolean): Modifier {
+    if (!enabled) return this
+    return layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        val pull = ChromeStackFeatherCollapse.roundToPx()
+        val height = (placeable.height - pull).coerceAtLeast(0)
+        layout(placeable.width, height) {
+            placeable.placeRelative(0, -pull)
+        }
+    }
+}
 
 /** One TTS sentence in a block, with char offsets into the displayed paragraph text. */
 private data class BlockSentence(
@@ -190,6 +209,8 @@ fun ReaderScreen(
     var programmatic by remember { mutableStateOf(false) }
     var overlay by remember { mutableStateOf(ReaderOverlay.Hidden) }
     var filterEditor by remember { mutableStateOf<FilterEditorSession?>(null) }
+    /** Follow TTS scroll, hide chrome, and ignore taps until unlocked. */
+    var scrollLocked by remember { mutableStateOf(false) }
     /** Skip the next TTS follow-scroll once when we center the list ourselves (double-tap / pin). */
     var suppressFollowScroll by remember { mutableStateOf(false) }
     var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
@@ -268,7 +289,10 @@ fun ReaderScreen(
             val s = tts.sentence
             // While TTS is actively following, highlight the spoken sentence.
             // Otherwise prefer the saved/scrolled UI locus so silent reading tracks the viewport.
-            if (s != null && tts.playing && tts.following && tts.autoScrollWithTts) {
+            if (s != null && tts.playing && (
+                    scrollLocked || (tts.following && tts.autoScrollWithTts)
+                )
+            ) {
                 blockIndexOf[s.chapterIndex to s.blockIndex] ?: 0
             } else {
                 blockIndexOf[ui.locus.chapterIndex to ui.locus.blockIndex] ?: 0
@@ -390,11 +414,17 @@ fun ReaderScreen(
         }
     }
 
-    // Re-center on each spoken sentence while follow mode is on.
-    LaunchedEffect(tts.following, tts.playing, tts.sentenceIndex, tts.autoScrollWithTts, restoredScroll) {
-        if (!tts.autoScrollWithTts || !tts.following || !tts.playing ||
-            items.isEmpty() || !restoredScroll
-        ) {
+    // Re-center on each spoken sentence while follow mode is on (or scroll-locked).
+    LaunchedEffect(
+        tts.following,
+        tts.playing,
+        tts.sentenceIndex,
+        tts.autoScrollWithTts,
+        scrollLocked,
+        restoredScroll,
+    ) {
+        val followScroll = scrollLocked || (tts.autoScrollWithTts && tts.following)
+        if (!followScroll || !tts.playing || items.isEmpty() || !restoredScroll) {
             return@LaunchedEffect
         }
         val s = tts.sentence ?: return@LaunchedEffect
@@ -408,6 +438,7 @@ fun ReaderScreen(
 
     val ttsForScroll = rememberUpdatedState(tts)
     val programmaticForScroll = rememberUpdatedState(programmatic)
+    val scrollLockedForScroll = rememberUpdatedState(scrollLocked)
 
     // Only real user gestures break follow. Do not watch isScrollInProgress —
     // follow animations and their cancellation settling look identical and were
@@ -415,6 +446,7 @@ fun ReaderScreen(
     val stopFollowOnUserScroll = remember(vm) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (scrollLockedForScroll.value) return Offset.Zero
                 if (source == NestedScrollSource.UserInput &&
                     available != Offset.Zero &&
                     !programmaticForScroll.value &&
@@ -437,6 +469,7 @@ fun ReaderScreen(
     }
 
     fun toggleChrome() {
+        if (scrollLocked) return
         overlay = when (overlay) {
             ReaderOverlay.Hidden -> ReaderOverlay.Chrome
             ReaderOverlay.Chrome -> ReaderOverlay.Hidden
@@ -446,12 +479,23 @@ fun ReaderScreen(
 
     fun navigateBack() {
         when {
+            scrollLocked -> scrollLocked = false
             selectionActive -> clearTextSelection()
             filterEditor != null -> filterEditor = null
             overlay == ReaderOverlay.Settings ||
                 overlay == ReaderOverlay.Toc ||
                 overlay == ReaderOverlay.Chrome -> overlay = ReaderOverlay.Hidden
             else -> leave.value()
+        }
+    }
+
+    fun enableScrollLock() {
+        scrollLocked = true
+        overlay = ReaderOverlay.Hidden
+        filterEditor = null
+        val target = playbackBlockIndex
+        if (target >= 0) {
+            scope.launch { centerItem(target) }
         }
     }
 
@@ -481,6 +525,7 @@ fun ReaderScreen(
         kind: ReaderGestureKind,
         onDoubleTapPlay: (() -> Unit)? = null,
     ) {
+        if (scrollLocked) return
         when (val action = resolveTouch(target, kind, overlay, selectionActive)) {
             null -> Unit
             ReaderTouchAction.DoubleTapPlay -> onDoubleTapPlay?.invoke()
@@ -555,6 +600,7 @@ fun ReaderScreen(
                         ) {
                             LazyColumn(
                                 state = listState,
+                                userScrollEnabled = !scrollLocked,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .nestedScroll(stopFollowOnUserScroll)
@@ -612,7 +658,9 @@ fun ReaderScreen(
                                             }
                                         }
                                     }
-                                    var textLayout by remember(item.block.id) { mutableStateOf<TextLayoutResult?>(null) }
+                                    var textLayout by remember(item.block.id, justifyText) {
+                                        mutableStateOf<TextLayoutResult?>(null)
+                                    }
                                     val replacedRanges = ui.replacedRangesByBlockId[item.block.id].orEmpty()
                                     val sentenceHighlightColor = colors.secondary.copy(alpha = 0.40f)
                                     val wordHighlightColor = colors.primary.copy(alpha = 0.40f)
@@ -805,7 +853,9 @@ fun ReaderScreen(
                     )
                 }
 
-                val overlaysQuiet = overlay != ReaderOverlay.Settings && overlay != ReaderOverlay.Toc
+                val overlaysQuiet = !scrollLocked &&
+                    overlay != ReaderOverlay.Settings &&
+                    overlay != ReaderOverlay.Toc
                 val showPlayingPin = overlaysQuiet &&
                     tts.playing &&
                     tts.snippet.isNotBlank() &&
@@ -824,7 +874,7 @@ fun ReaderScreen(
                     if (localStart >= localEndExclusive) null
                     else localStart until localEndExclusive
                 }
-                val chromeOpen = overlay == ReaderOverlay.Chrome
+                val chromeOpen = !scrollLocked && overlay == ReaderOverlay.Chrome
 
                 // Top chrome layer: title + optional edge chip, stacked with a relative [PinGap].
                 Column(
@@ -842,13 +892,13 @@ fun ReaderScreen(
                         storedPath = ui.storedPath,
                         modifier = Modifier.fillMaxWidth(),
                         onBack = { leave.value() },
-                        onToc = { overlay = ReaderOverlay.Toc },
+                        onSettings = { overlay = ReaderOverlay.Settings },
                     )
                     if (edgeChipTop) {
                         if (chromeOpen) Spacer(Modifier.height(PinGap))
                         val chipMod = Modifier
                             .fillMaxWidth()
-                            .offset(y = if (chromeOpen) -ReaderPanelFeather else FlowTokens.Radius.None)
+                            .chromeStackCollapse(chromeOpen)
                         if (showPlayingPin) {
                             PlaybackPinCard(
                                 snippet = tts.snippet,
@@ -908,14 +958,25 @@ fun ReaderScreen(
                         error = tts.error,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .offset(y = if (edgeChipBottom && chromeOpen) -ReaderPanelFeather else FlowTokens.Radius.None),
+                            .chromeStackCollapse(edgeChipBottom && chromeOpen),
                         onPlay = { playResumingSavedPosition() },
                         onPause = { vm.tts.pause() },
                         onPrev = { vm.tts.skipPrev() },
                         onNext = { vm.tts.skipNext() },
-                        onSettings = { overlay = ReaderOverlay.Settings },
+                        onToc = { overlay = ReaderOverlay.Toc },
+                        onScrollLock = { enableScrollLock() },
                     )
                 }
+
+                ScrollLockUnlockButton(
+                    visible = scrollLocked,
+                    onUnlock = { scrollLocked = false },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .zIndex(9f)
+                        .padding(bottom = ChromeScreenPad),
+                )
                 }
             }
         }
@@ -947,6 +1008,11 @@ fun ReaderScreen(
             filtersGlobal = ui.filtersGlobal,
             filtersGroups = ui.filtersGroups,
             filtersLocal = ui.filtersLocal,
+            filterScopes = listOf(
+                FilterScope.Global,
+                FilterScope.Groups,
+                FilterScope.Local,
+            ),
             onTheme = onTheme,
             onAccentHue = onAccentHue,
             onUiScale = onUiScale,
@@ -1077,7 +1143,9 @@ private fun PlaybackPinCard(
     val sentenceHighlightColor = colors.secondary.copy(alpha = 0.40f)
     val wordHighlightColor = colors.primary.copy(alpha = 0.40f)
     val sentenceRange = 0 until snippet.length
-    var textLayout by remember(snippet) { mutableStateOf<TextLayoutResult?>(null) }
+    var textLayout by remember(snippet, bodyStyle.textAlign, bodyStyle.letterSpacing) {
+        mutableStateOf<TextLayoutResult?>(null)
+    }
     ReaderPanelSurface(
         modifier = modifier.pointerInput(snippet) {
             detectTapGestures(
@@ -1086,14 +1154,12 @@ private fun PlaybackPinCard(
             )
         },
         matchReaderWidth = true,
-        feather = FlowTokens.Radius.None,
         borderColor = colors.secondary,
     ) {
         Text(
             snippet,
             style = bodyStyle,
             color = colors.onBackground,
-            maxLines = 3,
             onTextLayout = { textLayout = it },
             modifier = Modifier
                 .padding(
@@ -1140,15 +1206,17 @@ private fun DrawScope.drawTtsHighlightRange(
         val lastChar = (lineEndExclusive - 1).coerceIn(0, len - 1)
         val firstChar = lineStart.coerceIn(0, len - 1)
 
-        // Glyph boxes respect justified inter-word spacing; getHorizontalPosition at the
-        // exclusive line end can land on the next line and collapse the rect.
+        // Geometry APIs report pre-justify (start-aligned) x. Shift by the same
+        // per-space expansion Android applies at draw time for TextAlign.Justify.
         val startBox = layout.getBoundingBox(firstChar)
         val endBox = layout.getBoundingBox(lastChar)
-        var left = minOf(startBox.left, endBox.left)
-        var right = maxOf(startBox.right, endBox.right)
+        var left = minOf(startBox.left, endBox.left) + justifyXShift(layout, firstChar)
+        var right = maxOf(startBox.right, endBox.right) + justifyXShift(layout, lastChar)
         if (right <= left) {
-            left = layout.getHorizontalPosition(firstChar, usePrimaryDirection = true)
-            right = layout.getHorizontalPosition(lineEndExclusive, usePrimaryDirection = true)
+            left = layout.getHorizontalPosition(firstChar, usePrimaryDirection = true) +
+                justifyXShift(layout, firstChar)
+            right = layout.getHorizontalPosition(lineEndExclusive, usePrimaryDirection = true) +
+                justifyXShift(layout, (lineEndExclusive - 1).coerceAtLeast(lineStart))
             if (right < left) {
                 val tmp = left
                 left = right
@@ -1181,6 +1249,53 @@ private fun DrawScope.drawTtsHighlightRange(
         )
     }
 }
+
+/**
+ * Android/Compose apply [TextAlign.Justify] as extra width on U+0020 at draw time;
+ * [TextLayoutResult.getBoundingBox] / [TextLayoutResult.getPathForRange] still return
+ * the pre-justify caret. Mirror TextLine.justify so highlight x matches glyphs.
+ */
+private fun justifyXShift(layout: TextLayoutResult, offset: Int): Float {
+    if (layout.layoutInput.style.textAlign != TextAlign.Justify) return 0f
+    val text = layout.layoutInput.text
+    val len = text.length
+    if (len <= 0) return 0f
+    val line = layout.getLineForOffset(offset.coerceIn(0, len - 1))
+    val lineEnd = layout.getLineEnd(line)
+    // Same rule as Layout.isJustificationRequired: not the last line / newline line.
+    if (lineEnd >= len) return 0f
+    if (lineEnd > 0 && text[lineEnd - 1] == '\n') return 0f
+
+    val lineStart = layout.getLineStart(line)
+    var end = lineEnd
+    while (end > lineStart && isAndroidLineEndSpace(text[end - 1])) end--
+    if (end <= lineStart) return 0f
+
+    var spaces = 0
+    for (i in lineStart until end) {
+        if (text[i] == ' ') spaces++
+    }
+    if (spaces == 0) return 0f
+
+    val justifyWidth = layout.getLineRight(line) - layout.getLineLeft(line)
+    val naturalWidth = layout.getHorizontalPosition(end, usePrimaryDirection = true) -
+        layout.getHorizontalPosition(lineStart, usePrimaryDirection = true)
+    val added = (justifyWidth - kotlin.math.abs(naturalWidth)) / spaces
+    if (added <= 0f) return 0f
+
+    val limit = offset.coerceIn(lineStart, end)
+    var before = 0
+    for (i in lineStart until limit) {
+        if (text[i] == ' ') before++
+    }
+    return added * before
+}
+
+/** Keep in sync with android.text.TextLine.isLineEndSpace. */
+private fun isAndroidLineEndSpace(ch: Char): Boolean =
+    ch == ' ' || ch == '\t' || ch == 0x1680.toChar() ||
+        (ch in 0x2000.toChar()..0x200A.toChar() && ch != 0x2007.toChar()) ||
+        ch == 0x205F.toChar() || ch == 0x3000.toChar()
 
 private suspend fun LazyListState.animateScrollItemToCenter(index: Int) {
     bringItemToCenter(index, animated = true)

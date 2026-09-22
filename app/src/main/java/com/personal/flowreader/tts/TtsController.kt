@@ -329,7 +329,7 @@ class TtsController(
         sentences = sentences + extra
         updateSessionMetadata()
         if (_state.value.playing) {
-            val n = _state.value.prefetchCount.coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH)
+            val n = effectivePrefetchCount()
             for (ahead in 1..n) {
                 startEdgeJob(index + ahead) { prefetch(index + ahead) }
             }
@@ -965,7 +965,7 @@ class TtsController(
         while (scope.isActive && _state.value.playing && generation == playGeneration) {
             val s = sentences.getOrNull(index) ?: break
             publishSentence()
-            val n = _state.value.prefetchCount.coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH)
+            val n = effectivePrefetchCount()
             if (sentences.lastIndex - index <= n) {
                 pullMore()
             }
@@ -1060,7 +1060,7 @@ class TtsController(
     }
 
     private suspend fun speakEdge(i: Int, generation: Int) {
-        synthesizeToCache(i, force = false)
+        ensureSentenceCached(i, generation)
         if (generation != playGeneration) return
         val f = cacheFile(i)
         if (!f.exists() || f.length() == 0L) {
@@ -1073,7 +1073,11 @@ class TtsController(
             val overlapMs = (-_state.value.sentenceGapMs).coerceAtLeast(0)
             var nextFile: File? = null
             if (overlapMs > 0 && i < sentences.lastIndex) {
-                synthesizeToCache(i + 1, force = false)
+                // Warm i+2 now so speak(i+1) does not block the PCM writer on Edge synth.
+                if (i + 2 <= sentences.lastIndex) {
+                    startEdgeJob(i + 2) { prefetch(i + 2) }
+                }
+                ensureSentenceCached(i + 1, generation)
                 if (generation != playGeneration) return
                 ensureWordBoundariesLoaded(i + 1)
                 val n = cacheFile(i + 1)
@@ -1099,6 +1103,31 @@ class TtsController(
         if (generation == playGeneration && !usePcm) {
             clearWordHighlight()
         }
+    }
+
+    /**
+     * Wait for an on-disk Edge MP3 for sentence [i], joining any in-flight prefetch
+     * instead of starting a duplicate synthesize when possible.
+     */
+    private suspend fun ensureSentenceCached(i: Int, generation: Int): Boolean {
+        if (generation != playGeneration) return false
+        val f = cacheFile(i)
+        if (f.exists() && f.length() > 0L) {
+            ensureWordBoundariesLoaded(i)
+            publishReady(i)
+            return true
+        }
+        val inflight = edgeJobs[i]
+        if (inflight != null) {
+            inflight.join()
+            if (generation != playGeneration) return false
+            if (f.exists() && f.length() > 0L) {
+                ensureWordBoundariesLoaded(i)
+                publishReady(i)
+                return true
+            }
+        }
+        return synthesizeToCache(i, force = false)
     }
 
     /**
@@ -1587,11 +1616,20 @@ class TtsController(
     }
 
     private fun cacheWindow(center: Int = index): IntRange {
-        val n = _state.value.prefetchCount.coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH)
+        val n = effectivePrefetchCount()
         if (sentences.isEmpty()) return IntRange.EMPTY
         val lo = (center - n).coerceAtLeast(0)
         val hi = (center + n).coerceAtMost(sentences.lastIndex)
         return lo..hi
+    }
+
+    /**
+     * Prefetch depth used for Edge lookahead. Overlap needs at least two sentences ahead
+     * so the PCM writer is not blocked on a cold Edge synthesize between clips.
+     */
+    private fun effectivePrefetchCount(): Int {
+        val n = _state.value.prefetchCount.coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH)
+        return if (_state.value.sentenceGapMs < 0) maxOf(n, 2) else n
     }
 
     private fun inCacheWindow(i: Int, center: Int = index): Boolean = i in cacheWindow(center)

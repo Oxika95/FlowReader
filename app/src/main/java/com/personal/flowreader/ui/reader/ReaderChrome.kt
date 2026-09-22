@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,21 +21,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.gestures.scrollBy
@@ -52,6 +53,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -105,7 +108,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -263,7 +268,7 @@ internal fun TitleBannerCard(
     storedPath: String,
     modifier: Modifier = Modifier,
     onBack: () -> Unit,
-    onToc: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val cover by rememberReaderCover(storedPath, maxEdge = 512)
     val cardBg = MaterialTheme.colorScheme.background
@@ -277,7 +282,6 @@ internal fun TitleBannerCard(
         ReaderPanelSurface(
             modifier = Modifier.fillMaxWidth(),
             matchReaderWidth = true,
-            feather = FlowTokens.Radius.None,
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 BannerCoverUnderlay(
@@ -287,7 +291,7 @@ internal fun TitleBannerCard(
                     modifier = Modifier
                         .matchParentSize()
                         .padding(bottom = FlowTokens.Comp.ProgressBar)
-                        // Keep cover clear of back / TOC hit targets.
+                        // Keep cover clear of back / settings hit targets.
                         .padding(horizontal = BannerCoverSideInset),
                 )
                 Row(
@@ -337,10 +341,10 @@ internal fun TitleBannerCard(
                     }
                     // Match back control width so title stays centered on the card.
                     IconButton(
-                        onClick = onToc,
+                        onClick = onSettings,
                         modifier = Modifier.size(FlowTokens.Icon.Hero),
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Toc, contentDescription = "Contents")
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
                 LinearProgressIndicator(
@@ -451,7 +455,8 @@ internal fun MediaControlCard(
     onPause: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
-    onSettings: () -> Unit,
+    onToc: () -> Unit,
+    onScrollLock: () -> Unit,
 ) {
     val playSize = FlowTokens.Comp.Fab
     AnimatedVisibility(
@@ -470,8 +475,6 @@ internal fun MediaControlCard(
                     horizontal = FlowTokens.Space.S,
                     vertical = FlowTokens.Radius.None,
                 ),
-                // Hard edge so the border lines up with the reading column (no side halo).
-                feather = FlowTokens.Radius.None,
             ) {
                 Box(Modifier.fillMaxWidth()) {
                     Row(
@@ -489,10 +492,16 @@ internal fun MediaControlCard(
                         }
                     }
                     IconButton(
-                        onClick = onSettings,
+                        onClick = onToc,
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Toc, contentDescription = "Contents")
+                    }
+                    IconButton(
+                        onClick = onScrollLock,
                         modifier = Modifier.align(Alignment.CenterEnd),
                     ) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(Icons.Default.Lock, contentDescription = "Lock scroll to TTS")
                     }
                 }
                 error?.let {
@@ -519,6 +528,57 @@ internal fun MediaControlCard(
                     if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (playing) "Pause" else "Play",
                     modifier = Modifier.size(FlowTokens.Icon.XL),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Floating unlock control that sits in the same bottom-end slot as the media card's
+ * scroll-lock button while chrome is hidden in scroll-lock mode.
+ */
+@Composable
+internal fun ScrollLockUnlockButton(
+    visible: Boolean,
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val playSize = FlowTokens.Comp.Fab
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn() + scaleIn(),
+        exit = fadeOut() + scaleOut(),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(playSize),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Match MediaControlCard: reader gutter + panel content pad to the icon slot.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = ReaderContentStartPadding + FlowTokens.Space.S)
+                    .size(FlowTokens.Icon.Hero)
+                    .pointerInput(onUnlock) {
+                        detectTapGestures(onDoubleTap = { onUnlock() })
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(FlowTokens.Comp.ButtonSecondary)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = CircleShape,
+                        ),
+                )
+                Icon(
+                    Icons.Default.LockOpen,
+                    contentDescription = "Double-tap to unlock scroll",
                 )
             }
         }
@@ -749,6 +809,7 @@ internal fun SettingsOverlay(
     filtersGlobal: List<FilterRule>,
     filtersGroups: List<FilterRule>,
     filtersLocal: List<FilterRule>,
+    filterScopes: List<FilterScope> = FilterScope.entries,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
     onUiScale: (Float) -> Unit,
@@ -804,22 +865,15 @@ internal fun SettingsOverlay(
             }
         }
 
+        val primaryTabs = listOf("Layout", "Audio", "Filters")
         PrimaryTabRow(selectedTabIndex = tab) {
-            Tab(
-                selected = tab == 0,
-                onClick = { tab = 0 },
-                text = { Text("Layout") },
-            )
-            Tab(
-                selected = tab == 1,
-                onClick = { tab = 1 },
-                text = { Text("Audio") },
-            )
-            Tab(
-                selected = tab == 2,
-                onClick = { tab = 2 },
-                text = { Text("Filters") },
-            )
+            primaryTabs.forEachIndexed { index, label ->
+                Tab(
+                    selected = tab == index,
+                    onClick = { tab = index },
+                    text = { Text(label) },
+                )
+            }
         }
 
         Column(
@@ -854,9 +908,6 @@ internal fun SettingsOverlay(
                         onShowChapterHeadingsInBody = onShowChapterHeadingsInBody,
                         onKeepScreenAwake = onKeepScreenAwake,
                     )
-                    SettingsLocationNote(
-                        "Font, spacing, and orientation are only available while reading.",
-                    )
                 }
                 1 -> {
                     AudioSettingsTab(
@@ -883,21 +934,16 @@ internal fun SettingsOverlay(
                         onContinuousPcmPlayback = onContinuousPcmPlayback,
                         onSentenceGapMs = onSentenceGapMs,
                     )
-                    SettingsLocationNote(
-                        "Speed, pitch, and playback options are only available while reading.",
-                    )
                 }
                 else -> {
                     FiltersSettingsTab(
                         filtersGlobal = filtersGlobal,
                         filtersGroups = filtersGroups,
                         filtersLocal = filtersLocal,
+                        scopes = filterScopes,
                         onAdd = onAddFilter,
                         onEdit = onEditFilter,
                         onSetEnabled = onSetFilterEnabled,
-                    )
-                    SettingsLocationNote(
-                        "Local filters are only available while reading.",
                     )
                 }
             }
@@ -914,12 +960,29 @@ internal fun AppearanceSettings(
     onAccentHue: (Float) -> Unit,
     onUiScale: (Float) -> Unit,
 ) {
+    ThemeSettingsPane(
+        themeMode = themeMode,
+        accentHue = accentHue,
+        onTheme = onTheme,
+        onAccentHue = onAccentHue,
+    )
+    Spacer(Modifier.height(FlowTokens.Space.M))
+    UiScaleSettingsPane(
+        uiScale = uiScale,
+        onUiScale = onUiScale,
+    )
+}
+
+@Composable
+private fun ThemeSettingsPane(
+    themeMode: ThemeMode,
+    accentHue: Float,
+    onTheme: (ThemeMode) -> Unit,
+    onAccentHue: (Float) -> Unit,
+) {
     var accentDragging by remember { mutableStateOf(false) }
     var localAccent by remember { mutableFloatStateOf(accentHue) }
     val shownAccent = if (accentDragging) localAccent else accentHue
-    var scaleDragging by remember { mutableStateOf(false) }
-    var localScale by remember { mutableFloatStateOf(uiScale) }
-    val shownScale = if (scaleDragging) localScale else uiScale
 
     SettingsLabel("Theme")
     ChipRow {
@@ -974,8 +1037,17 @@ internal fun AppearanceSettings(
             ),
         )
     }
+}
 
-    Spacer(Modifier.height(FlowTokens.Space.M))
+@Composable
+private fun UiScaleSettingsPane(
+    uiScale: Float,
+    onUiScale: (Float) -> Unit,
+) {
+    var scaleDragging by remember { mutableStateOf(false) }
+    var localScale by remember { mutableFloatStateOf(uiScale) }
+    val shownScale = if (scaleDragging) localScale else uiScale
+
     SettingsLabel("UI scale")
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1005,6 +1077,7 @@ internal fun AppearanceSettings(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LayoutSettingsTab(
     themeMode: ThemeMode,
@@ -1028,16 +1101,78 @@ private fun LayoutSettingsTab(
     onShowChapterHeadingsInBody: (Boolean) -> Unit,
     onKeepScreenAwake: (Boolean) -> Unit,
 ) {
-    AppearanceSettings(
-        themeMode = themeMode,
-        accentHue = accentHue,
-        uiScale = uiScale,
-        onTheme = onTheme,
-        onAccentHue = onAccentHue,
-        onUiScale = onUiScale,
+    var layoutTab by remember { mutableIntStateOf(0) }
+    val layoutTabs = listOf("Theme", "UI", "Font")
+
+    SettingsSubTabRow(
+        selectedTabIndex = layoutTab,
+        labels = layoutTabs,
+        onTabSelected = { layoutTab = it },
     )
 
     Spacer(Modifier.height(FlowTokens.Space.M))
+    when (layoutTab) {
+        0 -> ThemeSettingsPane(
+            themeMode = themeMode,
+            accentHue = accentHue,
+            onTheme = onTheme,
+            onAccentHue = onAccentHue,
+        )
+        1 -> {
+            UiScaleSettingsPane(
+                uiScale = uiScale,
+                onUiScale = onUiScale,
+            )
+            Spacer(Modifier.height(FlowTokens.Space.M))
+            SettingsLabel("Orientation")
+            ChipRow {
+                ReaderOrientation.entries.forEach { mode ->
+                    FilterChip(
+                        selected = orientation == mode,
+                        onClick = { onOrientation(mode) },
+                        label = { Text(mode.label) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(FlowTokens.Space.L))
+            AudioToggleRow(
+                title = "Chapter headings in body",
+                subtitle = "Show each chapter title in the reading text",
+                checked = showChapterHeadingsInBody,
+                onCheckedChange = onShowChapterHeadingsInBody,
+            )
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            AudioToggleRow(
+                title = "Keep screen awake",
+                subtitle = "Prevent the display from sleeping while reading",
+                checked = keepScreenAwake,
+                onCheckedChange = onKeepScreenAwake,
+            )
+        }
+        else -> FontSettingsTab(
+            fontScale = fontScale,
+            fontFamily = fontFamily,
+            lineSpacing = lineSpacing,
+            justifyText = justifyText,
+            onFontScale = onFontScale,
+            onFontFamily = onFontFamily,
+            onLineSpacing = onLineSpacing,
+            onJustifyText = onJustifyText,
+        )
+    }
+}
+
+@Composable
+private fun FontSettingsTab(
+    fontScale: Float,
+    fontFamily: ReaderFont,
+    lineSpacing: Float,
+    justifyText: Boolean,
+    onFontScale: (Float) -> Unit,
+    onFontFamily: (ReaderFont) -> Unit,
+    onLineSpacing: (Float) -> Unit,
+    onJustifyText: (Boolean) -> Unit,
+) {
     SettingsLabel("Font")
     ChipRow {
         ReaderFont.entries.forEach { font ->
@@ -1081,38 +1216,12 @@ private fun LayoutSettingsTab(
         Text("Loose", style = MaterialTheme.typography.labelSmall)
     }
 
-    Spacer(Modifier.height(FlowTokens.Space.M))
-    SettingsLabel("Orientation")
-    ChipRow {
-        ReaderOrientation.entries.forEach { mode ->
-            FilterChip(
-                selected = orientation == mode,
-                onClick = { onOrientation(mode) },
-                label = { Text(mode.label) },
-            )
-        }
-    }
-
     Spacer(Modifier.height(FlowTokens.Space.L))
     AudioToggleRow(
         title = "Justify text",
         subtitle = "Stretch each line of body text from edge to edge",
         checked = justifyText,
         onCheckedChange = onJustifyText,
-    )
-    Spacer(Modifier.height(FlowTokens.Space.S))
-    AudioToggleRow(
-        title = "Chapter headings in body",
-        subtitle = "Show each chapter title in the reading text",
-        checked = showChapterHeadingsInBody,
-        onCheckedChange = onShowChapterHeadingsInBody,
-    )
-    Spacer(Modifier.height(FlowTokens.Space.S))
-    AudioToggleRow(
-        title = "Keep screen awake",
-        subtitle = "Prevent the display from sleeping while reading",
-        checked = keepScreenAwake,
-        onCheckedChange = onKeepScreenAwake,
     )
 }
 
@@ -1141,27 +1250,74 @@ internal fun AudioSettingsTab(
     onKeepAliveUnderlay: (Boolean) -> Unit = {},
     onContinuousPcmPlayback: (Boolean) -> Unit = {},
     onSentenceGapMs: (Int) -> Unit = {},
-    compact: Boolean = false,
+) {
+    var audioTab by remember { mutableIntStateOf(0) }
+    val audioTabs = listOf("Voice", "Playback")
+
+    SettingsSubTabRow(
+        selectedTabIndex = audioTab,
+        labels = audioTabs,
+        onTabSelected = { audioTab = it },
+    )
+
+    Spacer(Modifier.height(FlowTokens.Space.M))
+    when (audioTab) {
+        0 -> VoiceSettingsTab(
+            engineKey = engineKey,
+            voiceId = voiceId,
+            engines = engines,
+            voices = voices,
+            speed = speed,
+            pitch = pitch,
+            prefetchCount = prefetchCount,
+            onEngine = onEngine,
+            onVoice = onVoice,
+            onSpeed = onSpeed,
+            onPitch = onPitch,
+            onPrefetchCount = onPrefetchCount,
+        )
+        else -> PlaybackSettingsTab(
+            doubleTapPlay = doubleTapPlay,
+            autoScrollWithTts = autoScrollWithTts,
+            keepAliveUnderlay = keepAliveUnderlay,
+            continuousPcmPlayback = continuousPcmPlayback,
+            sentenceGapMs = sentenceGapMs,
+            onDoubleTapPlay = onDoubleTapPlay,
+            onAutoScrollWithTts = onAutoScrollWithTts,
+            onKeepAliveUnderlay = onKeepAliveUnderlay,
+            onContinuousPcmPlayback = onContinuousPcmPlayback,
+            onSentenceGapMs = onSentenceGapMs,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun VoiceSettingsTab(
+    engineKey: String,
+    voiceId: String,
+    engines: List<TtsEngineOption>,
+    voices: List<TtsVoiceOption>,
+    speed: Float = 1f,
+    pitch: Float = 1f,
+    prefetchCount: Int = 1,
+    onEngine: (String) -> Unit,
+    onVoice: (String) -> Unit,
+    onSpeed: (Float) -> Unit = {},
+    onPitch: (Float) -> Unit = {},
+    onPrefetchCount: (Int) -> Unit = {},
 ) {
     var engineOpen by remember { mutableStateOf(false) }
     var voiceOpen by remember { mutableStateOf(false) }
     var speedDragging by remember { mutableStateOf(false) }
     var pitchDragging by remember { mutableStateOf(false) }
     var prefetchDragging by remember { mutableStateOf(false) }
-    var gapDragging by remember { mutableStateOf(false) }
     var localSpeed by remember { mutableFloatStateOf(speed) }
     var localPitch by remember { mutableFloatStateOf(pitch) }
     var localPrefetch by remember { mutableFloatStateOf(prefetchCount.toFloat()) }
-    var localGap by remember { mutableFloatStateOf(sentenceGapMs.toFloat()) }
     val shownSpeed = if (speedDragging) localSpeed else speed
     val shownPitch = if (pitchDragging) localPitch else pitch
     val shownPrefetch = if (prefetchDragging) localPrefetch.roundToInt() else prefetchCount
-    val shownGap = if (gapDragging) {
-        TtsPrefs.coerceSentenceGapMs(localGap.roundToInt())
-    } else {
-        sentenceGapMs
-    }
-    val pcmLockedByOverlap = shownGap < 0
 
     val engineLabel = engines.firstOrNull { it.key == engineKey }?.label ?: engineKey
     val voiceLabel = voices.firstOrNull { it.id == voiceId }?.label
@@ -1233,9 +1389,8 @@ internal fun AudioSettingsTab(
         }
     }
 
-    if (!compact) {
-        Spacer(Modifier.height(FlowTokens.Space.M))
-        SettingsLabel("Speed")
+    Spacer(Modifier.height(FlowTokens.Space.M))
+    SettingsLabel("Speed")
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -1315,8 +1470,30 @@ internal fun AudioSettingsTab(
             textAlign = TextAlign.End,
         )
     }
+}
 
-    Spacer(Modifier.height(FlowTokens.Space.S))
+@Composable
+internal fun PlaybackSettingsTab(
+    doubleTapPlay: Boolean = false,
+    autoScrollWithTts: Boolean = false,
+    keepAliveUnderlay: Boolean = false,
+    continuousPcmPlayback: Boolean = false,
+    sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
+    onDoubleTapPlay: (Boolean) -> Unit = {},
+    onAutoScrollWithTts: (Boolean) -> Unit = {},
+    onKeepAliveUnderlay: (Boolean) -> Unit = {},
+    onContinuousPcmPlayback: (Boolean) -> Unit = {},
+    onSentenceGapMs: (Int) -> Unit = {},
+) {
+    var gapDragging by remember { mutableStateOf(false) }
+    var localGap by remember { mutableFloatStateOf(sentenceGapMs.toFloat()) }
+    val shownGap = if (gapDragging) {
+        TtsPrefs.coerceSentenceGapMs(localGap.roundToInt())
+    } else {
+        sentenceGapMs
+    }
+    val pcmLockedByOverlap = shownGap < 0
+
     SettingsLabel("Sentence offset")
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1353,32 +1530,31 @@ internal fun AudioSettingsTab(
         onCheckedChange = onAutoScrollWithTts,
     )
     Spacer(Modifier.height(FlowTokens.Space.S))
-        AudioToggleRow(
-            title = "Double-tap starts playback",
-            subtitle = "Unavailable on body text while selection is on — use play controls",
-            checked = doubleTapPlay,
-            onCheckedChange = onDoubleTapPlay,
-        )
+    AudioToggleRow(
+        title = "Double-tap starts playback",
+        subtitle = "Unavailable on body text while selection is on — use play controls",
+        checked = doubleTapPlay,
+        onCheckedChange = onDoubleTapPlay,
+    )
     Spacer(Modifier.height(FlowTokens.Space.S))
-        AudioToggleRow(
-            title = "Keep audio alive",
-            subtitle = "Quiet underlay while playing (helps some car systems)",
-            checked = keepAliveUnderlay,
-            onCheckedChange = onKeepAliveUnderlay,
-        )
+    AudioToggleRow(
+        title = "Keep audio alive",
+        subtitle = "Quiet underlay while playing (helps some car systems)",
+        checked = keepAliveUnderlay,
+        onCheckedChange = onKeepAliveUnderlay,
+    )
     Spacer(Modifier.height(FlowTokens.Space.S))
-        AudioToggleRow(
-            title = "Continuous PCM playback",
-            subtitle = if (pcmLockedByOverlap) {
-                "Required while sentence offset is negative"
-            } else {
-                "Single audio stream from sentence clips (Edge)"
-            },
-            checked = continuousPcmPlayback || pcmLockedByOverlap,
-            onCheckedChange = onContinuousPcmPlayback,
-            enabled = !pcmLockedByOverlap,
-        )
-    }
+    AudioToggleRow(
+        title = "Continuous PCM playback",
+        subtitle = if (pcmLockedByOverlap) {
+            "Required while sentence offset is negative"
+        } else {
+            "Single audio stream from sentence clips (Edge)"
+        },
+        checked = continuousPcmPlayback || pcmLockedByOverlap,
+        onCheckedChange = onContinuousPcmPlayback,
+        enabled = !pcmLockedByOverlap,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1401,15 +1577,11 @@ internal fun FiltersSettingsTab(
         FilterScope.Groups -> filtersGroups
     }
 
-    SecondaryTabRow(selectedTabIndex = scopeTab.coerceIn(0, visibleScopes.lastIndex)) {
-        visibleScopes.forEachIndexed { index, entry ->
-            Tab(
-                selected = scopeTab == index,
-                onClick = { scopeTab = index },
-                text = { Text(entry.label) },
-            )
-        }
-    }
+    SettingsSubTabRow(
+        selectedTabIndex = scopeTab.coerceIn(0, visibleScopes.lastIndex),
+        labels = visibleScopes.map { it.label },
+        onTabSelected = { scopeTab = it },
+    )
 
     Spacer(Modifier.height(FlowTokens.Space.M))
     Row(
@@ -1844,14 +2016,33 @@ private fun formatSentenceGapLabel(ms: Int): String = when {
     else -> "0 ms"
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SettingsLocationNote(text: String) {
-    Spacer(Modifier.height(FlowTokens.Space.L))
-    Text(
-        "* $text",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+private fun SettingsSubTabRow(
+    selectedTabIndex: Int,
+    labels: List<String>,
+    onTabSelected: (Int) -> Unit,
+) {
+    val height = FlowTokens.Comp.SubTabBar
+    SecondaryTabRow(
+        selectedTabIndex = selectedTabIndex,
+        modifier = Modifier.height(height),
+    ) {
+        labels.forEachIndexed { index, label ->
+            Tab(
+                selected = selectedTabIndex == index,
+                onClick = { onTabSelected(index) },
+                text = {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                    )
+                },
+                modifier = Modifier.height(height),
+            )
+        }
+    }
 }
 
 @Composable

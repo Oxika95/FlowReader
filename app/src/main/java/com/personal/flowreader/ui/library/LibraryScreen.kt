@@ -45,17 +45,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -79,18 +76,15 @@ import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.LibraryTabId
 import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.data.QueEntry
+import com.personal.flowreader.data.ReaderFont
+import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.ThemeMode
-import com.personal.flowreader.data.TtsEngineOption
-import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.library.plugin.LibrarySourcePlugin
-import com.personal.flowreader.ui.reader.AppearanceSettings
-import com.personal.flowreader.ui.reader.AudioSettingsTab
-import com.personal.flowreader.ui.reader.FilterRuleEditorOverlay
-import com.personal.flowreader.ui.reader.FiltersSettingsTab
 import com.personal.flowreader.ui.common.FlowTabMetrics
 import com.personal.flowreader.ui.common.FlowTabSlotHeader
+import com.personal.flowreader.ui.reader.FilterRuleEditorOverlay
 import com.personal.flowreader.ui.reader.ReaderModalScaffold
-import com.personal.flowreader.ui.reader.SettingsLocationNote
+import com.personal.flowreader.ui.reader.SettingsOverlay
 import com.personal.flowreader.ui.settings.FilterEditorSession
 import com.personal.flowreader.ui.theme.FlowTokens
 
@@ -118,9 +112,23 @@ fun LibraryScreen(
     themeMode: ThemeMode,
     accentHue: Float,
     uiScale: Float,
+    fontScale: Float,
+    fontFamily: ReaderFont,
+    lineSpacing: Float,
+    justifyText: Boolean,
+    orientation: ReaderOrientation,
+    showChapterHeadingsInBody: Boolean,
+    keepScreenAwake: Boolean,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
     onUiScale: (Float) -> Unit,
+    onFontScale: (Float) -> Unit,
+    onFontFamily: (ReaderFont) -> Unit,
+    onLineSpacing: (Float) -> Unit,
+    onJustifyText: (Boolean) -> Unit,
+    onOrientation: (ReaderOrientation) -> Unit,
+    onShowChapterHeadingsInBody: (Boolean) -> Unit,
+    onKeepScreenAwake: (Boolean) -> Unit,
     onOpenBook: (String) -> Unit,
     onOpenQue: (bookId: String, queId: String) -> Unit,
 ) {
@@ -337,22 +345,54 @@ fun LibraryScreen(
             vm.plugins.get(pluginTab.pluginId)?.OverlayContent(actions = vm.pluginActions)
         }
 
-        LibrarySettingsOverlay(
+        SettingsOverlay(
             visible = settingsOpen && filterEditor == null,
             themeMode = themeMode,
             accentHue = accentHue,
             uiScale = uiScale,
+            fontScale = fontScale,
+            fontFamily = fontFamily,
+            lineSpacing = lineSpacing,
+            justifyText = justifyText,
+            orientation = orientation,
+            showChapterHeadingsInBody = showChapterHeadingsInBody,
+            keepScreenAwake = keepScreenAwake,
             engineKey = tts.engineKey,
             voiceId = tts.voiceId,
             engines = tts.engines,
             voices = tts.voices,
+            speed = tts.speed,
+            pitch = tts.pitch,
+            prefetchCount = tts.prefetchCount,
+            doubleTapPlay = tts.doubleTapPlay,
+            autoScrollWithTts = tts.autoScrollWithTts,
+            keepAliveUnderlay = tts.keepAliveUnderlay,
+            continuousPcmPlayback = tts.continuousPcmPlayback,
+            sentenceGapMs = tts.sentenceGapMs,
             filtersGlobal = ui.filtersGlobal,
             filtersGroups = ui.filtersGroups,
+            filtersLocal = emptyList(),
+            filterScopes = listOf(FilterScope.Global, FilterScope.Groups),
             onTheme = onTheme,
             onAccentHue = onAccentHue,
             onUiScale = onUiScale,
+            onFontScale = onFontScale,
+            onFontFamily = onFontFamily,
+            onLineSpacing = onLineSpacing,
+            onJustifyText = onJustifyText,
+            onOrientation = onOrientation,
+            onShowChapterHeadingsInBody = onShowChapterHeadingsInBody,
+            onKeepScreenAwake = onKeepScreenAwake,
             onEngine = { vm.tts.setEngine(it) },
             onVoice = { vm.tts.setVoice(it) },
+            onSpeed = { vm.tts.setSpeed(it) },
+            onPitch = { vm.tts.setPitch(it) },
+            onPrefetchCount = { vm.tts.setPrefetchCount(it) },
+            onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
+            onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
+            onKeepAliveUnderlay = { vm.tts.setKeepAliveUnderlay(it) },
+            onContinuousPcmPlayback = { vm.tts.setContinuousPcmPlayback(it) },
+            onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
             onAddFilter = { scope ->
                 filterEditor = FilterEditorSession(scope = scope, rule = FilterRule(), isNew = true)
             },
@@ -648,114 +688,6 @@ private fun AddTabOverlay(
                     TextButton(onClick = { onSetEnabled(plugin.id, !on) }) {
                         Text(if (on) "Remove" else "Add")
                     }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun LibrarySettingsOverlay(
-    visible: Boolean,
-    themeMode: ThemeMode,
-    accentHue: Float,
-    uiScale: Float,
-    engineKey: String,
-    voiceId: String,
-    engines: List<TtsEngineOption>,
-    voices: List<TtsVoiceOption>,
-    filtersGlobal: List<FilterRule>,
-    filtersGroups: List<FilterRule>,
-    onTheme: (ThemeMode) -> Unit,
-    onAccentHue: (Float) -> Unit,
-    onUiScale: (Float) -> Unit,
-    onEngine: (String) -> Unit,
-    onVoice: (String) -> Unit,
-    onAddFilter: (FilterScope) -> Unit,
-    onEditFilter: (FilterScope, FilterRule) -> Unit,
-    onSetFilterEnabled: (FilterScope, String, Boolean) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var tab by remember { mutableIntStateOf(0) }
-    ReaderModalScaffold(
-        visible = visible,
-        contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
-        onDismiss = onDismiss,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = FlowTokens.ModalHeaderStart,
-                    end = FlowTokens.ModalHeaderEnd,
-                    top = FlowTokens.ModalHeaderTop,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Settings",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = FlowTokens.ModalTitleStart),
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Filled.Close, contentDescription = "Close settings")
-            }
-        }
-        PrimaryTabRow(selectedTabIndex = tab) {
-            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Theme") })
-            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Audio") })
-            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Filters") })
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = FlowTokens.Space.M, vertical = FlowTokens.Space.M),
-        ) {
-            when (tab) {
-                0 -> {
-                    AppearanceSettings(
-                        themeMode = themeMode,
-                        accentHue = accentHue,
-                        uiScale = uiScale,
-                        onTheme = onTheme,
-                        onAccentHue = onAccentHue,
-                        onUiScale = onUiScale,
-                    )
-                    SettingsLocationNote(
-                        "Font, spacing, and orientation are in the reader.",
-                    )
-                }
-                1 -> {
-                    AudioSettingsTab(
-                        engineKey = engineKey,
-                        voiceId = voiceId,
-                        engines = engines,
-                        voices = voices,
-                        onEngine = onEngine,
-                        onVoice = onVoice,
-                        compact = true,
-                    )
-                    SettingsLocationNote(
-                        "Speed, pitch, and playback options are in the reader.",
-                    )
-                }
-                else -> {
-                    FiltersSettingsTab(
-                        filtersGlobal = filtersGlobal,
-                        filtersGroups = filtersGroups,
-                        filtersLocal = emptyList(),
-                        onAdd = onAddFilter,
-                        onEdit = onEditFilter,
-                        onSetEnabled = onSetFilterEnabled,
-                        scopes = listOf(FilterScope.Global, FilterScope.Groups),
-                    )
-                    SettingsLocationNote(
-                        "Local filters are in the reader.",
-                    )
                 }
             }
         }

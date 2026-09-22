@@ -46,6 +46,7 @@ object FlowTokens {
         val ButtonPrimary = 48.dp
         val FieldHeight = 56.dp
         val TabBar = 48.dp
+        val SubTabBar = 32.dp
         val TabIndicator = 3.dp
         val TabInnerPad = Space.S
         val ListRow = 104.dp
