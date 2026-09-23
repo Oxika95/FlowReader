@@ -74,7 +74,7 @@ data class TtsSettingsState(
     val prefetchCount: Int,
     val doubleTapPlay: Boolean,
     val autoScrollWithTts: Boolean,
-    val keepAliveUnderlay: Boolean,
+    val minSignal: Float,
     val sentenceGapMs: Int,
     val highlightSyncMs: Int,
 )
@@ -87,7 +87,7 @@ data class TtsSettingsCallbacks(
     val onPrefetchCount: (Int) -> Unit,
     val onDoubleTapPlay: (Boolean) -> Unit,
     val onAutoScrollWithTts: (Boolean) -> Unit,
-    val onKeepAliveUnderlay: (Boolean) -> Unit,
+    val onMinSignal: (Float, Boolean) -> Unit,
     val onSentenceGapMs: (Int) -> Unit,
     val onHighlightSyncMs: (Int) -> Unit,
 )

@@ -14,6 +14,7 @@ import com.personal.flowreader.share.ShareDomainRule
 import com.personal.flowreader.share.ShareDomainRules
 import com.personal.flowreader.share.SharePrefs
 import kotlinx.coroutines.flow.first
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "flow_settings")
@@ -45,8 +46,11 @@ data class TtsPrefs(
     val doubleTapPlay: Boolean = true,
     /** When true, the list keeps the spoken block centered until the user scrolls away. */
     val autoScrollWithTts: Boolean = true,
-    /** Quiet AudioTrack noise underlay while playing (helps some car head units). */
-    val keepAliveUnderlay: Boolean = false,
+    /**
+     * Tonal underlay level while playing. Snaps to [TONAL_UNDERLAY_STEPS].
+     * Keeps a signal on the output so some car head units stay awake.
+     */
+    val minSignal: Float = DEFAULT_MIN_SIGNAL,
     /** Extra pause (+) or crossfade (−) after each spoken sentence (−500…500 ms). */
     val sentenceGapMs: Int = DEFAULT_SENTENCE_GAP_MS,
     /** Offset applied to Edge heard-clock word cues (ms). */
@@ -65,6 +69,31 @@ data class TtsPrefs(
         const val MIN_HIGHLIGHT_SYNC_MS = -500
         const val MAX_HIGHLIGHT_SYNC_MS = 500
         const val HIGHLIGHT_SYNC_STEP_MS = 50
+        const val DEFAULT_MIN_SIGNAL = 0f
+        const val MIN_SIGNAL = 0f
+        const val MAX_SIGNAL = 10f
+        val TONAL_UNDERLAY_STEPS = floatArrayOf(
+            0f, 0.1f, 0.25f, 0.5f, 1f, 2f, 3f, 4f, 5f, 10f,
+        )
+        val TONAL_UNDERLAY_LABELS = arrayOf(
+            "0", "0.1", "0.25", "0.5", "1", "2", "3", "4", "5", "10",
+        )
+
+        fun tonalUnderlayIndex(level: Float): Int {
+            var best = 0
+            var bestDist = Float.MAX_VALUE
+            for (i in TONAL_UNDERLAY_STEPS.indices) {
+                val dist = abs(TONAL_UNDERLAY_STEPS[i] - level)
+                if (dist < bestDist) {
+                    best = i
+                    bestDist = dist
+                }
+            }
+            return best
+        }
+
+        fun coerceMinSignal(level: Float): Float =
+            TONAL_UNDERLAY_STEPS[tonalUnderlayIndex(level)]
 
         fun coerceSentenceGapMs(ms: Int): Int {
             val clamped = ms.coerceIn(MIN_SENTENCE_GAP_MS, MAX_SENTENCE_GAP_MS)
@@ -160,8 +189,8 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_TTS_AUTO_SCROLL] = enabled }
     }
 
-    suspend fun setKeepAliveUnderlay(enabled: Boolean) {
-        store.edit { it[KEY_TTS_KEEP_ALIVE] = enabled }
+    suspend fun setMinSignal(level: Float) {
+        store.edit { it[KEY_TTS_TONAL_UNDERLAY] = TtsPrefs.coerceMinSignal(level) }
     }
 
     suspend fun setSentenceGapMs(ms: Int) {
@@ -267,6 +296,8 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_DOUBLE_TAP_PLAY = booleanPreferencesKey("tts_double_tap_play")
         private val KEY_TTS_AUTO_SCROLL = booleanPreferencesKey("tts_auto_scroll")
         private val KEY_TTS_KEEP_ALIVE = booleanPreferencesKey("tts_keep_alive")
+        private val KEY_TTS_MIN_SIGNAL = floatPreferencesKey("tts_min_signal")
+        private val KEY_TTS_TONAL_UNDERLAY = floatPreferencesKey("tts_tonal_underlay")
         private val KEY_TTS_SENTENCE_GAP_MS = intPreferencesKey("tts_sentence_gap_ms")
         private val KEY_TTS_HIGHLIGHT_SYNC_MS = intPreferencesKey("tts_highlight_sync_ms")
         private val KEY_GLOBAL_FILTERS = stringPreferencesKey("global_filters")
@@ -323,7 +354,13 @@ class SettingsStore(context: Context) {
                 .coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH),
             doubleTapPlay = this[KEY_TTS_DOUBLE_TAP_PLAY] ?: true,
             autoScrollWithTts = this[KEY_TTS_AUTO_SCROLL] ?: true,
-            keepAliveUnderlay = this[KEY_TTS_KEEP_ALIVE] ?: false,
+            minSignal = TtsPrefs.coerceMinSignal(
+                this[KEY_TTS_TONAL_UNDERLAY] ?: when {
+                    this[KEY_TTS_MIN_SIGNAL] != null -> this[KEY_TTS_MIN_SIGNAL]!! / 10f
+                    this[KEY_TTS_KEEP_ALIVE] == true -> 1f
+                    else -> TtsPrefs.DEFAULT_MIN_SIGNAL
+                },
+            ),
             sentenceGapMs = TtsPrefs.coerceSentenceGapMs(
                 this[KEY_TTS_SENTENCE_GAP_MS] ?: TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
             ),

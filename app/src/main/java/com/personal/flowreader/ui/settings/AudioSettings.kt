@@ -179,7 +179,7 @@ internal fun AudioSettingsTab(
     prefetchCount: Int = 1,
     doubleTapPlay: Boolean = false,
     autoScrollWithTts: Boolean = false,
-    keepAliveUnderlay: Boolean = false,
+    minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
     sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
     onEngine: (String) -> Unit,
@@ -189,7 +189,7 @@ internal fun AudioSettingsTab(
     onPrefetchCount: (Int) -> Unit = {},
     onDoubleTapPlay: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
-    onKeepAliveUnderlay: (Boolean) -> Unit = {},
+    onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
     onSentenceGapMs: (Int) -> Unit = {},
     onHighlightSyncMs: (Int) -> Unit = {},
 ) {
@@ -221,12 +221,12 @@ internal fun AudioSettingsTab(
         else -> PlaybackSettingsTab(
             doubleTapPlay = doubleTapPlay,
             autoScrollWithTts = autoScrollWithTts,
-            keepAliveUnderlay = keepAliveUnderlay,
+            minSignal = minSignal,
             sentenceGapMs = sentenceGapMs,
             highlightSyncMs = highlightSyncMs,
             onDoubleTapPlay = onDoubleTapPlay,
             onAutoScrollWithTts = onAutoScrollWithTts,
-            onKeepAliveUnderlay = onKeepAliveUnderlay,
+            onMinSignal = onMinSignal,
             onSentenceGapMs = onSentenceGapMs,
             onHighlightSyncMs = onHighlightSyncMs,
         )
@@ -418,12 +418,12 @@ internal fun VoiceSettingsTab(
 internal fun PlaybackSettingsTab(
     doubleTapPlay: Boolean = false,
     autoScrollWithTts: Boolean = false,
-    keepAliveUnderlay: Boolean = false,
+    minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
     sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
     onDoubleTapPlay: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
-    onKeepAliveUnderlay: (Boolean) -> Unit = {},
+    onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
     onSentenceGapMs: (Int) -> Unit = {},
     onHighlightSyncMs: (Int) -> Unit = {},
 ) {
@@ -441,7 +441,65 @@ internal fun PlaybackSettingsTab(
     } else {
         highlightSyncMs
     }
+    var signalDragging by remember { mutableStateOf(false) }
+    var localSignal by remember { mutableFloatStateOf(minSignal) }
+    val shownSignal = if (signalDragging) localSignal else minSignal
 
+    SettingsToggleRow(
+        title = "Auto-scroll with playback",
+        subtitle = "Keep the spoken text centered until you scroll away",
+        checked = autoScrollWithTts,
+        onCheckedChange = onAutoScrollWithTts,
+    )
+    Spacer(Modifier.height(FlowTokens.Space.S))
+    SettingsToggleRow(
+        title = "Double-tap starts playback",
+        subtitle = "Unavailable on body text while selection is on — use play controls",
+        checked = doubleTapPlay,
+        onCheckedChange = onDoubleTapPlay,
+    )
+
+    Spacer(Modifier.height(FlowTokens.Space.L))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Tonal underlay",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            formatMinSignalLabel(shownSignal),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    Text(
+        "Prevents audio drop out on some hardware at low tones.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Slider(
+        value = TtsPrefs.tonalUnderlayIndex(shownSignal).toFloat(),
+        onValueChange = {
+            val index = it.roundToInt().coerceIn(TtsPrefs.TONAL_UNDERLAY_STEPS.indices)
+            val level = TtsPrefs.TONAL_UNDERLAY_STEPS[index]
+            signalDragging = true
+            localSignal = level
+            onMinSignal(level, false)
+        },
+        onValueChangeFinished = {
+            onMinSignal(TtsPrefs.coerceMinSignal(localSignal), true)
+            signalDragging = false
+        },
+        valueRange = 0f..TtsPrefs.TONAL_UNDERLAY_STEPS.lastIndex.toFloat(),
+        steps = TtsPrefs.TONAL_UNDERLAY_STEPS.size - 2,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Spacer(Modifier.height(FlowTokens.Space.L))
     // Title + live value, then description, then slider (matches AudioToggleRow text hierarchy).
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -522,28 +580,6 @@ internal fun PlaybackSettingsTab(
             TtsPrefs.HIGHLIGHT_SYNC_STEP_MS - 1,
         modifier = Modifier.fillMaxWidth(),
     )
-
-    Spacer(Modifier.height(FlowTokens.Space.L))
-    SettingsToggleRow(
-        title = "Auto-scroll with playback",
-        subtitle = "Keep the spoken text centered until you scroll away",
-        checked = autoScrollWithTts,
-        onCheckedChange = onAutoScrollWithTts,
-    )
-    Spacer(Modifier.height(FlowTokens.Space.S))
-    SettingsToggleRow(
-        title = "Double-tap starts playback",
-        subtitle = "Unavailable on body text while selection is on — use play controls",
-        checked = doubleTapPlay,
-        onCheckedChange = onDoubleTapPlay,
-    )
-    Spacer(Modifier.height(FlowTokens.Space.S))
-    SettingsToggleRow(
-        title = "Keep audio alive",
-        subtitle = "Quiet underlay while playing (helps some car systems)",
-        checked = keepAliveUnderlay,
-        onCheckedChange = onKeepAliveUnderlay,
-    )
 }
 
 private fun formatSentenceGapLabel(ms: Int): String = when {
@@ -557,6 +593,9 @@ private fun formatHighlightSyncLabel(ms: Int): String = when {
     ms < 0 -> "$ms ms"
     else -> "0 ms"
 }
+
+private fun formatMinSignalLabel(level: Float): String =
+    TtsPrefs.TONAL_UNDERLAY_LABELS[TtsPrefs.tonalUnderlayIndex(level)]
 
 /**
  * Slider whose active track grows from value 0 (visual center when the range is

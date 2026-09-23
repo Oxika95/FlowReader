@@ -3,6 +3,7 @@ package com.personal.flowreader.tts
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import com.personal.flowreader.data.TtsPrefs
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.random.Random
@@ -15,6 +16,15 @@ class AudioKeepAlive {
     private val running = AtomicBoolean(false)
     private var track: AudioTrack? = null
     private var worker: Thread? = null
+
+    @Volatile
+    private var levelPercent = TtsPrefs.DEFAULT_MIN_SIGNAL
+
+    /** Tonal underlay loudness, 0 (off) to 10 (full). Applies immediately if playing. */
+    fun setLevel(percent: Float) {
+        levelPercent = TtsPrefs.coerceMinSignal(percent)
+        track?.setVolume(levelPercent / TtsPrefs.MAX_SIGNAL)
+    }
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -42,14 +52,15 @@ class AudioKeepAlive {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         track = t
+        t.setVolume(levelPercent / TtsPrefs.MAX_SIGNAL)
         t.play()
         worker = thread(name = "tts-keep-alive", isDaemon = true) {
             val buf = ShortArray(minBuf / 2)
             val rnd = Random(System.nanoTime())
             while (running.get()) {
-                // ~−60 dBFS peak — usually inaudible, enough for many DSP detectors.
+                // Full-scale noise; [setLevel] attenuates it to the chosen percent.
                 for (i in buf.indices) {
-                    buf[i] = (rnd.nextInt(-40, 41)).toShort()
+                    buf[i] = rnd.nextInt(-32767, 32768).toShort()
                 }
                 val written = t.write(buf, 0, buf.size)
                 if (written < 0) break

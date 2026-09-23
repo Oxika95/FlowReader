@@ -246,7 +246,7 @@ internal fun SettingsOverlay(
                         prefetchCount = tts.prefetchCount,
                         doubleTapPlay = tts.doubleTapPlay,
                         autoScrollWithTts = tts.autoScrollWithTts,
-                        keepAliveUnderlay = tts.keepAliveUnderlay,
+                        minSignal = tts.minSignal,
                         sentenceGapMs = tts.sentenceGapMs,
                         highlightSyncMs = tts.highlightSyncMs,
                         onEngine = ttsCallbacks.onEngine,
@@ -256,7 +256,7 @@ internal fun SettingsOverlay(
                         onPrefetchCount = ttsCallbacks.onPrefetchCount,
                         onDoubleTapPlay = ttsCallbacks.onDoubleTapPlay,
                         onAutoScrollWithTts = ttsCallbacks.onAutoScrollWithTts,
-                        onKeepAliveUnderlay = ttsCallbacks.onKeepAliveUnderlay,
+                        onMinSignal = ttsCallbacks.onMinSignal,
                         onSentenceGapMs = ttsCallbacks.onSentenceGapMs,
                         onHighlightSyncMs = ttsCallbacks.onHighlightSyncMs,
                     )

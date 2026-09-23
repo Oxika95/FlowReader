@@ -68,7 +68,7 @@ data class TtsUiState(
     val prefetchCount: Int = TtsPrefs.DEFAULT_PREFETCH,
     val doubleTapPlay: Boolean = true,
     val autoScrollWithTts: Boolean = true,
-    val keepAliveUnderlay: Boolean = false,
+    val minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
     val sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     /** Added to heard media time when resolving Edge word cues (ms). */
     val highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
@@ -223,7 +223,7 @@ class TtsController(
                     prefetchCount = prefs.prefetchCount,
                     doubleTapPlay = prefs.doubleTapPlay,
                     autoScrollWithTts = prefs.autoScrollWithTts,
-                    keepAliveUnderlay = prefs.keepAliveUnderlay,
+                    minSignal = prefs.minSignal,
                     sentenceGapMs = prefs.sentenceGapMs,
                     highlightSyncMs = prefs.highlightSyncMs,
                     voices = voices,
@@ -543,11 +543,16 @@ class TtsController(
         scope.launch { settings.setAutoScrollWithTts(enabled) }
     }
 
-    fun setKeepAliveUnderlay(enabled: Boolean) {
-        if (enabled == _state.value.keepAliveUnderlay) return
-        _state.update { it.copy(keepAliveUnderlay = enabled) }
-        scope.launch { settings.setKeepAliveUnderlay(enabled) }
-        syncKeepAlive()
+    fun setMinSignal(level: Float, persist: Boolean = true) {
+        val value = TtsPrefs.coerceMinSignal(level)
+        _state.update { it.copy(minSignal = value) }
+        if (value <= TtsPrefs.MIN_SIGNAL) {
+            keepAlive.stop()
+        } else {
+            keepAlive.setLevel(value)
+            if (_state.value.playing) keepAlive.start()
+        }
+        if (persist) scope.launch { settings.setMinSignal(value) }
     }
 
     fun setSentenceGapMs(ms: Int) {
@@ -1218,7 +1223,8 @@ class TtsController(
     }
 
     private fun syncKeepAlive() {
-        if (_state.value.playing && _state.value.keepAliveUnderlay) {
+        if (_state.value.playing && _state.value.minSignal > TtsPrefs.MIN_SIGNAL) {
+            keepAlive.setLevel(_state.value.minSignal)
             keepAlive.start()
         } else {
             keepAlive.stop()

@@ -46,6 +46,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,6 +79,8 @@ import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
@@ -157,6 +160,9 @@ private val EdgeBandBottomHeight = 72.dp
 /** Now-playing snippet card when the spoken block is scrolled out of view. */
 private enum class PlaybackPinEdge { Top, Bottom }
 
+/** Root-Y center of the current-sentence rail bar. */
+private data class SentenceIndicator(val sentenceIndex: Int, val centerY: Float)
+
 /** Gap between stacked chrome / pin cards — matches reader side gutters. */
 private val PinGap = ReaderContentStartPadding
 private val ChromeScreenPad = ReaderContentStartPadding
@@ -228,6 +234,9 @@ fun ReaderScreen(
     /** Skip the next TTS follow-scroll once when we center the list ourselves (double-tap / pin). */
     var suppressFollowScroll by remember { mutableStateOf(false) }
     var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
+    /** Written from layout; read only inside follow-scroll, not during composition. */
+    var sentenceIndicator by remember { mutableStateOf<SentenceIndicator?>(null) }
+    var listCenterY by remember { mutableFloatStateOf(0f) }
     val view = LocalView.current
     DisposableEffect(keepScreenAwake, view) {
         val previous = view.keepScreenOn
@@ -397,6 +406,31 @@ fun ReaderScreen(
         }
     }
 
+    /** Center the current-sentence rail bar, not the whole paragraph. */
+    suspend fun centerOnSentenceIndicator(itemIndex: Int, sentenceIndex: Int) {
+        if (items.isEmpty()) return
+        val target = itemIndex.coerceIn(0, items.lastIndex)
+        programmatic = true
+        try {
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == target }) {
+                listState.scrollToItem(target)
+            }
+            val placed = withTimeoutOrNull(750) {
+                snapshotFlow { sentenceIndicator }
+                    .first { it != null && it.sentenceIndex == sentenceIndex }
+            }
+            if (placed == null) {
+                listState.animateScrollItemToCenter(target)
+            } else {
+                val delta = placed.centerY - listCenterY
+                if (abs(delta) > 2f) listState.animateScrollBy(delta)
+            }
+            snapshotFlow { listState.isScrollInProgress }.first { !it }
+        } finally {
+            programmatic = false
+        }
+    }
+
     fun jumpToSavedPosition() {
         if (items.isEmpty()) return
         scope.launch { centerItem(locusIndex.coerceIn(0, items.lastIndex)) }
@@ -447,7 +481,7 @@ fun ReaderScreen(
             suppressFollowScroll = false
             return@LaunchedEffect
         }
-        centerItem(target)
+        centerOnSentenceIndicator(target, tts.sentenceIndex)
     }
 
     val ttsForScroll = rememberUpdatedState(tts)
@@ -617,6 +651,10 @@ fun ReaderScreen(
                                 userScrollEnabled = !scrollLocked,
                                 modifier = Modifier
                                     .fillMaxSize()
+                                    .onGloballyPositioned { coords ->
+                                        val top = coords.positionInRoot().y
+                                        listCenterY = top + coords.size.height / 2f
+                                    }
                                     .nestedScroll(stopFollowOnUserScroll)
                                     .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                                     .drawWithContent {
@@ -727,6 +765,9 @@ fun ReaderScreen(
                                                 generating = tts.generatingSentenceIndices,
                                                 softAccent = colors.secondary,
                                                 onForceRegenerate = { vm.tts.forceRegenerateSentence(it) },
+                                                onCurrentIndicator = { index, centerY ->
+                                                    sentenceIndicator = SentenceIndicator(index, centerY)
+                                                },
                                             )
                                             Text(
                                                 text,
@@ -1009,7 +1050,7 @@ fun ReaderScreen(
                 prefetchCount = tts.prefetchCount,
                 doubleTapPlay = tts.doubleTapPlay,
                 autoScrollWithTts = tts.autoScrollWithTts,
-                keepAliveUnderlay = tts.keepAliveUnderlay,
+                minSignal = tts.minSignal,
                 sentenceGapMs = tts.sentenceGapMs,
                 highlightSyncMs = tts.highlightSyncMs,
             ),
@@ -1021,7 +1062,7 @@ fun ReaderScreen(
                 onPrefetchCount = { vm.tts.setPrefetchCount(it) },
                 onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
                 onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
-                onKeepAliveUnderlay = { vm.tts.setKeepAliveUnderlay(it) },
+                onMinSignal = { level, persist -> vm.tts.setMinSignal(level, persist) },
                 onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
                 onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
             ),
@@ -1405,6 +1446,7 @@ private fun LocusRail(
     generating: Set<Int>,
     softAccent: Color,
     onForceRegenerate: (Int) -> Unit,
+    onCurrentIndicator: (sentenceIndex: Int, centerY: Float) -> Unit,
 ) {
     if (sentences.isEmpty()) {
         Spacer(modifier)
@@ -1491,6 +1533,14 @@ private fun LocusRail(
         },
     ) {
         val layout = textLayout
+        val reportCurrent = rememberUpdatedState(onCurrentIndicator)
+        fun Modifier.reportIfCurrent(sentenceIndex: Int): Modifier {
+            if (sentenceIndex != currentSentenceIndex) return this
+            return onGloballyPositioned { coords ->
+                val top = coords.positionInRoot().y
+                reportCurrent.value(sentenceIndex, top + coords.size.height / 2f)
+            }
+        }
         // Farthest from current drawn first; current gets zIndex 0 (top) when bars lap.
         val drawOrder = remember(sentences, currentSentenceIndex) {
             sentences.sortedByDescending { abs(it.index - currentSentenceIndex) }
@@ -1503,7 +1553,8 @@ private fun LocusRail(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
-                                .zIndex(-abs(s.index - currentSentenceIndex).toFloat()),
+                                .zIndex(-abs(s.index - currentSentenceIndex).toFloat())
+                                .reportIfCurrent(s.index),
                             isCurrent = s.index == currentSentenceIndex,
                             isGenerating = segmentGenerating(s.index),
                             isReady = segmentReady(s.index),
@@ -1535,7 +1586,8 @@ private fun LocusRail(
                         .zIndex(-dist.toFloat())
                         .offset { IntOffset(0, top.roundToInt()) }
                         .width(RailGutterWidth)
-                        .height(with(density) { heightPx.toDp() }),
+                        .height(with(density) { heightPx.toDp() })
+                        .reportIfCurrent(s.index),
                     isCurrent = s.index == currentSentenceIndex,
                     isGenerating = segmentGenerating(s.index),
                     isReady = segmentReady(s.index),
