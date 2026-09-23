@@ -28,6 +28,8 @@ import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.ui.library.LibraryScreen
 import com.personal.flowreader.ui.library.LibraryViewModel
 import com.personal.flowreader.ui.open.OpenBookViewModel
+import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
+import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.reader.ReaderScreen
 import com.personal.flowreader.ui.reader.ReaderViewModel
 import com.personal.flowreader.ui.theme.FlowTheme
@@ -113,26 +115,8 @@ class MainActivity : ComponentActivity() {
                         composable("library") {
                             LibraryScreen(
                                 vm = libraryVm,
-                                themeMode = openUi.theme,
-                                accentHue = openUi.accentHue,
-                                uiScale = openUi.uiScale,
-                                fontScale = openUi.fontScale,
-                                fontFamily = openUi.fontFamily,
-                                lineSpacing = openUi.lineSpacing,
-                                justifyText = openUi.justifyText,
-                                orientation = openUi.orientation,
-                                showChapterHeadingsInBody = openUi.showChapterHeadingsInBody,
-                                keepScreenAwake = openUi.keepScreenAwake,
-                                onTheme = { openVm.setTheme(it) },
-                                onAccentHue = { openVm.setAccentHue(it) },
-                                onUiScale = { openVm.setUiScale(it) },
-                                onFontScale = { openVm.setFontScale(it) },
-                                onFontFamily = { openVm.setFontFamily(it) },
-                                onLineSpacing = { openVm.setLineSpacing(it) },
-                                onJustifyText = { openVm.setJustifyText(it) },
-                                onOrientation = { openVm.setOrientation(it) },
-                                onShowChapterHeadingsInBody = { openVm.setShowChapterHeadingsInBody(it) },
-                                onKeepScreenAwake = { openVm.setKeepScreenAwake(it) },
+                                appearance = AppearanceSettingsState(openUi),
+                                appearanceCallbacks = AppearanceSettingsCallbacks(openVm),
                                 onOpenBook = { id -> nav.navigate("reader/$id") },
                                 onOpenQue = { bookId, queId ->
                                     nav.navigate("reader/$bookId/que/$queId")
@@ -216,26 +200,8 @@ private fun ReaderRoute(
     ReaderScreen(
         vm = readerVm,
         queId = queId,
-        themeMode = openUi.theme,
-        accentHue = openUi.accentHue,
-        uiScale = openUi.uiScale,
-        fontScale = openUi.fontScale,
-        fontFamily = openUi.fontFamily,
-        lineSpacing = openUi.lineSpacing,
-        justifyText = openUi.justifyText,
-        orientation = openUi.orientation,
-        showChapterHeadingsInBody = openUi.showChapterHeadingsInBody,
-        keepScreenAwake = openUi.keepScreenAwake,
-        onTheme = { openVm.setTheme(it) },
-        onAccentHue = { openVm.setAccentHue(it) },
-        onUiScale = { openVm.setUiScale(it) },
-        onFontScale = { openVm.setFontScale(it) },
-        onFontFamily = { openVm.setFontFamily(it) },
-        onLineSpacing = { openVm.setLineSpacing(it) },
-        onJustifyText = { openVm.setJustifyText(it) },
-        onOrientation = { openVm.setOrientation(it) },
-        onShowChapterHeadingsInBody = { openVm.setShowChapterHeadingsInBody(it) },
-        onKeepScreenAwake = { openVm.setKeepScreenAwake(it) },
+        appearance = AppearanceSettingsState(openUi),
+        appearanceCallbacks = AppearanceSettingsCallbacks(openVm),
         onBack = onBack,
         onAdvanceQue = onAdvanceQue,
     )

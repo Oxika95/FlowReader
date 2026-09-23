@@ -150,6 +150,15 @@ import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.data.UiScale
 import com.personal.flowreader.ui.common.rememberBookCover
+import com.personal.flowreader.ui.settings.AppSettingsOverlay
+import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
+import com.personal.flowreader.ui.settings.AppearanceSettingsState
+import com.personal.flowreader.ui.settings.FilterSettingsCallbacks
+import com.personal.flowreader.ui.settings.FilterSettingsState
+import com.personal.flowreader.ui.settings.ModalHeaderRow
+import com.personal.flowreader.ui.settings.SettingsToggleRow
+import com.personal.flowreader.ui.settings.TtsSettingsCallbacks
+import com.personal.flowreader.ui.settings.TtsSettingsState
 import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.accentPrimary
 import kotlin.math.max
@@ -759,55 +768,12 @@ internal fun TocOverlay(
 @Composable
 internal fun SettingsOverlay(
     visible: Boolean,
-    themeMode: ThemeMode,
-    accentHue: Float,
-    uiScale: Float,
-    fontScale: Float,
-    fontFamily: ReaderFont,
-    lineSpacing: Float,
-    justifyText: Boolean,
-    orientation: ReaderOrientation,
-    showChapterHeadingsInBody: Boolean,
-    keepScreenAwake: Boolean,
-    engineKey: String,
-    voiceId: String,
-    engines: List<TtsEngineOption>,
-    voices: List<TtsVoiceOption>,
-    speed: Float,
-    pitch: Float,
-    prefetchCount: Int,
-    doubleTapPlay: Boolean,
-    autoScrollWithTts: Boolean,
-    keepAliveUnderlay: Boolean,
-    sentenceGapMs: Int,
-    highlightSyncMs: Int,
-    filtersGlobal: List<FilterRule>,
-    filtersGroups: List<FilterRule>,
-    filtersLocal: List<FilterRule>,
-    filterScopes: List<FilterScope> = FilterScope.entries,
-    onTheme: (ThemeMode) -> Unit,
-    onAccentHue: (Float) -> Unit,
-    onUiScale: (Float) -> Unit,
-    onFontScale: (Float) -> Unit,
-    onFontFamily: (ReaderFont) -> Unit,
-    onLineSpacing: (Float) -> Unit,
-    onJustifyText: (Boolean) -> Unit,
-    onOrientation: (ReaderOrientation) -> Unit,
-    onShowChapterHeadingsInBody: (Boolean) -> Unit,
-    onKeepScreenAwake: (Boolean) -> Unit,
-    onEngine: (String) -> Unit,
-    onVoice: (String) -> Unit,
-    onSpeed: (Float) -> Unit,
-    onPitch: (Float) -> Unit,
-    onPrefetchCount: (Int) -> Unit,
-    onDoubleTapPlay: (Boolean) -> Unit,
-    onAutoScrollWithTts: (Boolean) -> Unit,
-    onKeepAliveUnderlay: (Boolean) -> Unit,
-    onSentenceGapMs: (Int) -> Unit,
-    onHighlightSyncMs: (Int) -> Unit,
-    onAddFilter: (FilterScope) -> Unit,
-    onEditFilter: (FilterScope, FilterRule) -> Unit,
-    onSetFilterEnabled: (FilterScope, String, Boolean) -> Unit,
+    appearance: AppearanceSettingsState,
+    appearanceCallbacks: AppearanceSettingsCallbacks,
+    tts: TtsSettingsState,
+    ttsCallbacks: TtsSettingsCallbacks,
+    filters: FilterSettingsState,
+    filterCallbacks: FilterSettingsCallbacks,
     onDismiss: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -816,34 +782,10 @@ internal fun SettingsOverlay(
         if (!visible) ruleEditor.request = null
     }
 
-    ReaderModalScaffold(
+    AppSettingsOverlay(
         visible = visible,
-        contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = FlowTokens.ModalHeaderStart,
-                    end = FlowTokens.ModalHeaderEnd,
-                    top = FlowTokens.ModalHeaderTop,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Settings",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = FlowTokens.ModalTitleStart),
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Close settings")
-            }
-        }
-
         val primaryTabs = listOf("Layout", "Audio", "Filters", "Import")
         PrimaryTabRow(selectedTabIndex = tab) {
             primaryTabs.forEachIndexed { index, label ->
@@ -866,63 +808,63 @@ internal fun SettingsOverlay(
             when (tab) {
                 0 -> {
                     LayoutSettingsTab(
-                        themeMode = themeMode,
-                        accentHue = accentHue,
-                        uiScale = uiScale,
-                        fontScale = fontScale,
-                        fontFamily = fontFamily,
-                        lineSpacing = lineSpacing,
-                        justifyText = justifyText,
-                        orientation = orientation,
-                        showChapterHeadingsInBody = showChapterHeadingsInBody,
-                        keepScreenAwake = keepScreenAwake,
-                        onTheme = onTheme,
-                        onAccentHue = onAccentHue,
-                        onUiScale = onUiScale,
-                        onFontScale = onFontScale,
-                        onFontFamily = onFontFamily,
-                        onLineSpacing = onLineSpacing,
-                        onJustifyText = onJustifyText,
-                        onOrientation = onOrientation,
-                        onShowChapterHeadingsInBody = onShowChapterHeadingsInBody,
-                        onKeepScreenAwake = onKeepScreenAwake,
+                        themeMode = appearance.themeMode,
+                        accentHue = appearance.accentHue,
+                        uiScale = appearance.uiScale,
+                        fontScale = appearance.fontScale,
+                        fontFamily = appearance.fontFamily,
+                        lineSpacing = appearance.lineSpacing,
+                        justifyText = appearance.justifyText,
+                        orientation = appearance.orientation,
+                        showChapterHeadingsInBody = appearance.showChapterHeadingsInBody,
+                        keepScreenAwake = appearance.keepScreenAwake,
+                        onTheme = appearanceCallbacks.onTheme,
+                        onAccentHue = appearanceCallbacks.onAccentHue,
+                        onUiScale = appearanceCallbacks.onUiScale,
+                        onFontScale = appearanceCallbacks.onFontScale,
+                        onFontFamily = appearanceCallbacks.onFontFamily,
+                        onLineSpacing = appearanceCallbacks.onLineSpacing,
+                        onJustifyText = appearanceCallbacks.onJustifyText,
+                        onOrientation = appearanceCallbacks.onOrientation,
+                        onShowChapterHeadingsInBody = appearanceCallbacks.onShowChapterHeadingsInBody,
+                        onKeepScreenAwake = appearanceCallbacks.onKeepScreenAwake,
                     )
                 }
                 1 -> {
                     AudioSettingsTab(
-                        engineKey = engineKey,
-                        voiceId = voiceId,
-                        engines = engines,
-                        voices = voices,
-                        speed = speed,
-                        pitch = pitch,
-                        prefetchCount = prefetchCount,
-                        doubleTapPlay = doubleTapPlay,
-                        autoScrollWithTts = autoScrollWithTts,
-                        keepAliveUnderlay = keepAliveUnderlay,
-                        sentenceGapMs = sentenceGapMs,
-                        highlightSyncMs = highlightSyncMs,
-                        onEngine = onEngine,
-                        onVoice = onVoice,
-                        onSpeed = onSpeed,
-                        onPitch = onPitch,
-                        onPrefetchCount = onPrefetchCount,
-                        onDoubleTapPlay = onDoubleTapPlay,
-                        onAutoScrollWithTts = onAutoScrollWithTts,
-                        onKeepAliveUnderlay = onKeepAliveUnderlay,
-                        onSentenceGapMs = onSentenceGapMs,
-                        onHighlightSyncMs = onHighlightSyncMs,
+                        engineKey = tts.engineKey,
+                        voiceId = tts.voiceId,
+                        engines = tts.engines,
+                        voices = tts.voices,
+                        speed = tts.speed,
+                        pitch = tts.pitch,
+                        prefetchCount = tts.prefetchCount,
+                        doubleTapPlay = tts.doubleTapPlay,
+                        autoScrollWithTts = tts.autoScrollWithTts,
+                        keepAliveUnderlay = tts.keepAliveUnderlay,
+                        sentenceGapMs = tts.sentenceGapMs,
+                        highlightSyncMs = tts.highlightSyncMs,
+                        onEngine = ttsCallbacks.onEngine,
+                        onVoice = ttsCallbacks.onVoice,
+                        onSpeed = ttsCallbacks.onSpeed,
+                        onPitch = ttsCallbacks.onPitch,
+                        onPrefetchCount = ttsCallbacks.onPrefetchCount,
+                        onDoubleTapPlay = ttsCallbacks.onDoubleTapPlay,
+                        onAutoScrollWithTts = ttsCallbacks.onAutoScrollWithTts,
+                        onKeepAliveUnderlay = ttsCallbacks.onKeepAliveUnderlay,
+                        onSentenceGapMs = ttsCallbacks.onSentenceGapMs,
+                        onHighlightSyncMs = ttsCallbacks.onHighlightSyncMs,
                     )
                 }
                 2 -> {
                     FiltersSettingsTab(
-                        filtersGlobal = filtersGlobal,
-                        filtersGroups = filtersGroups,
-                        filtersLocal = filtersLocal,
-                        scopes = filterScopes,
-                        onAdd = onAddFilter,
-                        onEdit = onEditFilter,
-                        onSetEnabled = onSetFilterEnabled,
+                        filtersGlobal = filters.filtersGlobal,
+                        filtersGroups = filters.filtersGroups,
+                        filtersLocal = filters.filtersLocal,
+                        scopes = filters.filterScopes,
+                        onAdd = filterCallbacks.onAddFilter,
+                        onEdit = filterCallbacks.onEditFilter,
+                        onSetEnabled = filterCallbacks.onSetFilterEnabled,
                     )
                 }
                 else -> {
@@ -1186,14 +1128,14 @@ private fun LayoutSettingsTab(
                 }
             }
             Spacer(Modifier.height(FlowTokens.Space.L))
-            AudioToggleRow(
+            SettingsToggleRow(
                 title = "Chapter headings in body",
                 subtitle = "Show each chapter title in the reading text",
                 checked = showChapterHeadingsInBody,
                 onCheckedChange = onShowChapterHeadingsInBody,
             )
             Spacer(Modifier.height(FlowTokens.Space.S))
-            AudioToggleRow(
+            SettingsToggleRow(
                 title = "Keep screen awake",
                 subtitle = "Prevent the display from sleeping while reading",
                 checked = keepScreenAwake,
@@ -1268,7 +1210,7 @@ private fun FontSettingsTab(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.L))
-    AudioToggleRow(
+    SettingsToggleRow(
         title = "Justify text",
         subtitle = "Stretch each line of body text from edge to edge",
         checked = justifyText,
@@ -1633,21 +1575,21 @@ internal fun PlaybackSettingsTab(
     )
 
     Spacer(Modifier.height(FlowTokens.Space.L))
-    AudioToggleRow(
+    SettingsToggleRow(
         title = "Auto-scroll with playback",
         subtitle = "Keep the spoken text centered until you scroll away",
         checked = autoScrollWithTts,
         onCheckedChange = onAutoScrollWithTts,
     )
     Spacer(Modifier.height(FlowTokens.Space.S))
-    AudioToggleRow(
+    SettingsToggleRow(
         title = "Double-tap starts playback",
         subtitle = "Unavailable on body text while selection is on — use play controls",
         checked = doubleTapPlay,
         onCheckedChange = onDoubleTapPlay,
     )
     Spacer(Modifier.height(FlowTokens.Space.S))
-    AudioToggleRow(
+    SettingsToggleRow(
         title = "Keep audio alive",
         subtitle = "Quiet underlay while playing (helps some car systems)",
         checked = keepAliveUnderlay,
@@ -1817,28 +1759,10 @@ internal fun FilterRuleEditorOverlay(
         contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = FlowTokens.ModalHeaderStart,
-                    end = FlowTokens.ModalHeaderEnd,
-                    top = FlowTokens.ModalHeaderTop,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                if (isNew) "New ${scope.label} Filter" else "Edit ${scope.label} Filter",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = FlowTokens.ModalTitleStart),
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
-            }
-        }
+        ModalHeaderRow(
+            title = if (isNew) "New ${scope.label} Filter" else "Edit ${scope.label} Filter",
+            onDismiss = onDismiss,
+        )
 
         Column(
             modifier = Modifier
@@ -1891,47 +1815,21 @@ internal fun FilterRuleEditorOverlay(
             }
 
             Spacer(Modifier.height(FlowTokens.Space.S))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = FlowTokens.Space.XS),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
-                    Text("Whole words only", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        if (regexMode) "Not used for RegEx" else "Match complete words",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = wholeWords && !regexMode,
-                    onCheckedChange = { wholeWords = it },
-                    enabled = !regexMode,
-                )
-            }
+            SettingsToggleRow(
+                title = "Whole words only",
+                subtitle = if (regexMode) "Not used for RegEx" else "Match complete words",
+                checked = wholeWords && !regexMode,
+                onCheckedChange = { wholeWords = it },
+                enabled = !regexMode,
+            )
 
             Spacer(Modifier.height(FlowTokens.Space.XS))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = FlowTokens.Space.XS),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
-                    Text("TTS only", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Apply when speaking, not on screen",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = ttsOnly,
-                    onCheckedChange = { ttsOnly = it },
-                )
-            }
+            SettingsToggleRow(
+                title = "TTS only",
+                subtitle = "Apply when speaking, not on screen",
+                checked = ttsOnly,
+                onCheckedChange = { ttsOnly = it },
+            )
 
             Spacer(Modifier.height(FlowTokens.Space.S))
             SettingsLabel("Find")
@@ -2057,53 +1955,6 @@ private fun FilterSampleField(
                     shape = shape,
                 )
             },
-        )
-    }
-}
-
-@Composable
-private fun AudioToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-) {
-    val titleColor = if (enabled) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    }
-    val subtitleColor = if (enabled) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (enabled) {
-                    Modifier.clickable { onCheckedChange(!checked) }
-                } else {
-                    Modifier
-                },
-            )
-            .padding(vertical = FlowTokens.Space.XS),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge, color = titleColor)
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = subtitleColor,
-            )
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
         )
     }
 }
@@ -2348,12 +2199,7 @@ internal fun SettingsSubTabRow(
 
 @Composable
 internal fun SettingsLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = FlowTokens.Space.S),
-    )
+    com.personal.flowreader.ui.settings.SettingsLabel(text)
 }
 
 @OptIn(ExperimentalLayoutApi::class)

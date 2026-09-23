@@ -1,7 +1,6 @@
 package com.personal.flowreader.ui.library
 
 import android.text.format.DateUtils
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -24,11 +23,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -51,7 +47,7 @@ import com.personal.flowreader.data.ProgressEntity
 import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
 import com.personal.flowreader.ui.common.loadBookCoverBitmap
 import com.personal.flowreader.ui.common.rememberBookCover
-import com.personal.flowreader.ui.reader.ReaderPanelShape
+import com.personal.flowreader.ui.reader.ReaderPanelSurface
 import com.personal.flowreader.ui.theme.FlowTokens
 
 @Composable
@@ -162,9 +158,7 @@ private fun LibraryBookCard(
     onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    val bg = MaterialTheme.colorScheme.background
-    val onBg = MaterialTheme.colorScheme.onBackground
-    Card(
+    ReaderPanelSurface(
         modifier = modifier.then(
             if (onLongClick != null) {
                 Modifier.combinedClickable(
@@ -175,10 +169,7 @@ private fun LibraryBookCard(
                 Modifier.clickable(onClick = onClick)
             },
         ),
-        shape = ReaderPanelShape,
-        colors = CardDefaults.cardColors(containerColor = bg, contentColor = onBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = FlowTokens.Radius.None),
-        border = BorderStroke(FlowTokens.Stroke.Hairline, MaterialTheme.colorScheme.outlineVariant),
+        feather = FlowTokens.Radius.None,
     ) {
         content()
     }

@@ -63,8 +63,10 @@ import com.personal.flowreader.share.SharePrefs
 import com.personal.flowreader.share.WebPageIngest
 import com.personal.flowreader.ui.reader.ChipRow
 import com.personal.flowreader.ui.reader.ReaderModalScaffold
-import com.personal.flowreader.ui.reader.SettingsLabel
 import com.personal.flowreader.ui.reader.SettingsSubTabRow
+import com.personal.flowreader.ui.settings.ModalHeaderRow
+import com.personal.flowreader.ui.settings.SettingsLabel
+import com.personal.flowreader.ui.settings.SettingsToggleRow
 import com.personal.flowreader.ui.theme.FlowTokens
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -483,28 +485,10 @@ private fun DomainRuleEditorOverlay(
         contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = FlowTokens.ModalHeaderStart,
-                    end = FlowTokens.ModalHeaderEnd,
-                    top = FlowTokens.ModalHeaderTop,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                if (isNew) "New Domain Rule" else "Edit Domain Rule",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = FlowTokens.ModalTitleStart),
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
-            }
-        }
+        ModalHeaderRow(
+            title = if (isNew) "New Domain Rule" else "Edit Domain Rule",
+            onDismiss = onDismiss,
+        )
 
         Column(
             modifier = Modifier
@@ -532,42 +516,19 @@ private fun DomainRuleEditorOverlay(
                 modifier = Modifier.fillMaxWidth(),
             )
             if (!matchIsRegex) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = FlowTokens.Space.XS),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
-                        Text("Allow Wildcards", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "Use * to represent one or more unknown characters.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = allowWildcard,
-                        onCheckedChange = { allowWildcard = it },
-                    )
-                }
+                SettingsToggleRow(
+                    title = "Allow Wildcards",
+                    subtitle = "Use * to represent one or more unknown characters.",
+                    checked = allowWildcard,
+                    onCheckedChange = { allowWildcard = it },
+                )
             }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = FlowTokens.Space.XS),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
-                    Text("Enable RegEx", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Use Regular Expression to match against the URL.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = matchIsRegex, onCheckedChange = { matchIsRegex = it })
-            }
+            SettingsToggleRow(
+                title = "Enable RegEx",
+                subtitle = "Use Regular Expression to match against the URL.",
+                checked = matchIsRegex,
+                onCheckedChange = { matchIsRegex = it },
+            )
 
             Spacer(Modifier.height(FlowTokens.Space.M))
             SettingsLabel("Add to…")

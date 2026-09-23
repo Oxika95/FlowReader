@@ -109,6 +109,12 @@ import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.SentenceSplitter
 import com.personal.flowreader.data.ThemeMode
+import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
+import com.personal.flowreader.ui.settings.AppearanceSettingsState
+import com.personal.flowreader.ui.settings.FilterSettingsCallbacks
+import com.personal.flowreader.ui.settings.FilterSettingsState
+import com.personal.flowreader.ui.settings.TtsSettingsCallbacks
+import com.personal.flowreader.ui.settings.TtsSettingsState
 import com.personal.flowreader.ui.settings.FilterEditorSession
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlinx.coroutines.flow.first
@@ -178,29 +184,31 @@ private data class BlockSentence(
 fun ReaderScreen(
     vm: ReaderViewModel,
     queId: String? = null,
-    themeMode: ThemeMode,
-    accentHue: Float,
-    uiScale: Float,
-    fontScale: Float,
-    fontFamily: ReaderFont,
-    lineSpacing: Float,
-    justifyText: Boolean,
-    orientation: ReaderOrientation,
-    showChapterHeadingsInBody: Boolean,
-    keepScreenAwake: Boolean,
-    onTheme: (ThemeMode) -> Unit,
-    onAccentHue: (Float) -> Unit,
-    onUiScale: (Float) -> Unit,
-    onFontScale: (Float) -> Unit,
-    onFontFamily: (ReaderFont) -> Unit,
-    onLineSpacing: (Float) -> Unit,
-    onJustifyText: (Boolean) -> Unit,
-    onOrientation: (ReaderOrientation) -> Unit,
-    onShowChapterHeadingsInBody: (Boolean) -> Unit,
-    onKeepScreenAwake: (Boolean) -> Unit,
+    appearance: AppearanceSettingsState,
+    appearanceCallbacks: AppearanceSettingsCallbacks,
     onBack: () -> Unit,
     onAdvanceQue: (bookId: String, queId: String) -> Unit = { _, _ -> },
 ) {
+    val themeMode = appearance.themeMode
+    val accentHue = appearance.accentHue
+    val uiScale = appearance.uiScale
+    val fontScale = appearance.fontScale
+    val fontFamily = appearance.fontFamily
+    val lineSpacing = appearance.lineSpacing
+    val justifyText = appearance.justifyText
+    val orientation = appearance.orientation
+    val showChapterHeadingsInBody = appearance.showChapterHeadingsInBody
+    val keepScreenAwake = appearance.keepScreenAwake
+    val onTheme = appearanceCallbacks.onTheme
+    val onAccentHue = appearanceCallbacks.onAccentHue
+    val onUiScale = appearanceCallbacks.onUiScale
+    val onFontScale = appearanceCallbacks.onFontScale
+    val onFontFamily = appearanceCallbacks.onFontFamily
+    val onLineSpacing = appearanceCallbacks.onLineSpacing
+    val onJustifyText = appearanceCallbacks.onJustifyText
+    val onOrientation = appearanceCallbacks.onOrientation
+    val onShowChapterHeadingsInBody = appearanceCallbacks.onShowChapterHeadingsInBody
+    val onKeepScreenAwake = appearanceCallbacks.onKeepScreenAwake
     val ui by vm.ui.collectAsState()
     val tts by vm.tts.state.collectAsState()
     val doc = ui.doc
@@ -983,73 +991,63 @@ fun ReaderScreen(
 
         SettingsOverlay(
             visible = overlay == ReaderOverlay.Settings && filterEditor == null,
-            themeMode = themeMode,
-            accentHue = accentHue,
-            uiScale = uiScale,
-            fontScale = fontScale,
-            fontFamily = fontFamily,
-            lineSpacing = lineSpacing,
-            justifyText = justifyText,
-            orientation = orientation,
-            showChapterHeadingsInBody = showChapterHeadingsInBody,
-            keepScreenAwake = keepScreenAwake,
-            engineKey = tts.engineKey,
-            voiceId = tts.voiceId,
-            engines = tts.engines,
-            voices = tts.voices,
-            speed = tts.speed,
-            pitch = tts.pitch,
-            prefetchCount = tts.prefetchCount,
-            doubleTapPlay = tts.doubleTapPlay,
-            autoScrollWithTts = tts.autoScrollWithTts,
-            keepAliveUnderlay = tts.keepAliveUnderlay,
-            sentenceGapMs = tts.sentenceGapMs,
-            highlightSyncMs = tts.highlightSyncMs,
-            filtersGlobal = ui.filtersGlobal,
-            filtersGroups = ui.filtersGroups,
-            filtersLocal = ui.filtersLocal,
-            filterScopes = listOf(
-                FilterScope.Global,
-                FilterScope.Groups,
-                FilterScope.Local,
+            appearance = appearance,
+            appearanceCallbacks = appearanceCallbacks,
+            tts = TtsSettingsState(
+                engineKey = tts.engineKey,
+                voiceId = tts.voiceId,
+                engines = tts.engines,
+                voices = tts.voices,
+                speed = tts.speed,
+                pitch = tts.pitch,
+                prefetchCount = tts.prefetchCount,
+                doubleTapPlay = tts.doubleTapPlay,
+                autoScrollWithTts = tts.autoScrollWithTts,
+                keepAliveUnderlay = tts.keepAliveUnderlay,
+                sentenceGapMs = tts.sentenceGapMs,
+                highlightSyncMs = tts.highlightSyncMs,
             ),
-            onTheme = onTheme,
-            onAccentHue = onAccentHue,
-            onUiScale = onUiScale,
-            onFontScale = onFontScale,
-            onFontFamily = onFontFamily,
-            onLineSpacing = onLineSpacing,
-            onJustifyText = onJustifyText,
-            onOrientation = onOrientation,
-            onShowChapterHeadingsInBody = onShowChapterHeadingsInBody,
-            onKeepScreenAwake = onKeepScreenAwake,
-            onEngine = { vm.tts.setEngine(it) },
-            onVoice = { vm.tts.setVoice(it) },
-            onSpeed = { vm.tts.setSpeed(it) },
-            onPitch = { vm.tts.setPitch(it) },
-            onPrefetchCount = { vm.tts.setPrefetchCount(it) },
-            onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
-            onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
-            onKeepAliveUnderlay = { vm.tts.setKeepAliveUnderlay(it) },
-            onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
-            onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
-            onAddFilter = { scope ->
-                filterEditor = FilterEditorSession(
-                    scope = scope,
-                    rule = FilterRule(),
-                    isNew = true,
-                )
-            },
-            onEditFilter = { scope, rule ->
-                filterEditor = FilterEditorSession(
-                    scope = scope,
-                    rule = rule,
-                    isNew = false,
-                )
-            },
-            onSetFilterEnabled = { scope, id, enabled ->
-                vm.setFilterEnabled(scope, id, enabled)
-            },
+            ttsCallbacks = TtsSettingsCallbacks(
+                onEngine = { vm.tts.setEngine(it) },
+                onVoice = { vm.tts.setVoice(it) },
+                onSpeed = { vm.tts.setSpeed(it) },
+                onPitch = { vm.tts.setPitch(it) },
+                onPrefetchCount = { vm.tts.setPrefetchCount(it) },
+                onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
+                onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
+                onKeepAliveUnderlay = { vm.tts.setKeepAliveUnderlay(it) },
+                onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
+                onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
+            ),
+            filters = FilterSettingsState(
+                filtersGlobal = ui.filtersGlobal,
+                filtersGroups = ui.filtersGroups,
+                filtersLocal = ui.filtersLocal,
+                filterScopes = listOf(
+                    FilterScope.Global,
+                    FilterScope.Groups,
+                    FilterScope.Local,
+                ),
+            ),
+            filterCallbacks = FilterSettingsCallbacks(
+                onAddFilter = { scope ->
+                    filterEditor = FilterEditorSession(
+                        scope = scope,
+                        rule = FilterRule(),
+                        isNew = true,
+                    )
+                },
+                onEditFilter = { scope, rule ->
+                    filterEditor = FilterEditorSession(
+                        scope = scope,
+                        rule = rule,
+                        isNew = false,
+                    )
+                },
+                onSetFilterEnabled = { scope, id, enabled ->
+                    vm.setFilterEnabled(scope, id, enabled)
+                },
+            ),
             onDismiss = { overlay = ReaderOverlay.Hidden },
         )
 

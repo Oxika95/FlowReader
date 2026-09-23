@@ -86,7 +86,14 @@ import com.personal.flowreader.ui.common.FlowSlotTabLabel
 import com.personal.flowreader.ui.reader.FilterRuleEditorOverlay
 import com.personal.flowreader.ui.reader.ReaderModalScaffold
 import com.personal.flowreader.ui.reader.SettingsOverlay
+import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
+import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.settings.FilterEditorSession
+import com.personal.flowreader.ui.settings.FilterSettingsCallbacks
+import com.personal.flowreader.ui.settings.FilterSettingsState
+import com.personal.flowreader.ui.settings.ModalHeaderRow
+import com.personal.flowreader.ui.settings.TtsSettingsCallbacks
+import com.personal.flowreader.ui.settings.TtsSettingsState
 import com.personal.flowreader.ui.theme.FlowTokens
 
 private const val LibraryFilterPreviewSample =
@@ -110,26 +117,8 @@ private class PersistableOpenDocument : ActivityResultContracts.OpenDocument() {
 @Composable
 fun LibraryScreen(
     vm: LibraryViewModel,
-    themeMode: ThemeMode,
-    accentHue: Float,
-    uiScale: Float,
-    fontScale: Float,
-    fontFamily: ReaderFont,
-    lineSpacing: Float,
-    justifyText: Boolean,
-    orientation: ReaderOrientation,
-    showChapterHeadingsInBody: Boolean,
-    keepScreenAwake: Boolean,
-    onTheme: (ThemeMode) -> Unit,
-    onAccentHue: (Float) -> Unit,
-    onUiScale: (Float) -> Unit,
-    onFontScale: (Float) -> Unit,
-    onFontFamily: (ReaderFont) -> Unit,
-    onLineSpacing: (Float) -> Unit,
-    onJustifyText: (Boolean) -> Unit,
-    onOrientation: (ReaderOrientation) -> Unit,
-    onShowChapterHeadingsInBody: (Boolean) -> Unit,
-    onKeepScreenAwake: (Boolean) -> Unit,
+    appearance: AppearanceSettingsState,
+    appearanceCallbacks: AppearanceSettingsCallbacks,
     onOpenBook: (String) -> Unit,
     onOpenQue: (bookId: String, queId: String) -> Unit,
 ) {
@@ -348,61 +337,51 @@ fun LibraryScreen(
 
         SettingsOverlay(
             visible = settingsOpen && filterEditor == null,
-            themeMode = themeMode,
-            accentHue = accentHue,
-            uiScale = uiScale,
-            fontScale = fontScale,
-            fontFamily = fontFamily,
-            lineSpacing = lineSpacing,
-            justifyText = justifyText,
-            orientation = orientation,
-            showChapterHeadingsInBody = showChapterHeadingsInBody,
-            keepScreenAwake = keepScreenAwake,
-            engineKey = tts.engineKey,
-            voiceId = tts.voiceId,
-            engines = tts.engines,
-            voices = tts.voices,
-            speed = tts.speed,
-            pitch = tts.pitch,
-            prefetchCount = tts.prefetchCount,
-            doubleTapPlay = tts.doubleTapPlay,
-            autoScrollWithTts = tts.autoScrollWithTts,
-            keepAliveUnderlay = tts.keepAliveUnderlay,
-            sentenceGapMs = tts.sentenceGapMs,
-            highlightSyncMs = tts.highlightSyncMs,
-            filtersGlobal = ui.filtersGlobal,
-            filtersGroups = ui.filtersGroups,
-            filtersLocal = emptyList(),
-            filterScopes = listOf(FilterScope.Global, FilterScope.Groups),
-            onTheme = onTheme,
-            onAccentHue = onAccentHue,
-            onUiScale = onUiScale,
-            onFontScale = onFontScale,
-            onFontFamily = onFontFamily,
-            onLineSpacing = onLineSpacing,
-            onJustifyText = onJustifyText,
-            onOrientation = onOrientation,
-            onShowChapterHeadingsInBody = onShowChapterHeadingsInBody,
-            onKeepScreenAwake = onKeepScreenAwake,
-            onEngine = { vm.tts.setEngine(it) },
-            onVoice = { vm.tts.setVoice(it) },
-            onSpeed = { vm.tts.setSpeed(it) },
-            onPitch = { vm.tts.setPitch(it) },
-            onPrefetchCount = { vm.tts.setPrefetchCount(it) },
-            onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
-            onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
-            onKeepAliveUnderlay = { vm.tts.setKeepAliveUnderlay(it) },
-            onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
-            onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
-            onAddFilter = { scope ->
-                filterEditor = FilterEditorSession(scope = scope, rule = FilterRule(), isNew = true)
-            },
-            onEditFilter = { scope, rule ->
-                filterEditor = FilterEditorSession(scope = scope, rule = rule, isNew = false)
-            },
-            onSetFilterEnabled = { scope, id, enabled ->
-                vm.setFilterEnabled(scope, id, enabled)
-            },
+            appearance = appearance,
+            appearanceCallbacks = appearanceCallbacks,
+            tts = TtsSettingsState(
+                engineKey = tts.engineKey,
+                voiceId = tts.voiceId,
+                engines = tts.engines,
+                voices = tts.voices,
+                speed = tts.speed,
+                pitch = tts.pitch,
+                prefetchCount = tts.prefetchCount,
+                doubleTapPlay = tts.doubleTapPlay,
+                autoScrollWithTts = tts.autoScrollWithTts,
+                keepAliveUnderlay = tts.keepAliveUnderlay,
+                sentenceGapMs = tts.sentenceGapMs,
+                highlightSyncMs = tts.highlightSyncMs,
+            ),
+            ttsCallbacks = TtsSettingsCallbacks(
+                onEngine = { vm.tts.setEngine(it) },
+                onVoice = { vm.tts.setVoice(it) },
+                onSpeed = { vm.tts.setSpeed(it) },
+                onPitch = { vm.tts.setPitch(it) },
+                onPrefetchCount = { vm.tts.setPrefetchCount(it) },
+                onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
+                onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
+                onKeepAliveUnderlay = { vm.tts.setKeepAliveUnderlay(it) },
+                onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
+                onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
+            ),
+            filters = FilterSettingsState(
+                filtersGlobal = ui.filtersGlobal,
+                filtersGroups = ui.filtersGroups,
+                filtersLocal = emptyList(),
+                filterScopes = listOf(FilterScope.Global, FilterScope.Groups),
+            ),
+            filterCallbacks = FilterSettingsCallbacks(
+                onAddFilter = { scope ->
+                    filterEditor = FilterEditorSession(scope = scope, rule = FilterRule(), isNew = true)
+                },
+                onEditFilter = { scope, rule ->
+                    filterEditor = FilterEditorSession(scope = scope, rule = rule, isNew = false)
+                },
+                onSetFilterEnabled = { scope, id, enabled ->
+                    vm.setFilterEnabled(scope, id, enabled)
+                },
+            ),
             onDismiss = { settingsOpen = false },
         )
 
@@ -568,28 +547,11 @@ private fun AddTabOverlay(
         ),
         onDismiss = onDismiss,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = FlowTokens.ModalHeaderStart,
-                    end = FlowTokens.ModalHeaderEnd,
-                    top = FlowTokens.ModalHeaderTop,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Add a tab",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = FlowTokens.ModalTitleStart),
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Filled.Close, contentDescription = "Close")
-            }
-        }
+        ModalHeaderRow(
+            title = "Add a tab",
+            onDismiss = onDismiss,
+            closeContentDescription = "Close",
+        )
         Column(
             Modifier.padding(
                 horizontal = FlowTokens.ModalBodyPadding,
@@ -651,28 +613,11 @@ private fun AddBookOverlay(
         ),
         onDismiss = onDismiss,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = FlowTokens.ModalHeaderStart,
-                    end = FlowTokens.ModalHeaderEnd,
-                    top = FlowTokens.ModalHeaderTop,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Add a book",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = FlowTokens.ModalTitleStart),
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Filled.Close, contentDescription = "Close")
-            }
-        }
+        ModalHeaderRow(
+            title = "Add a book",
+            onDismiss = onDismiss,
+            closeContentDescription = "Close",
+        )
         Column(
             Modifier.padding(
                 horizontal = FlowTokens.ModalBodyPadding,
