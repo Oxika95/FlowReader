@@ -93,7 +93,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -112,7 +111,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -132,13 +130,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.os.Build
 import com.personal.flowreader.data.AccentHue
-import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterMatchType
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.ReaderFont
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -153,6 +149,7 @@ import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.data.UiScale
+import com.personal.flowreader.ui.common.rememberBookCover
 import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.accentPrimary
 import kotlin.math.max
@@ -286,7 +283,7 @@ internal fun TitleBannerCard(
     onBack: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val cover by rememberReaderCover(storedPath, maxEdge = 512)
+    val cover by rememberBookCover(storedPath, maxEdge = 512)
     val cardBg = MaterialTheme.colorScheme.background
     val canBlur = Build.VERSION.SDK_INT >= 31
     AnimatedVisibility(
@@ -385,44 +382,6 @@ internal fun TitleBannerCard(
 
 /** Horizontal inset so the cover band ends before the side icon buttons (matches primary control). */
 private val BannerCoverSideInset = FlowTokens.Comp.ButtonPrimary
-
-@Composable
-private fun rememberReaderCover(storedPath: String, maxEdge: Int): androidx.compose.runtime.State<ImageBitmap?> =
-    produceState(initialValue = null, storedPath, maxEdge) {
-        value = if (storedPath.isBlank()) {
-            null
-        } else {
-            withContext(Dispatchers.IO) {
-                // Prefer sidecar cover (plugin books), then EPUB embedded cover.
-                val file = File(storedPath)
-                val sidecar = file.parentFile?.let { dir ->
-                    listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp")
-                        .map { File(dir, it) }
-                        .firstOrNull { it.exists() && it.length() > 0L }
-                }
-                when {
-                    sidecar != null -> {
-                        android.graphics.BitmapFactory.decodeFile(sidecar.absolutePath)
-                            ?.let { bmp ->
-                                val scaled = if (maxOf(bmp.width, bmp.height) > maxEdge) {
-                                    val scale = maxEdge.toFloat() / maxOf(bmp.width, bmp.height)
-                                    android.graphics.Bitmap.createScaledBitmap(
-                                        bmp,
-                                        (bmp.width * scale).toInt().coerceAtLeast(1),
-                                        (bmp.height * scale).toInt().coerceAtLeast(1),
-                                        true,
-                                    ).also { if (it !== bmp) bmp.recycle() }
-                                } else {
-                                    bmp
-                                }
-                                scaled.asImageBitmap()
-                            }
-                    }
-                    else -> EpubCover.loadBitmap(file, maxEdge)?.asImageBitmap()
-                }
-            }
-        }
-    }
 
 @Composable
 private fun BannerCoverUnderlay(

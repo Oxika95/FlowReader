@@ -80,8 +80,9 @@ import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.library.plugin.LibrarySourcePlugin
-import com.personal.flowreader.ui.common.FlowTabMetrics
-import com.personal.flowreader.ui.common.FlowTabSlotHeader
+import com.personal.flowreader.ui.common.FlowSlotTab
+import com.personal.flowreader.ui.common.FlowSlotTabBar
+import com.personal.flowreader.ui.common.FlowSlotTabLabel
 import com.personal.flowreader.ui.reader.FilterRuleEditorOverlay
 import com.personal.flowreader.ui.reader.ReaderModalScaffold
 import com.personal.flowreader.ui.reader.SettingsOverlay
@@ -515,99 +516,39 @@ private fun LibraryTabBar(
     onTab: (LibraryTabId) -> Unit,
     onAddTab: () -> Unit,
 ) {
-    val scroll = rememberScrollState()
-    val indicator = MaterialTheme.colorScheme.primary
-    val density = LocalDensity.current
-    val measurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val innerPadPx = with(density) { FlowTabMetrics.InnerPad.roundToPx() }
-        val minWidths = IntArray(tabs.size + 1) { i ->
-            if (i < tabs.size) {
-                measurer.measure(
-                    text = tabs[i].second,
-                    style = labelStyle,
-                    maxLines = 1,
-                    softWrap = false,
-                ).size.width + innerPadPx * 2
-            } else {
-                with(density) { 22.dp.roundToPx() } + innerPadPx * 2
-            }
-        }
-        val layout = LibraryTabSlots.layout(
-            availablePx = constraints.maxWidth,
-            insetPx = with(density) { inset.roundToPx() },
-            gapPx = with(density) { FlowTabMetrics.MinGap.roundToPx() },
-            minWidthsPx = minWidths,
-        )
-        Row(
-            modifier = Modifier
-                .height(FlowTabMetrics.BarHeight)
-                .padding(horizontal = inset)
-                .then(
-                    if (layout.overflow) {
-                        Modifier.horizontalScroll(scroll)
-                    } else {
-                        Modifier.fillMaxWidth()
-                    },
-                ),
-            horizontalArrangement = Arrangement.spacedBy(FlowTabMetrics.MinGap),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            tabs.forEachIndexed { index, (id, label) ->
-                val selectedTab = !addSelected && selected == id
-                FlowTabSlotHeader(
+    val slotTabs = buildList {
+        tabs.forEach { (id, label) ->
+            val selectedTab = !addSelected && selected == id
+            add(
+                FlowSlotTab(
                     selected = selectedTab,
                     onClick = { onTab(id) },
-                    indicator = indicator,
-                    modifier = Modifier
-                        .width(with(density) { layout.slotWidthsPx[index].toDp() })
-                        .fillMaxHeight(),
-                    innerPad = FlowTabMetrics.InnerPad,
-                    indicatorHeight = FlowTabMetrics.IndicatorHeight,
-                ) {
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = if (selectedTab) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (selectedTab) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Visible,
-                        )
-                }
-            }
-            FlowTabSlotHeader(
+                    measureLabel = label,
+                    content = { FlowSlotTabLabel(label, it) },
+                ),
+            )
+        }
+        add(
+            FlowSlotTab(
                 selected = addSelected,
                 onClick = onAddTab,
-                indicator = indicator,
-                modifier = Modifier
-                    .width(with(density) { layout.slotWidthsPx.last().toDp() })
-                    .fillMaxHeight(),
-                innerPad = FlowTabMetrics.InnerPad,
-                indicatorHeight = FlowTabMetrics.IndicatorHeight,
-            ) {
-                Icon(
-                    Icons.Filled.Add,
-                    contentDescription = "Add tab",
-                    modifier = Modifier.size(22.dp),
-                    tint = if (addSelected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-        }
-        HorizontalDivider(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-            color = MaterialTheme.colorScheme.outlineVariant,
+                measureLabel = null,
+                content = { sel ->
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = "Add tab",
+                        modifier = Modifier.size(22.dp),
+                        tint = if (sel) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                },
+            ),
         )
     }
+    FlowSlotTabBar(tabs = slotTabs, inset = inset)
 }
 
 @Composable

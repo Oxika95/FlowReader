@@ -102,16 +102,19 @@ import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.library.plugin.LibrarySourcePlugin
 import com.personal.flowreader.library.plugin.SourceWork
-import com.personal.flowreader.ui.common.FlowTabMetrics
-import com.personal.flowreader.ui.common.FlowTabSlotHeader
+import com.personal.flowreader.ui.common.BookHeroPrimaryButton
+import com.personal.flowreader.ui.common.BookHeroSecondaryButton
+import com.personal.flowreader.ui.common.BookHeroSecondaryButtonRow
+import com.personal.flowreader.ui.common.BookHeroSplashButtons
+import com.personal.flowreader.ui.common.BookHeroSplashShell
+import com.personal.flowreader.ui.common.FlowSlotTab
+import com.personal.flowreader.ui.common.FlowSlotTabBar
+import com.personal.flowreader.ui.common.FlowSlotTabLabel
+import com.personal.flowreader.ui.common.rememberBookCover
 import com.personal.flowreader.ui.library.LibraryBooksPane
-import com.personal.flowreader.ui.library.LibraryTabSlots
-import com.personal.flowreader.ui.library.loadLibraryCoverBitmap
 import com.personal.flowreader.ui.reader.ReaderModalScaffold
 import com.personal.flowreader.ui.reader.ReaderPanelFeather
 import com.personal.flowreader.ui.theme.FlowTokens
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 class RoyalRoadPlugin : LibrarySourcePlugin {
     override val id: String = ID
@@ -246,101 +249,40 @@ private fun RoyalRoadListTabs(
     onSelect: (RoyalRoadListKind) -> Unit,
     onAccount: () -> Unit,
 ) {
-    val scroll = rememberScrollState()
-    val indicator = MaterialTheme.colorScheme.primary
-    val density = LocalDensity.current
-    val measurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
     val kinds = RoyalRoadListKind.entries
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val innerPadPx = with(density) { FlowTabMetrics.InnerPad.roundToPx() }
-        val minWidths = IntArray(kinds.size + 1) { i ->
-            if (i < kinds.size) {
-                measurer.measure(
-                    text = kinds[i].label,
-                    style = labelStyle,
-                    maxLines = 1,
-                    softWrap = false,
-                ).size.width + innerPadPx * 2
-            } else {
-                // Account tab min slot: keep literal (not Icon.L) — width math, not icon size.
-                with(density) { 22.dp.roundToPx() } + innerPadPx * 2
-            }
-        }
-        val layout = LibraryTabSlots.layout(
-            availablePx = constraints.maxWidth,
-            insetPx = with(density) { FlowTokens.ScreenGutter.roundToPx() },
-            gapPx = with(density) { FlowTabMetrics.MinGap.roundToPx() },
-            minWidthsPx = minWidths,
-        )
-        Row(
-            modifier = Modifier
-                .height(FlowTabMetrics.BarHeight)
-                .padding(horizontal = FlowTokens.ScreenGutter)
-                .then(
-                    if (layout.overflow) {
-                        Modifier.horizontalScroll(scroll)
-                    } else {
-                        Modifier.fillMaxWidth()
-                    },
-                ),
-            horizontalArrangement = Arrangement.spacedBy(FlowTabMetrics.MinGap),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            kinds.forEachIndexed { index, kind ->
-                val selectedTab = !accountSelected && selected == kind
-                FlowTabSlotHeader(
+    val slotTabs = buildList {
+        kinds.forEach { kind ->
+            val selectedTab = !accountSelected && selected == kind
+            add(
+                FlowSlotTab(
                     selected = selectedTab,
                     onClick = { onSelect(kind) },
-                    indicator = indicator,
-                    modifier = Modifier
-                        .width(with(density) { layout.slotWidthsPx[index].toDp() })
-                        .fillMaxHeight(),
-                    innerPad = FlowTabMetrics.InnerPad,
-                    indicatorHeight = FlowTabMetrics.IndicatorHeight,
-                ) {
-                    Text(
-                        kind.label,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = if (selectedTab) FontWeight.SemiBold else FontWeight.Medium,
-                        color = if (selectedTab) {
+                    measureLabel = kind.label,
+                    content = { FlowSlotTabLabel(kind.label, it) },
+                ),
+            )
+        }
+        add(
+            FlowSlotTab(
+                selected = accountSelected,
+                onClick = onAccount,
+                measureLabel = null,
+                content = { sel ->
+                    Icon(
+                        Icons.Filled.Person,
+                        contentDescription = if (loggedIn) "Account" else "Sign in",
+                        modifier = Modifier.size(FlowTokens.Icon.L),
+                        tint = if (sel) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Visible,
                     )
-                }
-            }
-            FlowTabSlotHeader(
-                selected = accountSelected,
-                onClick = onAccount,
-                indicator = indicator,
-                modifier = Modifier
-                    .width(with(density) { layout.slotWidthsPx.last().toDp() })
-                    .fillMaxHeight(),
-                innerPad = FlowTabMetrics.InnerPad,
-                indicatorHeight = FlowTabMetrics.IndicatorHeight,
-            ) {
-                Icon(
-                    Icons.Filled.Person,
-                    contentDescription = if (loggedIn) "Account" else "Sign in",
-                    modifier = Modifier.size(FlowTokens.Icon.L),
-                    tint = if (accountSelected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-        }
-        HorizontalDivider(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-            color = MaterialTheme.colorScheme.outlineVariant,
+                },
+            ),
         )
     }
+    FlowSlotTabBar(tabs = slotTabs)
 }
 
 @Composable
@@ -648,287 +590,186 @@ private fun StorySplashOverlay(
     onBookmark: (RoyalRoadListKind) -> Unit,
 ) {
     val story = ui.story
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val book = story?.let { s -> ui.books.find { it.bookId == s.bookId } }
-    val cover by produceState(initialValue = null as androidx.compose.ui.graphics.ImageBitmap?, book?.bookId, book?.storedPath) {
-        value = book?.let { row ->
-            withContext(Dispatchers.IO) {
-                loadLibraryCoverBitmap(row, maxEdge = 768)?.asImageBitmap()
-            }
-        }
-    }
-    val canBlur = android.os.Build.VERSION.SDK_INT >= 31
-    val cardBg = MaterialTheme.colorScheme.background
-    ReaderModalScaffold(
+    val cover by rememberBookCover(book, maxEdge = 768)
+    BookHeroSplashShell(
         visible = visible && story != null,
-        contentPadding = PaddingValues(FlowTokens.Radius.None),
         onDismiss = onDismiss,
-        feather = ReaderPanelFeather,
-        scrimAlpha = FlowTokens.ScrimHero,
-    ) {
-        if (story == null) return@ReaderModalScaffold
-        val art = cover
-        val onCoverMuted = FlowTokens.CoverMutedWhite
-        Column(Modifier.fillMaxWidth()) {
-            BoxWithConstraints(
+        art = cover,
+        coverBandPadding = PaddingValues(
+            start = FlowTokens.Space.L,
+            end = FlowTokens.Space.S,
+            top = FlowTokens.Space.XS,
+        ),
+        overlayExtras = overlayExtras@{
+            val s = story ?: return@overlayExtras
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = FlowTokens.Space.M, end = FlowTokens.Space.M),
+                verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                RoyalRoadListKind.entries.forEach { kind ->
+                    SplashCircleIconButton(
+                        icon = kind.splashIcon,
+                        contentDescription = kind.label,
+                        selected = kind in s.listedIn,
+                        enabled = !ui.busy,
+                        onClick = { onBookmark(kind) },
+                    )
+                }
+                SplashCircleIconButton(
+                    icon = Icons.Filled.Share,
+                    contentDescription = "Share",
+                    selected = false,
+                    enabled = s.fictionUrl.isNotBlank(),
+                    onClick = {
+                        val send = android.content.Intent(
+                            android.content.Intent.ACTION_SEND,
+                        ).apply {
+                            type = "text/plain"
+                            putExtra(
+                                android.content.Intent.EXTRA_SUBJECT,
+                                s.title,
+                            )
+                            putExtra(
+                                android.content.Intent.EXTRA_TEXT,
+                                s.fictionUrl,
+                            )
+                        }
+                        context.startActivity(
+                            android.content.Intent.createChooser(
+                                send,
+                                "Share story",
+                            ),
+                        )
+                    },
+                )
+            }
+        },
+        coverBand = coverBand@{ maxHeight ->
+            if (story == null) return@coverBand
+            val onCoverMuted = FlowTokens.CoverMutedWhite
+            val synopsisMaxHeight = (maxHeight * 0.42f).coerceAtLeast(FlowTokens.Comp.ButtonSecondary)
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    story.title,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        lineHeight = MaterialTheme.typography.titleLarge.fontSize *
+                            FlowTokens.SplashTitleLineHeight,
+                    ),
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (story.author.isNotBlank()) {
+                    Text(
+                        story.author,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White,
+                        modifier = Modifier.padding(top = FlowTokens.Space.Hair),
+                    )
+                }
+            }
+            val stats = listOfNotNull(
+                story.status.takeIf { it.isNotBlank() },
+                story.ratingLabel.takeIf { it.isNotBlank() }?.let { "★ $it" },
+                story.views?.let { "${formatCount(it)} views" },
+                "${story.chapterCount} chapters",
+            ).joinToString(" · ")
+            if (stats.isNotEmpty()) {
+                Text(
+                    stats,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onCoverMuted,
+                    modifier = Modifier.padding(top = FlowTokens.Space.XS, end = FlowTokens.Space.S),
+                )
+            }
+            if (story.tags.isNotEmpty()) {
+                Text(
+                    story.tags.joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = FlowTokens.Space.XS, end = FlowTokens.Space.S),
+                )
+            }
+            if (story.synopsis.isNotBlank()) {
+                Text(
+                    story.synopsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onCoverMuted,
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 20,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = synopsisMaxHeight)
+                        .padding(
+                            top = FlowTokens.Space.XS,
+                            end = FlowTokens.Space.S,
+                            bottom = FlowTokens.Space.XS,
+                        ),
+                )
+            }
+            ChapterCacheStrip(
+                chapterCount = story.chapterCount,
+                chapterIndex = ui.partialStartIndex,
+                cachedIndices = story.cachedIndices,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(art?.let { it.width.toFloat() / it.height.toFloat() } ?: FlowTokens.CoverAspect),
-            ) {
-                // Cap synopsis so title/meta/offline + description stay within the cover.
-                val synopsisMaxHeight = (maxHeight * 0.42f).coerceAtLeast(FlowTokens.Comp.ButtonSecondary)
-                if (art != null) {
-                    Image(
-                        bitmap = art,
-                        contentDescription = null,
-                        contentScale = ContentScale.FillWidth,
-                        alignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(if (canBlur) Modifier.blur(FlowTokens.CoverBlur) else Modifier),
-                    )
-                } else {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                    )
-                }
-                Column(Modifier.fillMaxSize()) {
-                    Spacer(Modifier.weight(1f))
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(FlowTokens.CoverGradientHeight)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        FlowTokens.CoverBandBlack,
-                                    ),
-                                ),
-                            ),
-                    )
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(FlowTokens.CoverBandBlack)
-                            .padding(
-                                start = FlowTokens.Space.L,
-                                end = FlowTokens.Space.S,
-                                top = FlowTokens.Space.XS,
-                            ),
-                    ) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(
-                                story.title,
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    lineHeight = MaterialTheme.typography.titleLarge.fontSize *
-                                        FlowTokens.SplashTitleLineHeight,
-                                ),
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (story.author.isNotBlank()) {
-                                Text(
-                                    story.author,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(top = FlowTokens.Space.Hair),
-                                )
-                            }
-                        }
-                        val stats = listOfNotNull(
-                            story.status.takeIf { it.isNotBlank() },
-                            story.ratingLabel.takeIf { it.isNotBlank() }?.let { "★ $it" },
-                            story.views?.let { "${formatCount(it)} views" },
-                            "${story.chapterCount} chapters",
-                        ).joinToString(" · ")
-                        if (stats.isNotEmpty()) {
-                            Text(
-                                stats,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = onCoverMuted,
-                                modifier = Modifier.padding(top = FlowTokens.Space.XS, end = FlowTokens.Space.S),
-                            )
-                        }
-                        if (story.tags.isNotEmpty()) {
-                            Text(
-                                story.tags.joinToString(" · "),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = FlowTokens.Space.XS, end = FlowTokens.Space.S),
-                            )
-                        }
-                        if (story.synopsis.isNotBlank()) {
-                            Text(
-                                story.synopsis,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = onCoverMuted,
-                                overflow = TextOverflow.Ellipsis,
-                                maxLines = 20,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = synopsisMaxHeight)
-                                    .padding(
-                                        top = FlowTokens.Space.XS,
-                                        end = FlowTokens.Space.S,
-                                        bottom = FlowTokens.Space.XS,
-                                    ),
-                            )
-                        }
-                        ChapterCacheStrip(
-                            chapterCount = story.chapterCount,
-                            chapterIndex = ui.partialStartIndex,
-                            cachedIndices = story.cachedIndices,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = FlowTokens.Space.S)
-                                .height(FlowTokens.Space.M),
-                        )
-                    }
-                }
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = FlowTokens.Space.M, end = FlowTokens.Space.M),
-                    verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    RoyalRoadListKind.entries.forEach { kind ->
-                        SplashCircleIconButton(
-                            icon = kind.splashIcon,
-                            contentDescription = kind.label,
-                            selected = kind in story.listedIn,
-                            enabled = !ui.busy,
-                            onClick = { onBookmark(kind) },
-                        )
-                    }
-                    SplashCircleIconButton(
-                        icon = Icons.Filled.Share,
-                        contentDescription = "Share",
-                        selected = false,
-                        enabled = story.fictionUrl.isNotBlank(),
-                        onClick = {
-                            val send = android.content.Intent(
-                                android.content.Intent.ACTION_SEND,
-                            ).apply {
-                                type = "text/plain"
-                                putExtra(
-                                    android.content.Intent.EXTRA_SUBJECT,
-                                    story.title,
-                                )
-                                putExtra(
-                                    android.content.Intent.EXTRA_TEXT,
-                                    story.fictionUrl,
-                                )
-                            }
-                            context.startActivity(
-                                android.content.Intent.createChooser(
-                                    send,
-                                    "Share story",
-                                ),
-                            )
-                        },
-                    )
-                }
-            }
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(cardBg)
-                    .padding(horizontal = FlowTokens.Space.S, vertical = FlowTokens.Space.S),
-                verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.XS),
-            ) {
-                val dl = ui.downloadProgress
-                Text(
-                    if (dl != null) {
-                        "Downloading ${dl.first} / ${dl.second}"
-                    } else {
-                        "Cached ${story.downloadedCount} / ${story.chapterCount} chapters" +
-                            " · cache level ${maxOf(story.keepBehind, story.prefetchAhead)}"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
+                    .padding(top = FlowTokens.Space.S)
+                    .height(FlowTokens.Space.M),
+            )
+        },
+    ) {
+        if (story == null) return@BookHeroSplashShell
+        val dl = ui.downloadProgress
+        Text(
+            if (dl != null) {
+                "Downloading ${dl.first} / ${dl.second}"
+            } else {
+                "Cached ${story.downloadedCount} / ${story.chapterCount} chapters" +
+                    " · cache level ${maxOf(story.keepBehind, story.prefetchAhead)}"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
+        )
+        BookHeroSplashButtons {
+            BookHeroSecondaryButtonRow {
+                BookHeroSecondaryButton(
+                    onClick = onDownload,
+                    enabled = !ui.busy && story.chapterCount > 0,
+                    label = "Download",
                 )
-                CompositionLocalProvider(
-                    LocalMinimumInteractiveComponentSize provides Dp.Unspecified,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = FlowTokens.Space.XS),
-                        horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.XS),
-                    ) {
-                        OutlinedButton(
-                            onClick = onDownload,
-                            enabled = !ui.busy && story.chapterCount > 0,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(FlowTokens.SplashSecondaryButtonHeight),
-                            contentPadding = PaddingValues(
-                                horizontal = FlowTokens.Space.XS,
-                                vertical = FlowTokens.Radius.None,
-                            ),
-                        ) {
-                            Text("Download", maxLines = 1, style = MaterialTheme.typography.labelLarge)
-                        }
-                        OutlinedButton(
-                            onClick = onRefreshToc,
-                            enabled = !ui.busy,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(FlowTokens.SplashSecondaryButtonHeight),
-                            contentPadding = PaddingValues(
-                                horizontal = FlowTokens.Space.XS,
-                                vertical = FlowTokens.Radius.None,
-                            ),
-                        ) {
-                            Text("Refresh", maxLines = 1, style = MaterialTheme.typography.labelLarge)
-                        }
-                        OutlinedButton(
-                            onClick = onDelete,
-                            enabled = !ui.busy,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(FlowTokens.SplashSecondaryButtonHeight),
-                            contentPadding = PaddingValues(
-                                horizontal = FlowTokens.Space.XS,
-                                vertical = FlowTokens.Radius.None,
-                            ),
-                        ) {
-                            Text("Delete", maxLines = 1, style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
-                    Button(
-                        onClick = onRead,
-                        enabled = !ui.busy && story.chapterCount > 0,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = FlowTokens.Space.XS)
-                            .height(FlowTokens.SplashPrimaryButtonHeight),
-                        contentPadding = PaddingValues(
-                            horizontal = FlowTokens.Space.L,
-                            vertical = FlowTokens.Radius.None,
-                        ),
-                    ) {
-                        Text("Read")
-                    }
-                }
-                ui.error?.let { err ->
-                    Text(
-                        err,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
-                    )
-                }
+                BookHeroSecondaryButton(
+                    onClick = onRefreshToc,
+                    enabled = !ui.busy,
+                    label = "Refresh",
+                )
+                BookHeroSecondaryButton(
+                    onClick = onDelete,
+                    enabled = !ui.busy,
+                    label = "Delete",
+                )
             }
+            BookHeroPrimaryButton(
+                onClick = onRead,
+                enabled = !ui.busy && story.chapterCount > 0,
+                label = "Read",
+            )
+        }
+        ui.error?.let { err ->
+            Text(
+                err,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
+            )
         }
     }
 }

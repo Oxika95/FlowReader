@@ -1,6 +1,5 @@
 package com.personal.flowreader.ui.library
 
-import android.graphics.BitmapFactory
 import android.text.format.DateUtils
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -36,28 +35,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import com.personal.flowreader.data.BookSource
-import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.data.ProgressEntity
 import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
+import com.personal.flowreader.ui.common.loadBookCoverBitmap
+import com.personal.flowreader.ui.common.rememberBookCover
 import com.personal.flowreader.ui.reader.ReaderPanelShape
 import com.personal.flowreader.ui.theme.FlowTokens
-import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 @Composable
 fun LibraryBooksPane(
@@ -333,35 +328,10 @@ private fun LibraryBookShelfTile(book: ProgressEntity) {
 
 @Composable
 fun rememberLibraryCover(book: ProgressEntity, maxEdge: Int): androidx.compose.runtime.State<ImageBitmap?> =
-    produceState(initialValue = null, book.bookId, book.storedPath, book.sourceKind, maxEdge) {
-        value = withContext(Dispatchers.IO) {
-            loadLibraryCoverBitmap(book, maxEdge)?.asImageBitmap()
-        }
-    }
+    rememberBookCover(book, maxEdge)
 
-internal fun loadLibraryCoverBitmap(book: ProgressEntity, maxEdge: Int): android.graphics.Bitmap? {
-    if (book.sourceKind == RoyalRoadPlugin.ID || book.bookId.startsWith("rr:")) {
-        val dir = File(book.storedPath).parentFile
-        val coverFile = listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp")
-            .mapNotNull { name -> dir?.let { File(it, name) } }
-            .firstOrNull { it.exists() && it.length() > 0L }
-        if (coverFile != null) {
-            return decodeScaled(coverFile, maxEdge)
-        }
-    }
-    return EpubCover.loadBitmap(File(book.storedPath), maxEdge)
-}
-
-private fun decodeScaled(file: File, maxEdge: Int): android.graphics.Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(file.absolutePath, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    var sample = 1
-    val longest = maxOf(bounds.outWidth, bounds.outHeight)
-    while (longest / sample > maxEdge) sample *= 2
-    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-    return BitmapFactory.decodeFile(file.absolutePath, opts)
-}
+internal fun loadLibraryCoverBitmap(book: ProgressEntity, maxEdge: Int): android.graphics.Bitmap? =
+    loadBookCoverBitmap(book, maxEdge)
 
 @Composable
 private fun LibraryCoverFill(
