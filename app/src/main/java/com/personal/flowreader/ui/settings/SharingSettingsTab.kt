@@ -61,9 +61,9 @@ import com.personal.flowreader.share.ShareDomainRules
 import com.personal.flowreader.share.ShareParseMode
 import com.personal.flowreader.share.SharePrefs
 import com.personal.flowreader.share.WebPageIngest
-import com.personal.flowreader.ui.reader.ChipRow
-import com.personal.flowreader.ui.reader.ReaderModalScaffold
-import com.personal.flowreader.ui.reader.SettingsSubTabRow
+import com.personal.flowreader.ui.settings.ChipRow
+import com.personal.flowreader.ui.chrome.ReaderModalScaffold
+import com.personal.flowreader.ui.settings.SettingsSubTabRow
 import com.personal.flowreader.ui.settings.ModalHeaderRow
 import com.personal.flowreader.ui.settings.SettingsLabel
 import com.personal.flowreader.ui.settings.SettingsToggleRow

@@ -33,8 +33,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
-import com.personal.flowreader.ui.reader.ReaderModalScaffold
-import com.personal.flowreader.ui.reader.ReaderPanelFeather
+import com.personal.flowreader.ui.chrome.ReaderModalScaffold
+import com.personal.flowreader.ui.chrome.ReaderPanelFeather
 import com.personal.flowreader.ui.theme.FlowTokens
 
 /**
@@ -104,6 +104,7 @@ fun BookHeroCover(
                     ?: FlowTokens.CoverAspect,
             ),
     ) {
+        val coverMaxHeight = maxHeight
         if (art != null) {
             Image(
                 bitmap = art,
@@ -140,7 +141,7 @@ fun BookHeroCover(
                     .background(FlowTokens.CoverBandBlack)
                     .padding(coverBandPadding),
             ) {
-                coverBand(maxHeight)
+                coverBand(coverMaxHeight)
             }
         }
         overlayExtras()

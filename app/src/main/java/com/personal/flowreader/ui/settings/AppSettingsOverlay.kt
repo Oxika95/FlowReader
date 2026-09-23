@@ -3,7 +3,7 @@ package com.personal.flowreader.ui.settings
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
-import com.personal.flowreader.ui.reader.ReaderModalScaffold
+import com.personal.flowreader.ui.chrome.ReaderModalScaffold
 import com.personal.flowreader.ui.theme.FlowTokens
 
 /**

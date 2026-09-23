@@ -1,0 +1,534 @@
+package com.personal.flowreader.ui.settings
+
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Toc
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.SecondaryTabRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import android.os.Build
+import com.personal.flowreader.data.AccentHue
+import com.personal.flowreader.data.FilterApplyResult
+import com.personal.flowreader.data.FilterMatchType
+import com.personal.flowreader.data.FilterRule
+import com.personal.flowreader.data.FilterScope
+import com.personal.flowreader.data.ReaderFont
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import com.personal.flowreader.data.ReaderOrientation
+import com.personal.flowreader.data.TextFilters
+import com.personal.flowreader.data.ThemeMode
+import com.personal.flowreader.data.TtsEngineOption
+import com.personal.flowreader.data.TtsPrefs
+import com.personal.flowreader.data.TtsVoiceOption
+import com.personal.flowreader.data.UiScale
+import com.personal.flowreader.ui.common.rememberBookCover
+import com.personal.flowreader.ui.settings.AppSettingsOverlay
+import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
+import com.personal.flowreader.ui.settings.AppearanceSettingsState
+import com.personal.flowreader.ui.settings.FilterSettingsCallbacks
+import com.personal.flowreader.ui.settings.FilterSettingsState
+import com.personal.flowreader.ui.settings.ModalHeaderRow
+import com.personal.flowreader.ui.settings.SettingsToggleRow
+import com.personal.flowreader.ui.settings.TtsSettingsCallbacks
+import com.personal.flowreader.ui.settings.TtsSettingsState
+import com.personal.flowreader.ui.theme.FlowTokens
+import com.personal.flowreader.ui.theme.accentPrimary
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import com.personal.flowreader.ui.chrome.ReaderModalScaffold
+import com.personal.flowreader.ui.chrome.ReaderPanelShape
+import com.personal.flowreader.ui.reader.FilterPreviewMode
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun FiltersSettingsTab(
+    filtersGlobal: List<FilterRule>,
+    filtersGroups: List<FilterRule>,
+    filtersLocal: List<FilterRule>,
+    onAdd: (FilterScope) -> Unit,
+    onEdit: (FilterScope, FilterRule) -> Unit,
+    onSetEnabled: (FilterScope, String, Boolean) -> Unit,
+    scopes: List<FilterScope> = FilterScope.entries,
+) {
+    var scopeTab by remember { mutableIntStateOf(0) }
+    val visibleScopes = scopes.ifEmpty { FilterScope.entries }
+    val scope = visibleScopes[scopeTab.coerceIn(0, visibleScopes.lastIndex)]
+    val rules = when (scope) {
+        FilterScope.Global -> filtersGlobal
+        FilterScope.Local -> filtersLocal
+        FilterScope.Groups -> filtersGroups
+    }
+
+    SettingsSubTabRow(
+        selectedTabIndex = scopeTab.coerceIn(0, visibleScopes.lastIndex),
+        labels = visibleScopes.map { it.label },
+        onTabSelected = { scopeTab = it },
+    )
+
+    Spacer(Modifier.height(FlowTokens.Space.M))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Rules",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { onAdd(scope) }) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(FlowTokens.Icon.M))
+            Spacer(Modifier.width(FlowTokens.Space.XS))
+            Text("Add")
+        }
+    }
+
+    if (rules.isEmpty()) {
+        Text(
+            "No filters yet. Add a rule to replace text in the reader and TTS.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = FlowTokens.Space.S),
+        )
+    } else {
+        rules.sortedBy { it.order }.forEach { rule ->
+            FilterRuleRow(
+                rule = rule,
+                onToggle = { onSetEnabled(scope, rule.id, it) },
+                onClick = { onEdit(scope, rule) },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        }
+    }
+
+    val enabledCount = rules.count { it.enabled }
+    Text(
+        "Enabled $enabledCount of ${rules.size}",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = FlowTokens.Space.M),
+    )
+}
+
+@Composable
+private fun FilterRuleRow(
+    rule: FilterRule,
+    onToggle: (Boolean) -> Unit,
+    onClick: () -> Unit,
+) {
+    val title = rule.title.ifBlank { rule.pattern.ifBlank { "Untitled rule" } }
+    val replacementLabel = rule.replacement.ifEmpty { "(empty)" }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = FlowTokens.Space.M),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.S)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${rule.pattern} → $replacementLabel",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Switch(checked = rule.enabled, onCheckedChange = onToggle)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun FilterRuleEditorOverlay(
+    visible: Boolean,
+    scope: FilterScope,
+    initial: FilterRule,
+    sampleSeed: String,
+    isNew: Boolean,
+    previewApply: (sample: String, draft: FilterRule, mode: FilterPreviewMode) -> FilterApplyResult,
+    onSave: (FilterRule) -> Unit,
+    onDelete: (() -> Unit)?,
+    onSpeak: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (!visible) return
+
+    var title by remember(initial.id, visible) { mutableStateOf(initial.title) }
+    var matchType by remember(initial.id, visible) { mutableStateOf(initial.matchType) }
+    var wholeWords by remember(initial.id, visible) { mutableStateOf(initial.wholeWords) }
+    var ttsOnly by remember(initial.id, visible) { mutableStateOf(initial.ttsOnly) }
+    var pattern by remember(initial.id, visible) { mutableStateOf(initial.pattern) }
+    var replacement by remember(initial.id, visible) { mutableStateOf(initial.replacement) }
+    var previewMode by remember(initial.id, visible) { mutableStateOf(FilterPreviewMode.ThisRule) }
+    var typeOpen by remember { mutableStateOf(false) }
+
+    val draft = initial.copy(
+        title = title,
+        matchType = matchType,
+        wholeWords = wholeWords,
+        ttsOnly = ttsOnly,
+        pattern = pattern,
+        replacement = replacement,
+    )
+    val patternError = TextFilters.validatePattern(draft)
+    val preview = remember(sampleSeed, draft, previewMode, scope) {
+        previewApply(sampleSeed, draft, previewMode)
+    }
+    val regexMode = matchType == FilterMatchType.RegEx
+    val colors = MaterialTheme.colorScheme
+    val sampleAnnotated = remember(preview, colors.secondary) {
+        buildAnnotatedString {
+            append(preview.text)
+            for (range in preview.replacedRanges) {
+                val start = range.first.coerceIn(0, preview.text.length)
+                val end = (range.last + 1).coerceIn(start, preview.text.length)
+                if (start < end) {
+                    addStyle(SpanStyle(color = colors.secondary), start, end)
+                }
+            }
+        }
+    }
+
+    ReaderModalScaffold(
+        visible = visible,
+        contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
+        onDismiss = onDismiss,
+    ) {
+        ModalHeaderRow(
+            title = if (isNew) "New ${scope.label} Filter" else "Edit ${scope.label} Filter",
+            onDismiss = onDismiss,
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = FlowTokens.Pad.CardIn,
+                    vertical = FlowTokens.Space.S,
+                ),
+        ) {
+            SettingsLabel("Title (optional)")
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                singleLine = true,
+                shape = FlowTokens.PanelShape,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(FlowTokens.Space.M))
+            SettingsLabel("Type")
+            ExposedDropdownMenuBox(
+                expanded = typeOpen,
+                onExpandedChange = { typeOpen = it },
+            ) {
+                OutlinedTextField(
+                    value = matchType.label,
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeOpen) },
+                    shape = FlowTokens.PanelShape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(
+                    expanded = typeOpen,
+                    onDismissRequest = { typeOpen = false },
+                ) {
+                    FilterMatchType.entries.forEach { type ->
+                        DropdownMenuItem(
+                            text = { Text(type.label) },
+                            onClick = {
+                                matchType = type
+                                typeOpen = false
+                            },
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            SettingsToggleRow(
+                title = "Whole words only",
+                subtitle = if (regexMode) "Not used for RegEx" else "Match complete words",
+                checked = wholeWords && !regexMode,
+                onCheckedChange = { wholeWords = it },
+                enabled = !regexMode,
+            )
+
+            Spacer(Modifier.height(FlowTokens.Space.XS))
+            SettingsToggleRow(
+                title = "TTS only",
+                subtitle = "Apply when speaking, not on screen",
+                checked = ttsOnly,
+                onCheckedChange = { ttsOnly = it },
+            )
+
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            SettingsLabel("Find")
+            OutlinedTextField(
+                value = pattern,
+                onValueChange = { pattern = it },
+                singleLine = true,
+                isError = patternError != null,
+                supportingText = patternError?.let { { Text(it) } },
+                shape = FlowTokens.PanelShape,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            SettingsLabel("Replace with")
+            OutlinedTextField(
+                value = replacement,
+                onValueChange = { replacement = it },
+                singleLine = true,
+                placeholder = { Text("(empty deletes matches)") },
+                trailingIcon = {
+                    IconButton(
+                        onClick = { onSpeak(replacement) },
+                        enabled = replacement.isNotBlank(),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak replacement")
+                    }
+                },
+                shape = FlowTokens.PanelShape,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(FlowTokens.Space.L))
+            SettingsLabel("Preview")
+            ChipRow {
+                FilterPreviewMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = previewMode == mode,
+                        onClick = { previewMode = mode },
+                        label = { Text(mode.label) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            FilterSampleField(
+                annotated = sampleAnnotated,
+                plain = preview.text,
+                onSpeak = onSpeak,
+            )
+
+            Spacer(Modifier.height(FlowTokens.Space.L))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onDelete != null) {
+                    TextButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(FlowTokens.Icon.M))
+                        Spacer(Modifier.width(FlowTokens.Space.XS))
+                        Text("Delete")
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(
+                    onClick = { onSave(draft) },
+                    enabled = pattern.isNotBlank() && patternError == null,
+                ) {
+                    Text("Save")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterSampleField(
+    annotated: AnnotatedString,
+    plain: String,
+    onSpeak: (String) -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val shape = FlowTokens.PanelShape
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextFieldDefaults.DecorationBox(
+            value = plain.ifEmpty { " " },
+            innerTextField = {
+                Text(
+                    text = annotated,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    minLines = 2,
+                    maxLines = 4,
+                )
+            },
+            enabled = true,
+            singleLine = false,
+            visualTransformation = VisualTransformation.None,
+            interactionSource = interaction,
+            isError = false,
+            label = { Text("Sample") },
+            trailingIcon = {
+                IconButton(
+                    onClick = { onSpeak(plain) },
+                    enabled = plain.isNotBlank(),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak preview")
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(),
+            contentPadding = OutlinedTextFieldDefaults.contentPadding(
+                start = FlowTokens.Space.L,
+                end = FlowTokens.Space.L,
+                top = FlowTokens.Space.L,
+                bottom = FlowTokens.Space.L,
+            ),
+            container = {
+                OutlinedTextFieldDefaults.Container(
+                    enabled = true,
+                    isError = false,
+                    interactionSource = interaction,
+                    shape = shape,
+                )
+            },
+        )
+    }
+}
+

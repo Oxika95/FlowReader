@@ -47,7 +47,7 @@ import com.personal.flowreader.data.ProgressEntity
 import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
 import com.personal.flowreader.ui.common.loadBookCoverBitmap
 import com.personal.flowreader.ui.common.rememberBookCover
-import com.personal.flowreader.ui.reader.ReaderPanelSurface
+import com.personal.flowreader.ui.chrome.ReaderPanelSurface
 import com.personal.flowreader.ui.theme.FlowTokens
 
 @Composable

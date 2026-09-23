@@ -83,9 +83,9 @@ import com.personal.flowreader.library.plugin.LibrarySourcePlugin
 import com.personal.flowreader.ui.common.FlowSlotTab
 import com.personal.flowreader.ui.common.FlowSlotTabBar
 import com.personal.flowreader.ui.common.FlowSlotTabLabel
-import com.personal.flowreader.ui.reader.FilterRuleEditorOverlay
-import com.personal.flowreader.ui.reader.ReaderModalScaffold
-import com.personal.flowreader.ui.reader.SettingsOverlay
+import com.personal.flowreader.ui.settings.FilterRuleEditorOverlay
+import com.personal.flowreader.ui.chrome.ReaderModalScaffold
+import com.personal.flowreader.ui.settings.SettingsOverlay
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.settings.FilterEditorSession
