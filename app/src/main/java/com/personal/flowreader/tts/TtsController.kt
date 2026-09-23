@@ -69,8 +69,9 @@ data class TtsUiState(
     val doubleTapPlay: Boolean = true,
     val autoScrollWithTts: Boolean = true,
     val keepAliveUnderlay: Boolean = false,
-    val continuousPcmPlayback: Boolean = false,
     val sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
+    /** Added to heard media time when resolving Edge word cues (ms). */
+    val highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
     val engines: List<TtsEngineOption> = TtsEngines.BUILT_IN,
     val voices: List<TtsVoiceOption> = emptyList(),
     val sentence: Sentence? = null,
@@ -96,10 +97,12 @@ class TtsController(
     private val edge = EdgeTtsClient()
     private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
     private val keepAlive = AudioKeepAlive()
-    private val pcmPlayer = PcmSentencePlayer()
+    private val audioEngine = TtsAudioEngine()
     /** Edge word boundaries keyed by sentence index for the attached book/voice. */
     private val wordBoundariesBySentence = ConcurrentHashMap<Int, List<EdgeWordBoundary>>()
-    /** Polls AudioTrack playback head for word highlight (PCM path). */
+    /** Cached TimedCues per sentence (built from Edge boundaries). */
+    private val cuesBySentence = ConcurrentHashMap<Int, List<WordHighlight.TimedCue>>()
+    /** Polls AudioTrack playback head for word highlight. */
     private var wordTrackJob: Job? = null
     /** Hearable timeline marks: playback head ≥ startWriteFrame → this sentence/seed. */
     private val wordSegments = ArrayList<WordSegment>()
@@ -128,12 +131,10 @@ class TtsController(
     private var index = 0
     private var playJob: Job? = null
     private var previewJob: Job? = null
-    private var player: MediaPlayer? = null
     private var previewPlayer: MediaPlayer? = null
-    private val playbackMutex = Mutex()
     /** Serializes play / pause / restart so MediaSession echoes can't fork loops. */
     private val playGate = Mutex()
-    /** Bumped on every stop/restart; playFile ignores stale generations. */
+    /** Bumped on every stop/restart; speak loop ignores stale generations. */
     private var playGeneration = 0
     /** In-flight Edge synthesize/prefetch jobs keyed by sentence index; touched from IO too. */
     private val edgeJobs = ConcurrentHashMap<Int, Job>()
@@ -195,7 +196,9 @@ class TtsController(
     fun mediaTitle(): String = bookTitle.ifBlank { "Flow Reader" }
 
     fun mediaSubtitle(): String {
-        val s = sentences.getOrNull(index) ?: return _state.value.snippet
+        // Prefer the heard sentence (UI index), not the write-ahead playhead.
+        val heard = _state.value.sentenceIndex
+        val s = sentences.getOrNull(heard) ?: sentences.getOrNull(index) ?: return _state.value.snippet
         val chapter = chapterTitles.getOrNull(s.chapterIndex).orEmpty()
         return chapter.ifBlank { s.text.take(120) }
     }
@@ -221,8 +224,8 @@ class TtsController(
                     doubleTapPlay = prefs.doubleTapPlay,
                     autoScrollWithTts = prefs.autoScrollWithTts,
                     keepAliveUnderlay = prefs.keepAliveUnderlay,
-                    continuousPcmPlayback = prefs.continuousPcmPlayback,
                     sentenceGapMs = prefs.sentenceGapMs,
+                    highlightSyncMs = prefs.highlightSyncMs,
                     voices = voices,
                 )
             }
@@ -260,6 +263,7 @@ class TtsController(
         sentences = emptyList()
         index = 0
         wordBoundariesBySentence.clear()
+        cuesBySentence.clear()
         _state.update {
             it.copy(
                 playing = false,
@@ -371,7 +375,7 @@ class TtsController(
                 }
                 when (_state.value.engineKey) {
                     TtsEngines.EDGE -> previewWithEdge(snippet)
-                    else -> speakSystem(snippet)
+                    else -> speakSystem(snippet, sentenceIndex = null)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -546,34 +550,19 @@ class TtsController(
         syncKeepAlive()
     }
 
-    fun setContinuousPcmPlayback(enabled: Boolean) {
-        // Negative sentence offset requires PCM; ignore attempts to turn it off.
-        if (!enabled && _state.value.sentenceGapMs < 0) return
-        if (enabled == _state.value.continuousPcmPlayback) return
-        _state.update { it.copy(continuousPcmPlayback = enabled) }
-        scope.launch { settings.setContinuousPcmPlayback(enabled) }
+    fun setSentenceGapMs(ms: Int) {
+        val value = TtsPrefs.coerceSentenceGapMs(ms)
+        if (value == _state.value.sentenceGapMs) return
+        _state.update { it.copy(sentenceGapMs = value) }
+        scope.launch { settings.setSentenceGapMs(value) }
         if (_state.value.playing) restartLoop()
     }
 
-    fun setSentenceGapMs(ms: Int) {
-        val value = TtsPrefs.coerceSentenceGapMs(ms)
-        val prev = _state.value.sentenceGapMs
-        val prevPcm = _state.value.continuousPcmPlayback
-        if (value == prev) return
-        val forcePcm = value < 0
-        _state.update {
-            it.copy(
-                sentenceGapMs = value,
-                continuousPcmPlayback = if (forcePcm) true else it.continuousPcmPlayback,
-            )
-        }
-        scope.launch {
-            settings.setSentenceGapMs(value)
-            if (forcePcm && !prevPcm) {
-                settings.setContinuousPcmPlayback(true)
-            }
-        }
-        if (_state.value.playing && forcePcm && !prevPcm) restartLoop()
+    fun setHighlightSyncMs(ms: Int) {
+        val value = TtsPrefs.coerceHighlightSyncMs(ms)
+        if (value == _state.value.highlightSyncMs) return
+        _state.update { it.copy(highlightSyncMs = value) }
+        scope.launch { settings.setHighlightSyncMs(value) }
     }
 
     /**
@@ -589,6 +578,7 @@ class TtsController(
             cacheFile(i).delete()
             wordsCacheFile(i).delete()
             wordBoundariesBySentence.remove(i)
+            cuesBySentence.remove(i)
             _state.update {
                 it.copy(
                     readySentenceIndices = it.readySentenceIndices - i,
@@ -702,7 +692,7 @@ class TtsController(
 
     /**
      * Readest-style: await previous speak teardown, then start one loop under [playGate].
-     * QuickNovel-style: bump generation + stop player before any new MediaPlayer.
+     * Bump generation and interrupt clip playback before starting a new loop.
      */
     private suspend fun startPlayback(follow: Boolean? = null) = playGate.withLock {
         if (_state.value.playing && playJob?.isActive == true) return@withLock
@@ -917,6 +907,33 @@ class TtsController(
         pruneCacheToWindow(index)
     }
 
+    /**
+     * Drive sentence wash / pin / locus from the same heard-clock segments as word highlight.
+     * Write-ahead [index] may already be further along in the AudioTrack buffer.
+     */
+    private fun publishHeardSentence(heardIndex: Int) {
+        val s = sentences.getOrNull(heardIndex) ?: return
+        if (_state.value.sentenceIndex == heardIndex && _state.value.sentence == s) return
+        _state.update {
+            it.copy(sentence = s, sentenceIndex = heardIndex, snippet = s.text)
+        }
+        updateSessionMetadata()
+        TtsPlaybackService.refresh()
+    }
+
+    /** Block until playback head catches write head (end-of-book drain). */
+    private suspend fun awaitHeardCatchUp(generation: Int) {
+        val rate = audioEngine.sampleRateHz()
+        if (rate <= 0) return
+        val slackFrames = (rate / 20).coerceAtLeast(1) // ~50ms
+        while (generation == playGeneration && _state.value.playing) {
+            val written = audioEngine.writtenFrames()
+            val head = audioEngine.playbackHeadFrames()
+            if (written - head <= slackFrames) break
+            delay(16)
+        }
+    }
+
     private fun markGenerating(i: Int) {
         _state.update {
             it.copy(generatingSentenceIndices = it.generatingSentenceIndices + i)
@@ -964,7 +981,12 @@ class TtsController(
     private suspend fun loop(generation: Int) {
         while (scope.isActive && _state.value.playing && generation == playGeneration) {
             val s = sentences.getOrNull(index) ?: break
-            publishSentence()
+            // Edge UI follows heard clock; System has no PCM buffer lag — publish write index.
+            if (_state.value.engineKey == TtsEngines.EDGE) {
+                pruneCacheToWindow(index)
+            } else {
+                publishSentence()
+            }
             val n = effectivePrefetchCount()
             if (sentences.lastIndex - index <= n) {
                 pullMore()
@@ -989,21 +1011,23 @@ class TtsController(
             if (generation != playGeneration) return
             val gapMs = _state.value.sentenceGapMs
             if (gapMs > 0) {
-                if (_state.value.continuousPcmPlayback &&
-                    _state.value.engineKey == TtsEngines.EDGE
-                ) {
-                    pcmPlayer.writeSilence(gapMs) { generation == playGeneration }
+                if (_state.value.engineKey == TtsEngines.EDGE) {
+                    audioEngine.writeSilence(gapMs) { generation == playGeneration }
                 } else {
                     delay(gapMs.toLong())
                 }
             }
-            // Negative gap (overlap) is applied inside speakEdge / PcmSentencePlayer.
+            // Negative gap (crossfade) is applied inside speakEdge / TtsAudioEngine.
             if (generation != playGeneration) return
             if (index >= sentences.lastIndex) {
                 if (pullMore() && index < sentences.lastIndex) {
                     index++
                     continue
                 }
+                if (_state.value.engineKey == TtsEngines.EDGE) {
+                    awaitHeardCatchUp(generation)
+                }
+                if (generation != playGeneration) return
                 stopSessionAudio()
                 _state.update { it.copy(playing = false) }
                 setSessionState(PlaybackState.STATE_STOPPED)
@@ -1020,7 +1044,7 @@ class TtsController(
     private suspend fun speak(s: Sentence, generation: Int) {
         when (_state.value.engineKey) {
             TtsEngines.EDGE -> speakEdge(index, generation)
-            else -> speakSystem(speechText(s.text))
+            else -> speakSystem(speechText(s.text), sentenceIndex = index)
         }
     }
 
@@ -1067,42 +1091,43 @@ class TtsController(
             throw IllegalStateException("Unable to play audio")
         }
         ensureWordBoundariesLoaded(i)
-        val usePcm = _state.value.continuousPcmPlayback || _state.value.sentenceGapMs < 0
-        if (usePcm) {
-            ensurePcmWordTracking()
-            val overlapMs = (-_state.value.sentenceGapMs).coerceAtLeast(0)
-            var nextFile: File? = null
-            if (overlapMs > 0 && i < sentences.lastIndex) {
-                // Warm i+2 now so speak(i+1) does not block the PCM writer on Edge synth.
-                if (i + 2 <= sentences.lastIndex) {
-                    startEdgeJob(i + 2) { prefetch(i + 2) }
-                }
-                ensureSentenceCached(i + 1, generation)
-                if (generation != playGeneration) return
-                ensureWordBoundariesLoaded(i + 1)
-                val n = cacheFile(i + 1)
-                if (n.exists() && n.length() > 0L) nextFile = n
+        ensurePcmWordTracking()
+        val overlapMs = (-_state.value.sentenceGapMs).coerceAtLeast(0)
+        var nextFile: File? = null
+        if (overlapMs > 0 && i < sentences.lastIndex) {
+            // Warm i+2 now so speak(i+1) does not block the PCM writer on Edge synth.
+            if (i + 2 <= sentences.lastIndex) {
+                startEdgeJob(i + 2) { prefetch(i + 2) }
             }
-            pcmPlayer.play(
-                file = f,
-                generationActive = { generation == playGeneration },
-                nextFile = nextFile,
-                overlapMs = overlapMs,
-                onHearableStart = { seed ->
-                    pushWordSegment(i, pcmPlayer.writtenFrames(), seed)
-                },
-                onOverlapNextStart = {
-                    pushWordSegment(i + 1, pcmPlayer.writtenFrames(), seedSec = 0.0)
-                },
-            )
-        } else {
-            stopPcmWordTracking()
-            beginWordHighlight(i, mediaTimeSec = 0.0)
-            playFile(f, generation, sentenceIndex = i)
+            ensureSentenceCached(i + 1, generation)
+            if (generation != playGeneration) return
+            ensureWordBoundariesLoaded(i + 1)
+            val n = cacheFile(i + 1)
+            if (n.exists() && n.length() > 0L) {
+                nextFile = n
+                // Decode-ahead: warm PCM before the fade arm.
+                audioEngine.prefetchDecode(n)
+            }
+        } else if (i < sentences.lastIndex) {
+            val n = cacheFile(i + 1)
+            if (n.exists() && n.length() > 0L) {
+                audioEngine.prefetchDecode(n)
+            }
         }
-        if (generation == playGeneration && !usePcm) {
-            clearWordHighlight()
-        }
+        // Only arm crossfade when next clip is ready (Flick shouldArmCrossfade).
+        val armOverlap = if (nextFile != null) overlapMs else 0
+        audioEngine.play(
+            file = f,
+            generationActive = { generation == playGeneration },
+            nextFile = nextFile,
+            overlapMs = armOverlap,
+            onHearableStart = { seed ->
+                pushWordSegment(i, audioEngine.writtenFrames(), seed)
+            },
+            onOverlapNextStart = {
+                pushWordSegment(i + 1, audioEngine.writtenFrames(), seedSec = 0.0)
+            },
+        )
     }
 
     /**
@@ -1148,6 +1173,7 @@ class TtsController(
             f.delete()
             wordsFile.delete()
             wordBoundariesBySentence.remove(i)
+            cuesBySentence.remove(i)
         }
         publishGenerating(i)
         return try {
@@ -1160,6 +1186,12 @@ class TtsController(
             writeAtomically(f, audio.mp3)
             writeWordBoundaries(wordsFile, audio.boundaries)
             wordBoundariesBySentence[i] = audio.boundaries
+            val sentence = sentences.getOrNull(i)
+            if (sentence != null && audio.boundaries.isNotEmpty()) {
+                cuesBySentence[i] = WordHighlight.cuesFromBoundaries(sentence, audio.boundaries)
+            } else {
+                cuesBySentence.remove(i)
+            }
             publishReady(i)
             true
         } catch (e: CancellationException) {
@@ -1171,94 +1203,15 @@ class TtsController(
         }
     }
 
-    private suspend fun playFile(file: File, generation: Int, sentenceIndex: Int) = playbackMutex.withLock {
-        if (generation != playGeneration) return@withLock
-        // QuickNovel EdgeTtsPlayer: always tear down previous player before start.
-        releasePlayer()
-        if (generation != playGeneration) return@withLock
-        val mp = MediaPlayer()
-        try {
-            mp.setDataSource(file.absolutePath)
-            withContext(Dispatchers.IO) { mp.prepare() }
-        } catch (t: Throwable) {
-            mp.runCatching { release() }
-            throw t
-        }
-        if (generation != playGeneration) {
-            mp.runCatching { release() }
-            return@withLock
-        }
-        suspendCancellableCoroutine { cont ->
-            player = mp
-            mp.setOnCompletionListener {
-                if (player === mp) player = null
-                mp.setOnCompletionListener(null)
-                mp.setOnErrorListener(null)
-                mp.runCatching { release() }
-                if (cont.isActive) cont.resume(Unit)
-            }
-            mp.setOnErrorListener { _, _, _ ->
-                if (player === mp) player = null
-                mp.setOnCompletionListener(null)
-                mp.setOnErrorListener(null)
-                mp.runCatching { release() }
-                if (cont.isActive) cont.resumeWithException(IllegalStateException("Unable to play audio"))
-                true
-            }
-            cont.invokeOnCancellation {
-                releasePlayer()
-            }
-            try {
-                // Edge bakes the rate into the MP3 — resampling here would double it.
-                mp.start()
-                // ~rAF cadence like Readest's requestAnimationFrame word tracker.
-                scope.launch {
-                    var lastRange: IntRange? = null
-                    while (cont.isActive && generation == playGeneration && player === mp) {
-                        val posMs = runCatching { mp.currentPosition }.getOrDefault(0)
-                        updateWordHighlight(sentenceIndex, posMs / 1000.0)
-                        val now = _state.value.wordHighlight
-                        if (now != lastRange) lastRange = now
-                        delay(16)
-                    }
-                }
-            } catch (t: Throwable) {
-                releasePlayer()
-                if (cont.isActive) cont.resumeWithException(t)
-            }
-        }
-    }
-
-    /** QuickNovel-style: clear listeners, stop, reset, release — never leave a live player. */
-    private fun releasePlayer() {
-        val mp = player ?: return
-        player = null
-        mp.setOnCompletionListener(null)
-        mp.setOnErrorListener(null)
-        try {
-            if (mp.isPlaying) mp.stop()
-        } catch (_: IllegalStateException) {
-        }
-        try {
-            mp.reset()
-        } catch (_: IllegalStateException) {
-        }
-        try {
-            mp.release()
-        } catch (_: IllegalStateException) {
-        }
-    }
-
     private fun interruptClipPlayback() {
-        releasePlayer()
-        pcmPlayer.cancel()
+        audioEngine.cancel()
         stopPcmWordTracking()
         clearWordHighlight()
+        systemTts?.stop()
     }
 
     private fun stopSessionAudio() {
-        releasePlayer()
-        pcmPlayer.release()
+        audioEngine.release()
         keepAlive.stop()
         stopPcmWordTracking()
         clearWordHighlight()
@@ -1272,14 +1225,9 @@ class TtsController(
         }
     }
 
-    private fun beginWordHighlight(sentenceIndex: Int, mediaTimeSec: Double) {
-        updateWordHighlight(sentenceIndex, mediaTimeSec)
-    }
-
     private fun pushWordSegment(sentenceIndex: Int, startWriteFrame: Long, seedSec: Double) {
         synchronized(wordSegmentsLock) {
             wordSegments.add(WordSegment(sentenceIndex, startWriteFrame, seedSec))
-            // Keep a small window; older marks are past the playhead.
             if (wordSegments.size > 32) {
                 wordSegments.subList(0, wordSegments.size - 24).clear()
             }
@@ -1292,9 +1240,9 @@ class TtsController(
             var lastSi = -1
             var lastIdx = -1
             while (isActive && _state.value.playing) {
-                val rate = pcmPlayer.sampleRateHz()
+                val rate = audioEngine.sampleRateHz()
                 if (rate > 0) {
-                    val head = pcmPlayer.playbackHeadFrames()
+                    val head = audioEngine.playbackHeadFrames()
                     val seg = synchronized(wordSegmentsLock) {
                         var best: WordSegment? = null
                         for (s in wordSegments) {
@@ -1304,15 +1252,20 @@ class TtsController(
                     }
                     if (seg != null) {
                         val played = (head - seg.startWriteFrame).coerceAtLeast(0L)
-                        val sec = seg.seedSec + played.toDouble() / rate
-                        val boundaries = wordBoundariesBySentence[seg.sentenceIndex].orEmpty()
-                        val idx = if (boundaries.isEmpty()) {
+                        val syncSec = _state.value.highlightSyncMs / 1000.0
+                        val sec = seg.seedSec + played.toDouble() / rate + syncSec
+                        if (seg.sentenceIndex != lastSi) {
+                            lastSi = seg.sentenceIndex
+                            lastIdx = -1
+                            publishHeardSentence(seg.sentenceIndex)
+                        }
+                        val cues = cuesBySentence[seg.sentenceIndex].orEmpty()
+                        val idx = if (cues.isEmpty()) {
                             -1
                         } else {
-                            WordHighlight.findBoundaryIndexAtTime(boundaries, sec)
+                            cues.indexOf(WordHighlight.cueAtTime(cues, sec))
                         }
-                        if (seg.sentenceIndex != lastSi || idx != lastIdx) {
-                            lastSi = seg.sentenceIndex
+                        if (idx != lastIdx) {
                             lastIdx = idx
                             updateWordHighlight(seg.sentenceIndex, sec)
                         }
@@ -1334,8 +1287,16 @@ class TtsController(
             clearWordHighlight()
             return
         }
-        val boundaries = wordBoundariesBySentence[sentenceIndex].orEmpty()
-        val range = WordHighlight.highlightRangeInBlock(sentence, boundaries, mediaTimeSec)
+        val cues = cuesBySentence[sentenceIndex]
+            ?: WordHighlight.cuesFromBoundaries(
+                sentence,
+                wordBoundariesBySentence[sentenceIndex].orEmpty(),
+            ).also { if (it.isNotEmpty()) cuesBySentence[sentenceIndex] = it }
+        if (cues.isEmpty()) {
+            clearWordHighlight()
+            return
+        }
+        val range = WordHighlight.cueAtTime(cues, mediaTimeSec)?.charRange
         val current = _state.value.wordHighlight
         if (range == current) return
         _state.update { it.copy(wordHighlight = range) }
@@ -1347,13 +1308,27 @@ class TtsController(
     }
 
     private fun ensureWordBoundariesLoaded(i: Int) {
-        if (wordBoundariesBySentence.containsKey(i)) return
+        if (wordBoundariesBySentence.containsKey(i)) {
+            if (!cuesBySentence.containsKey(i)) {
+                val sentence = sentences.getOrNull(i)
+                val bounds = wordBoundariesBySentence[i].orEmpty()
+                if (sentence != null && bounds.isNotEmpty()) {
+                    cuesBySentence[i] = WordHighlight.cuesFromBoundaries(sentence, bounds)
+                }
+            }
+            return
+        }
         val file = wordsCacheFile(i)
         if (!file.exists()) {
             wordBoundariesBySentence[i] = emptyList()
             return
         }
-        wordBoundariesBySentence[i] = readWordBoundaries(file)
+        val bounds = readWordBoundaries(file)
+        wordBoundariesBySentence[i] = bounds
+        val sentence = sentences.getOrNull(i)
+        if (sentence != null && bounds.isNotEmpty()) {
+            cuesBySentence[i] = WordHighlight.cuesFromBoundaries(sentence, bounds)
+        }
     }
 
     private fun wordsCacheFile(i: Int): File =
@@ -1419,7 +1394,8 @@ class TtsController(
         return this
     }
 
-    private suspend fun speakSystem(text: String) {
+    private suspend fun speakSystem(text: String, sentenceIndex: Int?) {
+        // Keep sentence highlight via publishSentence; only clear word until ranges arrive.
         clearWordHighlight()
         val enginePkg = when (val key = _state.value.engineKey) {
             TtsEngines.SYSTEM_DEFAULT -> null
@@ -1432,17 +1408,20 @@ class TtsController(
         if (voiceId.isNotBlank() && voiceId != "default") {
             tts.voices?.firstOrNull { it.name == voiceId }?.let { tts.voice = it }
         }
-        // Refresh voice list once ready.
         val voices = systemVoices(tts)
         if (voices != _state.value.voices) {
             _state.update { it.copy(voices = voices) }
         }
+        val spokenSentence = sentenceIndex?.let { sentences.getOrNull(it) }
         suspendCancellableCoroutine { cont ->
             val id = UUID.randomUUID().toString()
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
-                    if (utteranceId == id && cont.isActive) cont.resume(Unit)
+                    if (utteranceId == id) {
+                        clearWordHighlight()
+                        if (cont.isActive) cont.resume(Unit)
+                    }
                 }
                 @Deprecated("deprecated")
                 override fun onError(utteranceId: String?) {
@@ -1450,12 +1429,29 @@ class TtsController(
                         cont.resumeWithException(IllegalStateException("System TTS error"))
                     }
                 }
+                override fun onRangeStart(
+                    utteranceId: String?,
+                    start: Int,
+                    end: Int,
+                    frame: Int,
+                ) {
+                    if (utteranceId != id || spokenSentence == null) return
+                    val range = WordHighlight.rangeFromUtteranceChars(spokenSentence, start, end)
+                        ?: return
+                    val current = _state.value.wordHighlight
+                    if (range != current) {
+                        _state.update { it.copy(wordHighlight = range) }
+                    }
+                }
             })
             val code = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
             if (code != TextToSpeech.SUCCESS && cont.isActive) {
                 cont.resumeWithException(IllegalStateException("System TTS unavailable"))
             }
-            cont.invokeOnCancellation { tts.stop() }
+            cont.invokeOnCancellation {
+                tts.stop()
+                clearWordHighlight()
+            }
         }
     }
 
@@ -1681,6 +1677,7 @@ class TtsController(
         cancelEdgeJobs()
         clearAudioStatus()
         wordBoundariesBySentence.clear()
+        cuesBySentence.clear()
         withContext(Dispatchers.IO) {
             cacheDir.listFiles()?.forEach { it.delete() }
         }

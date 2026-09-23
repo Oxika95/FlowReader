@@ -47,10 +47,10 @@ data class TtsPrefs(
     val autoScrollWithTts: Boolean = true,
     /** Quiet AudioTrack noise underlay while playing (helps some car head units). */
     val keepAliveUnderlay: Boolean = false,
-    /** Edge: decode sentence MP3s into one continuous PCM AudioTrack. */
-    val continuousPcmPlayback: Boolean = false,
-    /** Extra pause (+) or overlap (−) after each spoken sentence (−1000…1000 ms). */
+    /** Extra pause (+) or crossfade (−) after each spoken sentence (−500…500 ms). */
     val sentenceGapMs: Int = DEFAULT_SENTENCE_GAP_MS,
+    /** Offset applied to Edge heard-clock word cues (ms). */
+    val highlightSyncMs: Int = DEFAULT_HIGHLIGHT_SYNC_MS,
 ) {
     companion object {
         const val DEFAULT_EDGE_VOICE = "en-US-AndrewNeural"
@@ -58,15 +58,26 @@ data class TtsPrefs(
         const val MIN_PREFETCH = 1
         const val MAX_PREFETCH = 10
         const val DEFAULT_SENTENCE_GAP_MS = 0
-        const val MIN_SENTENCE_GAP_MS = -1000
-        const val MAX_SENTENCE_GAP_MS = 1000
+        const val MIN_SENTENCE_GAP_MS = -500
+        const val MAX_SENTENCE_GAP_MS = 500
         const val SENTENCE_GAP_STEP_MS = 50
+        const val DEFAULT_HIGHLIGHT_SYNC_MS = 0
+        const val MIN_HIGHLIGHT_SYNC_MS = -500
+        const val MAX_HIGHLIGHT_SYNC_MS = 500
+        const val HIGHLIGHT_SYNC_STEP_MS = 50
 
         fun coerceSentenceGapMs(ms: Int): Int {
             val clamped = ms.coerceIn(MIN_SENTENCE_GAP_MS, MAX_SENTENCE_GAP_MS)
             val stepped = ((clamped.toFloat() / SENTENCE_GAP_STEP_MS).roundToInt()
                 * SENTENCE_GAP_STEP_MS)
             return stepped.coerceIn(MIN_SENTENCE_GAP_MS, MAX_SENTENCE_GAP_MS)
+        }
+
+        fun coerceHighlightSyncMs(ms: Int): Int {
+            val clamped = ms.coerceIn(MIN_HIGHLIGHT_SYNC_MS, MAX_HIGHLIGHT_SYNC_MS)
+            val stepped = ((clamped.toFloat() / HIGHLIGHT_SYNC_STEP_MS).roundToInt()
+                * HIGHLIGHT_SYNC_STEP_MS)
+            return stepped.coerceIn(MIN_HIGHLIGHT_SYNC_MS, MAX_HIGHLIGHT_SYNC_MS)
         }
     }
 }
@@ -153,12 +164,12 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_TTS_KEEP_ALIVE] = enabled }
     }
 
-    suspend fun setContinuousPcmPlayback(enabled: Boolean) {
-        store.edit { it[KEY_TTS_CONTINUOUS_PCM] = enabled }
-    }
-
     suspend fun setSentenceGapMs(ms: Int) {
         store.edit { it[KEY_TTS_SENTENCE_GAP_MS] = TtsPrefs.coerceSentenceGapMs(ms) }
+    }
+
+    suspend fun setHighlightSyncMs(ms: Int) {
+        store.edit { it[KEY_TTS_HIGHLIGHT_SYNC_MS] = TtsPrefs.coerceHighlightSyncMs(ms) }
     }
 
     suspend fun globalFiltersOnce(): List<FilterRule> =
@@ -256,8 +267,8 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_DOUBLE_TAP_PLAY = booleanPreferencesKey("tts_double_tap_play")
         private val KEY_TTS_AUTO_SCROLL = booleanPreferencesKey("tts_auto_scroll")
         private val KEY_TTS_KEEP_ALIVE = booleanPreferencesKey("tts_keep_alive")
-        private val KEY_TTS_CONTINUOUS_PCM = booleanPreferencesKey("tts_continuous_pcm")
         private val KEY_TTS_SENTENCE_GAP_MS = intPreferencesKey("tts_sentence_gap_ms")
+        private val KEY_TTS_HIGHLIGHT_SYNC_MS = intPreferencesKey("tts_highlight_sync_ms")
         private val KEY_GLOBAL_FILTERS = stringPreferencesKey("global_filters")
         private val KEY_GROUP_FILTERS = stringPreferencesKey("group_filters")
         private val KEY_LIBRARY_VIEW = stringPreferencesKey("library_view")
@@ -313,14 +324,11 @@ class SettingsStore(context: Context) {
             doubleTapPlay = this[KEY_TTS_DOUBLE_TAP_PLAY] ?: true,
             autoScrollWithTts = this[KEY_TTS_AUTO_SCROLL] ?: true,
             keepAliveUnderlay = this[KEY_TTS_KEEP_ALIVE] ?: false,
-            continuousPcmPlayback = (this[KEY_TTS_CONTINUOUS_PCM] ?: false).let { pcm ->
-                val gap = TtsPrefs.coerceSentenceGapMs(
-                    this[KEY_TTS_SENTENCE_GAP_MS] ?: TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
-                )
-                if (gap < 0) true else pcm
-            },
             sentenceGapMs = TtsPrefs.coerceSentenceGapMs(
                 this[KEY_TTS_SENTENCE_GAP_MS] ?: TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
+            ),
+            highlightSyncMs = TtsPrefs.coerceHighlightSyncMs(
+                this[KEY_TTS_HIGHLIGHT_SYNC_MS] ?: TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
             ),
         )
     }

@@ -367,8 +367,8 @@ fun LibraryScreen(
             doubleTapPlay = tts.doubleTapPlay,
             autoScrollWithTts = tts.autoScrollWithTts,
             keepAliveUnderlay = tts.keepAliveUnderlay,
-            continuousPcmPlayback = tts.continuousPcmPlayback,
             sentenceGapMs = tts.sentenceGapMs,
+            highlightSyncMs = tts.highlightSyncMs,
             filtersGlobal = ui.filtersGlobal,
             filtersGroups = ui.filtersGroups,
             filtersLocal = emptyList(),
@@ -391,8 +391,8 @@ fun LibraryScreen(
             onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
             onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
             onKeepAliveUnderlay = { vm.tts.setKeepAliveUnderlay(it) },
-            onContinuousPcmPlayback = { vm.tts.setContinuousPcmPlayback(it) },
             onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
+            onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
             onAddFilter = { scope ->
                 filterEditor = FilterEditorSession(scope = scope, rule = FilterRule(), isNew = true)
             },

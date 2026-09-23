@@ -19,34 +19,35 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 
 /**
- * Decodes sentence MP3 files to PCM and writes them to a single stream-mode [AudioTrack],
- * keeping one continuous output across clips. Supports overlapping the tail of one clip
- * with the head of the next when [overlapMs] &gt; 0.
+ * Post-synthesis Edge playback: decode sentence MP3s to PCM, write a single continuous
+ * [AudioTrack], equal-power crossfade (or silence gap / butt-join), and expose a heard clock
+ * for word-cue sync. Does not synthesize or touch the network.
  */
-class PcmSentencePlayer {
+class TtsAudioEngine {
     private val cancelled = AtomicBoolean(false)
     private var track: AudioTrack? = null
     private var trackSampleRate = 0
     private var trackChannels = 0
-    /** Total frames written to the current track (matches hearable timeline). */
     private var framesWritten: Long = 0L
-    /** Remainder of a clip already started via overlap; flushed on the next [play]. */
     private var pendingRemainder: PcmClip? = null
-    /** Media-time seed (seconds) for [pendingRemainder] after an overlap into that clip. */
     private var pendingMediaSeedSec: Double = 0.0
 
-    /** Unsigned playback-head frames for word-highlight sync (Readest-style heard time). */
+    /** Decode-ahead cache keyed by absolute path. */
+    private val decodeCache = object : LinkedHashMap<String, PcmClip>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PcmClip>?): Boolean =
+            size > DECODE_CACHE_MAX
+    }
+    private val decodeCacheLock = Any()
+
     fun playbackHeadFrames(): Long {
         val t = track ?: return 0L
         return t.playbackHeadPosition.toLong() and 0xffff_ffffL
     }
 
-    /** Frames queued to the track so far; equals the hearable frame index of the next write. */
     fun writtenFrames(): Long = framesWritten
 
     fun sampleRateHz(): Int = trackSampleRate
 
-    /** Seconds already played into the pending remainder clip (0 if none). */
     fun peekPendingMediaSeedSec(): Double =
         if (pendingRemainder != null) pendingMediaSeedSec else 0.0
 
@@ -61,6 +62,7 @@ class PcmSentencePlayer {
         pendingRemainder = null
         pendingMediaSeedSec = 0.0
         framesWritten = 0L
+        synchronized(decodeCacheLock) { decodeCache.clear() }
         val t = track
         track = null
         trackSampleRate = 0
@@ -75,16 +77,18 @@ class PcmSentencePlayer {
         cancelled.set(false)
     }
 
+    /** Warm the decode cache for [file] without playing. */
+    suspend fun prefetchDecode(file: File) = withContext(Dispatchers.IO) {
+        if (!file.exists() || file.length() == 0L) return@withContext
+        decodeCached(file)
+    }
+
     /**
-     * Play [file] as PCM. When [overlapMs] &gt; 0 and [nextFile] is present, mixes the last
-     * [overlapMs] of this clip with the start of the next and holds the next clip's
-     * remainder for the following [play] call.
+     * Play [file] as PCM. When [overlapMs] &gt; 0 and [nextFile] is ready, equal-power
+     * crossfades a clamped overlap; otherwise writes the clip fully.
      *
-     * Does **not** report word-highlight time — callers must poll [playbackHeadFrames]
-     * against marks taken from [writtenFrames] (write-ahead is ahead of what is heard).
-     *
-     * [onHearableStart] fires just before writing this clip (seed already into the clip).
-     * [onOverlapNextStart] fires just before the mixed next-clip head (seed 0 of next).
+     * [onHearableStart] — just before writing this clip (seed already into the clip).
+     * [onOverlapNextStart] — when the incoming clip becomes hearable at the mix.
      */
     suspend fun play(
         file: File,
@@ -102,44 +106,43 @@ class PcmSentencePlayer {
         val current = pendingRemainder?.also {
             pendingRemainder = null
             pendingMediaSeedSec = 0.0
-        } ?: (decodeFile(file) ?: return@withContext)
+        } ?: (decodeCached(file) ?: return@withContext)
         ensureTrack(current.sampleRate, current.channels)
         onHearableStart?.invoke(seed)
-        playClipOverlapping(current, nextFile, overlapMs, generationActive, onOverlapNextStart)
+        playClipCrossfading(current, nextFile, overlapMs, generationActive, onOverlapNextStart)
     }
 
-    private suspend fun playClipOverlapping(
+    private suspend fun playClipCrossfading(
         current: PcmClip,
         nextFile: File?,
         overlapMs: Int,
         generationActive: () -> Boolean,
         onOverlapNextStart: (() -> Unit)?,
     ) {
-        if (overlapMs <= 0 || nextFile == null || !nextFile.exists() || nextFile.length() == 0L) {
+        val nextReady = nextFile != null && nextFile.exists() && nextFile.length() > 0L
+        if (overlapMs <= 0 || !nextReady) {
             writeSamples(current.samples, generationActive)
             return
         }
 
-        val overlapFrames = (current.sampleRate * overlapMs / 1000).coerceAtLeast(1)
-        val overlapSamplesDesired = (overlapFrames * current.channels)
-            .coerceAtMost(current.samples.size)
-        if (overlapSamplesDesired <= 0) {
+        // Requested overlap samples (upper bound); clamp after next is decoded.
+        val requestedFrames = (current.sampleRate * overlapMs / 1000).coerceAtLeast(1)
+        val requestedSamples =
+            (requestedFrames * current.channels).coerceAtMost(current.samples.size)
+        if (requestedSamples <= 0) {
             writeSamples(current.samples, generationActive)
             return
         }
+        val bodyLen = current.samples.size - requestedSamples
 
-        val cut = current.samples.size - overlapSamplesDesired
-
-        // Decode the next clip while we keep the track fed with this clip's body.
-        // Previously we decoded first — underruns while MediaCodec ran with only ~0.3s buffer.
-        val next = if (cut > 0) {
+        val next = if (bodyLen > 0) {
             coroutineScope {
-                val nextDeferred = async(Dispatchers.IO) { decodeFile(nextFile) }
-                writeSamples(current.samples, generationActive, from = 0, length = cut)
+                val nextDeferred = async(Dispatchers.IO) { decodeCached(nextFile!!) }
+                writeSamples(current.samples, generationActive, from = 0, length = bodyLen)
                 nextDeferred.await()
             }
         } else {
-            decodeFile(nextFile)
+            decodeCached(nextFile!!)
         }
 
         if (!generationActive() || cancelled.get()) return
@@ -148,58 +151,84 @@ class PcmSentencePlayer {
             next.sampleRate != current.sampleRate ||
             next.channels != current.channels
         ) {
-            if (cut < current.samples.size) {
-                writeSamples(
-                    current.samples,
-                    generationActive,
-                    from = cut,
-                    length = current.samples.size - cut,
-                )
-            }
+            writeSamples(
+                current.samples,
+                generationActive,
+                from = bodyLen,
+                length = current.samples.size - bodyLen,
+            )
             return
         }
 
+        val effectiveMs = Crossfade.clampOverlapMs(
+            requestedMs = overlapMs,
+            currentSampleCount = current.samples.size,
+            nextSampleCount = next.samples.size,
+            sampleRate = current.sampleRate,
+            channels = current.channels,
+        )
+        val overlapFrames = if (effectiveMs > 0) {
+            (current.sampleRate * effectiveMs / 1000).coerceAtLeast(1)
+        } else {
+            0
+        }
+        val overlapSamplesDesired =
+            (overlapFrames * current.channels).coerceAtMost(current.samples.size)
+
+        // If clamp shortened the fade, write the extra current samples before the mix.
+        val extraBeforeMix = requestedSamples - overlapSamplesDesired
+        if (extraBeforeMix > 0) {
+            writeSamples(
+                current.samples,
+                generationActive,
+                from = bodyLen,
+                length = extraBeforeMix,
+            )
+        }
+
+        if (overlapSamplesDesired <= 0) {
+            writeSamples(next.samples, generationActive)
+            return
+        }
+
+        val mixFrom = current.samples.size - overlapSamplesDesired
         val overlapSamples = overlapSamplesDesired.coerceAtMost(next.samples.size)
-        if (overlapSamples <= 0) {
-            if (cut < current.samples.size) {
-                writeSamples(
-                    current.samples,
-                    generationActive,
-                    from = cut,
-                    length = current.samples.size - cut,
-                )
-            }
-            return
-        }
-
-        // Current tail past what next can cover — write unmatched current first.
         if (overlapSamples < overlapSamplesDesired) {
             val unmatched = overlapSamplesDesired - overlapSamples
-            writeSamples(current.samples, generationActive, from = cut, length = unmatched)
+            writeSamples(current.samples, generationActive, from = mixFrom, length = unmatched)
         }
 
         if (!generationActive() || cancelled.get()) return
+        if (overlapSamples <= 0) return
 
-        // Next sentence becomes hearable at the mix; mark before writing it.
         onOverlapNextStart?.invoke()
-        val mixFrom = cut + (overlapSamplesDesired - overlapSamples)
+        val mixStart = mixFrom + (overlapSamplesDesired - overlapSamples)
+        val ch = current.channels.coerceAtLeast(1)
+        val frames = overlapSamples / ch
         val mixed = ShortArray(overlapSamples)
-        for (i in 0 until overlapSamples) {
-            val sum = current.samples[mixFrom + i].toInt() + next.samples[i].toInt()
-            mixed[i] = sum.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        for (frame in 0 until frames) {
+            val progress = if (frames <= 1) 1f else frame.toFloat() / (frames - 1).toFloat()
+            for (c in 0 until ch) {
+                val idx = frame * ch + c
+                mixed[idx] = Crossfade.mixSample(
+                    current.samples[mixStart + idx],
+                    next.samples[idx],
+                    progress,
+                )
+            }
         }
         writeSamples(mixed, generationActive)
+
         if (overlapSamples < next.samples.size) {
             pendingRemainder = PcmClip(
                 samples = next.samples.copyOfRange(overlapSamples, next.samples.size),
                 sampleRate = next.sampleRate,
                 channels = next.channels,
             )
-            pendingMediaSeedSec = overlapMs / 1000.0
+            pendingMediaSeedSec = effectiveMs / 1000.0
         }
     }
 
-    /** Write [gapMs] of silence into the open track (keeps the stream continuous). */
     suspend fun writeSilence(
         gapMs: Int,
         generationActive: () -> Boolean,
@@ -227,6 +256,18 @@ class PcmSentencePlayer {
         }
     }
 
+    private fun decodeCached(file: File): PcmClip? {
+        val key = file.absolutePath
+        synchronized(decodeCacheLock) {
+            decodeCache[key]?.let { return it }
+        }
+        val decoded = decodeFile(file) ?: return null
+        synchronized(decodeCacheLock) {
+            decodeCache[key] = decoded
+        }
+        return decoded
+    }
+
     private fun decodeFile(file: File): PcmClip? {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
@@ -246,7 +287,6 @@ class PcmSentencePlayer {
             codec.configure(format, null, null, 0)
             codec.start()
 
-            // Growable ShortArray — avoid ArrayList<Short> boxing (was multi-100ms on decode).
             var pcm = ShortArray(sampleRate * channelCount)
             var pcmSize = 0
             val info = MediaCodec.BufferInfo()
@@ -350,7 +390,6 @@ class PcmSentencePlayer {
                 framesWritten += written / ch.toLong()
                 offset += written
             } else {
-                // Buffer full / transient 0 — retry; never drop the rest of the clip.
                 yield()
                 delay(2)
             }
@@ -374,9 +413,9 @@ class PcmSentencePlayer {
         val encoding = AudioFormat.ENCODING_PCM_16BIT
         val minBuf = AudioTrack.getMinBufferSize(sampleRate, channelMask, encoding)
         if (minBuf <= 0) throw IllegalStateException("Unsupported PCM format")
-        // ~2s of PCM so decode/synth jitter between clips doesn't underrun.
+        // ~1s PCM: decode-ahead covers inter-clip decode; lower write-ahead latency.
         val bytesPerSec = sampleRate * (if (channelCount >= 2) 2 else 1) * 2
-        val bufBytes = max(minBuf * 4, bytesPerSec * 2)
+        val bufBytes = max(minBuf * 4, bytesPerSec)
         val attrs = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -419,4 +458,8 @@ class PcmSentencePlayer {
         val sampleRate: Int,
         val channels: Int,
     )
+
+    companion object {
+        private const val DECODE_CACHE_MAX = 4
+    }
 }
