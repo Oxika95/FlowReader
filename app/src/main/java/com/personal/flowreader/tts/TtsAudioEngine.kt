@@ -6,6 +6,7 @@ import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.os.Build
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -51,6 +52,15 @@ class TtsAudioEngine {
     fun peekPendingMediaSeedSec(): Double =
         if (pendingRemainder != null) pendingMediaSeedSec else 0.0
 
+    /** True when a prior crossfade left PCM that must keep feeding the track. */
+    fun hasPendingRemainder(): Boolean = pendingRemainder != null
+
+    /** App-level AudioTrack underruns since this track was created (API 24+). */
+    fun underrunCount(): Int {
+        val t = track ?: return 0
+        return if (Build.VERSION.SDK_INT >= 24) t.underrunCount else 0
+    }
+
     fun cancel() {
         cancelled.set(true)
         pendingRemainder = null
@@ -84,8 +94,10 @@ class TtsAudioEngine {
     }
 
     /**
-     * Play [file] as PCM. When [overlapMs] &gt; 0 and [nextFile] is ready, equal-power
-     * crossfades a clamped overlap; otherwise writes the clip fully.
+     * Play [file] as PCM. When [overlapMs] &gt; 0 and the next clip is available,
+     * equal-power crossfades a clamped overlap; otherwise writes the clip fully
+     * (butt-join). [resolveNext] runs **during** the body write so the track stays
+     * fed while Edge synth / decode catch up (AOSP/Readest-style: never stop the sink).
      *
      * [onHearableStart] — just before writing this clip (seed already into the clip).
      * [onOverlapNextStart] — when the incoming clip becomes hearable at the mix.
@@ -94,6 +106,8 @@ class TtsAudioEngine {
         file: File,
         generationActive: () -> Boolean,
         nextFile: File? = null,
+        /** Invoked while writing the body when [nextFile] is null and [overlapMs] &gt; 0. */
+        resolveNext: (suspend () -> File?)? = null,
         overlapMs: Int = 0,
         onHearableStart: ((mediaSeedSec: Double) -> Unit)? = null,
         onOverlapNextStart: (() -> Unit)? = null,
@@ -103,8 +117,10 @@ class TtsAudioEngine {
 
         val fromPending = pendingRemainder != null
         SynthDebugLog.append(
-            "engine.play pending=$fromPending overlapMs=$overlapMs next=${nextFile != null} " +
-                "written=$framesWritten head=${playbackHeadFrames()}",
+            "engine.play pending=$fromPending overlapMs=$overlapMs " +
+                "nextKnown=${nextFile != null} resolve=${resolveNext != null} " +
+                "written=$framesWritten head=${playbackHeadFrames()} " +
+                "underruns=${underrunCount()}",
         )
         val seed = if (fromPending) pendingMediaSeedSec else 0.0
         val current = pendingRemainder?.also {
@@ -116,19 +132,26 @@ class TtsAudioEngine {
         })
         ensureTrack(current.sampleRate, current.channels)
         onHearableStart?.invoke(seed)
-        playClipCrossfading(current, nextFile, overlapMs, generationActive, onOverlapNextStart)
+        playClipCrossfading(
+            current = current,
+            nextFile = nextFile,
+            resolveNext = resolveNext,
+            overlapMs = overlapMs,
+            generationActive = generationActive,
+            onOverlapNextStart = onOverlapNextStart,
+        )
     }
 
     private suspend fun playClipCrossfading(
         current: PcmClip,
         nextFile: File?,
+        resolveNext: (suspend () -> File?)?,
         overlapMs: Int,
         generationActive: () -> Boolean,
         onOverlapNextStart: (() -> Unit)?,
     ) {
-        val nextReady = nextFile != null && nextFile.exists() && nextFile.length() > 0L
-        if (overlapMs <= 0 || !nextReady) {
-            SynthDebugLog.append("engine.buttJoin samples=${current.samples.size}")
+        if (overlapMs <= 0) {
+            SynthDebugLog.append("engine.buttJoin samples=${current.samples.size} reason=noOverlap")
             writeSamples(current.samples, generationActive)
             return
         }
@@ -147,20 +170,24 @@ class TtsAudioEngine {
                 "written=$framesWritten head=${playbackHeadFrames()}",
         )
 
-        val decodeStarted = System.currentTimeMillis()
+        val prepStarted = System.currentTimeMillis()
+        // Resolve + decode next while writing body so AudioTrack never starves on Edge wait.
         val next = if (bodyLen > 0) {
             coroutineScope {
-                val nextDeferred = async(Dispatchers.IO) { decodeCached(nextFile!!) }
+                val nextDeferred = async(Dispatchers.IO) {
+                    resolveAndDecodeNext(nextFile, resolveNext)
+                }
                 writeSamples(current.samples, generationActive, from = 0, length = bodyLen)
                 nextDeferred.await()
             }
         } else {
-            decodeCached(nextFile!!)
+            resolveAndDecodeNext(nextFile, resolveNext)
         }
         SynthDebugLog.append(
             "engine.fadeNext ready=${next != null} " +
-                "decodeMs=${System.currentTimeMillis() - decodeStarted} " +
-                "written=$framesWritten head=${playbackHeadFrames()}",
+                "prepMs=${System.currentTimeMillis() - prepStarted} " +
+                "written=$framesWritten head=${playbackHeadFrames()} " +
+                "underruns=${underrunCount()}",
         )
 
         if (!generationActive() || cancelled.get()) return
@@ -169,6 +196,10 @@ class TtsAudioEngine {
             next.sampleRate != current.sampleRate ||
             next.channels != current.channels
         ) {
+            SynthDebugLog.append(
+                "engine.buttJoinTail samples=${current.samples.size - bodyLen} " +
+                    "reason=${if (next == null) "nextLate" else "formatMismatch"}",
+            )
             writeSamples(
                 current.samples,
                 generationActive,
@@ -272,6 +303,30 @@ class TtsAudioEngine {
                 delay(2)
             }
         }
+    }
+
+    /**
+     * Prefer an already-known [known] path; otherwise call [resolveNext]. Decode into the
+     * PCM cache. Returns null when the next clip is late or missing (caller butt-joins).
+     */
+    private suspend fun resolveAndDecodeNext(
+        known: File?,
+        resolveNext: (suspend () -> File?)?,
+    ): PcmClip? {
+        val file = when {
+            known != null && known.exists() && known.length() > 0L -> known
+            resolveNext != null -> {
+                val resolved = runCatching { resolveNext() }.getOrNull()
+                if (resolved != null && resolved.exists() && resolved.length() > 0L) {
+                    resolved
+                } else {
+                    SynthDebugLog.append("engine.nextUnresolved")
+                    null
+                }
+            }
+            else -> null
+        } ?: return null
+        return decodeCached(file)
     }
 
     private fun decodeCached(file: File): PcmClip? {

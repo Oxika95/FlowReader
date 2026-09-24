@@ -601,6 +601,8 @@ class TtsController(
             appendLine("playbackHead=${audioEngine.playbackHeadFrames()}")
             appendLine("sampleRate=${audioEngine.sampleRateHz()}")
             appendLine("pendingSeedSec=${audioEngine.peekPendingMediaSeedSec()}")
+            appendLine("pendingRemainder=${audioEngine.hasPendingRemainder()}")
+            appendLine("underruns=${audioEngine.underrunCount()}")
             appendLine("ready=${s.readySentenceIndices.sorted()}")
             appendLine("generating=${s.generatingSentenceIndices.sorted()}")
             appendLine("--- events ---")
@@ -1111,6 +1113,14 @@ class TtsController(
         job.start()
     }
 
+    /** Prefetch without canceling an in-flight job for the same sentence. */
+    private fun ensurePrefetchJob(i: Int) {
+        if (i < 0 || i > sentences.lastIndex) return
+        if (peekReadyCacheFile(i) != null) return
+        if (edgeJobs[i] != null) return
+        startEdgeJob(i) { prefetch(i) }
+    }
+
     private fun cancelEdgeJobs() {
         edgeJobs.values.forEach { it.cancel() }
         edgeJobs.clear()
@@ -1121,6 +1131,10 @@ class TtsController(
         if (!inCacheWindow(i)) return
         try {
             synthesizeToCache(i, force = false)
+            val f = cacheFile(i)
+            if (f.exists() && f.length() > 0L) {
+                audioEngine.prefetchDecode(f)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Throwable) {
@@ -1129,7 +1143,12 @@ class TtsController(
     }
 
     private suspend fun speakEdge(i: Int, generation: Int) {
-        SynthDebugLog.append("speakEdge i=$i gen=$generation slack=${slackMs()}")
+        SynthDebugLog.append(
+            "speakEdge i=$i gen=$generation slack=${slackMs()} " +
+                "pending=${audioEngine.hasPendingRemainder()} underruns=${audioEngine.underrunCount()}",
+        )
+        // Current sentence must be on disk before we can write — this is the only
+        // ensure allowed to gate play (cold start / first clip).
         ensureSentenceCached(i, generation)
         if (generation != playGeneration) return
         val f = cacheFile(i)
@@ -1139,41 +1158,61 @@ class TtsController(
         ensureWordBoundariesLoaded(i)
         ensurePcmWordTracking()
         val overlapMs = (-_state.value.sentenceGapMs).coerceAtLeast(0)
-        var nextFile: File? = null
-        if (overlapMs > 0 && i < sentences.lastIndex) {
-            // Warm i+2 now so speak(i+1) does not block the PCM writer on Edge synth.
-            if (i + 2 <= sentences.lastIndex) {
-                startEdgeJob(i + 2) { prefetch(i + 2) }
-            }
-            val waitStart = System.currentTimeMillis()
-            SynthDebugLog.append("ensureNext start i=${i + 1} slack=${slackMs()}")
-            ensureSentenceCached(i + 1, generation)
-            SynthDebugLog.append(
-                "ensureNext done i=${i + 1} waitMs=${System.currentTimeMillis() - waitStart} slack=${slackMs()}",
-            )
-            if (generation != playGeneration) return
-            ensureWordBoundariesLoaded(i + 1)
-            val n = cacheFile(i + 1)
-            if (n.exists() && n.length() > 0L) {
-                nextFile = n
-                // Decode-ahead: warm PCM before the fade arm.
-                audioEngine.prefetchDecode(n)
-            }
-        } else if (i < sentences.lastIndex) {
-            val n = cacheFile(i + 1)
-            if (n.exists() && n.length() > 0L) {
-                audioEngine.prefetchDecode(n)
-            }
+
+        // Kick lookahead without awaiting or canceling in-flight work.
+        ensurePrefetchJob(i + 1)
+        ensurePrefetchJob(i + 2)
+
+        // Instant peek only — never join Edge synth before play while the track is live.
+        val nextReadyNow = peekReadyCacheFile(i + 1)
+        if (nextReadyNow != null) {
+            audioEngine.prefetchDecode(nextReadyNow)
+            if (overlapMs > 0) ensureWordBoundariesLoaded(i + 1)
         }
-        // Only arm crossfade when next clip is ready (Flick shouldArmCrossfade).
-        val armOverlap = if (nextFile != null) overlapMs else 0
+
+        val wantFade = overlapMs > 0 && i < sentences.lastIndex
+        // Resolve during body write inside the engine — never before play (FOSS sink rule).
+        val resolveNext: (suspend () -> File?)? = if (wantFade && nextReadyNow == null) {
+            resolve@{
+                val waitStart = System.currentTimeMillis()
+                SynthDebugLog.append(
+                    "ensureNextDeferred start i=${i + 1} slack=${slackMs()}",
+                )
+                ensureSentenceCached(i + 1, generation)
+                SynthDebugLog.append(
+                    "ensureNextDeferred done i=${i + 1} " +
+                        "waitMs=${System.currentTimeMillis() - waitStart} slack=${slackMs()}",
+                )
+                if (generation != playGeneration) return@resolve null
+                ensureWordBoundariesLoaded(i + 1)
+                val n = cacheFile(i + 1)
+                if (n.exists() && n.length() > 0L) {
+                    audioEngine.prefetchDecode(n)
+                    n
+                } else {
+                    null
+                }
+            }
+        } else {
+            null
+        }
+
+        if (!wantFade && i < sentences.lastIndex) {
+            val n = peekReadyCacheFile(i + 1)
+            if (n != null) audioEngine.prefetchDecode(n)
+        }
+
+        val armOverlap = if (wantFade) overlapMs else 0
         SynthDebugLog.append(
-            "play i=$i overlapMs=$armOverlap next=${nextFile != null} slack=${slackMs()}",
+            "play i=$i overlapMs=$armOverlap nextKnown=${nextReadyNow != null} " +
+                "resolve=${resolveNext != null} slack=${slackMs()} " +
+                "pending=${audioEngine.hasPendingRemainder()}",
         )
         audioEngine.play(
             file = f,
             generationActive = { generation == playGeneration },
-            nextFile = nextFile,
+            nextFile = nextReadyNow,
+            resolveNext = resolveNext,
             overlapMs = armOverlap,
             onHearableStart = { seed ->
                 pushWordSegment(i, audioEngine.writtenFrames(), seed)
@@ -1182,7 +1221,16 @@ class TtsController(
                 pushWordSegment(i + 1, audioEngine.writtenFrames(), seedSec = 0.0)
             },
         )
-        SynthDebugLog.append("playDone i=$i slack=${slackMs()}")
+        SynthDebugLog.append(
+            "playDone i=$i slack=${slackMs()} underruns=${audioEngine.underrunCount()}",
+        )
+    }
+
+    /** Non-blocking: file present on disk with bytes. Does not start or join synth. */
+    private fun peekReadyCacheFile(i: Int): File? {
+        if (i < 0 || i > sentences.lastIndex) return null
+        val f = cacheFile(i)
+        return if (f.exists() && f.length() > 0L) f else null
     }
 
     private fun slackMs(): Long {
