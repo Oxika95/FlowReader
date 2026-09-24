@@ -24,6 +24,7 @@ data class OpenUi(
     val orientation: ReaderOrientation = ReaderOrientation.Auto,
     val showChapterHeadingsInBody: Boolean = false,
     val keepScreenAwake: Boolean = false,
+    val debugEnabled: Boolean = false,
 )
 
 class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
@@ -45,6 +46,7 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
                 orientation = prefs.orientation,
                 showChapterHeadingsInBody = prefs.showChapterHeadingsInBody,
                 keepScreenAwake = prefs.keepScreenAwake,
+                debugEnabled = prefs.debugEnabled,
             )
         }
     }
@@ -101,5 +103,11 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
     fun setKeepScreenAwake(enabled: Boolean) {
         _ui.value = _ui.value.copy(keepScreenAwake = enabled)
         viewModelScope.launch { flow.settings.setKeepScreenAwake(enabled) }
+    }
+
+    fun setDebugEnabled(enabled: Boolean) {
+        _ui.value = _ui.value.copy(debugEnabled = enabled)
+        viewModelScope.launch { flow.settings.setDebugEnabled(enabled) }
+        flow.tts.setDebugEnabled(enabled)
     }
 }

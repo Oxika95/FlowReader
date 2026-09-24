@@ -33,6 +33,8 @@ data class ReaderPrefs(
     val showChapterHeadingsInBody: Boolean = false,
     /** When true, the reader keeps the display on while open. */
     val keepScreenAwake: Boolean = false,
+    /** When true, synth debug logging and the floating dump FAB are available. */
+    val debugEnabled: Boolean = false,
 )
 
 data class TtsPrefs(
@@ -157,6 +159,10 @@ class SettingsStore(context: Context) {
 
     suspend fun setKeepScreenAwake(enabled: Boolean) {
         store.edit { it[KEY_KEEP_SCREEN_AWAKE] = enabled }
+    }
+
+    suspend fun setDebugEnabled(enabled: Boolean) {
+        store.edit { it[KEY_DEBUG_ENABLED] = enabled }
     }
 
     suspend fun setEngine(key: String) {
@@ -288,6 +294,7 @@ class SettingsStore(context: Context) {
         private val KEY_ORIENTATION = stringPreferencesKey("orientation")
         private val KEY_SHOW_CHAPTER_HEADINGS = booleanPreferencesKey("show_chapter_headings")
         private val KEY_KEEP_SCREEN_AWAKE = booleanPreferencesKey("keep_screen_awake")
+        private val KEY_DEBUG_ENABLED = booleanPreferencesKey("debug_enabled")
         private val KEY_TTS_ENGINE = stringPreferencesKey("tts_engine")
         private val KEY_TTS_VOICE = stringPreferencesKey("tts_voice")
         private val KEY_TTS_SPEED = floatPreferencesKey("tts_speed")
@@ -329,6 +336,7 @@ class SettingsStore(context: Context) {
             }.getOrDefault(ReaderOrientation.Auto),
             showChapterHeadingsInBody = this[KEY_SHOW_CHAPTER_HEADINGS] ?: false,
             keepScreenAwake = this[KEY_KEEP_SCREEN_AWAKE] ?: false,
+            debugEnabled = this[KEY_DEBUG_ENABLED] ?: false,
         )
 
         private fun Preferences.resolveAccentHue(): Float {

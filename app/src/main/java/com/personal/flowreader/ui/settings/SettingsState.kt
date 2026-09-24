@@ -22,6 +22,7 @@ data class AppearanceSettingsState(
     val orientation: ReaderOrientation,
     val showChapterHeadingsInBody: Boolean,
     val keepScreenAwake: Boolean,
+    val debugEnabled: Boolean,
 )
 
 data class AppearanceSettingsCallbacks(
@@ -35,6 +36,7 @@ data class AppearanceSettingsCallbacks(
     val onOrientation: (ReaderOrientation) -> Unit,
     val onShowChapterHeadingsInBody: (Boolean) -> Unit,
     val onKeepScreenAwake: (Boolean) -> Unit,
+    val onDebugEnabled: (Boolean) -> Unit,
 )
 
 fun AppearanceSettingsState(openUi: OpenUi) = AppearanceSettingsState(
@@ -48,6 +50,7 @@ fun AppearanceSettingsState(openUi: OpenUi) = AppearanceSettingsState(
     orientation = openUi.orientation,
     showChapterHeadingsInBody = openUi.showChapterHeadingsInBody,
     keepScreenAwake = openUi.keepScreenAwake,
+    debugEnabled = openUi.debugEnabled,
 )
 
 fun AppearanceSettingsCallbacks(openVm: OpenBookViewModel) = AppearanceSettingsCallbacks(
@@ -61,6 +64,7 @@ fun AppearanceSettingsCallbacks(openVm: OpenBookViewModel) = AppearanceSettingsC
     onOrientation = openVm::setOrientation,
     onShowChapterHeadingsInBody = openVm::setShowChapterHeadingsInBody,
     onKeepScreenAwake = openVm::setKeepScreenAwake,
+    onDebugEnabled = openVm::setDebugEnabled,
 )
 
 /** TTS prefs + engines for the Audio settings tab. */

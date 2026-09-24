@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -25,6 +26,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.personal.flowreader.data.ReaderOrientation
+import com.personal.flowreader.ui.debug.DebugSynthDumpFab
 import com.personal.flowreader.ui.library.LibraryScreen
 import com.personal.flowreader.ui.library.LibraryViewModel
 import com.personal.flowreader.ui.open.OpenBookViewModel
@@ -107,61 +109,66 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    NavHost(
-                        navController = nav,
-                        startDestination = "library",
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        composable("library") {
-                            LibraryScreen(
-                                vm = libraryVm,
-                                appearance = AppearanceSettingsState(openUi),
-                                appearanceCallbacks = AppearanceSettingsCallbacks(openVm),
-                                onOpenBook = { id -> nav.navigate("reader/$id") },
-                                onOpenQue = { bookId, queId ->
-                                    nav.navigate("reader/$bookId/que/$queId")
-                                },
-                            )
-                        }
-                        composable(
-                            route = "reader/{bookId}",
-                            arguments = listOf(
-                                navArgument("bookId") { type = NavType.StringType },
-                            ),
+                    Box(Modifier.fillMaxSize()) {
+                        NavHost(
+                            navController = nav,
+                            startDestination = "library",
+                            modifier = Modifier.fillMaxSize(),
                         ) {
-                            ReaderRoute(
-                                openUi = openUi,
-                                openVm = openVm,
-                                queId = null,
-                                onBack = { nav.popBackStack() },
-                                onAdvanceQue = { _, _ -> },
-                            )
+                            composable("library") {
+                                LibraryScreen(
+                                    vm = libraryVm,
+                                    appearance = AppearanceSettingsState(openUi),
+                                    appearanceCallbacks = AppearanceSettingsCallbacks(openVm),
+                                    onOpenBook = { id -> nav.navigate("reader/$id") },
+                                    onOpenQue = { bookId, queId ->
+                                        nav.navigate("reader/$bookId/que/$queId")
+                                    },
+                                )
+                            }
+                            composable(
+                                route = "reader/{bookId}",
+                                arguments = listOf(
+                                    navArgument("bookId") { type = NavType.StringType },
+                                ),
+                            ) {
+                                ReaderRoute(
+                                    openUi = openUi,
+                                    openVm = openVm,
+                                    queId = null,
+                                    onBack = { nav.popBackStack() },
+                                    onAdvanceQue = { _, _ -> },
+                                )
+                            }
+                            composable(
+                                route = "reader/{bookId}/que/{queId}?autoPlay={autoPlay}",
+                                arguments = listOf(
+                                    navArgument("bookId") { type = NavType.StringType },
+                                    navArgument("queId") { type = NavType.StringType },
+                                    navArgument("autoPlay") {
+                                        type = NavType.StringType
+                                        nullable = true
+                                        defaultValue = null
+                                    },
+                                ),
+                            ) { entry ->
+                                val queId = entry.arguments?.getString("queId")
+                                ReaderRoute(
+                                    openUi = openUi,
+                                    openVm = openVm,
+                                    queId = queId,
+                                    onBack = { nav.popBackStack() },
+                                    onAdvanceQue = { nextBookId, nextQueId ->
+                                        nav.navigate("reader/$nextBookId/que/$nextQueId?autoPlay=1") {
+                                            popUpTo("library") { inclusive = false }
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                )
+                            }
                         }
-                        composable(
-                            route = "reader/{bookId}/que/{queId}?autoPlay={autoPlay}",
-                            arguments = listOf(
-                                navArgument("bookId") { type = NavType.StringType },
-                                navArgument("queId") { type = NavType.StringType },
-                                navArgument("autoPlay") {
-                                    type = NavType.StringType
-                                    nullable = true
-                                    defaultValue = null
-                                },
-                            ),
-                        ) { entry ->
-                            val queId = entry.arguments?.getString("queId")
-                            ReaderRoute(
-                                openUi = openUi,
-                                openVm = openVm,
-                                queId = queId,
-                                onBack = { nav.popBackStack() },
-                                onAdvanceQue = { nextBookId, nextQueId ->
-                                    nav.navigate("reader/$nextBookId/que/$nextQueId?autoPlay=1") {
-                                        popUpTo("library") { inclusive = false }
-                                        launchSingleTop = true
-                                    }
-                                },
-                            )
+                        if (openUi.debugEnabled) {
+                            DebugSynthDumpFab()
                         }
                     }
                 }

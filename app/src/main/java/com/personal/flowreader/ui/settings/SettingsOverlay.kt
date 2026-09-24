@@ -179,6 +179,8 @@ internal fun SettingsOverlay(
     ttsCallbacks: TtsSettingsCallbacks,
     filters: FilterSettingsState,
     filterCallbacks: FilterSettingsCallbacks,
+    debugEnabled: Boolean,
+    onDebugEnabled: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -191,13 +193,22 @@ internal fun SettingsOverlay(
         visible = visible,
         onDismiss = onDismiss,
     ) {
-        val primaryTabs = listOf("Layout", "Audio", "Filters", "Import")
+        val primaryTabs = listOf("Layout", "Audio", "Filters", "Import", "About")
+        // Fixed PrimaryTabRow: leftover width goes into equal tab slots (same idea as
+        // LibraryTabSlots). Do not use ScrollableTabRow here — it packs to label width
+        // and leaves a large empty, still-scrollable gutter (edgePadding).
         PrimaryTabRow(selectedTabIndex = tab) {
             primaryTabs.forEachIndexed { index, label ->
                 Tab(
                     selected = tab == index,
                     onClick = { tab = index },
-                    text = { Text(label) },
+                    text = {
+                        Text(
+                            label,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    },
                 )
             }
         }
@@ -272,8 +283,14 @@ internal fun SettingsOverlay(
                         onSetEnabled = filterCallbacks.onSetFilterEnabled,
                     )
                 }
-                else -> {
+                3 -> {
                     SharingSettingsHost(ruleEditor)
+                }
+                else -> {
+                    AboutSettingsTab(
+                        debugEnabled = debugEnabled,
+                        onDebugEnabled = onDebugEnabled,
+                    )
                 }
             }
         }

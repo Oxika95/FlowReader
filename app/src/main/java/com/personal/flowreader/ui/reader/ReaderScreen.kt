@@ -1095,6 +1095,8 @@ fun ReaderScreen(
                     vm.setFilterEnabled(scope, id, enabled)
                 },
             ),
+            debugEnabled = appearance.debugEnabled,
+            onDebugEnabled = appearanceCallbacks.onDebugEnabled,
             onDismiss = { overlay = ReaderOverlay.Hidden },
         )
 

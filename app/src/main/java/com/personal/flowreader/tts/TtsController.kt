@@ -72,6 +72,8 @@ data class TtsUiState(
     val sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     /** Added to heard media time when resolving Edge word cues (ms). */
     val highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
+    /** When true, synth ring-log is active and the floating dump FAB is shown. */
+    val debugEnabled: Boolean = false,
     val engines: List<TtsEngineOption> = TtsEngines.BUILT_IN,
     val voices: List<TtsVoiceOption> = emptyList(),
     val sentence: Sentence? = null,
@@ -208,12 +210,14 @@ class TtsController(
     init {
         scope.launch {
             val prefs = settings.ttsOnce()
+            val reader = settings.readerOnce()
             val voices = voicesFor(prefs.engineKey)
             val voiceId = when {
                 voices.any { it.id == prefs.voiceId } -> prefs.voiceId
                 prefs.engineKey == TtsEngines.EDGE -> TtsPrefs.DEFAULT_EDGE_VOICE
                 else -> voices.firstOrNull()?.id.orEmpty()
             }
+            SynthDebugLog.setEnabled(reader.debugEnabled)
             _state.update {
                 it.copy(
                     engineKey = prefs.engineKey,
@@ -226,6 +230,7 @@ class TtsController(
                     minSignal = prefs.minSignal,
                     sentenceGapMs = prefs.sentenceGapMs,
                     highlightSyncMs = prefs.highlightSyncMs,
+                    debugEnabled = reader.debugEnabled,
                     voices = voices,
                 )
             }
@@ -568,6 +573,41 @@ class TtsController(
         if (value == _state.value.highlightSyncMs) return
         _state.update { it.copy(highlightSyncMs = value) }
         scope.launch { settings.setHighlightSyncMs(value) }
+    }
+
+    fun setDebugEnabled(enabled: Boolean) {
+        if (enabled == _state.value.debugEnabled) return
+        SynthDebugLog.setEnabled(enabled)
+        _state.update { it.copy(debugEnabled = enabled) }
+        SynthDebugLog.append("debugEnabled=$enabled")
+    }
+
+    /**
+     * Snapshot the synth ring buffer + live engine counters to a file under
+     * app external files (`synth-logs/`).
+     */
+    fun dumpSynthLog(): File {
+        val dir = File(context.getExternalFilesDir(null), "synth-logs").apply { mkdirs() }
+        val out = File(dir, "synth-${System.currentTimeMillis()}.txt")
+        val s = _state.value
+        val header = buildString {
+            appendLine("Flow Reader synth dump")
+            appendLine("time=${System.currentTimeMillis()}")
+            appendLine("engine=${s.engineKey} voice=${s.voiceId}")
+            appendLine("playing=${s.playing} speed=${s.speed} pitch=${s.pitch}")
+            appendLine("gapMs=${s.sentenceGapMs} syncMs=${s.highlightSyncMs} prefetch=${s.prefetchCount}")
+            appendLine("writeIndex=$index heardIndex=${s.sentenceIndex}")
+            appendLine("writtenFrames=${audioEngine.writtenFrames()}")
+            appendLine("playbackHead=${audioEngine.playbackHeadFrames()}")
+            appendLine("sampleRate=${audioEngine.sampleRateHz()}")
+            appendLine("pendingSeedSec=${audioEngine.peekPendingMediaSeedSec()}")
+            appendLine("ready=${s.readySentenceIndices.sorted()}")
+            appendLine("generating=${s.generatingSentenceIndices.sorted()}")
+            appendLine("--- events ---")
+        }
+        out.writeText(header + SynthDebugLog.snapshot().joinToString("\n") + "\n")
+        SynthDebugLog.append("dump->${out.absolutePath}")
+        return out
     }
 
     /**
@@ -1089,6 +1129,7 @@ class TtsController(
     }
 
     private suspend fun speakEdge(i: Int, generation: Int) {
+        SynthDebugLog.append("speakEdge i=$i gen=$generation slack=${slackMs()}")
         ensureSentenceCached(i, generation)
         if (generation != playGeneration) return
         val f = cacheFile(i)
@@ -1104,7 +1145,12 @@ class TtsController(
             if (i + 2 <= sentences.lastIndex) {
                 startEdgeJob(i + 2) { prefetch(i + 2) }
             }
+            val waitStart = System.currentTimeMillis()
+            SynthDebugLog.append("ensureNext start i=${i + 1} slack=${slackMs()}")
             ensureSentenceCached(i + 1, generation)
+            SynthDebugLog.append(
+                "ensureNext done i=${i + 1} waitMs=${System.currentTimeMillis() - waitStart} slack=${slackMs()}",
+            )
             if (generation != playGeneration) return
             ensureWordBoundariesLoaded(i + 1)
             val n = cacheFile(i + 1)
@@ -1121,6 +1167,9 @@ class TtsController(
         }
         // Only arm crossfade when next clip is ready (Flick shouldArmCrossfade).
         val armOverlap = if (nextFile != null) overlapMs else 0
+        SynthDebugLog.append(
+            "play i=$i overlapMs=$armOverlap next=${nextFile != null} slack=${slackMs()}",
+        )
         audioEngine.play(
             file = f,
             generationActive = { generation == playGeneration },
@@ -1133,6 +1182,14 @@ class TtsController(
                 pushWordSegment(i + 1, audioEngine.writtenFrames(), seedSec = 0.0)
             },
         )
+        SynthDebugLog.append("playDone i=$i slack=${slackMs()}")
+    }
+
+    private fun slackMs(): Long {
+        val rate = audioEngine.sampleRateHz()
+        if (rate <= 0) return -1L
+        val slackFrames = audioEngine.writtenFrames() - audioEngine.playbackHeadFrames()
+        return slackFrames * 1000L / rate
     }
 
     /**

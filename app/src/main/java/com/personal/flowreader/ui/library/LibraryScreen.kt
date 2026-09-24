@@ -382,6 +382,8 @@ fun LibraryScreen(
                     vm.setFilterEnabled(scope, id, enabled)
                 },
             ),
+            debugEnabled = appearance.debugEnabled,
+            onDebugEnabled = appearanceCallbacks.onDebugEnabled,
             onDismiss = { settingsOpen = false },
         )
 

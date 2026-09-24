@@ -102,11 +102,18 @@ class TtsAudioEngine {
         if (!generationActive() || cancelled.get()) return@withContext
 
         val fromPending = pendingRemainder != null
+        SynthDebugLog.append(
+            "engine.play pending=$fromPending overlapMs=$overlapMs next=${nextFile != null} " +
+                "written=$framesWritten head=${playbackHeadFrames()}",
+        )
         val seed = if (fromPending) pendingMediaSeedSec else 0.0
         val current = pendingRemainder?.also {
             pendingRemainder = null
             pendingMediaSeedSec = 0.0
-        } ?: (decodeCached(file) ?: return@withContext)
+        } ?: (decodeCached(file) ?: run {
+            SynthDebugLog.append("engine.play decodeMiss path=${file.name}")
+            return@withContext
+        })
         ensureTrack(current.sampleRate, current.channels)
         onHearableStart?.invoke(seed)
         playClipCrossfading(current, nextFile, overlapMs, generationActive, onOverlapNextStart)
@@ -121,6 +128,7 @@ class TtsAudioEngine {
     ) {
         val nextReady = nextFile != null && nextFile.exists() && nextFile.length() > 0L
         if (overlapMs <= 0 || !nextReady) {
+            SynthDebugLog.append("engine.buttJoin samples=${current.samples.size}")
             writeSamples(current.samples, generationActive)
             return
         }
@@ -134,7 +142,12 @@ class TtsAudioEngine {
             return
         }
         val bodyLen = current.samples.size - requestedSamples
+        SynthDebugLog.append(
+            "engine.fade body=$bodyLen reqSamples=$requestedSamples " +
+                "written=$framesWritten head=${playbackHeadFrames()}",
+        )
 
+        val decodeStarted = System.currentTimeMillis()
         val next = if (bodyLen > 0) {
             coroutineScope {
                 val nextDeferred = async(Dispatchers.IO) { decodeCached(nextFile!!) }
@@ -144,6 +157,11 @@ class TtsAudioEngine {
         } else {
             decodeCached(nextFile!!)
         }
+        SynthDebugLog.append(
+            "engine.fadeNext ready=${next != null} " +
+                "decodeMs=${System.currentTimeMillis() - decodeStarted} " +
+                "written=$framesWritten head=${playbackHeadFrames()}",
+        )
 
         if (!generationActive() || cancelled.get()) return
 
@@ -385,11 +403,15 @@ class TtsAudioEngine {
         while (offset < end && generationActive() && !cancelled.get()) {
             val n = minOf(end - offset, 2048)
             val written = t.write(samples, offset, n)
-            if (written < 0) break
+            if (written < 0) {
+                SynthDebugLog.append("engine.writeErr code=$written offset=$offset")
+                break
+            }
             if (written > 0) {
                 framesWritten += written / ch.toLong()
                 offset += written
             } else {
+                SynthDebugLog.append("engine.writeZero offset=$offset")
                 yield()
                 delay(2)
             }
@@ -405,6 +427,7 @@ class TtsAudioEngine {
             return
         }
         releaseTrackOnly()
+        SynthDebugLog.append("engine.newTrack rate=$sampleRate ch=$channelCount")
         val channelMask = if (channelCount >= 2) {
             AudioFormat.CHANNEL_OUT_STEREO
         } else {
