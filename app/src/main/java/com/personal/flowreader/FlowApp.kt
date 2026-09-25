@@ -9,6 +9,7 @@ import com.personal.flowreader.data.MIGRATION_2_3
 import com.personal.flowreader.data.MIGRATION_3_4
 import com.personal.flowreader.data.MIGRATION_4_5
 import com.personal.flowreader.data.MIGRATION_5_6
+import com.personal.flowreader.data.MIGRATION_6_7
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.library.plugin.LibraryPluginRegistry
 import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
@@ -43,7 +44,14 @@ class FlowApp : Application() {
     override fun onCreate() {
         super.onCreate()
         db = Room.databaseBuilder(this, AppDatabase::class.java, "flow.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+                MIGRATION_6_7,
+            )
             .build()
         settings = SettingsStore(this)
         tts = TtsController(this, settings)
@@ -53,8 +61,8 @@ class FlowApp : Application() {
         plugins = LibraryPluginRegistry(listOf(RoyalRoadPlugin()))
         appScope.launch {
             sweepStaleCache()
-            val showQue = settings.shareOnce().showQueInShareSheet
-            com.personal.flowreader.share.ShareQueAliasController.setEnabled(this@FlowApp, showQue)
+            // One share target: disable legacy Flow-Queue alias if still enabled.
+            com.personal.flowreader.share.ShareQueAliasController.setEnabled(this@FlowApp, false)
         }
     }
 

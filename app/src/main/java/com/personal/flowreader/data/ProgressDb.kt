@@ -27,6 +27,11 @@ data class ProgressEntity(
     val inLibrary: Boolean = true,
     /** 0–1 reading progress matching the eReader header bar (block index / last block). */
     val readingProgress: Float = 0f,
+    /**
+     * Custom library tab id when sorted into a user shelf. Blank = Files tab.
+     * Ignored when [inLibrary] is false (Que-only).
+     */
+    val libraryTabId: String = "",
 )
 
 @Entity(tableName = "book_filters")
@@ -64,8 +69,16 @@ interface ProgressDao {
     @Query("SELECT * FROM progress ORDER BY updatedAt DESC LIMIT 1")
     suspend fun latest(): ProgressEntity?
 
-    @Query("SELECT * FROM progress WHERE inLibrary = 1 ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM progress WHERE inLibrary = 1 AND libraryTabId = '' ORDER BY updatedAt DESC")
     suspend fun library(): List<ProgressEntity>
+
+    @Query(
+        "SELECT * FROM progress WHERE inLibrary = 1 AND libraryTabId = :tabId ORDER BY updatedAt DESC",
+    )
+    suspend fun libraryTab(tabId: String): List<ProgressEntity>
+
+    @Query("UPDATE progress SET libraryTabId = '' WHERE libraryTabId = :tabId")
+    suspend fun clearLibraryTab(tabId: String)
 
     @Query(
         "SELECT * FROM progress WHERE sourceKind = :sourceKind ORDER BY updatedAt DESC",
@@ -177,9 +190,15 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE progress ADD COLUMN libraryTabId TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [ProgressEntity::class, BookFiltersEntity::class, QueItemEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

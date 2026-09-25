@@ -193,7 +193,7 @@ internal fun SettingsOverlay(
         visible = visible,
         onDismiss = onDismiss,
     ) {
-        val primaryTabs = listOf("Layout", "Audio", "Filters", "Import", "About")
+        val primaryTabs = listOf("About", "Audio", "Filters", "Import", "Layout")
         // Fixed PrimaryTabRow: leftover width goes into equal tab slots (same idea as
         // LibraryTabSlots). Do not use ScrollableTabRow here — it packs to label width
         // and leaves a large empty, still-scrollable gutter (edgePadding).
@@ -223,27 +223,9 @@ internal fun SettingsOverlay(
         ) {
             when (tab) {
                 0 -> {
-                    LayoutSettingsTab(
-                        themeMode = appearance.themeMode,
-                        accentHue = appearance.accentHue,
-                        uiScale = appearance.uiScale,
-                        fontScale = appearance.fontScale,
-                        fontFamily = appearance.fontFamily,
-                        lineSpacing = appearance.lineSpacing,
-                        justifyText = appearance.justifyText,
-                        orientation = appearance.orientation,
-                        showChapterHeadingsInBody = appearance.showChapterHeadingsInBody,
-                        keepScreenAwake = appearance.keepScreenAwake,
-                        onTheme = appearanceCallbacks.onTheme,
-                        onAccentHue = appearanceCallbacks.onAccentHue,
-                        onUiScale = appearanceCallbacks.onUiScale,
-                        onFontScale = appearanceCallbacks.onFontScale,
-                        onFontFamily = appearanceCallbacks.onFontFamily,
-                        onLineSpacing = appearanceCallbacks.onLineSpacing,
-                        onJustifyText = appearanceCallbacks.onJustifyText,
-                        onOrientation = appearanceCallbacks.onOrientation,
-                        onShowChapterHeadingsInBody = appearanceCallbacks.onShowChapterHeadingsInBody,
-                        onKeepScreenAwake = appearanceCallbacks.onKeepScreenAwake,
+                    AboutSettingsTab(
+                        debugEnabled = debugEnabled,
+                        onDebugEnabled = onDebugEnabled,
                     )
                 }
                 1 -> {
@@ -291,9 +273,27 @@ internal fun SettingsOverlay(
                     SharingSettingsHost(ruleEditor)
                 }
                 else -> {
-                    AboutSettingsTab(
-                        debugEnabled = debugEnabled,
-                        onDebugEnabled = onDebugEnabled,
+                    LayoutSettingsTab(
+                        themeMode = appearance.themeMode,
+                        accentHue = appearance.accentHue,
+                        uiScale = appearance.uiScale,
+                        fontScale = appearance.fontScale,
+                        fontFamily = appearance.fontFamily,
+                        lineSpacing = appearance.lineSpacing,
+                        justifyText = appearance.justifyText,
+                        orientation = appearance.orientation,
+                        showChapterHeadingsInBody = appearance.showChapterHeadingsInBody,
+                        keepScreenAwake = appearance.keepScreenAwake,
+                        onTheme = appearanceCallbacks.onTheme,
+                        onAccentHue = appearanceCallbacks.onAccentHue,
+                        onUiScale = appearanceCallbacks.onUiScale,
+                        onFontScale = appearanceCallbacks.onFontScale,
+                        onFontFamily = appearanceCallbacks.onFontFamily,
+                        onLineSpacing = appearanceCallbacks.onLineSpacing,
+                        onJustifyText = appearanceCallbacks.onJustifyText,
+                        onOrientation = appearanceCallbacks.onOrientation,
+                        onShowChapterHeadingsInBody = appearanceCallbacks.onShowChapterHeadingsInBody,
+                        onKeepScreenAwake = appearanceCallbacks.onKeepScreenAwake,
                     )
                 }
             }
@@ -313,8 +313,14 @@ private fun SharingSettingsHost(ruleEditor: com.personal.flowreader.ui.settings.
     var prefs by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(com.personal.flowreader.share.SharePrefs())
     }
-    var rules by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(emptyList<com.personal.flowreader.share.ShareDomainRule>())
+    var routerRules by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(emptyList<com.personal.flowreader.share.RouterRule>())
+    }
+    var parseRules by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(emptyList<com.personal.flowreader.share.ParseRule>())
+    }
+    var customTabs by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(emptyList<com.personal.flowreader.data.CustomLibraryTab>())
     }
     var overlayOk by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(
@@ -323,29 +329,29 @@ private fun SharingSettingsHost(ruleEditor: com.personal.flowreader.ui.settings.
     }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         prefs = withContext(Dispatchers.IO) { app.settings.shareOnce() }
-        rules = withContext(Dispatchers.IO) { app.settings.shareDomainRulesOnce() }
+        routerRules = withContext(Dispatchers.IO) { app.settings.shareRouterRulesOnce() }
+        parseRules = withContext(Dispatchers.IO) { app.settings.shareParseRulesOnce() }
+        customTabs = withContext(Dispatchers.IO) { app.settings.customLibraryTabsOnce() }
         overlayOk = com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context)
     }
     androidx.compose.runtime.LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             overlayOk = com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context)
+            customTabs = withContext(Dispatchers.IO) { app.settings.customLibraryTabsOnce() }
         }
     }
     com.personal.flowreader.ui.settings.SharingSettingsTab(
         prefs = prefs,
-        rules = rules,
+        routerRules = routerRules,
+        parseRules = parseRules,
         overlayAllowed = overlayOk,
         plugins = app.plugins.available.map {
             com.personal.flowreader.ui.settings.SharePluginOption(it.id, it.title)
         },
-        editorState = ruleEditor,
-        onShowQue = { enabled ->
-            prefs = prefs.copy(showQueInShareSheet = enabled)
-            app.appScope.launch {
-                app.settings.setShowQueInShareSheet(enabled)
-                com.personal.flowreader.share.ShareQueAliasController.setEnabled(app, enabled)
-            }
+        customTabs = customTabs.map {
+            com.personal.flowreader.ui.settings.SharePluginOption(it.id, it.title)
         },
+        editorState = ruleEditor,
         onManualOverride = { enabled ->
             val mode = if (enabled) {
                 com.personal.flowreader.share.ShareAskMode.Ask
@@ -363,9 +369,13 @@ private fun SharingSettingsHost(ruleEditor: com.personal.flowreader.ui.settings.
             }
             overlayOk = com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context)
         },
-        onSaveRules = { next ->
-            rules = next
-            app.appScope.launch { app.settings.setShareDomainRules(next) }
+        onSaveRouterRules = { next ->
+            routerRules = next
+            app.appScope.launch { app.settings.setShareRouterRules(next) }
+        },
+        onSaveParseRules = { next ->
+            parseRules = next
+            app.appScope.launch { app.settings.setShareParseRules(next) }
         },
     )
 }

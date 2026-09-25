@@ -153,6 +153,7 @@ class BookCatalog(private val app: FlowApp) {
         displayTitle: String? = null,
         inLibrary: Boolean,
         enqueue: Boolean,
+        libraryTabId: String = "",
     ): TextIngestResult {
         if (text.isBlank()) throw IllegalArgumentException("Nothing to share")
 
@@ -166,6 +167,7 @@ class BookCatalog(private val app: FlowApp) {
         val title = displayTitle?.trim()?.takeIf { it.isNotEmpty() }
             ?: SharedTextTitle.from(text, titleHint)
         val now = System.currentTimeMillis()
+        val shelf = libraryTabId.trim()
         val row = ProgressEntity(
             bookId = id,
             title = existing?.title?.takeIf { it.isNotBlank() } ?: title,
@@ -178,6 +180,11 @@ class BookCatalog(private val app: FlowApp) {
             updatedAt = now,
             inLibrary = (existing?.inLibrary == true) || inLibrary,
             readingProgress = existing?.readingProgress ?: 0f,
+            libraryTabId = if (inLibrary && shelf.isNotEmpty()) {
+                shelf
+            } else {
+                existing?.libraryTabId.orEmpty()
+            },
         )
         app.db.progress().upsert(row)
 
@@ -344,7 +351,7 @@ class BookCatalog(private val app: FlowApp) {
         return item
     }
 
-    suspend fun add(uri: Uri, source: BookSource): ProgressEntity {
+    suspend fun add(uri: Uri, source: BookSource, libraryTabId: String = ""): ProgressEntity {
         if (source == BookSource.Linked) persistReadAccess(uri)
         val tmp = File(app.cacheDir, "import-${UUID.randomUUID()}")
         try {
@@ -368,6 +375,7 @@ class BookCatalog(private val app: FlowApp) {
             }
 
             val title = ingestTitle(dest, ext, uri)
+            val shelf = libraryTabId.trim()
             val row = ProgressEntity(
                 bookId = id,
                 title = title,
@@ -380,12 +388,20 @@ class BookCatalog(private val app: FlowApp) {
                 updatedAt = System.currentTimeMillis(),
                 inLibrary = true,
                 readingProgress = existing?.readingProgress ?: 0f,
+                libraryTabId = shelf.ifEmpty { existing?.libraryTabId.orEmpty() },
             )
             app.db.progress().upsert(row)
             return row
         } finally {
             tmp.delete()
         }
+    }
+
+    suspend fun listTab(tabId: String): List<ProgressEntity> =
+        app.db.progress().libraryTab(tabId)
+
+    suspend fun clearLibraryTab(tabId: String) {
+        app.db.progress().clearLibraryTab(tabId)
     }
 
     fun materialize(row: ProgressEntity): File {

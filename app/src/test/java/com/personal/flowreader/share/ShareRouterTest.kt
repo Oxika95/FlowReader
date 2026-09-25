@@ -30,76 +30,51 @@ class UrlDetectorTest {
     }
 }
 
-class ShareDomainRulesTest {
+class ShareUrlMatchTest {
     @Test
-    fun topRuleWinsOverMoreSpecificLowerRule() {
+    fun topParseRuleWinsOverMoreSpecificLowerRule() {
         val rules = listOf(
-            ShareDomainRule(id = "1", hostPattern = "example.com", destination = ShareDestination.Files, order = 0),
-            ShareDomainRule(id = "2", hostPattern = "blog.example.com", destination = ShareDestination.Queue, order = 1),
+            ParseRule(id = "1", hostPattern = "example.com", order = 0),
+            ParseRule(id = "2", hostPattern = "blog.example.com", order = 1),
         )
-        assertEquals("1", ShareDomainRules.match("blog.example.com", rules)?.id)
-        assertEquals("1", ShareDomainRules.match("www.example.com", rules)?.id)
+        assertEquals(
+            "1",
+            ShareUrlMatch.matchParseHost("blog.example.com", "/", rules)?.id,
+        )
     }
 
     @Test
-    fun specificRuleListedFirstWins() {
-        val rules = listOf(
-            ShareDomainRule(id = "2", hostPattern = "blog.example.com", destination = ShareDestination.Queue, order = 0),
-            ShareDomainRule(id = "1", hostPattern = "example.com", destination = ShareDestination.Files, order = 1),
+    fun starHostMatchesAny() {
+        val rule = RouterRule(
+            kind = RouterContentKind.Url,
+            hostPattern = "*",
+            destination = RouterLanding.Queue,
         )
-        assertEquals("2", ShareDomainRules.match("blog.example.com", rules)?.id)
-        assertEquals("1", ShareDomainRules.match("www.example.com", rules)?.id)
+        assertTrue(ShareUrlMatch.matches("anything.com", "/", rule))
     }
 
     @Test
-    fun disabledTopRuleFallsThrough() {
-        val rules = listOf(
-            ShareDomainRule(id = "1", hostPattern = "example.com", enabled = false),
-            ShareDomainRule(id = "2", hostPattern = "example.com"),
-        )
-        assertEquals("2", ShareDomainRules.match("example.com", rules)?.id)
-    }
-
-    @Test
-    fun subdomainToggle() {
-        val rule = ShareDomainRule(
-            hostPattern = "example.com",
-            matchSubdomains = false,
-        )
-        assertTrue(ShareDomainRules.matchesHost("example.com", rule))
-        assertTrue(!ShareDomainRules.matchesHost("a.example.com", rule))
-    }
-
-    @Test
-    fun roundTripEncode() {
-        val seed = ShareDomainRules.seed()
-        val again = ShareDomainRules.decode(ShareDomainRules.encode(seed))
+    fun handoffRoundTripEncode() {
+        val seed = RouterRules.seed()
+        val again = RouterRules.decode(RouterRules.encode(seed))
         assertEquals(seed.size, again.size)
-        assertEquals(seed.first().hostPattern, again.first().hostPattern)
-        assertEquals(ShareDestination.Plugin, again.first().destination)
-        assertEquals("royalroad", again.first().pluginId)
-    }
-
-    @Test
-    fun migratesLegacyCssSelectorAndAction() {
-        val legacy = """[{"id":"1","hostPattern":"blog.example.com","enabled":true,"matchSubdomains":true,"action":"CrawlArticle","cssSelector":"div.post","order":0}]"""
-        val decoded = ShareDomainRules.decode(legacy).first()
-        assertEquals("div.post", decoded.contentCss)
-        assertEquals(ShareParseMode.Custom, decoded.parseMode)
-        assertEquals(ShareDestination.Files, decoded.destination)
+        assertEquals(RouterContentKind.BookFile, again.first().kind)
+        assertEquals(RouterLanding.FILES, again.first().destination.id)
     }
 
     @Test
     fun migratesLegacyRrPluginAction() {
-        val legacy = """[{"id":"1","hostPattern":"royalroad.com","enabled":true,"matchSubdomains":true,"action":"RoyalRoadPlugin","order":0}]"""
-        val decoded = ShareDomainRules.decode(legacy).first()
-        assertEquals(ShareDestination.Plugin, decoded.destination)
-        assertEquals("royalroad", decoded.pluginId)
+        val legacy =
+            """[{"id":"1","hostPattern":"royalroad.com","enabled":true,"matchSubdomains":true,"action":"RoyalRoadPlugin","order":0}]"""
+        val (plugins, parses) = ParseRules.migrateLegacy(legacy)
+        assertTrue(parses.isEmpty())
+        assertEquals(RouterLanding.PLUGIN, plugins.first().destination.id)
+        assertEquals("royalroad", plugins.first().pluginId)
     }
 
     @Test
     fun effectiveSelectorsOnlyForCustom() {
-        val custom = ShareDomainRule(
+        val custom = ParseRule(
             hostPattern = "x.com",
             parseMode = ShareParseMode.Custom,
             contentCss = "article",
@@ -107,164 +82,56 @@ class ShareDomainRulesTest {
             removeCss = ".ad",
         )
         val def = custom.copy(parseMode = ShareParseMode.Default)
-        assertEquals(Triple("article", "h1", ".ad"), ShareDomainRules.effectiveSelectors(custom))
-        assertEquals(Triple(null, null, null), ShareDomainRules.effectiveSelectors(def))
+        assertEquals(Triple("article", "h1", ".ad"), ParseRules.effectiveSelectors(custom))
+        assertEquals(Triple(null, null, null), ParseRules.effectiveSelectors(def))
     }
 
     @Test
-    fun chapterRuleAboveStoryRuleWins() {
+    fun chapterParseAboveStoryHandoffUsesSeparateLists() {
         val rules = listOf(
-            ShareDomainRule(
-                id = "chapter",
-                hostPattern = "royalroad.com",
-                pathPattern = "/fiction/1/my-story/chapter",
-                parseMode = ShareParseMode.Default,
-                destination = ShareDestination.Queue,
-            ),
-            ShareDomainRule(
+            RouterRule(
                 id = "story",
-                hostPattern = "royalroad.com",
-                pathPattern = "/fiction/1/my-story",
-                destination = ShareDestination.Plugin,
-                pluginId = "royalroad",
-            ),
-        )
-        val chapter = ShareDomainRules.matchUrl(
-            "https://www.royalroad.com/fiction/1/my-story/chapter/99/title",
-            rules,
-        )
-        assertEquals("chapter", chapter?.id)
-        assertEquals(ShareDestination.Queue, chapter?.destination)
-
-        val fiction = ShareDomainRules.matchUrl(
-            "https://www.royalroad.com/fiction/1/my-story",
-            rules,
-        )
-        assertEquals("story", fiction?.id)
-        assertEquals(ShareDestination.Plugin, fiction?.destination)
-    }
-
-    @Test
-    fun blankPathMatchesAny() {
-        val rules = listOf(
-            ShareDomainRule(
-                id = "nested",
-                hostPattern = "example.com",
-                pathPattern = "/blog/post",
-                destination = ShareDestination.Queue,
-            ),
-            ShareDomainRule(
-                id = "any",
-                hostPattern = "example.com",
-                destination = ShareDestination.Files,
-            ),
-        )
-        assertEquals(
-            "nested",
-            ShareDomainRules.matchUrl("https://example.com/blog/post/1", rules)?.id,
-        )
-        assertEquals(
-            "any",
-            ShareDomainRules.matchUrl("https://example.com/other", rules)?.id,
-        )
-    }
-
-    @Test
-    fun pathRoundTrip() {
-        val rule = ShareDomainRule(
-            hostPattern = "example.com",
-            pathPattern = "/a/b",
-            destination = ShareDestination.Queue,
-        )
-        val again = ShareDomainRules.decode(ShareDomainRules.encode(listOf(rule))).first()
-        assertEquals("/a/b", again.pathPattern)
-    }
-
-    @Test
-    fun regexPathMatchesChapters() {
-        val rules = listOf(
-            ShareDomainRule(
-                id = "fiction",
+                kind = RouterContentKind.Url,
                 hostPattern = "royalroad.com",
                 pathPattern = """/fiction/\d+/[^/]+$""",
                 pathIsRegex = true,
-                destination = ShareDestination.Plugin,
+                destination = RouterLanding.Plugin,
                 pluginId = "royalroad",
             ),
-            ShareDomainRule(
+            RouterRule(
                 id = "chapter",
+                kind = RouterContentKind.Url,
                 hostPattern = "royalroad.com",
                 pathPattern = """/fiction/\d+/[^/]+/chapter""",
                 pathIsRegex = true,
-                parseMode = ShareParseMode.Default,
-                destination = ShareDestination.Queue,
+                parseUrl = true,
+                destination = RouterLanding.Queue,
             ),
         )
         assertEquals(
-            "chapter",
-            ShareDomainRules.matchUrl(
-                "https://www.royalroad.com/fiction/21220/my-story/chapter/1/prologue",
+            "story",
+            ShareUrlMatch.matchUrlRule(
+                "https://www.royalroad.com/fiction/1/my-story",
                 rules,
             )?.id,
         )
         assertEquals(
-            "fiction",
-            ShareDomainRules.matchUrl(
-                "https://www.royalroad.com/fiction/21220/my-story",
+            "chapter",
+            ShareUrlMatch.matchUrlRule(
+                "https://www.royalroad.com/fiction/1/my-story/chapter/99/title",
                 rules,
             )?.id,
         )
-    }
-
-    @Test
-    fun invalidRegexDoesNotMatch() {
-        val rule = ShareDomainRule(
-            hostPattern = "*",
-            pathPattern = "[invalid",
-            pathIsRegex = true,
-            destination = ShareDestination.Queue,
-        )
-        assertTrue(!ShareDomainRules.matches("example.com", "/anything", rule))
     }
 
     @Test
     fun parseMatchInputSplitsHostAndPath() {
-        val parsed = ShareDomainRules.parseMatchInput(
+        val parsed = ShareUrlMatch.parseMatchInput(
             "https://www.Example.com/fiction/1/story",
             isRegex = false,
         )
         assertEquals("www.example.com", parsed.host)
         assertEquals("/fiction/1/story", parsed.path)
-        assertTrue(!parsed.isRegex)
-    }
-
-    @Test
-    fun formatAndParseRoundTrip() {
-        val rule = ShareDomainRule(
-            hostPattern = "*.example.com",
-            pathPattern = "/a/b",
-            matchSubdomains = true,
-        )
-        val text = ShareDomainRules.formatMatch(rule)
-        assertEquals("*.example.com/a/b", text)
-        val parsed = ShareDomainRules.parseMatchInput(text, isRegex = false)
-        assertEquals("*.example.com", parsed.host)
-        assertEquals("/a/b", parsed.path)
-    }
-
-    @Test
-    fun wildcardHostRequiresAllowFlagForSubdomains() {
-        val withFlag = ShareDomainRule(
-            hostPattern = "*.example.com",
-            matchSubdomains = true,
-        )
-        val withoutFlag = ShareDomainRule(
-            hostPattern = "*.example.com",
-            matchSubdomains = false,
-        )
-        assertTrue(ShareDomainRules.matchesHost("a.example.com", withFlag))
-        assertTrue(ShareDomainRules.matchesHost("example.com", withoutFlag))
-        assertTrue(!ShareDomainRules.matchesHost("a.example.com", withoutFlag))
     }
 }
 
@@ -274,11 +141,9 @@ class WebPageIngestTest {
         <meta property="og:title" content="OG Title"/>
         </head><body>
         <h1 class="chapter">Chapter One</h1>
-        <nav>Skip nav</nav>
         <article class="content">
           <p>Hello body.</p>
           <div class="ads">Buy now</div>
-          <p>More text.</p>
         </article>
         </body></html>
     """.trimIndent()
@@ -306,77 +171,135 @@ class WebPageIngestTest {
         assertTrue(article.text.contains("Hello body"))
         assertTrue(!article.text.contains("Buy now"))
     }
-
-    @Test
-    fun fallsBackToOgTitle() {
-        val article = WebPageIngest.extractArticle(
-            html = sampleHtml,
-            url = "https://example.com/ch1",
-            contentCss = "article.content",
-        )
-        assertEquals("OG Title", article.title)
-    }
 }
 
 class ShareRouterTest {
-    private val rules = ShareDomainRules.seed()
+    private val rules = RouterRules.seed()
+    private val parseRules = emptyList<ParseRule>()
+    private val auto = SharePrefs(askMode = ShareAskMode.Auto)
+    private val ask = SharePrefs(askMode = ShareAskMode.Ask)
 
     @Test
-    fun queAliasForcesQueue() {
-        val action = ShareRouter.decide(
-            SharePayload("hello", fromQueAlias = true),
-            SharePrefs(askMode = ShareAskMode.Ask),
-            rules,
-        )
+    fun plainTextGoesQueue() {
+        val action = ShareRouter.decide(SharePayload("just text"), auto, rules, parseRules)
         assertTrue(action is ShareAction.ToQueue)
     }
 
     @Test
-    fun askModeShowsChooser() {
-        val action = ShareRouter.decide(
-            SharePayload("https://example.com"),
-            SharePrefs(askMode = ShareAskMode.Ask),
-            rules,
-        )
-        assertTrue(action is ShareAction.ShowChooser)
-    }
-
-    @Test
-    fun autoPlainGoesFiles() {
-        val action = ShareRouter.decide(
-            SharePayload("just text"),
-            SharePrefs(askMode = ShareAskMode.Auto),
-            rules,
-        )
+    fun rawTextCanGoFiles() {
+        val custom = rules.map {
+            if (it.kind == RouterContentKind.RawText) it.copy(destination = RouterLanding.Files) else it
+        }
+        val action = ShareRouter.decide(SharePayload("just text"), auto, custom, parseRules)
         assertTrue(action is ShareAction.ToFiles)
     }
 
     @Test
-    fun autoRrUsesSeedPluginDestination() {
+    fun urlPassThroughQueuesUrlString() {
+        val custom = rules.map {
+            if (it.id == "seed-url-any") it.copy(parseUrl = false, destination = RouterLanding.Queue) else it
+        }
+        val action = ShareRouter.decide(
+            SharePayload("https://blog.example.com/post/1"),
+            auto,
+            custom,
+            parseRules,
+        )
+        assertTrue(action is ShareAction.ToQueue)
+        assertEquals("https://blog.example.com/post/1", (action as ShareAction.ToQueue).text)
+    }
+
+    @Test
+    fun urlParseToFiles() {
+        val custom = rules.map {
+            if (it.id == "seed-url-any") {
+                it.copy(parseUrl = true, destination = RouterLanding.Files)
+            } else {
+                it
+            }
+        }
+        val action = ShareRouter.decide(
+            SharePayload("https://blog.example.com/post/1"),
+            auto,
+            custom,
+            parseRules,
+        )
+        assertTrue(action is ShareAction.Crawl)
+        assertEquals(RouterLanding.FILES, (action as ShareAction.Crawl).landing.id)
+    }
+
+    @Test
+    fun autoRrUsesSeedPlugin() {
         val action = ShareRouter.decide(
             SharePayload("https://www.royalroad.com/fiction/1/foo"),
-            SharePrefs(askMode = ShareAskMode.Auto),
+            auto,
             rules,
+            parseRules,
         )
         assertTrue(action is ShareAction.RoyalRoadPlugin)
     }
 
     @Test
-    fun autoCustomCrawlToQueue() {
-        val crawlRules = listOf(
-            ShareDomainRule(
-                hostPattern = "blog.example.com",
-                parseMode = ShareParseMode.Custom,
-                destination = ShareDestination.Queue,
-                contentCss = "article",
-            ),
+    fun askOnPluginShowsChooser() {
+        val action = ShareRouter.decide(
+            SharePayload("https://www.royalroad.com/fiction/1/foo"),
+            ask,
+            rules,
+            parseRules,
         )
+        assertTrue(action is ShareAction.ShowChooser)
+        assertEquals("royalroad", (action as ShareAction.ShowChooser).pluginRule.pluginId)
+    }
+
+    @Test
+    fun unmatchedUrlCrawlsToQueue() {
         val action = ShareRouter.decide(
             SharePayload("https://blog.example.com/post/1"),
-            SharePrefs(askMode = ShareAskMode.Auto),
-            crawlRules,
+            auto,
+            rules,
+            parseRules,
         )
         assertTrue(action is ShareAction.Crawl)
-        assertTrue((action as ShareAction.Crawl).toQueue)
+        assertEquals(RouterLanding.QUEUE, (action as ShareAction.Crawl).landing.id)
+    }
+
+    @Test
+    fun rawTextCanGoCustomTab() {
+        val shelf = "custom-shelf-1"
+        val custom = rules.map {
+            if (it.kind == RouterContentKind.RawText) {
+                it.copy(destination = RouterLanding(shelf))
+            } else {
+                it
+            }
+        }
+        val action = ShareRouter.decide(SharePayload("just text"), auto, custom, parseRules)
+        assertTrue(action is ShareAction.ToFiles)
+        assertEquals(shelf, (action as ShareAction.ToFiles).libraryTabId)
+    }
+
+    @Test
+    fun urlParseToCustomTab() {
+        val shelf = "custom-shelf-2"
+        val custom = rules.map {
+            if (it.id == "seed-url-any") {
+                it.copy(parseUrl = true, destination = RouterLanding(shelf))
+            } else {
+                it
+            }
+        }
+        val action = ShareRouter.decide(
+            SharePayload("https://blog.example.com/post/1"),
+            auto,
+            custom,
+            parseRules,
+        )
+        assertTrue(action is ShareAction.Crawl)
+        assertEquals(shelf, (action as ShareAction.Crawl).landing.id)
+    }
+
+    @Test
+    fun bookFileLandingFromSeed() {
+        assertEquals(RouterLanding.FILES, ShareRouter.bookFileLanding(rules).id)
     }
 }

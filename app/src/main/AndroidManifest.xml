@@ -72,7 +72,7 @@
             android:taskAffinity=""
             android:launchMode="singleInstance" />
 
-        <!-- Share target: import shared text into the Files library. -->
+        <!-- Share target: route shared text through Import → Router. -->
         <activity-alias
             android:name=".ShareLibraryAlias"
             android:exported="true"
@@ -86,10 +86,11 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- Share target: append shared text to the Que playlist. -->
+        <!-- Legacy Flow-Queue alias; disabled at runtime. Kept so upgrades can turn it off. -->
         <activity-alias
             android:name=".ShareQueAlias"
             android:exported="true"
+            android:enabled="false"
             android:icon="@drawable/ic_launcher"
             android:label="@string/share_que_label"
             android:targetActivity=".share.ShareIngressActivity">

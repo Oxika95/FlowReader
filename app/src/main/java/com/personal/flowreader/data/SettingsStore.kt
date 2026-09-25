@@ -9,11 +9,15 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.personal.flowreader.share.ParseRule
+import com.personal.flowreader.share.ParseRules
+import com.personal.flowreader.share.RouterRule
+import com.personal.flowreader.share.RouterRules
 import com.personal.flowreader.share.ShareAskMode
-import com.personal.flowreader.share.ShareDomainRule
-import com.personal.flowreader.share.ShareDomainRules
 import com.personal.flowreader.share.SharePrefs
 import kotlinx.coroutines.flow.first
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.abs
 import kotlin.math.log10
 import kotlin.math.pow
@@ -310,6 +314,15 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_ENABLED_PLUGINS] = ids.sorted().joinToString(",") }
     }
 
+    suspend fun customLibraryTabsOnce(): List<CustomLibraryTab> {
+        val raw = store.data.first()[KEY_CUSTOM_TABS]
+        return decodeCustomTabs(raw)
+    }
+
+    suspend fun setCustomLibraryTabs(tabs: List<CustomLibraryTab>) {
+        store.edit { it[KEY_CUSTOM_TABS] = encodeCustomTabs(tabs) }
+    }
+
     suspend fun notificationsAskedOnce(): Boolean =
         store.data.first()[KEY_NOTIFICATIONS_ASKED] ?: false
 
@@ -320,30 +333,59 @@ class SettingsStore(context: Context) {
     suspend fun shareOnce(): SharePrefs {
         val p = store.data.first()
         return SharePrefs(
-            showQueInShareSheet = p[KEY_SHARE_SHOW_QUE] ?: true,
             askMode = runCatching {
-                ShareAskMode.valueOf(p[KEY_SHARE_ASK_MODE] ?: ShareAskMode.Ask.name)
-            }.getOrDefault(ShareAskMode.Ask),
+                ShareAskMode.valueOf(p[KEY_SHARE_ASK_MODE] ?: ShareAskMode.Auto.name)
+            }.getOrDefault(ShareAskMode.Auto),
         )
-    }
-
-    suspend fun setShowQueInShareSheet(enabled: Boolean) {
-        store.edit { it[KEY_SHARE_SHOW_QUE] = enabled }
     }
 
     suspend fun setShareAskMode(mode: ShareAskMode) {
         store.edit { it[KEY_SHARE_ASK_MODE] = mode.name }
     }
 
-    suspend fun shareDomainRulesOnce(): List<ShareDomainRule> {
-        val raw = store.data.first()[KEY_SHARE_DOMAIN_RULES]
-        if (raw.isNullOrBlank()) return ShareDomainRules.seed()
-        val decoded = ShareDomainRules.decode(raw)
-        return decoded.ifEmpty { ShareDomainRules.seed() }
+    /**
+     * Router rules (content kind → match/parse → destination).
+     * Migrates legacy handoffs + route defaults once.
+     */
+    suspend fun shareRouterRulesOnce(): List<RouterRule> {
+        val p = store.data.first()
+        val raw = p[KEY_SHARE_ROUTER_RULES]
+        if (!raw.isNullOrBlank()) {
+            val decoded = RouterRules.decode(raw)
+            if (decoded.isNotEmpty()) return decoded
+        }
+        val migrated = RouterRules.migrateFromLegacy(
+            handoffJson = p[KEY_SHARE_PLUGIN_HANDOFFS],
+            bookDest = p[KEY_SHARE_ROUTE_BOOK],
+            textDest = p[KEY_SHARE_ROUTE_TEXT],
+            urlDest = p[KEY_SHARE_ROUTE_URL],
+            legacyDomainJson = p[KEY_SHARE_DOMAIN_RULES],
+        )
+        store.edit { it[KEY_SHARE_ROUTER_RULES] = RouterRules.encode(migrated) }
+        return migrated
     }
 
-    suspend fun setShareDomainRules(rules: List<ShareDomainRule>) {
-        store.edit { it[KEY_SHARE_DOMAIN_RULES] = ShareDomainRules.encode(rules) }
+    suspend fun setShareRouterRules(rules: List<RouterRule>) {
+        store.edit { it[KEY_SHARE_ROUTER_RULES] = RouterRules.encode(rules) }
+    }
+
+    suspend fun shareParseRulesOnce(): List<ParseRule> {
+        val p = store.data.first()
+        val raw = p[KEY_SHARE_PARSE_RULES]
+        if (!raw.isNullOrBlank()) {
+            return ParseRules.decode(raw)
+        }
+        val legacy = p[KEY_SHARE_DOMAIN_RULES]
+        if (!legacy.isNullOrBlank()) {
+            val (_, parses) = ParseRules.migrateLegacy(legacy)
+            store.edit { it[KEY_SHARE_PARSE_RULES] = ParseRules.encode(parses) }
+            return parses
+        }
+        return emptyList()
+    }
+
+    suspend fun setShareParseRules(rules: List<ParseRule>) {
+        store.edit { it[KEY_SHARE_PARSE_RULES] = ParseRules.encode(rules) }
     }
 
     companion object {
@@ -378,10 +420,16 @@ class SettingsStore(context: Context) {
         private val KEY_LIBRARY_VIEW = stringPreferencesKey("library_view")
         private val KEY_LIBRARY_TAB = stringPreferencesKey("library_tab")
         private val KEY_ENABLED_PLUGINS = stringPreferencesKey("enabled_plugins")
+        private val KEY_CUSTOM_TABS = stringPreferencesKey("custom_library_tabs")
         private val KEY_NOTIFICATIONS_ASKED = booleanPreferencesKey("notifications_asked")
-        private val KEY_SHARE_SHOW_QUE = booleanPreferencesKey("share_show_que")
         private val KEY_SHARE_ASK_MODE = stringPreferencesKey("share_ask_mode")
-        private val KEY_SHARE_DOMAIN_RULES = stringPreferencesKey("share_domain_rules")
+        private val KEY_SHARE_ROUTE_BOOK = stringPreferencesKey("share_route_book") // legacy
+        private val KEY_SHARE_ROUTE_TEXT = stringPreferencesKey("share_route_text") // legacy
+        private val KEY_SHARE_ROUTE_URL = stringPreferencesKey("share_route_url") // legacy
+        private val KEY_SHARE_DOMAIN_RULES = stringPreferencesKey("share_domain_rules") // legacy
+        private val KEY_SHARE_PLUGIN_HANDOFFS = stringPreferencesKey("share_plugin_handoffs") // legacy
+        private val KEY_SHARE_ROUTER_RULES = stringPreferencesKey("share_router_rules")
+        private val KEY_SHARE_PARSE_RULES = stringPreferencesKey("share_parse_rules")
 
         private fun decodeIdSet(raw: String?): Set<String> =
             raw?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
@@ -448,5 +496,40 @@ class SettingsStore(context: Context) {
                 this[KEY_TTS_CLIP_FLEX_CHARS] ?: TtsPrefs.DEFAULT_CLIP_FLEX_CHARS,
             ),
         )
+
+        private fun encodeCustomTabs(tabs: List<CustomLibraryTab>): String {
+            val arr = JSONArray()
+            tabs.sortedBy { it.order }.forEach { tab ->
+                arr.put(
+                    JSONObject()
+                        .put("id", tab.id)
+                        .put("title", tab.title)
+                        .put("order", tab.order),
+                )
+            }
+            return arr.toString()
+        }
+
+        private fun decodeCustomTabs(raw: String?): List<CustomLibraryTab> {
+            if (raw.isNullOrBlank()) return emptyList()
+            return runCatching {
+                val arr = JSONArray(raw)
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        val id = o.optString("id").trim()
+                        val title = o.optString("title").trim()
+                        if (id.isEmpty() || title.isEmpty()) continue
+                        add(
+                            CustomLibraryTab(
+                                id = id,
+                                title = title,
+                                order = o.optInt("order", i),
+                            ),
+                        )
+                    }
+                }.sortedBy { it.order }
+            }.getOrDefault(emptyList())
+        }
     }
 }

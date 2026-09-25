@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.personal.flowreader.share.RouterLanding
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.ui.theme.FlowTheme
@@ -36,7 +37,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Receives share aliases. Routes via [ShareRouter]; shows floating overlay or in-app chooser.
+ * Receives share. Routes via [ShareRouter]; shows floating overlay or in-app chooser
+ * only when Manual Override asks Plugin vs Parse for a handoff URL.
  */
 class ShareIngressActivity : ComponentActivity() {
     private var overlay: ShareOverlayController? = null
@@ -45,36 +47,33 @@ class ShareIngressActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val text = intent?.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
-        val fromQue = intent?.component?.className?.endsWith("ShareQueAlias") == true
         if (text.isEmpty()) {
             finish()
             return
         }
-        val payload = SharePayload(text = text, fromQueAlias = fromQue)
+        val payload = SharePayload(text = text)
         setContent {
             FlowTheme(mode = ThemeMode.Oled) {
-                var showFallback by remember { mutableStateOf(false) }
+                var fallback by remember { mutableStateOf<ShareAction.ShowChooser?>(null) }
                 var busy by remember { mutableStateOf(true) }
                 LaunchedEffect(payload) {
                     val app = application as FlowApp
                     val prefs = withContext(Dispatchers.IO) { app.settings.shareOnce() }
-                    val rules = withContext(Dispatchers.IO) { app.settings.shareDomainRulesOnce() }
-                    val action = ShareRouter.decide(payload, prefs, rules)
+                    val handoffs = withContext(Dispatchers.IO) { app.settings.shareRouterRulesOnce() }
+                    val parseRules = withContext(Dispatchers.IO) { app.settings.shareParseRulesOnce() }
+                    val action = ShareRouter.decide(payload, prefs, handoffs, parseRules)
                     busy = false
                     when (action) {
                         is ShareAction.ShowChooser -> {
                             val ctrl = ShareOverlayController(applicationContext)
                             overlay = ctrl
                             val shown = ctrl.show(
-                                payload = payload,
+                                chooser = action,
                                 onPick = { picked -> dispatch(picked); finish() },
                                 onCancel = { finish() },
                             )
-                            if (!shown) showFallback = true
-                            else {
-                                // Keep activity alive under overlay briefly, then move back.
-                                moveTaskToBack(true)
-                            }
+                            if (!shown) fallback = action
+                            else moveTaskToBack(true)
                         }
                         else -> {
                             dispatch(action)
@@ -82,7 +81,8 @@ class ShareIngressActivity : ComponentActivity() {
                         }
                     }
                 }
-                if (showFallback) {
+                val chooser = fallback
+                if (chooser != null) {
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -90,7 +90,7 @@ class ShareIngressActivity : ComponentActivity() {
                         contentAlignment = Alignment.Center,
                     ) {
                         FallbackChooser(
-                            payload = payload,
+                            chooser = chooser,
                             onPick = { dispatch(it); finish() },
                             onCancel = { finish() },
                         )
@@ -115,12 +115,11 @@ class ShareIngressActivity : ComponentActivity() {
 
 @Composable
 private fun FallbackChooser(
-    payload: SharePayload,
+    chooser: ShareAction.ShowChooser,
     onPick: (ShareAction) -> Unit,
     onCancel: () -> Unit,
 ) {
-    val url = payload.url
-    val rr = ShareRouter.isRoyalRoadHost(UrlDetector.hostOf(url.orEmpty()))
+    val url = chooser.payload.url ?: return
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -140,42 +139,27 @@ private fun FallbackChooser(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                url ?: payload.text.take(120),
+                url,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 3,
             )
-            if (rr && url != null) {
-                Button(
-                    onClick = { onPick(ShareAction.RoyalRoadPlugin(url)) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Plugin") }
-                OutlinedButton(
-                    onClick = { onPick(ShareAction.RoyalRoadSimple(url, toQueue = true)) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Queue") }
-            } else {
-                Button(
-                    onClick = { onPick(ShareAction.ToFiles(payload.text)) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Files") }
-                OutlinedButton(
-                    onClick = { onPick(ShareAction.ToQueue(payload.text)) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Queue") }
-                if (url != null) {
-                    OutlinedButton(
-                        onClick = {
-                            onPick(
-                                ShareAction.Crawl(
-                                    url,
-                                    ShareDomainRule(hostPattern = UrlDetector.hostOf(url).orEmpty()),
-                                    toQueue = false,
-                                ),
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Parse page") }
-                }
+            Button(
+                onClick = { onPick(ShareAction.RoyalRoadPlugin(url)) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Plugin") }
+            OutlinedButton(
+                onClick = { onPick(chooser.urlFallback) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    when (val fb = chooser.urlFallback) {
+                        is ShareAction.Crawl ->
+                            if (fb.landing.id == RouterLanding.FILES) "Parse → Files" else "Parse → Queue"
+                        is ShareAction.ToQueue -> "Queue URL"
+                        is ShareAction.ToFiles -> "Files"
+                        else -> "URL default"
+                    },
+                )
             }
             TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
         }

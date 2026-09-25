@@ -45,6 +45,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -70,6 +71,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.personal.flowreader.data.BookSource
+import com.personal.flowreader.data.CustomLibraryTab
 import com.personal.flowreader.data.FileAccessAdvice
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
@@ -168,6 +170,7 @@ fun LibraryScreen(
             LibraryTopBar(
                 tab = ui.tab,
                 plugins = vm.plugins.enabled(ui.enabledPluginIds),
+                customTabs = ui.customTabs,
                 viewMode = ui.viewMode,
                 inset = libraryGutter,
                 addTabOpen = addTabOpen,
@@ -183,6 +186,16 @@ fun LibraryScreen(
                     busy = ui.busy,
                     inset = libraryGutter,
                     emptyMessage = "No books yet.\nTap + to add an EPUB or TXT.",
+                    onOpen = onOpenBook,
+                    onLongOpen = { bookId -> filesSplashId = bookId },
+                    modifier = Modifier.weight(1f),
+                )
+                is LibraryTabId.Custom -> LibraryBooksPane(
+                    books = ui.books,
+                    viewMode = ui.viewMode,
+                    busy = ui.busy,
+                    inset = libraryGutter,
+                    emptyMessage = "Nothing on this shelf yet.\nTap + to add an EPUB or TXT.",
                     onOpen = onOpenBook,
                     onLongOpen = { bookId -> filesSplashId = bookId },
                     modifier = Modifier.weight(1f),
@@ -224,10 +237,10 @@ fun LibraryScreen(
             }
         }
 
-        if (ui.tab == LibraryTabId.Files &&
+        val showLibraryFab = (ui.tab == LibraryTabId.Files || ui.tab is LibraryTabId.Custom) &&
             !settingsOpen && !addDialog && !addTabOpen && filterEditor == null &&
             filesSplashId == null
-        ) {
+        if (showLibraryFab) {
             FilledIconButton(
                 onClick = { if (!ui.busy) addDialog = true },
                 modifier = Modifier
@@ -296,9 +309,17 @@ fun LibraryScreen(
             visible = addTabOpen,
             plugins = vm.plugins.available,
             enabledIds = ui.enabledPluginIds,
+            customTabs = ui.customTabs,
             onSetEnabled = { id, enabled ->
                 vm.setPluginEnabled(id, enabled)
                 addTabOpen = false
+            },
+            onAddCustom = { title ->
+                vm.addCustomTab(title)
+                addTabOpen = false
+            },
+            onRemoveCustom = { id ->
+                vm.removeCustomTab(id)
             },
             onDismiss = { addTabOpen = false },
         )
@@ -427,6 +448,7 @@ fun LibraryScreen(
 private fun LibraryTopBar(
     tab: LibraryTabId,
     plugins: List<LibrarySourcePlugin>,
+    customTabs: List<CustomLibraryTab>,
     viewMode: LibraryViewMode,
     inset: Dp,
     addTabOpen: Boolean,
@@ -438,6 +460,9 @@ private fun LibraryTopBar(
     val tabs = buildList {
         add(LibraryTabId.Files to "Files")
         add(LibraryTabId.Que to "Queue")
+        customTabs.sortedBy { it.order }.forEach {
+            add(LibraryTabId.Custom(it.id) to it.title)
+        }
         plugins.forEach { add(LibraryTabId.Plugin(it.id) to it.title) }
     }
     Column(Modifier.fillMaxWidth()) {
@@ -453,7 +478,10 @@ private fun LibraryTopBar(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
-            if (tab == LibraryTabId.Files || tab is LibraryTabId.Plugin) {
+            if (tab == LibraryTabId.Files ||
+                tab is LibraryTabId.Custom ||
+                tab is LibraryTabId.Plugin
+            ) {
                 IconButton(onClick = { onViewMode(LibraryViewMode.List) }) {
                     Icon(
                         Icons.AutoMirrored.Filled.ViewList,
@@ -541,9 +569,13 @@ private fun AddTabOverlay(
     visible: Boolean,
     plugins: List<LibrarySourcePlugin>,
     enabledIds: Set<String>,
+    customTabs: List<CustomLibraryTab>,
     onSetEnabled: (String, Boolean) -> Unit,
+    onAddCustom: (String) -> Unit,
+    onRemoveCustom: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var customTitle by remember(visible) { mutableStateOf("") }
     ReaderModalScaffold(
         visible = visible,
         contentPadding = PaddingValues(
@@ -565,6 +597,65 @@ private fun AddTabOverlay(
             ),
             verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
         ) {
+            Text(
+                "Custom shelf",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Create a shelf and choose it as a Router destination under Import settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = customTitle,
+                onValueChange = { customTitle = it },
+                singleLine = true,
+                label = { Text("Tab name") },
+                shape = FlowTokens.PanelShape,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(
+                    onClick = {
+                        val name = customTitle.trim()
+                        if (name.isEmpty()) return@TextButton
+                        onAddCustom(name)
+                        customTitle = ""
+                    },
+                    enabled = customTitle.trim().isNotEmpty(),
+                ) {
+                    Text("Add shelf")
+                }
+            }
+            if (customTabs.isNotEmpty()) {
+                customTabs.sortedBy { it.order }.forEach { tab ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = FlowTokens.Space.XS),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            tab.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { onRemoveCustom(tab.id) }) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Remove ${tab.title}",
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = FlowTokens.Space.S))
+
             Text(
                 "Plugins",
                 style = MaterialTheme.typography.titleMedium,
@@ -672,7 +763,7 @@ private fun QueTab(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "Queue is empty.\nPaste from the clipboard or share text to Flow-Queue.",
+                    "Queue is empty.\nPaste from the clipboard or share text to Flow Reader.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

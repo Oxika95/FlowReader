@@ -207,7 +207,7 @@ enum class LibraryViewMode {
     Shelf,
 }
 
-/** Selected library tab, including plugin ids. Persisted as [persistKey]. */
+/** Selected library tab, including plugin ids and user custom shelves. */
 sealed class LibraryTabId {
     abstract val persistKey: String
 
@@ -223,18 +223,37 @@ sealed class LibraryTabId {
         override val persistKey: String = pluginId
     }
 
+    data class Custom(val tabId: String) : LibraryTabId() {
+        override val persistKey: String = tabId
+    }
+
     companion object {
         const val ID_FILES = "files"
         const val ID_QUE = "que"
 
-        fun parse(raw: String?, knownPluginIds: Set<String>): LibraryTabId =
+        fun parse(
+            raw: String?,
+            knownPluginIds: Set<String>,
+            knownCustomIds: Set<String> = emptySet(),
+        ): LibraryTabId =
             when (raw) {
                 null, ID_FILES, "Files" -> Files
                 ID_QUE, "Que" -> Que
-                else -> if (raw in knownPluginIds) Plugin(raw) else Files
+                else -> when {
+                    raw in knownPluginIds -> Plugin(raw)
+                    raw in knownCustomIds -> Custom(raw)
+                    else -> Files
+                }
             }
     }
 }
+
+/** User-created library shelf (sorting destination for the Import router). */
+data class CustomLibraryTab(
+    val id: String,
+    val title: String,
+    val order: Int = 0,
+)
 
 /** Result of sharing text into the library and/or Que. */
 data class TextIngestResult(

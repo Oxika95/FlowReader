@@ -38,7 +38,8 @@ object ShareDispatch {
     const val EXTRA_TEXT = "share_text"
     const val EXTRA_TITLE = "share_title"
     const val EXTRA_URL = "share_url"
-    const val EXTRA_TO_QUE = "share_to_que"
+    const val EXTRA_LANDING = "share_landing"
+    const val EXTRA_LIBRARY_TAB = "share_library_tab"
     const val EXTRA_SELECTOR = "share_selector"
     const val EXTRA_TITLE_CSS = "share_title_css"
     const val EXTRA_REMOVE_CSS = "share_remove_css"
@@ -47,7 +48,6 @@ object ShareDispatch {
     const val KIND_QUEUE = "queue"
     const val KIND_CRAWL = "crawl"
     const val KIND_RR_PLUGIN = "rr_plugin"
-    const val KIND_RR_SIMPLE = "rr_simple"
 
     fun intentFor(context: Context, action: ShareAction): Intent {
         val i = Intent(context, MainActivity::class.java).apply {
@@ -63,6 +63,9 @@ object ShareDispatch {
                 i.putExtra(EXTRA_KIND, KIND_FILES)
                 i.putExtra(EXTRA_TEXT, action.text)
                 action.titleHint?.let { i.putExtra(EXTRA_TITLE, it) }
+                if (action.libraryTabId.isNotBlank()) {
+                    i.putExtra(EXTRA_LIBRARY_TAB, action.libraryTabId)
+                }
             }
             is ShareAction.ToQueue -> {
                 i.putExtra(EXTRA_KIND, KIND_QUEUE)
@@ -72,8 +75,8 @@ object ShareDispatch {
             is ShareAction.Crawl -> {
                 i.putExtra(EXTRA_KIND, KIND_CRAWL)
                 i.putExtra(EXTRA_URL, action.url)
-                i.putExtra(EXTRA_TO_QUE, action.toQueue)
-                val (content, title, remove) = ShareDomainRules.effectiveSelectors(action.rule)
+                i.putExtra(EXTRA_LANDING, action.landing.id)
+                val (content, title, remove) = ParseRules.effectiveSelectors(action.rule)
                 content?.let { i.putExtra(EXTRA_SELECTOR, it) }
                 title?.let { i.putExtra(EXTRA_TITLE_CSS, it) }
                 remove?.let { i.putExtra(EXTRA_REMOVE_CSS, it) }
@@ -81,11 +84,6 @@ object ShareDispatch {
             is ShareAction.RoyalRoadPlugin -> {
                 i.putExtra(EXTRA_KIND, KIND_RR_PLUGIN)
                 i.putExtra(EXTRA_URL, action.url)
-            }
-            is ShareAction.RoyalRoadSimple -> {
-                i.putExtra(EXTRA_KIND, KIND_RR_SIMPLE)
-                i.putExtra(EXTRA_URL, action.url)
-                i.putExtra(EXTRA_TO_QUE, action.toQueue)
             }
             is ShareAction.ShowChooser -> error("Chooser is not executable")
         }
@@ -97,7 +95,11 @@ object ShareDispatch {
 class ShareOverlayController(private val context: Context) {
     private var root: LinearLayout? = null
 
-    fun show(payload: SharePayload, onPick: (ShareAction) -> Unit, onCancel: () -> Unit): Boolean {
+    fun show(
+        chooser: ShareAction.ShowChooser,
+        onPick: (ShareAction) -> Unit,
+        onCancel: () -> Unit,
+    ): Boolean {
         dismiss()
         if (!ShareOverlayPermission.canDrawOverlays(context)) return false
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -119,8 +121,8 @@ class ShareOverlayController(private val context: Context) {
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED
         }
 
-        val url = payload.url
-        val rr = ShareRouter.isRoyalRoadHost(UrlDetector.hostOf(url.orEmpty()))
+        val payload = chooser.payload
+        val url = payload.url ?: return false
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
@@ -166,28 +168,18 @@ class ShareOverlayController(private val context: Context) {
             )
         }
 
-        addTitle("Send to Flow Reader")
-        addTitle((url ?: payload.text).take(140), sizeSp = 13f, color = 0xFFCAC4D0.toInt())
-        if (rr && url != null) {
-            addBtn("Plugin") { onPick(ShareAction.RoyalRoadPlugin(url)) }
-            addBtn("Queue", outline = true) {
-                onPick(ShareAction.RoyalRoadSimple(url, toQueue = true))
-            }
-        } else {
-            addBtn("Files") { onPick(ShareAction.ToFiles(payload.text)) }
-            addBtn("Queue", outline = true) { onPick(ShareAction.ToQueue(payload.text)) }
-            if (url != null) {
-                addBtn("Parse page", outline = true) {
-                    onPick(
-                        ShareAction.Crawl(
-                            url,
-                            ShareDomainRule(hostPattern = UrlDetector.hostOf(url).orEmpty()),
-                            toQueue = false,
-                        ),
-                    )
-                }
-            }
+        val fallbackLabel = when (val fb = chooser.urlFallback) {
+            is ShareAction.Crawl ->
+                if (fb.landing.id == RouterLanding.FILES) "Parse → Files" else "Parse → Queue"
+            is ShareAction.ToQueue -> "Queue URL"
+            is ShareAction.ToFiles -> "Files"
+            else -> "URL default"
         }
+
+        addTitle("Send to Flow Reader")
+        addTitle(url.take(140), sizeSp = 13f, color = 0xFFCAC4D0.toInt())
+        addBtn("Plugin") { onPick(ShareAction.RoyalRoadPlugin(url)) }
+        addBtn(fallbackLabel, outline = true) { onPick(chooser.urlFallback) }
         addBtn("Cancel", outline = true) { onCancel() }
 
         val outer = LinearLayout(context).apply {

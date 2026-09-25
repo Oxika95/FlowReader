@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.BookSource
+import com.personal.flowreader.data.CustomLibraryTab
 import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
@@ -18,9 +19,16 @@ import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.library.plugin.LibraryPluginRegistry
 import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
+import com.personal.flowreader.share.ParseRules
+import com.personal.flowreader.share.RouterLanding
+import com.personal.flowreader.share.ShareAction
+import com.personal.flowreader.share.ShareAskMode
 import com.personal.flowreader.share.ShareDispatch
+import com.personal.flowreader.share.SharePayload
+import com.personal.flowreader.share.ShareRouter
 import com.personal.flowreader.share.WebPageIngest
 import com.personal.flowreader.ui.reader.FilterPreviewMode
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +43,7 @@ data class LibraryUi(
     val filtersGlobal: List<FilterRule> = emptyList(),
     val filtersGroups: List<FilterRule> = emptyList(),
     val enabledPluginIds: Set<String> = emptySet(),
+    val customTabs: List<CustomLibraryTab> = emptyList(),
     val busy: Boolean = false,
     val message: String? = null,
     val error: String? = null,
@@ -107,14 +116,17 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             val mode = flow.settings.libraryViewModeOnce()
             val enabled = flow.settings.enabledPluginIdsOnce()
                 .intersect(flow.plugins.pluginIds)
+            val customTabs = flow.settings.customLibraryTabsOnce()
             val tab = LibraryTabId.parse(
                 flow.settings.libraryTabIdOnce(),
                 enabled,
+                customTabs.map { it.id }.toSet(),
             )
             _ui.value = _ui.value.copy(
                 viewMode = mode,
                 tab = tab,
                 enabledPluginIds = enabled,
+                customTabs = customTabs,
             )
             refresh()
         }
@@ -122,7 +134,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() {
         viewModelScope.launch {
-            val books = withContext(Dispatchers.IO) { flow.catalog.list() }
+            val tab = _ui.value.tab
+            val books = withContext(Dispatchers.IO) { booksForTab(tab) }
             val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
             val global = flow.settings.globalFiltersOnce()
             val groups = flow.settings.groupFiltersOnce()
@@ -135,9 +148,73 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private suspend fun booksForTab(tab: LibraryTabId): List<ProgressEntity> =
+        when (tab) {
+            is LibraryTabId.Custom -> flow.catalog.listTab(tab.tabId)
+            else -> flow.catalog.list()
+        }
+
     fun setTab(tab: LibraryTabId) {
         _ui.value = _ui.value.copy(tab = tab)
-        viewModelScope.launch { flow.settings.setLibraryTabId(tab.persistKey) }
+        viewModelScope.launch {
+            flow.settings.setLibraryTabId(tab.persistKey)
+            val books = withContext(Dispatchers.IO) { booksForTab(tab) }
+            _ui.value = _ui.value.copy(books = books)
+        }
+    }
+
+    fun addCustomTab(title: String) {
+        val name = title.trim()
+        if (name.isEmpty()) return
+        viewModelScope.launch {
+            val id = UUID.randomUUID().toString()
+            val next = _ui.value.customTabs + CustomLibraryTab(
+                id = id,
+                title = name,
+                order = _ui.value.customTabs.size,
+            )
+            withContext(Dispatchers.IO) { flow.settings.setCustomLibraryTabs(next) }
+            val tab = LibraryTabId.Custom(id)
+            withContext(Dispatchers.IO) { flow.settings.setLibraryTabId(tab.persistKey) }
+            _ui.value = _ui.value.copy(
+                customTabs = next,
+                tab = tab,
+                books = emptyList(),
+                message = "Added $name",
+            )
+        }
+    }
+
+    fun removeCustomTab(tabId: String) {
+        viewModelScope.launch {
+            val next = _ui.value.customTabs.filterNot { it.id == tabId }
+                .mapIndexed { index, tab -> tab.copy(order = index) }
+            withContext(Dispatchers.IO) {
+                flow.catalog.clearLibraryTab(tabId)
+                flow.settings.setCustomLibraryTabs(next)
+                val rules = flow.settings.shareRouterRulesOnce().map { rule ->
+                    if (rule.destination.id == tabId) {
+                        rule.copy(destination = RouterLanding.Files)
+                    } else {
+                        rule
+                    }
+                }
+                flow.settings.setShareRouterRules(rules)
+            }
+            val tab = when (val cur = _ui.value.tab) {
+                is LibraryTabId.Custom ->
+                    if (cur.tabId == tabId) LibraryTabId.Files else cur
+                else -> cur
+            }
+            withContext(Dispatchers.IO) { flow.settings.setLibraryTabId(tab.persistKey) }
+            val books = withContext(Dispatchers.IO) { booksForTab(tab) }
+            _ui.value = _ui.value.copy(
+                customTabs = next,
+                tab = tab,
+                books = books,
+                message = "Removed tab",
+            )
+        }
     }
 
     fun setPluginEnabled(id: String, enabled: Boolean) {
@@ -194,7 +271,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     return true
                 }
                 // Fallback if something still delivers text SEND to MainActivity.
-                ingestSharedText(text, toQue = intent.component?.className?.endsWith("ShareQueAlias") == true)
+                routeImportText(text)
                 return true
             }
             else -> return false
@@ -210,15 +287,17 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     ShareDispatch.KIND_FILES -> {
                         val text = intent.getStringExtra(ShareDispatch.EXTRA_TEXT).orEmpty()
                         val title = intent.getStringExtra(ShareDispatch.EXTRA_TITLE)
+                        val shelf = intent.getStringExtra(ShareDispatch.EXTRA_LIBRARY_TAB).orEmpty()
                         val result = withContext(Dispatchers.IO) {
                             flow.catalog.addText(
                                 text = text,
                                 titleHint = title,
                                 inLibrary = true,
                                 enqueue = false,
+                                libraryTabId = shelf,
                             )
                         }
-                        refreshAfterIngest(LibraryTabId.Files, "Added ${result.progress.title}")
+                        refreshAfterIngest(tabForShelf(shelf), "Added ${result.progress.title}")
                     }
                     ShareDispatch.KIND_QUEUE -> {
                         val text = intent.getStringExtra(ShareDispatch.EXTRA_TEXT).orEmpty()
@@ -235,7 +314,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     ShareDispatch.KIND_CRAWL -> {
                         val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
-                        val toQue = intent.getBooleanExtra(ShareDispatch.EXTRA_TO_QUE, false)
+                        val landing = RouterLanding.parse(
+                            intent.getStringExtra(ShareDispatch.EXTRA_LANDING),
+                            RouterLanding.Queue,
+                        )
                         val contentCss = intent.getStringExtra(ShareDispatch.EXTRA_SELECTOR)
                         val titleCss = intent.getStringExtra(ShareDispatch.EXTRA_TITLE_CSS)
                         val removeCss = intent.getStringExtra(ShareDispatch.EXTRA_REMOVE_CSS)
@@ -243,15 +325,29 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                             WebPageIngest.fetchArticle(url, contentCss, titleCss, removeCss)
                         }
                         val result = withContext(Dispatchers.IO) {
-                            flow.catalog.addText(
-                                text = article.text,
-                                titleHint = article.title,
-                                inLibrary = !toQue,
-                                enqueue = toQue,
-                            )
+                            if (landing.isQueue) {
+                                flow.catalog.addText(
+                                    text = article.text,
+                                    titleHint = article.title,
+                                    inLibrary = false,
+                                    enqueue = true,
+                                )
+                            } else {
+                                flow.catalog.addText(
+                                    text = article.text,
+                                    titleHint = article.title,
+                                    inLibrary = true,
+                                    enqueue = false,
+                                    libraryTabId = landing.libraryShelfId,
+                                )
+                            }
                         }
-                        val tab = if (toQue) LibraryTabId.Que else LibraryTabId.Files
-                        val msg = if (toQue) "Queued ${result.progress.title}" else "Added ${result.progress.title}"
+                        val tab = tabForLanding(landing)
+                        val msg = if (landing.isQueue) {
+                            "Queued ${result.progress.title}"
+                        } else {
+                            "Added ${result.progress.title}"
+                        }
                         refreshAfterIngest(tab, msg)
                     }
                     ShareDispatch.KIND_RR_PLUGIN -> {
@@ -271,28 +367,6 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                             message = "Opening Royal Road…",
                         )
                     }
-                    ShareDispatch.KIND_RR_SIMPLE -> {
-                        val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
-                        val toQue = intent.getBooleanExtra(ShareDispatch.EXTRA_TO_QUE, true)
-                        val chapter = withContext(Dispatchers.IO) {
-                            flow.royalRoad.fetchOneChapter(url)
-                        }
-                        val result = withContext(Dispatchers.IO) {
-                            flow.catalog.addText(
-                                text = chapter.text,
-                                titleHint = chapter.title,
-                                inLibrary = !toQue,
-                                enqueue = toQue,
-                            )
-                        }
-                        val tab = if (toQue) LibraryTabId.Que else LibraryTabId.Files
-                        val msg = if (toQue) {
-                            "Queued ${result.progress.title}"
-                        } else {
-                            "Added ${result.progress.title}"
-                        }
-                        refreshAfterIngest(tab, msg)
-                    }
                 }
             } catch (t: Throwable) {
                 _ui.value = _ui.value.copy(
@@ -303,8 +377,109 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Clipboard / fallback text: same Import → Router path as share. */
+    fun routeImportText(text: String) {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(busy = true, error = null, message = null)
+            try {
+                val prefs = withContext(Dispatchers.IO) { flow.settings.shareOnce() }
+                val routerRules = withContext(Dispatchers.IO) { flow.settings.shareRouterRulesOnce() }
+                val parseRules = withContext(Dispatchers.IO) { flow.settings.shareParseRulesOnce() }
+                // In-app has no overlay chooser — always Auto for clipboard / fallback.
+                val action = ShareRouter.decide(
+                    SharePayload(text = text),
+                    prefs.copy(askMode = ShareAskMode.Auto),
+                    routerRules,
+                    parseRules,
+                )
+                when (action) {
+                    is ShareAction.ToFiles -> {
+                        val result = withContext(Dispatchers.IO) {
+                            flow.catalog.addText(
+                                text = action.text,
+                                titleHint = action.titleHint,
+                                inLibrary = true,
+                                enqueue = false,
+                                libraryTabId = action.libraryTabId,
+                            )
+                        }
+                        refreshAfterIngest(
+                            tabForShelf(action.libraryTabId),
+                            "Added ${result.progress.title}",
+                        )
+                    }
+                    is ShareAction.ToQueue -> {
+                        val result = withContext(Dispatchers.IO) {
+                            flow.catalog.addText(
+                                text = action.text,
+                                titleHint = action.titleHint,
+                                inLibrary = false,
+                                enqueue = true,
+                            )
+                        }
+                        refreshAfterIngest(LibraryTabId.Que, "Queued ${result.progress.title}")
+                    }
+                    is ShareAction.Crawl -> {
+                        val (content, titleCss, remove) = ParseRules.effectiveSelectors(action.rule)
+                        val article = withContext(Dispatchers.IO) {
+                            WebPageIngest.fetchArticle(action.url, content, titleCss, remove)
+                        }
+                        val landing = action.landing
+                        val result = withContext(Dispatchers.IO) {
+                            if (landing.isQueue) {
+                                flow.catalog.addText(
+                                    text = article.text,
+                                    titleHint = article.title,
+                                    inLibrary = false,
+                                    enqueue = true,
+                                )
+                            } else {
+                                flow.catalog.addText(
+                                    text = article.text,
+                                    titleHint = article.title,
+                                    inLibrary = true,
+                                    enqueue = false,
+                                    libraryTabId = landing.libraryShelfId,
+                                )
+                            }
+                        }
+                        val tab = tabForLanding(landing)
+                        val msg = if (landing.isQueue) {
+                            "Queued ${result.progress.title}"
+                        } else {
+                            "Added ${result.progress.title}"
+                        }
+                        refreshAfterIngest(tab, msg)
+                    }
+                    is ShareAction.RoyalRoadPlugin -> {
+                        flow.pendingRoyalRoadShareUrl.value = action.url
+                        val enabled = withContext(Dispatchers.IO) {
+                            flow.settings.enabledPluginIdsOnce()
+                        }.toMutableSet().also { it.add(RoyalRoadPlugin.ID) }
+                        withContext(Dispatchers.IO) {
+                            flow.settings.setEnabledPluginIds(enabled)
+                            flow.settings.setLibraryTabId(RoyalRoadPlugin.ID)
+                        }
+                        _ui.value = _ui.value.copy(
+                            enabledPluginIds = enabled,
+                            tab = LibraryTabId.Plugin(RoyalRoadPlugin.ID),
+                            busy = false,
+                            message = "Opening Royal Road…",
+                        )
+                    }
+                    is ShareAction.ShowChooser -> error("Auto mode must not show chooser")
+                }
+            } catch (t: Throwable) {
+                _ui.value = _ui.value.copy(
+                    busy = false,
+                    error = t.message ?: "Could not import",
+                )
+            }
+        }
+    }
+
     private suspend fun refreshAfterIngest(tab: LibraryTabId, message: String) {
-        val books = withContext(Dispatchers.IO) { flow.catalog.list() }
+        val books = withContext(Dispatchers.IO) { booksForTab(tab) }
         val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
         withContext(Dispatchers.IO) { flow.settings.setLibraryTabId(tab.persistKey) }
         _ui.value = _ui.value.copy(
@@ -316,27 +491,59 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    private fun tabForLanding(landing: RouterLanding): LibraryTabId =
+        when {
+            landing.isQueue -> LibraryTabId.Que
+            landing.libraryShelfId.isNotEmpty() -> LibraryTabId.Custom(landing.libraryShelfId)
+            else -> LibraryTabId.Files
+        }
+
+    private fun tabForShelf(libraryTabId: String): LibraryTabId =
+        if (libraryTabId.isBlank()) LibraryTabId.Files else LibraryTabId.Custom(libraryTabId)
+
+    private fun shelfForAdd(): String =
+        (_ui.value.tab as? LibraryTabId.Custom)?.tabId.orEmpty()
+
     /** Import or link an external book URI, then request the reader to open it. */
     fun openExternalUri(uri: Uri) {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(busy = true, error = null, message = null)
             try {
+                val routerRules = withContext(Dispatchers.IO) { flow.settings.shareRouterRulesOnce() }
+                val landing = ShareRouter.bookFileLanding(routerRules)
+                val shelf = if (landing.isLibrary) landing.libraryShelfId else ""
                 val row = withContext(Dispatchers.IO) {
                     try {
-                        flow.catalog.add(uri, BookSource.Linked)
+                        flow.catalog.add(uri, BookSource.Linked, shelf)
                     } catch (_: Throwable) {
-                        flow.catalog.add(uri, BookSource.Imported)
+                        flow.catalog.add(uri, BookSource.Imported, shelf)
                     }
                 }
-                val books = withContext(Dispatchers.IO) { flow.catalog.list() }
-                flow.settings.setLibraryTabId(LibraryTabId.Files.persistKey)
-                _ui.value = _ui.value.copy(
-                    books = books,
-                    tab = LibraryTabId.Files,
-                    busy = false,
-                    message = "Opened ${row.title}",
-                    pendingOpenBookId = row.bookId,
-                )
+                if (landing.isQueue) {
+                    withContext(Dispatchers.IO) { flow.catalog.enqueueExisting(row.bookId) }
+                    val books = withContext(Dispatchers.IO) { booksForTab(LibraryTabId.Que) }
+                    val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
+                    flow.settings.setLibraryTabId(LibraryTabId.Que.persistKey)
+                    _ui.value = _ui.value.copy(
+                        books = books,
+                        que = que,
+                        tab = LibraryTabId.Que,
+                        busy = false,
+                        message = "Queued ${row.title}",
+                        pendingOpenBookId = row.bookId,
+                    )
+                } else {
+                    val tab = tabForLanding(landing)
+                    val books = withContext(Dispatchers.IO) { booksForTab(tab) }
+                    flow.settings.setLibraryTabId(tab.persistKey)
+                    _ui.value = _ui.value.copy(
+                        books = books,
+                        tab = tab,
+                        busy = false,
+                        message = "Opened ${row.title}",
+                        pendingOpenBookId = row.bookId,
+                    )
+                }
             } catch (t: Throwable) {
                 _ui.value = _ui.value.copy(
                     busy = false,
@@ -424,21 +631,21 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Queue the current clipboard text (same path as share-to-Flow-Queue). */
+    /** Queue / route clipboard text through the Import router. */
     fun queueFromClipboard(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) {
             _ui.value = _ui.value.copy(error = "Clipboard is empty")
             return
         }
-        ingestSharedText(trimmed, toQue = true)
+        routeImportText(trimmed)
     }
 
     fun removeQue(id: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { flow.catalog.removeQue(id) }
             val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
-            val books = withContext(Dispatchers.IO) { flow.catalog.list() }
+            val books = withContext(Dispatchers.IO) { booksForTab(_ui.value.tab) }
             _ui.value = _ui.value.copy(que = que, books = books)
         }
     }
@@ -448,7 +655,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             _ui.value = _ui.value.copy(busy = true, error = null)
             try {
                 withContext(Dispatchers.IO) { flow.catalog.removeFromLibrary(bookId) }
-                val books = withContext(Dispatchers.IO) { flow.catalog.list() }
+                val books = withContext(Dispatchers.IO) { booksForTab(_ui.value.tab) }
                 val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
                 _ui.value = _ui.value.copy(
                     books = books,
@@ -571,14 +778,43 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(busy = true, error = null, message = null)
             try {
-                val row = withContext(Dispatchers.IO) { flow.catalog.add(uri, source) }
-                val books = withContext(Dispatchers.IO) { flow.catalog.list() }
-                val verb = if (source == BookSource.Linked) "Linked" else "Imported"
-                _ui.value = _ui.value.copy(
-                    books = books,
-                    busy = false,
-                    message = "$verb ${row.title}",
-                )
+                val routerRules = withContext(Dispatchers.IO) { flow.settings.shareRouterRulesOnce() }
+                val landing = ShareRouter.bookFileLanding(routerRules)
+                // Manual add from a custom shelf stays on that shelf; otherwise follow router.
+                val shelf = when {
+                    landing.isQueue -> ""
+                    shelfForAdd().isNotEmpty() -> shelfForAdd()
+                    else -> landing.libraryShelfId
+                }
+                val row = withContext(Dispatchers.IO) {
+                    flow.catalog.add(uri, source, shelf)
+                }
+                if (landing.isQueue && shelfForAdd().isEmpty()) {
+                    withContext(Dispatchers.IO) { flow.catalog.enqueueExisting(row.bookId) }
+                    val books = withContext(Dispatchers.IO) { booksForTab(_ui.value.tab) }
+                    val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
+                    _ui.value = _ui.value.copy(
+                        books = books,
+                        que = que,
+                        tab = LibraryTabId.Que,
+                        busy = false,
+                        message = "Queued ${row.title}",
+                    )
+                } else {
+                    val tab = if (shelf.isNotEmpty()) {
+                        LibraryTabId.Custom(shelf)
+                    } else {
+                        _ui.value.tab
+                    }
+                    val books = withContext(Dispatchers.IO) { booksForTab(tab) }
+                    val verb = if (source == BookSource.Linked) "Linked" else "Imported"
+                    _ui.value = _ui.value.copy(
+                        books = books,
+                        tab = tab,
+                        busy = false,
+                        message = "$verb ${row.title}",
+                    )
+                }
             } catch (t: Throwable) {
                 _ui.value = _ui.value.copy(
                     busy = false,

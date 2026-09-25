@@ -4,50 +4,90 @@ object ShareRouter {
     fun decide(
         payload: SharePayload,
         prefs: SharePrefs,
-        rules: List<ShareDomainRule>,
+        routerRules: List<RouterRule>,
+        parseRules: List<ParseRule>,
     ): ShareAction {
-        if (payload.fromQueAlias) {
-            return ShareAction.ToQueue(payload.text)
-        }
-
-        if (prefs.askMode == ShareAskMode.Ask) {
-            return ShareAction.ShowChooser(payload)
-        }
-
         val url = payload.url
-        if (url == null) {
-            return ShareAction.ToFiles(payload.text)
+        if (url != null) {
+            val matched = ShareUrlMatch.matchUrlRule(url, routerRules)
+                ?: ShareUrlMatch.firstOfKind(RouterContentKind.Url, routerRules)
+            if (matched != null && matched.destination.id == RouterLanding.PLUGIN) {
+                if (prefs.askMode == ShareAskMode.Ask) {
+                    val parse = ShareUrlMatch.matchParse(url, parseRules)
+                        ?: ParseRules.defaultForUrl(url)
+                    val fallbackRule = nextNonPluginUrlRule(url, routerRules, matched.id)
+                    return ShareAction.ShowChooser(
+                        payload = payload,
+                        pluginRule = matched,
+                        parseRule = parse,
+                        urlFallback = applyUrlRule(url, fallbackRule, parse),
+                    )
+                }
+                return pluginAction(url, matched.pluginId)
+            }
+            val parse = ShareUrlMatch.matchParse(url, parseRules)
+                ?: ParseRules.defaultForUrl(url)
+            return applyUrlRule(url, matched, parse)
         }
+        val textRule = ShareUrlMatch.firstOfKind(RouterContentKind.RawText, routerRules)
+        return applyText(payload.text, textRule?.destination ?: RouterLanding.Queue)
+    }
 
-        val matched = ShareDomainRules.matchUrl(url, rules)
-            ?: ShareDomainRule(
-                hostPattern = UrlDetector.hostOf(url).orEmpty(),
-                parseMode = ShareParseMode.Default,
-                destination = ShareDestination.Files,
+    fun bookFileLanding(routerRules: List<RouterRule>): RouterLanding =
+        ShareUrlMatch.firstOfKind(RouterContentKind.BookFile, routerRules)?.destination
+            ?: RouterLanding.Files
+
+    private fun nextNonPluginUrlRule(
+        url: String,
+        rules: List<RouterRule>,
+        skipId: String,
+    ): RouterRule? {
+        val host = UrlDetector.hostOf(url) ?: return null
+        val path = UrlDetector.pathOf(url) ?: "/"
+        return rules.firstOrNull {
+            it.enabled &&
+                it.kind == RouterContentKind.Url &&
+                it.id != skipId &&
+                it.destination.id != RouterLanding.PLUGIN &&
+                ShareUrlMatch.matches(host, path, it)
+        } ?: rules.firstOrNull {
+            it.enabled &&
+                it.kind == RouterContentKind.Url &&
+                it.id != skipId &&
+                it.destination.id != RouterLanding.PLUGIN
+        }
+    }
+
+    private fun applyUrlRule(
+        url: String,
+        rule: RouterRule?,
+        parse: ParseRule,
+    ): ShareAction {
+        if (rule == null) {
+            return ShareAction.Crawl(url, parse, RouterLanding.Queue)
+        }
+        if (rule.destination.id == RouterLanding.PLUGIN) {
+            return pluginAction(url, rule.pluginId)
+        }
+        if (!rule.parseUrl) {
+            return toLibraryOrQueue(url, rule.destination)
+        }
+        return ShareAction.Crawl(url, parse, rule.destination)
+    }
+
+    private fun applyText(text: String, landing: RouterLanding): ShareAction =
+        toLibraryOrQueue(text, landing)
+
+    private fun toLibraryOrQueue(text: String, landing: RouterLanding): ShareAction =
+        when {
+            landing.isQueue -> ShareAction.ToQueue(text)
+            else -> ShareAction.ToFiles(
+                text = text,
+                libraryTabId = landing.libraryShelfId,
             )
-
-        return when (matched.destination) {
-            ShareDestination.Plugin -> pluginAction(url, matched.pluginId)
-            ShareDestination.Files -> crawlOrRaw(url, matched, toQueue = false)
-            ShareDestination.Queue -> crawlOrRaw(url, matched, toQueue = true)
         }
-    }
 
-    private fun pluginAction(url: String, pluginId: String?): ShareAction {
-        return when (pluginId) {
-            "royalroad", null, "" -> ShareAction.RoyalRoadPlugin(url)
-            else -> ShareAction.RoyalRoadPlugin(url) // only RR exists today
-        }
-    }
-
-    private fun crawlOrRaw(url: String, rule: ShareDomainRule, toQueue: Boolean): ShareAction {
-        // Domain rules for URLs always fetch; parse mode controls selectors vs heuristics.
-        return ShareAction.Crawl(url = url, rule = rule, toQueue = toQueue)
-    }
-
-    fun isRoyalRoadHost(host: String?): Boolean {
-        if (host.isNullOrBlank()) return false
-        return host == "royalroad.com" || host.endsWith(".royalroad.com") ||
-            host == "royalroadl.com" || host.endsWith(".royalroadl.com")
-    }
+    @Suppress("UNUSED_PARAMETER")
+    private fun pluginAction(url: String, pluginId: String?): ShareAction =
+        ShareAction.RoyalRoadPlugin(url)
 }
