@@ -22,6 +22,10 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`
 
 Min SDK 26. Target / compile SDK 36.
 
+## Docs
+
+Feature and UI map: [docs/](docs/README.md)
+
 ## Notes
 
 Readest source is kept as a protocol reference at `C:\Git\readest-personal-fork`. This app does not fork it.

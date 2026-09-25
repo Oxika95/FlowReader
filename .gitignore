@@ -13,3 +13,5 @@ local.properties
 *.ap_
 *.aab
 /app/release
+# Gutenberg EPUBs for wiki screenshots only — do not commit
+docs/_sample_books/
