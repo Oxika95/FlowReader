@@ -72,6 +72,10 @@ data class TtsUiState(
     val sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     /** Added to heard media time when resolving Edge word cues (ms). */
     val highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
+    /** Ideal characters per TTS clip. */
+    val clipTargetChars: Int = TtsPrefs.DEFAULT_CLIP_TARGET_CHARS,
+    /** Characters allowed above/below [clipTargetChars]. */
+    val clipFlexChars: Int = TtsPrefs.DEFAULT_CLIP_FLEX_CHARS,
     /** When true, synth ring-log is active and the floating dump FAB is shown. */
     val debugEnabled: Boolean = false,
     val engines: List<TtsEngineOption> = TtsEngines.BUILT_IN,
@@ -129,6 +133,8 @@ class TtsController(
     private var attachedBookId = ""
     @Volatile
     private var moreProvider: (suspend () -> Boolean)? = null
+    @Volatile
+    private var attachedDoc: BookDoc? = null
     @Volatile
     private var index = 0
     private var playJob: Job? = null
@@ -230,6 +236,8 @@ class TtsController(
                     minSignal = prefs.minSignal,
                     sentenceGapMs = prefs.sentenceGapMs,
                     highlightSyncMs = prefs.highlightSyncMs,
+                    clipTargetChars = prefs.clipTargetChars,
+                    clipFlexChars = prefs.clipFlexChars,
                     debugEnabled = reader.debugEnabled,
                     voices = voices,
                 )
@@ -262,6 +270,7 @@ class TtsController(
         bookKey = sanitizeBookKey(bookId)
         bookTitle = book.title
         chapterTitles = book.chapters.map { it.title }
+        attachedDoc = book
         coverArt?.recycle()
         coverArt = null
         this.speechFilters = speechFilters
@@ -286,8 +295,10 @@ class TtsController(
         updateSessionMetadata()
         setSessionState(PlaybackState.STATE_PAUSED)
         scope.launch {
+            val target = _state.value.clipTargetChars
+            val flex = _state.value.clipFlexChars
             val split = withContext(Dispatchers.Default) {
-                SentenceSplitter.split(book)
+                SentenceSplitter.split(book, targetChars = target, flexChars = flex)
             }
             if (attachedBookId != bookId) return@launch
             sentences = split
@@ -331,17 +342,21 @@ class TtsController(
         if (addedChapters.isEmpty()) return
         val offset = chapterTitles.size
         chapterTitles = chapterTitles + addedChapters.map { it.title }
+        val s = _state.value
         val extra = SentenceSplitter.split(
             BookDoc(bookTitle, addedChapters),
-        ).map { s -> s.copy(chapterIndex = s.chapterIndex + offset) }
+            targetChars = s.clipTargetChars,
+            flexChars = s.clipFlexChars,
+        ).map { sent -> sent.copy(chapterIndex = sent.chapterIndex + offset) }
         if (extra.isEmpty()) return
+        // Keep streaming doc in sync for length-band re-splits.
+        attachedDoc = attachedDoc?.let { prev ->
+            prev.copy(chapters = prev.chapters + addedChapters)
+        } ?: BookDoc(bookTitle, addedChapters)
         sentences = sentences + extra
         updateSessionMetadata()
         if (_state.value.playing) {
-            val n = effectivePrefetchCount()
-            for (ahead in 1..n) {
-                startEdgeJob(index + ahead) { prefetch(index + ahead) }
-            }
+            scheduleAheadPrefetch()
         }
         TtsPlaybackService.refresh()
     }
@@ -551,7 +566,7 @@ class TtsController(
     fun setMinSignal(level: Float, persist: Boolean = true) {
         val value = TtsPrefs.coerceMinSignal(level)
         _state.update { it.copy(minSignal = value) }
-        if (value <= TtsPrefs.MIN_SIGNAL) {
+        if (!TtsPrefs.isUnderlayEnabled(value)) {
             keepAlive.stop()
         } else {
             keepAlive.setLevel(value)
@@ -573,6 +588,61 @@ class TtsController(
         if (value == _state.value.highlightSyncMs) return
         _state.update { it.copy(highlightSyncMs = value) }
         scope.launch { settings.setHighlightSyncMs(value) }
+    }
+
+    fun setClipTargetChars(chars: Int) {
+        val value = TtsPrefs.coerceClipTargetChars(chars)
+        if (value == _state.value.clipTargetChars) return
+        _state.update { it.copy(clipTargetChars = value) }
+        scope.launch {
+            settings.setClipTargetChars(value)
+            resplitAttachedForClipBand()
+        }
+    }
+
+    fun setClipFlexChars(chars: Int) {
+        val value = TtsPrefs.coerceClipFlexChars(chars)
+        if (value == _state.value.clipFlexChars) return
+        _state.update { it.copy(clipFlexChars = value) }
+        scope.launch {
+            settings.setClipFlexChars(value)
+            resplitAttachedForClipBand()
+        }
+    }
+
+    /** Re-chunk sentences after clip-size prefs change; clears Edge cache. */
+    private suspend fun resplitAttachedForClipBand() {
+        val doc = attachedDoc ?: return
+        val bookId = attachedBookId
+        val locus = sentences.getOrNull(index)?.let {
+            Locus(it.chapterIndex, it.blockIndex, it.start)
+        } ?: Locus(0, 0, 0)
+        val target = _state.value.clipTargetChars
+        val flex = _state.value.clipFlexChars
+        val split = withContext(Dispatchers.Default) {
+            SentenceSplitter.split(doc, targetChars = target, flexChars = flex)
+        }
+        if (attachedBookId != bookId) return
+        sentences = split
+        index = SentenceSplitter.indexAt(sentences, locus)
+        val s = sentences.getOrNull(index)
+        _state.update {
+            it.copy(
+                sentence = s,
+                sentenceIndex = index,
+                snippet = s?.text.orEmpty(),
+                wordHighlight = null,
+                readySentenceIndices = emptySet(),
+                generatingSentenceIndices = emptySet(),
+            )
+        }
+        clearEdgeCache()
+        if (_state.value.playing) restartLoop()
+        else {
+            pruneCacheToWindow(index)
+            updateSessionMetadata()
+            TtsPlaybackService.refresh()
+        }
     }
 
     fun setDebugEnabled(enabled: Boolean) {
@@ -632,7 +702,13 @@ class TtsController(
                     generatingSentenceIndices = it.generatingSentenceIndices + i,
                 )
             }
-            startEdgeJob(i) { synthesizeToCache(i, force = true) }
+            startEdgeJob(i) {
+                try {
+                    synthesizeToCache(i, force = true)
+                } finally {
+                    scope.launch(Dispatchers.Main.immediate) { pumpPrefetch() }
+                }
+            }
         }
     }
 
@@ -1038,10 +1114,7 @@ class TtsController(
             if (sentences.lastIndex - index <= n) {
                 pullMore()
             }
-            for (offset in 1..n) {
-                val target = index + offset
-                startEdgeJob(target) { prefetch(target) }
-            }
+            scheduleAheadPrefetch()
             try {
                 speak(s, generation)
             } catch (e: CancellationException) {
@@ -1098,6 +1171,10 @@ class TtsController(
     /** Visible sentence text plus any TTS-only filter transforms. */
     private fun speechText(text: String): String = TextFilters.applySpeech(text, speechFilters)
 
+    /**
+     * Force-start (or restart) an Edge job for [i]. Prefer [ensurePrefetchJob] /
+     * [scheduleAheadPrefetch] for lookahead so healthy in-flight work is kept.
+     */
     private fun startEdgeJob(i: Int, block: suspend () -> Unit) {
         edgeJobs.remove(i)?.cancel()
         lateinit var job: Job
@@ -1113,12 +1190,73 @@ class TtsController(
         job.start()
     }
 
-    /** Prefetch without canceling an in-flight job for the same sentence. */
+    /**
+     * Cancel Edge jobs that are behind the playhead or outside the cache window.
+     * Leaves in-flight ahead work alone.
+     */
+    private fun cancelStaleEdgeJobs(center: Int = index) {
+        val window = cacheWindow(center)
+        val stale = edgeJobs.keys.filter { it < center || it !in window }
+        for (i in stale) {
+            edgeJobs.remove(i)?.cancel()
+        }
+    }
+
+    /**
+     * Fill missing ahead clips nearest-first with bounded parallelism. Does not
+     * cancel healthy in-flight jobs for sentences still ahead of [index].
+     */
+    private fun scheduleAheadPrefetch(center: Int = index) {
+        if (_state.value.engineKey != TtsEngines.EDGE) return
+        cancelStaleEdgeJobs(center)
+        pumpPrefetch(center)
+    }
+
+    private fun pumpPrefetch(center: Int = index) {
+        if (_state.value.engineKey != TtsEngines.EDGE) return
+        if (!_state.value.playing) return
+        val n = effectivePrefetchCount()
+        val hi = (center + n).coerceAtMost(sentences.lastIndex)
+        if (hi < center + 1) return
+
+        val activeAhead = edgeJobs.count { (i, job) ->
+            job.isActive && i in (center + 1)..hi
+        }
+        var slots = (PREFETCH_PARALLELISM - activeAhead).coerceAtLeast(0)
+        if (slots <= 0) return
+
+        for (target in (center + 1)..hi) {
+            if (slots <= 0) break
+            if (peekReadyCacheFile(target) != null) continue
+            if (edgeJobs[target]?.isActive == true) continue
+            launchPrefetchJob(target)
+            slots--
+        }
+    }
+
+    /** Start prefetch for [i] without canceling any other sentence's job. */
+    private fun launchPrefetchJob(i: Int) {
+        if (i < 0 || i > sentences.lastIndex) return
+        if (edgeJobs[i]?.isActive == true) return
+        lateinit var job: Job
+        job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            try {
+                prefetch(i)
+            } finally {
+                edgeJobs.remove(i, job)
+                // Free a slot: fill the next nearest gap.
+                scope.launch(Dispatchers.Main.immediate) { pumpPrefetch() }
+            }
+        }
+        edgeJobs[i] = job
+        job.start()
+    }
+
+    /** Request lookahead fill without canceling in-flight work for the same sentence. */
     private fun ensurePrefetchJob(i: Int) {
         if (i < 0 || i > sentences.lastIndex) return
         if (peekReadyCacheFile(i) != null) return
-        if (edgeJobs[i] != null) return
-        startEdgeJob(i) { prefetch(i) }
+        scheduleAheadPrefetch()
     }
 
     private fun cancelEdgeJobs() {
@@ -1128,7 +1266,8 @@ class TtsController(
 
     private suspend fun prefetch(i: Int) {
         if (_state.value.engineKey != TtsEngines.EDGE) return
-        if (!inCacheWindow(i)) return
+        // Drop work that fell behind the playhead while waiting for a slot.
+        if (i < index || !inCacheWindow(i)) return
         try {
             synthesizeToCache(i, force = false)
             val f = cacheFile(i)
@@ -1159,9 +1298,8 @@ class TtsController(
         ensurePcmWordTracking()
         val overlapMs = (-_state.value.sentenceGapMs).coerceAtLeast(0)
 
-        // Kick lookahead without awaiting or canceling in-flight work.
-        ensurePrefetchJob(i + 1)
-        ensurePrefetchJob(i + 2)
+        // Nearest-first lookahead; keep in-flight ahead jobs.
+        scheduleAheadPrefetch(i)
 
         // Instant peek only — never join Edge synth before play while the track is live.
         val nextReadyNow = peekReadyCacheFile(i + 1)
@@ -1328,7 +1466,7 @@ class TtsController(
     }
 
     private fun syncKeepAlive() {
-        if (_state.value.playing && _state.value.minSignal > TtsPrefs.MIN_SIGNAL) {
+        if (_state.value.playing && TtsPrefs.isUnderlayEnabled(_state.value.minSignal)) {
             keepAlive.setLevel(_state.value.minSignal)
             keepAlive.start()
         } else {
@@ -1800,6 +1938,9 @@ class TtsController(
     private fun pitchPercent(): Int = ((_state.value.pitch - 1f) * 50f).toInt()
 
     companion object {
+        /** Max concurrent Edge lookahead synths; nearest gaps fill first. */
+        private const val PREFETCH_PARALLELISM = 2
+
         /** `b<bookKey>_s<sentenceIndex>_<voiceKey>.mp3` */
         private val SENTENCE_CACHE_NAME = Regex("""^b([A-Za-z0-9.-]*)_s(\d+)_.*\.mp3$""")
         private val BOOK_KEY_UNSAFE = Regex("[^A-Za-z0-9.-]")

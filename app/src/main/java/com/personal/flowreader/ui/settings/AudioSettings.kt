@@ -57,6 +57,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
@@ -177,6 +179,8 @@ internal fun AudioSettingsTab(
     speed: Float = 1f,
     pitch: Float = 1f,
     prefetchCount: Int = 1,
+    clipTargetChars: Int = TtsPrefs.DEFAULT_CLIP_TARGET_CHARS,
+    clipFlexChars: Int = TtsPrefs.DEFAULT_CLIP_FLEX_CHARS,
     doubleTapPlay: Boolean = false,
     autoScrollWithTts: Boolean = false,
     minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
@@ -187,6 +191,8 @@ internal fun AudioSettingsTab(
     onSpeed: (Float) -> Unit = {},
     onPitch: (Float) -> Unit = {},
     onPrefetchCount: (Int) -> Unit = {},
+    onClipTargetChars: (Int) -> Unit = {},
+    onClipFlexChars: (Int) -> Unit = {},
     onDoubleTapPlay: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
     onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
@@ -212,11 +218,15 @@ internal fun AudioSettingsTab(
             speed = speed,
             pitch = pitch,
             prefetchCount = prefetchCount,
+            clipTargetChars = clipTargetChars,
+            clipFlexChars = clipFlexChars,
             onEngine = onEngine,
             onVoice = onVoice,
             onSpeed = onSpeed,
             onPitch = onPitch,
             onPrefetchCount = onPrefetchCount,
+            onClipTargetChars = onClipTargetChars,
+            onClipFlexChars = onClipFlexChars,
         )
         else -> PlaybackSettingsTab(
             doubleTapPlay = doubleTapPlay,
@@ -243,23 +253,41 @@ internal fun VoiceSettingsTab(
     speed: Float = 1f,
     pitch: Float = 1f,
     prefetchCount: Int = 1,
+    clipTargetChars: Int = TtsPrefs.DEFAULT_CLIP_TARGET_CHARS,
+    clipFlexChars: Int = TtsPrefs.DEFAULT_CLIP_FLEX_CHARS,
     onEngine: (String) -> Unit,
     onVoice: (String) -> Unit,
     onSpeed: (Float) -> Unit = {},
     onPitch: (Float) -> Unit = {},
     onPrefetchCount: (Int) -> Unit = {},
+    onClipTargetChars: (Int) -> Unit = {},
+    onClipFlexChars: (Int) -> Unit = {},
 ) {
     var engineOpen by remember { mutableStateOf(false) }
     var voiceOpen by remember { mutableStateOf(false) }
     var speedDragging by remember { mutableStateOf(false) }
     var pitchDragging by remember { mutableStateOf(false) }
     var prefetchDragging by remember { mutableStateOf(false) }
+    var targetDragging by remember { mutableStateOf(false) }
+    var flexDragging by remember { mutableStateOf(false) }
     var localSpeed by remember { mutableFloatStateOf(speed) }
     var localPitch by remember { mutableFloatStateOf(pitch) }
     var localPrefetch by remember { mutableFloatStateOf(prefetchCount.toFloat()) }
+    var localTarget by remember { mutableFloatStateOf(clipTargetChars.toFloat()) }
+    var localFlex by remember { mutableFloatStateOf(clipFlexChars.toFloat()) }
     val shownSpeed = if (speedDragging) localSpeed else speed
     val shownPitch = if (pitchDragging) localPitch else pitch
     val shownPrefetch = if (prefetchDragging) localPrefetch.roundToInt() else prefetchCount
+    val shownTarget = if (targetDragging) {
+        TtsPrefs.coerceClipTargetChars(localTarget.roundToInt())
+    } else {
+        clipTargetChars
+    }
+    val shownFlex = if (flexDragging) {
+        TtsPrefs.coerceClipFlexChars(localFlex.roundToInt())
+    } else {
+        clipFlexChars
+    }
 
     val engineLabel = engines.firstOrNull { it.key == engineKey }?.label ?: engineKey
     val voiceLabel = voices.firstOrNull { it.id == voiceId }?.label
@@ -386,31 +414,129 @@ internal fun VoiceSettingsTab(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.S))
-    SettingsLabel("Pre-cache sentences")
+    var advancedOpen by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { advancedOpen = !advancedOpen }
+            .padding(vertical = FlowTokens.Space.XS),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Slider(
-            value = if (prefetchDragging) localPrefetch else prefetchCount.toFloat(),
-            onValueChange = {
-                prefetchDragging = true
-                localPrefetch = it
-            },
-            onValueChangeFinished = {
-                onPrefetchCount(localPrefetch.roundToInt())
-                prefetchDragging = false
-            },
-            valueRange = TtsPrefs.MIN_PREFETCH.toFloat()..TtsPrefs.MAX_PREFETCH.toFloat(),
-            steps = TtsPrefs.MAX_PREFETCH - TtsPrefs.MIN_PREFETCH - 1,
+        Text(
+            "Advanced",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
-        Text(
-            "$shownPrefetch",
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
-            textAlign = TextAlign.End,
+        Icon(
+            imageVector = if (advancedOpen) {
+                Icons.Filled.ExpandLess
+            } else {
+                Icons.Filled.ExpandMore
+            },
+            contentDescription = if (advancedOpen) "Hide advanced" else "Show advanced",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+    AnimatedVisibility(visible = advancedOpen) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            SettingsLabel("Pre-cache clips")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Slider(
+                    value = if (prefetchDragging) localPrefetch else prefetchCount.toFloat(),
+                    onValueChange = {
+                        prefetchDragging = true
+                        localPrefetch = it
+                    },
+                    onValueChangeFinished = {
+                        onPrefetchCount(localPrefetch.roundToInt())
+                        prefetchDragging = false
+                    },
+                    valueRange = TtsPrefs.MIN_PREFETCH.toFloat()..TtsPrefs.MAX_PREFETCH.toFloat(),
+                    steps = TtsPrefs.MAX_PREFETCH - TtsPrefs.MIN_PREFETCH - 1,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "$shownPrefetch",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
+                    textAlign = TextAlign.End,
+                )
+            }
+
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            SettingsLabel("Clip size")
+            Text(
+                "Target characters per spoken clip.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Slider(
+                    value = shownTarget.toFloat(),
+                    onValueChange = {
+                        targetDragging = true
+                        localTarget = it
+                    },
+                    onValueChangeFinished = {
+                        onClipTargetChars(TtsPrefs.coerceClipTargetChars(localTarget.roundToInt()))
+                        targetDragging = false
+                    },
+                    valueRange = TtsPrefs.MIN_CLIP_TARGET_CHARS.toFloat()..
+                        TtsPrefs.MAX_CLIP_TARGET_CHARS.toFloat(),
+                    steps = (TtsPrefs.MAX_CLIP_TARGET_CHARS - TtsPrefs.MIN_CLIP_TARGET_CHARS) /
+                        TtsPrefs.CLIP_TARGET_STEP_CHARS - 1,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "$shownTarget",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
+                    textAlign = TextAlign.End,
+                )
+            }
+
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            SettingsLabel("Size leeway")
+            Text(
+                "Characters allowed above or below the target.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Slider(
+                    value = shownFlex.toFloat(),
+                    onValueChange = {
+                        flexDragging = true
+                        localFlex = it
+                    },
+                    onValueChangeFinished = {
+                        onClipFlexChars(TtsPrefs.coerceClipFlexChars(localFlex.roundToInt()))
+                        flexDragging = false
+                    },
+                    valueRange = TtsPrefs.MIN_CLIP_FLEX_CHARS.toFloat()..
+                        TtsPrefs.MAX_CLIP_FLEX_CHARS.toFloat(),
+                    steps = (TtsPrefs.MAX_CLIP_FLEX_CHARS - TtsPrefs.MIN_CLIP_FLEX_CHARS) /
+                        TtsPrefs.CLIP_FLEX_STEP_CHARS - 1,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "±$shownFlex",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.widthIn(min = FlowTokens.Comp.SliderValueWidth),
+                    textAlign = TextAlign.End,
+                )
+            }
+        }
     }
 }
 

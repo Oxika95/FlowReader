@@ -6,11 +6,15 @@ import android.media.AudioTrack
 import com.personal.flowreader.data.TtsPrefs
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 /**
  * Quiet broadband noise on a dedicated [AudioTrack] so Bluetooth/car head units
  * do not treat inter-clip silence as "no playback".
+ *
+ * Level is dB below full-scale PCM (`0` = off). Gain is applied to the written
+ * samples so very low steps stay accurate.
  */
 class AudioKeepAlive {
     private val running = AtomicBoolean(false)
@@ -18,12 +22,11 @@ class AudioKeepAlive {
     private var worker: Thread? = null
 
     @Volatile
-    private var levelPercent = TtsPrefs.DEFAULT_MIN_SIGNAL
+    private var linearGain = 0f
 
-    /** Tonal underlay loudness, 0 (off) to 10 (full). Applies immediately if playing. */
-    fun setLevel(percent: Float) {
-        levelPercent = TtsPrefs.coerceMinSignal(percent)
-        track?.setVolume(levelPercent / TtsPrefs.MAX_SIGNAL)
+    /** Underlay level: `0` off, otherwise negative dB vs full scale. */
+    fun setLevel(levelDb: Float) {
+        linearGain = TtsPrefs.underlayLinearGain(levelDb)
     }
 
     fun start() {
@@ -52,15 +55,20 @@ class AudioKeepAlive {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         track = t
-        t.setVolume(levelPercent / TtsPrefs.MAX_SIGNAL)
+        t.setVolume(1f)
         t.play()
         worker = thread(name = "tts-keep-alive", isDaemon = true) {
             val buf = ShortArray(minBuf / 2)
             val rnd = Random(System.nanoTime())
             while (running.get()) {
-                // Full-scale noise; [setLevel] attenuates it to the chosen percent.
-                for (i in buf.indices) {
-                    buf[i] = rnd.nextInt(-32767, 32768).toShort()
+                val gain = linearGain
+                if (gain <= 0f) {
+                    buf.fill(0)
+                } else {
+                    for (i in buf.indices) {
+                        val sample = rnd.nextInt(-32767, 32768) * gain
+                        buf[i] = sample.roundToInt().coerceIn(-32767, 32767).toShort()
+                    }
                 }
                 val written = t.write(buf, 0, buf.size)
                 if (written < 0) break

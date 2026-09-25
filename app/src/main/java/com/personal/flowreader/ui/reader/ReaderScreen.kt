@@ -256,7 +256,15 @@ fun ReaderScreen(
     val items = remember(doc, showChapterHeadingsInBody) {
         doc?.readingItems(includeChapterTitles = showChapterHeadingsInBody).orEmpty()
     }
-    val allSentences = remember(doc) { doc?.let { SentenceSplitter.split(it) }.orEmpty() }
+    val allSentences = remember(doc, tts.clipTargetChars, tts.clipFlexChars) {
+        doc?.let {
+            SentenceSplitter.split(
+                it,
+                targetChars = tts.clipTargetChars,
+                flexChars = tts.clipFlexChars,
+            )
+        }.orEmpty()
+    }
     /** (chapter, block) → flat item index; the reader looks this up on every frame. */
     val blockIndexOf = remember(items) {
         buildMap(items.size) {
@@ -1048,6 +1056,8 @@ fun ReaderScreen(
                 speed = tts.speed,
                 pitch = tts.pitch,
                 prefetchCount = tts.prefetchCount,
+                clipTargetChars = tts.clipTargetChars,
+                clipFlexChars = tts.clipFlexChars,
                 doubleTapPlay = tts.doubleTapPlay,
                 autoScrollWithTts = tts.autoScrollWithTts,
                 minSignal = tts.minSignal,
@@ -1060,6 +1070,8 @@ fun ReaderScreen(
                 onSpeed = { vm.tts.setSpeed(it) },
                 onPitch = { vm.tts.setPitch(it) },
                 onPrefetchCount = { vm.tts.setPrefetchCount(it) },
+                onClipTargetChars = { vm.tts.setClipTargetChars(it) },
+                onClipFlexChars = { vm.tts.setClipFlexChars(it) },
                 onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
                 onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
                 onMinSignal = { level, persist -> vm.tts.setMinSignal(level, persist) },

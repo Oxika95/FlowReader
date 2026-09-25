@@ -15,6 +15,8 @@ import com.personal.flowreader.share.ShareDomainRules
 import com.personal.flowreader.share.SharePrefs
 import kotlinx.coroutines.flow.first
 import kotlin.math.abs
+import kotlin.math.log10
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "flow_settings")
@@ -49,18 +51,23 @@ data class TtsPrefs(
     /** When true, the list keeps the spoken block centered until the user scrolls away. */
     val autoScrollWithTts: Boolean = true,
     /**
-     * Tonal underlay level while playing. Snaps to [TONAL_UNDERLAY_STEPS].
-     * Keeps a signal on the output so some car head units stay awake.
+     * Tonal underlay while playing. `0` = off; otherwise dB below full-scale PCM
+     * (negative). Snaps to [TONAL_UNDERLAY_STEPS]. Keeps a faint signal on the
+     * output so some car head units stay awake.
      */
     val minSignal: Float = DEFAULT_MIN_SIGNAL,
     /** Extra pause (+) or crossfade (−) after each spoken sentence (−500…500 ms). */
     val sentenceGapMs: Int = DEFAULT_SENTENCE_GAP_MS,
     /** Offset applied to Edge heard-clock word cues (ms). */
     val highlightSyncMs: Int = DEFAULT_HIGHLIGHT_SYNC_MS,
+    /** Ideal characters per TTS clip (join/split target). */
+    val clipTargetChars: Int = DEFAULT_CLIP_TARGET_CHARS,
+    /** Characters allowed above/below [clipTargetChars]. */
+    val clipFlexChars: Int = DEFAULT_CLIP_FLEX_CHARS,
 ) {
     companion object {
         const val DEFAULT_EDGE_VOICE = "en-US-AndrewNeural"
-        const val DEFAULT_PREFETCH = 2
+        const val DEFAULT_PREFETCH = 5
         const val MIN_PREFETCH = 1
         const val MAX_PREFETCH = 10
         const val DEFAULT_SENTENCE_GAP_MS = 0
@@ -71,15 +78,36 @@ data class TtsPrefs(
         const val MIN_HIGHLIGHT_SYNC_MS = -500
         const val MAX_HIGHLIGHT_SYNC_MS = 500
         const val HIGHLIGHT_SYNC_STEP_MS = 50
+        const val DEFAULT_CLIP_TARGET_CHARS = SentenceLengthNormalizer.DEFAULT_TARGET_CHARS
+        const val MIN_CLIP_TARGET_CHARS = SentenceLengthNormalizer.MIN_TARGET_CHARS
+        const val MAX_CLIP_TARGET_CHARS = SentenceLengthNormalizer.MAX_TARGET_CHARS
+        const val CLIP_TARGET_STEP_CHARS = 25
+        const val DEFAULT_CLIP_FLEX_CHARS = SentenceLengthNormalizer.DEFAULT_FLEX_CHARS
+        const val MIN_CLIP_FLEX_CHARS = SentenceLengthNormalizer.MIN_FLEX_CHARS
+        const val MAX_CLIP_FLEX_CHARS = SentenceLengthNormalizer.MAX_FLEX_CHARS
+        const val CLIP_FLEX_STEP_CHARS = 5
+        /** Off. Non-zero stored values are negative dB vs full-scale PCM. */
         const val DEFAULT_MIN_SIGNAL = 0f
         const val MIN_SIGNAL = 0f
-        const val MAX_SIGNAL = 10f
+        /**
+         * Off + −100…−20 dB (10 dB steps). Former 0…10 linear scale bottomed out
+         * around −40 dB FS and was still clearly audible.
+         */
         val TONAL_UNDERLAY_STEPS = floatArrayOf(
-            0f, 0.1f, 0.25f, 0.5f, 1f, 2f, 3f, 4f, 5f, 10f,
+            0f, -100f, -90f, -80f, -70f, -60f, -50f, -40f, -30f, -20f,
         )
         val TONAL_UNDERLAY_LABELS = arrayOf(
-            "0", "0.1", "0.25", "0.5", "1", "2", "3", "4", "5", "10",
+            "Off", "-100 dB", "-90 dB", "-80 dB", "-70 dB",
+            "-60 dB", "-50 dB", "-40 dB", "-30 dB", "-20 dB",
         )
+
+        fun isUnderlayEnabled(level: Float): Boolean = level < 0f
+
+        /** Linear PCM amplitude for [level] (`0` → silence, `-20` → ~0.1). */
+        fun underlayLinearGain(level: Float): Float {
+            if (!isUnderlayEnabled(level)) return 0f
+            return 10f.pow(coerceMinSignal(level) / 20f).coerceIn(0f, 1f)
+        }
 
         fun tonalUnderlayIndex(level: Float): Int {
             var best = 0
@@ -97,6 +125,20 @@ data class TtsPrefs(
         fun coerceMinSignal(level: Float): Float =
             TONAL_UNDERLAY_STEPS[tonalUnderlayIndex(level)]
 
+        /**
+         * Maps legacy 0…10 underlay prefs (gain = value/10) onto the dB ladder.
+         * Values already on the new ladder pass through [coerceMinSignal].
+         */
+        fun migrateMinSignal(stored: Float): Float {
+            if (stored == 0f) return DEFAULT_MIN_SIGNAL
+            // New format: negative dB steps.
+            if (stored < 0f) return coerceMinSignal(stored)
+            // Legacy 0…10 linear loudness → dB FS via gain = stored/10.
+            val gain = (stored / 10f).coerceIn(0.0001f, 1f)
+            val db = 20f * log10(gain)
+            return coerceMinSignal(db)
+        }
+
         fun coerceSentenceGapMs(ms: Int): Int {
             val clamped = ms.coerceIn(MIN_SENTENCE_GAP_MS, MAX_SENTENCE_GAP_MS)
             val stepped = ((clamped.toFloat() / SENTENCE_GAP_STEP_MS).roundToInt()
@@ -109,6 +151,20 @@ data class TtsPrefs(
             val stepped = ((clamped.toFloat() / HIGHLIGHT_SYNC_STEP_MS).roundToInt()
                 * HIGHLIGHT_SYNC_STEP_MS)
             return stepped.coerceIn(MIN_HIGHLIGHT_SYNC_MS, MAX_HIGHLIGHT_SYNC_MS)
+        }
+
+        fun coerceClipTargetChars(chars: Int): Int {
+            val clamped = chars.coerceIn(MIN_CLIP_TARGET_CHARS, MAX_CLIP_TARGET_CHARS)
+            val stepped = ((clamped.toFloat() / CLIP_TARGET_STEP_CHARS).roundToInt()
+                * CLIP_TARGET_STEP_CHARS)
+            return stepped.coerceIn(MIN_CLIP_TARGET_CHARS, MAX_CLIP_TARGET_CHARS)
+        }
+
+        fun coerceClipFlexChars(chars: Int): Int {
+            val clamped = chars.coerceIn(MIN_CLIP_FLEX_CHARS, MAX_CLIP_FLEX_CHARS)
+            val stepped = ((clamped.toFloat() / CLIP_FLEX_STEP_CHARS).roundToInt()
+                * CLIP_FLEX_STEP_CHARS)
+            return stepped.coerceIn(MIN_CLIP_FLEX_CHARS, MAX_CLIP_FLEX_CHARS)
         }
     }
 }
@@ -205,6 +261,14 @@ class SettingsStore(context: Context) {
 
     suspend fun setHighlightSyncMs(ms: Int) {
         store.edit { it[KEY_TTS_HIGHLIGHT_SYNC_MS] = TtsPrefs.coerceHighlightSyncMs(ms) }
+    }
+
+    suspend fun setClipTargetChars(chars: Int) {
+        store.edit { it[KEY_TTS_CLIP_TARGET_CHARS] = TtsPrefs.coerceClipTargetChars(chars) }
+    }
+
+    suspend fun setClipFlexChars(chars: Int) {
+        store.edit { it[KEY_TTS_CLIP_FLEX_CHARS] = TtsPrefs.coerceClipFlexChars(chars) }
     }
 
     suspend fun globalFiltersOnce(): List<FilterRule> =
@@ -307,6 +371,8 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_TONAL_UNDERLAY = floatPreferencesKey("tts_tonal_underlay")
         private val KEY_TTS_SENTENCE_GAP_MS = intPreferencesKey("tts_sentence_gap_ms")
         private val KEY_TTS_HIGHLIGHT_SYNC_MS = intPreferencesKey("tts_highlight_sync_ms")
+        private val KEY_TTS_CLIP_TARGET_CHARS = intPreferencesKey("tts_clip_target_chars")
+        private val KEY_TTS_CLIP_FLEX_CHARS = intPreferencesKey("tts_clip_flex_chars")
         private val KEY_GLOBAL_FILTERS = stringPreferencesKey("global_filters")
         private val KEY_GROUP_FILTERS = stringPreferencesKey("group_filters")
         private val KEY_LIBRARY_VIEW = stringPreferencesKey("library_view")
@@ -362,7 +428,7 @@ class SettingsStore(context: Context) {
                 .coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH),
             doubleTapPlay = this[KEY_TTS_DOUBLE_TAP_PLAY] ?: true,
             autoScrollWithTts = this[KEY_TTS_AUTO_SCROLL] ?: true,
-            minSignal = TtsPrefs.coerceMinSignal(
+            minSignal = TtsPrefs.migrateMinSignal(
                 this[KEY_TTS_TONAL_UNDERLAY] ?: when {
                     this[KEY_TTS_MIN_SIGNAL] != null -> this[KEY_TTS_MIN_SIGNAL]!! / 10f
                     this[KEY_TTS_KEEP_ALIVE] == true -> 1f
@@ -374,6 +440,12 @@ class SettingsStore(context: Context) {
             ),
             highlightSyncMs = TtsPrefs.coerceHighlightSyncMs(
                 this[KEY_TTS_HIGHLIGHT_SYNC_MS] ?: TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
+            ),
+            clipTargetChars = TtsPrefs.coerceClipTargetChars(
+                this[KEY_TTS_CLIP_TARGET_CHARS] ?: TtsPrefs.DEFAULT_CLIP_TARGET_CHARS,
+            ),
+            clipFlexChars = TtsPrefs.coerceClipFlexChars(
+                this[KEY_TTS_CLIP_FLEX_CHARS] ?: TtsPrefs.DEFAULT_CLIP_FLEX_CHARS,
             ),
         )
     }

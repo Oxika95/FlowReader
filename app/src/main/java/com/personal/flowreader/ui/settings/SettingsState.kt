@@ -81,6 +81,8 @@ data class TtsSettingsState(
     val minSignal: Float,
     val sentenceGapMs: Int,
     val highlightSyncMs: Int,
+    val clipTargetChars: Int,
+    val clipFlexChars: Int,
 )
 
 data class TtsSettingsCallbacks(
@@ -94,6 +96,8 @@ data class TtsSettingsCallbacks(
     val onMinSignal: (Float, Boolean) -> Unit,
     val onSentenceGapMs: (Int) -> Unit,
     val onHighlightSyncMs: (Int) -> Unit,
+    val onClipTargetChars: (Int) -> Unit,
+    val onClipFlexChars: (Int) -> Unit,
 )
 
 data class FilterSettingsState(

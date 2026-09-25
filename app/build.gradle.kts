@@ -13,8 +13,8 @@ android {
         applicationId = "com.personal.flowreader"
         minSdk = 26
         targetSdk = 36
-        versionCode = 95
-        versionName = "0.95-alpha"
+        versionCode = 96
+        versionName = "0.96-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -70,4 +70,7 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnit()
+    // Forward opt-in for live Edge length bench (EdgeSynthLengthBench).
+    systemProperty("flow.bench.edge", System.getProperty("flow.bench.edge") ?: "")
+    environment("FLOW_BENCH_EDGE", System.getenv("FLOW_BENCH_EDGE") ?: "")
 }
