@@ -3,6 +3,10 @@ package com.personal.flowreader.tts
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
@@ -30,6 +34,11 @@ data class EdgeAudio(
 class EdgeTtsClient(
     private val http: OkHttpClient = defaultHttp(),
 ) {
+    /**
+     * Synthesize [text] by racing [RACE_ATTEMPTS] parallel WebSockets. The first
+     * successful [EdgeAudio] wins; siblings are cancelled. A hard [RACE_TIMEOUT_MS]
+     * wall aborts the whole race if every attempt hangs.
+     */
     suspend fun synthesize(
         text: String,
         voice: String = "en-US-JennyNeural",
@@ -46,9 +55,64 @@ class EdgeTtsClient(
                 "Utterance too long (${trimmed.length} chars; max $MAX_UTTERANCE_CHARS).",
             )
         }
-        return withTimeout(SYNTH_TIMEOUT_MS) {
-            synthesizeOnce(trimmed, voice, lang, ratePercent, pitchPercent)
+        SynthDebugLog.append(
+            "edge race start n=$RACE_ATTEMPTS chars=${trimmed.length} voice=$voice",
+        )
+        return withTimeout(RACE_TIMEOUT_MS) {
+            raceSynthesize(trimmed, voice, lang, ratePercent, pitchPercent)
         }
+    }
+
+    private suspend fun raceSynthesize(
+        text: String,
+        voice: String,
+        lang: String,
+        ratePercent: Int,
+        pitchPercent: Int,
+    ): EdgeAudio = coroutineScope {
+        val deferreds = List(RACE_ATTEMPTS) { idx ->
+            async {
+                val outcome = try {
+                    Result.success(synthesizeOnce(text, voice, lang, ratePercent, pitchPercent))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    SynthDebugLog.append(
+                        "edge race[$idx] fail: ${t.message ?: t.javaClass.simpleName}",
+                    )
+                    Result.failure(t)
+                }
+                idx to outcome
+            }
+        }
+        val pending = deferreds.toMutableSet()
+        val errors = ArrayList<Throwable>(RACE_ATTEMPTS)
+        while (pending.isNotEmpty()) {
+            val (idx, outcome) = select {
+                for (d in pending.toList()) {
+                    d.onAwait { value ->
+                        pending.remove(d)
+                        value
+                    }
+                }
+            }
+            outcome.fold(
+                onSuccess = { audio ->
+                    SynthDebugLog.append(
+                        "edge race win[$idx] bytes=${audio.mp3.size} cancelOthers=${pending.size}",
+                    )
+                    pending.forEach { it.cancel() }
+                    deferreds.forEach { if (it.isActive) it.cancel() }
+                    return@coroutineScope audio
+                },
+                onFailure = { t ->
+                    errors += t
+                },
+            )
+        }
+        SynthDebugLog.append("edge race all failed n=${errors.size}")
+        throw errors.lastOrNull()
+            ?: IllegalStateException("All Edge race attempts failed.")
     }
 
     private suspend fun synthesizeOnce(
@@ -157,7 +221,10 @@ class EdgeTtsClient(
     companion object {
         const val MAX_UTTERANCE_CHARS = 4_000
         const val MAX_AUDIO_BYTES = 8 * 1024 * 1024
-        private const val SYNTH_TIMEOUT_MS = 45_000L
+        /** Parallel WebSockets per utterance; first success wins. */
+        private const val RACE_ATTEMPTS = 3
+        /** Wall clock for the whole race (all attempts hang → fail). */
+        private const val RACE_TIMEOUT_MS = 6_000L
 
         fun parseAudioMetadataBody(body: String): List<EdgeWordBoundary> {
             if (body.isBlank()) return emptyList()
@@ -211,9 +278,9 @@ class EdgeTtsClient(
         }
 
         private fun defaultHttp(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(45, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(6, TimeUnit.SECONDS)
+            .writeTimeout(6, TimeUnit.SECONDS)
             .build()
     }
 }
