@@ -18,7 +18,10 @@ internal object SentenceLengthNormalizer {
     private const val BAND_FLOOR = 20
     private const val BAND_CEILING = 500
 
-    private val softBreaks = listOf(", ", "; ", ": ", " — ", " – ", " - ")
+    private val softBreaks = listOf(
+        ". ", "? ", "! ",
+        ", ", "; ", ": ", " — ", " – ", " - ",
+    )
 
     data class Band(val target: Int, val min: Int, val max: Int)
 

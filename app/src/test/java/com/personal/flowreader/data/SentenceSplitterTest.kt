@@ -21,9 +21,16 @@ class KoehnSentenceBreakTest {
 
     @Test
     fun doesNotBreakOnEg() {
-        val parts = KoehnSentenceBreak.split("See e.g. apples and oranges.")
+        val parts = KoehnSentenceBreak.split("See e.g. Apples and oranges.")
         assertEquals(1, parts.size)
         assertTrue(parts[0].contains("e.g."))
+    }
+
+    @Test
+    fun doesNotBreakOnIe() {
+        val parts = KoehnSentenceBreak.split("Use i.e. Exact wording only.")
+        assertEquals(1, parts.size)
+        assertTrue(parts[0].contains("i.e."))
     }
 
     @Test
@@ -33,9 +40,41 @@ class KoehnSentenceBreakTest {
     }
 
     @Test
+    fun breaksOnNoBeforeCapitalWord() {
+        val parts = KoehnSentenceBreak.split("No. That was never the plan.")
+        assertEquals(2, parts.size)
+        assertEquals("No.", parts[0])
+        assertEquals("That was never the plan.", parts[1])
+    }
+
+    @Test
     fun simplePeriodSplit() {
         val parts = KoehnSentenceBreak.split("Hello world. Next one.")
         assertEquals(listOf("Hello world.", "Next one."), parts)
+    }
+
+    @Test
+    fun breaksAfterInc() {
+        val parts = KoehnSentenceBreak.split("She works at Apple Inc. The stock rose.")
+        assertEquals(2, parts.size)
+        assertEquals("She works at Apple Inc.", parts[0])
+        assertEquals("The stock rose.", parts[1])
+    }
+
+    @Test
+    fun breaksAfterEtc() {
+        val parts = KoehnSentenceBreak.split("He nodded etc. She continued.")
+        assertEquals(2, parts.size)
+        assertEquals("He nodded etc.", parts[0])
+        assertEquals("She continued.", parts[1])
+    }
+
+    @Test
+    fun breaksAfterSingleLetterSection() {
+        val parts = KoehnSentenceBreak.split("See section A. The next part begins here.")
+        assertEquals(2, parts.size)
+        assertEquals("See section A.", parts[0])
+        assertEquals("The next part begins here.", parts[1])
     }
 }
 
@@ -64,6 +103,20 @@ class SentenceLengthNormalizerTest {
         assertTrue(out.size >= 2)
         assertTrue(out.all { it.length <= SentenceLengthNormalizer.band().max })
         assertTrue(out[0].endsWith(",") || out[0].contains(","))
+    }
+
+    @Test
+    fun splitsLongAtPeriodNearTarget() {
+        // Missed Koehn break: one blob with an interior ". " over max → soft-split on period.
+        val left = "a".repeat(60) + ". "
+        val right = "B" + "b".repeat(60)
+        val long = left + right
+        assertTrue(long.length > SentenceLengthNormalizer.band().max)
+        val out = SentenceLengthNormalizer.normalize(listOf(long))
+        assertTrue(out.size >= 2)
+        assertTrue(out.all { it.length <= SentenceLengthNormalizer.band().max })
+        assertTrue(out[0].endsWith("."))
+        assertTrue(out[1].startsWith("B"))
     }
 
     @Test
@@ -110,6 +163,20 @@ class SentenceSplitterTest {
         val s = SentenceSplitter.split(doc)
         assertEquals(1, s.size)
         assertTrue(s[0].text.startsWith("Mr. Smith"))
+    }
+
+    @Test
+    fun keepsIncBreakThroughNormalizeWhenPartsStayLong() {
+        val a = "After many years of careful work she finally left Apple Inc."
+        val b = "The stock rose sharply when buyers flooded the open market floor."
+        assertTrue("a=${a.length}", a.length >= SentenceSplitter.MIN_CHARS)
+        assertTrue("b=${b.length}", b.length >= SentenceSplitter.MIN_CHARS)
+        assertTrue(a.length + 1 + b.length > SentenceSplitter.MAX_CHARS)
+        val doc = TxtIngest.readText("t", "$a $b")
+        val s = SentenceSplitter.split(doc)
+        assertEquals(2, s.size)
+        assertTrue(s[0].text.endsWith("Inc."))
+        assertTrue(s[1].text.startsWith("The stock"))
     }
 
     @Test

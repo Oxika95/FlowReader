@@ -7,6 +7,7 @@ import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsVoiceOption
+import com.personal.flowreader.tts.PairedBtDevice
 import com.personal.flowreader.ui.open.OpenBookViewModel
 import com.personal.flowreader.ui.open.OpenUi
 
@@ -79,6 +80,9 @@ data class TtsSettingsState(
     val doubleTapPlay: Boolean,
     val autoScrollWithTts: Boolean,
     val minSignal: Float,
+    val underlayBtAddress: String,
+    val underlayBtName: String,
+    val underlayBtConnected: Boolean,
     val sentenceGapMs: Int,
     val highlightSyncMs: Int,
     val clipTargetChars: Int,
@@ -94,6 +98,8 @@ data class TtsSettingsCallbacks(
     val onDoubleTapPlay: (Boolean) -> Unit,
     val onAutoScrollWithTts: (Boolean) -> Unit,
     val onMinSignal: (Float, Boolean) -> Unit,
+    val onUnderlayBtDevice: (address: String, name: String) -> Unit,
+    val underlayBondedDevices: () -> List<PairedBtDevice>,
     val onSentenceGapMs: (Int) -> Unit,
     val onHighlightSyncMs: (Int) -> Unit,
     val onClipTargetChars: (Int) -> Unit,

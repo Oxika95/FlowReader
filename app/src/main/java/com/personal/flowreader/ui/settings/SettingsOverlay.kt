@@ -242,6 +242,9 @@ internal fun SettingsOverlay(
                         doubleTapPlay = tts.doubleTapPlay,
                         autoScrollWithTts = tts.autoScrollWithTts,
                         minSignal = tts.minSignal,
+                        underlayBtAddress = tts.underlayBtAddress,
+                        underlayBtName = tts.underlayBtName,
+                        underlayBtConnected = tts.underlayBtConnected,
                         sentenceGapMs = tts.sentenceGapMs,
                         highlightSyncMs = tts.highlightSyncMs,
                         onEngine = ttsCallbacks.onEngine,
@@ -254,6 +257,8 @@ internal fun SettingsOverlay(
                         onDoubleTapPlay = ttsCallbacks.onDoubleTapPlay,
                         onAutoScrollWithTts = ttsCallbacks.onAutoScrollWithTts,
                         onMinSignal = ttsCallbacks.onMinSignal,
+                        onUnderlayBtDevice = ttsCallbacks.onUnderlayBtDevice,
+                        underlayBondedDevices = ttsCallbacks.underlayBondedDevices,
                         onSentenceGapMs = ttsCallbacks.onSentenceGapMs,
                         onHighlightSyncMs = ttsCallbacks.onHighlightSyncMs,
                     )

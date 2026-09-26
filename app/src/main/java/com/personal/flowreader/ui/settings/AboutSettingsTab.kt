@@ -88,7 +88,7 @@ internal fun AboutSettingsTab(
         Spacer(Modifier.height(FlowTokens.Space.L))
         SettingsToggleRow(
             title = "Debug mode",
-            subtitle = "Show a draggable bug bubble to view and save synthesizer logs",
+            subtitle = "Show a draggable bug bubble; drag to the X to turn off",
             checked = debugEnabled,
             onCheckedChange = onDebugEnabled,
         )

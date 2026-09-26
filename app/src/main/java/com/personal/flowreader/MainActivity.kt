@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
             val libraryVm: LibraryViewModel = viewModel()
             val openUi by openVm.ui.collectAsState()
             val libraryUi by libraryVm.ui.collectAsState()
+            val tts by (application as FlowApp).tts.state.collectAsState()
             val incoming by pendingIncoming.collectAsState()
 
             LaunchedEffect(openUi.orientation) {
@@ -82,6 +83,13 @@ class MainActivity : ComponentActivity() {
                     ReaderOrientation.Auto -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                     ReaderOrientation.Portrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                     ReaderOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                }
+            }
+
+            // TTS media errors force-enable debug; keep About/settings toggle in sync.
+            LaunchedEffect(tts.debugEnabled) {
+                if (tts.debugEnabled && !openUi.debugEnabled) {
+                    openVm.setDebugEnabled(true)
                 }
             }
 
@@ -167,8 +175,10 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-                        if (openUi.debugEnabled) {
-                            DebugSynthDumpFab()
+                        if (openUi.debugEnabled || tts.debugEnabled) {
+                            DebugSynthDumpFab(
+                                onCloseDebugger = { openVm.setDebugEnabled(false) },
+                            )
                         }
                     }
                 }

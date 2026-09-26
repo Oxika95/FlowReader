@@ -325,7 +325,6 @@ private fun BannerCoverUnderlay(
 internal fun MediaControlCard(
     visible: Boolean,
     playing: Boolean,
-    error: String?,
     modifier: Modifier = Modifier,
     onPlay: () -> Unit,
     onPause: () -> Unit,
@@ -379,17 +378,6 @@ internal fun MediaControlCard(
                     ) {
                         Icon(Icons.Default.Lock, contentDescription = "Lock scroll to TTS")
                     }
-                }
-                error?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(
-                            horizontal = FlowTokens.Space.XS,
-                            vertical = FlowTokens.Space.XS,
-                        ),
-                    )
                 }
             }
             FilledIconButton(

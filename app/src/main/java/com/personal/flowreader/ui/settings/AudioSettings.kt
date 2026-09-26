@@ -131,8 +131,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.Manifest
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import com.personal.flowreader.data.AccentHue
+import com.personal.flowreader.tts.PairedBtDevice
+import com.personal.flowreader.tts.UnderlayBluetoothMonitor
 import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterMatchType
 import com.personal.flowreader.data.FilterRule
@@ -184,6 +190,9 @@ internal fun AudioSettingsTab(
     doubleTapPlay: Boolean = false,
     autoScrollWithTts: Boolean = false,
     minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
+    underlayBtAddress: String = "",
+    underlayBtName: String = "",
+    underlayBtConnected: Boolean = false,
     sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
     onEngine: (String) -> Unit,
@@ -196,6 +205,8 @@ internal fun AudioSettingsTab(
     onDoubleTapPlay: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
     onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
+    onUnderlayBtDevice: (String, String) -> Unit = { _, _ -> },
+    underlayBondedDevices: () -> List<PairedBtDevice> = { emptyList() },
     onSentenceGapMs: (Int) -> Unit = {},
     onHighlightSyncMs: (Int) -> Unit = {},
 ) {
@@ -232,11 +243,16 @@ internal fun AudioSettingsTab(
             doubleTapPlay = doubleTapPlay,
             autoScrollWithTts = autoScrollWithTts,
             minSignal = minSignal,
+            underlayBtAddress = underlayBtAddress,
+            underlayBtName = underlayBtName,
+            underlayBtConnected = underlayBtConnected,
             sentenceGapMs = sentenceGapMs,
             highlightSyncMs = highlightSyncMs,
             onDoubleTapPlay = onDoubleTapPlay,
             onAutoScrollWithTts = onAutoScrollWithTts,
             onMinSignal = onMinSignal,
+            onUnderlayBtDevice = onUnderlayBtDevice,
+            underlayBondedDevices = underlayBondedDevices,
             onSentenceGapMs = onSentenceGapMs,
             onHighlightSyncMs = onHighlightSyncMs,
         )
@@ -540,19 +556,26 @@ internal fun VoiceSettingsTab(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PlaybackSettingsTab(
     doubleTapPlay: Boolean = false,
     autoScrollWithTts: Boolean = false,
     minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
+    underlayBtAddress: String = "",
+    underlayBtName: String = "",
+    underlayBtConnected: Boolean = false,
     sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
     onDoubleTapPlay: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
     onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
+    onUnderlayBtDevice: (String, String) -> Unit = { _, _ -> },
+    underlayBondedDevices: () -> List<PairedBtDevice> = { emptyList() },
     onSentenceGapMs: (Int) -> Unit = {},
     onHighlightSyncMs: (Int) -> Unit = {},
 ) {
+    val context = LocalContext.current
     var gapDragging by remember { mutableStateOf(false) }
     var localGap by remember { mutableFloatStateOf(sentenceGapMs.toFloat()) }
     val shownGap = if (gapDragging) {
@@ -570,6 +593,43 @@ internal fun PlaybackSettingsTab(
     var signalDragging by remember { mutableStateOf(false) }
     var localSignal by remember { mutableFloatStateOf(minSignal) }
     val shownSignal = if (signalDragging) localSignal else minSignal
+    val underlayOn = TtsPrefs.isUnderlayEnabled(shownSignal)
+    var lastUnderlayLevel by remember {
+        mutableFloatStateOf(
+            if (TtsPrefs.isUnderlayEnabled(minSignal)) minSignal else DEFAULT_UNDERLAY_ON_LEVEL,
+        )
+    }
+    var gaplessOpen by remember { mutableStateOf(false) }
+    var btPickerOpen by remember { mutableStateOf(false) }
+    var bondedDevices by remember { mutableStateOf<List<PairedBtDevice>>(emptyList()) }
+    var pendingOpenPicker by remember { mutableStateOf(false) }
+
+    fun loadBondedAndOpen() {
+        bondedDevices = underlayBondedDevices()
+        btPickerOpen = true
+    }
+
+    val btPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted && pendingOpenPicker) {
+            pendingOpenPicker = false
+            loadBondedAndOpen()
+        } else {
+            pendingOpenPicker = false
+        }
+    }
+
+    fun openBtPicker() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            !UnderlayBluetoothMonitor.hasConnectPermission(context)
+        ) {
+            pendingOpenPicker = true
+            btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+            return
+        }
+        loadBondedAndOpen()
+    }
 
     SettingsToggleRow(
         title = "Auto-scroll with playback",
@@ -586,126 +646,311 @@ internal fun PlaybackSettingsTab(
     )
 
     Spacer(Modifier.height(FlowTokens.Space.L))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Tonal underlay",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            formatMinSignalLabel(shownSignal),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-    Text(
-        "Prevents audio drop out on some hardware at low tones.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Slider(
-        value = TtsPrefs.tonalUnderlayIndex(shownSignal).toFloat(),
-        onValueChange = {
-            val index = it.roundToInt().coerceIn(TtsPrefs.TONAL_UNDERLAY_STEPS.indices)
-            val level = TtsPrefs.TONAL_UNDERLAY_STEPS[index]
-            signalDragging = true
-            localSignal = level
-            onMinSignal(level, false)
-        },
-        onValueChangeFinished = {
-            onMinSignal(TtsPrefs.coerceMinSignal(localSignal), true)
+    SettingsToggleRow(
+        title = "Tonal underlay",
+        subtitle = underlaySubtitle(
+            underlayOn = underlayOn,
+            address = underlayBtAddress,
+            name = underlayBtName,
+            connected = underlayBtConnected,
+        ),
+        checked = underlayOn,
+        onCheckedChange = { enabled ->
+            if (enabled) {
+                val level = TtsPrefs.coerceMinSignal(lastUnderlayLevel).let {
+                    if (TtsPrefs.isUnderlayEnabled(it)) it else DEFAULT_UNDERLAY_ON_LEVEL
+                }
+                localSignal = level
+                onMinSignal(level, true)
+            } else {
+                if (TtsPrefs.isUnderlayEnabled(shownSignal)) {
+                    lastUnderlayLevel = shownSignal
+                }
+                localSignal = TtsPrefs.DEFAULT_MIN_SIGNAL
+                onMinSignal(TtsPrefs.DEFAULT_MIN_SIGNAL, true)
+            }
             signalDragging = false
         },
-        valueRange = 0f..TtsPrefs.TONAL_UNDERLAY_STEPS.lastIndex.toFloat(),
-        steps = TtsPrefs.TONAL_UNDERLAY_STEPS.size - 2,
-        modifier = Modifier.fillMaxWidth(),
     )
+    AnimatedVisibility(visible = underlayOn) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Level",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    formatMinSignalLabel(shownSignal),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Slider(
+                value = underlayLevelSliderIndex(shownSignal).toFloat(),
+                onValueChange = {
+                    val level = UNDERLAY_LEVEL_STEPS[
+                        it.roundToInt().coerceIn(UNDERLAY_LEVEL_STEPS.indices),
+                    ]
+                    signalDragging = true
+                    localSignal = level
+                    lastUnderlayLevel = level
+                    onMinSignal(level, false)
+                },
+                onValueChangeFinished = {
+                    val level = TtsPrefs.coerceMinSignal(localSignal)
+                    lastUnderlayLevel = level
+                    onMinSignal(level, true)
+                    signalDragging = false
+                },
+                valueRange = 0f..UNDERLAY_LEVEL_STEPS.lastIndex.toFloat(),
+                steps = (UNDERLAY_LEVEL_STEPS.size - 2).coerceAtLeast(0),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            ExposedDropdownMenuBox(
+                expanded = btPickerOpen,
+                onExpandedChange = { expanding ->
+                    if (expanding) openBtPicker() else btPickerOpen = false
+                },
+            ) {
+                OutlinedTextField(
+                    value = underlayBtDeviceFieldValue(underlayBtAddress, underlayBtName),
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Bluetooth device") },
+                    supportingText = {
+                        Text(
+                            underlayBtDeviceSupportingText(
+                                address = underlayBtAddress,
+                                name = underlayBtName,
+                                connected = underlayBtConnected,
+                            ),
+                        )
+                    },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = btPickerOpen)
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(),
+                    modifier = Modifier
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+                )
+                ExposedDropdownMenu(
+                    expanded = btPickerOpen,
+                    onDismissRequest = { btPickerOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("None (always on)") },
+                        onClick = {
+                            onUnderlayBtDevice("", "")
+                            btPickerOpen = false
+                        },
+                    )
+                    if (bondedDevices.isEmpty()) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "No paired devices",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            onClick = { btPickerOpen = false },
+                            enabled = false,
+                        )
+                    } else {
+                        bondedDevices.forEach { device ->
+                            DropdownMenuItem(
+                                text = { Text(device.name) },
+                                onClick = {
+                                    onUnderlayBtDevice(device.address, device.name)
+                                    btPickerOpen = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Spacer(Modifier.height(FlowTokens.Space.L))
-    // Title + live value, then description, then slider (matches AudioToggleRow text hierarchy).
+    SettingsFlyoutHeader(
+        title = "Gapless audio",
+        expanded = gaplessOpen,
+        onToggle = { gaplessOpen = !gaplessOpen },
+    )
+    AnimatedVisibility(visible = gaplessOpen) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Sentence offset",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    formatSentenceGapLabel(shownGap),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Text(
+                when {
+                    shownGap < 0 -> "Negative = equal-power crossfade between sentences"
+                    shownGap > 0 -> "Positive = pause between sentences"
+                    else -> "Zero = butt-join (gapless)"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            CenterOriginSlider(
+                value = if (gapDragging) localGap else sentenceGapMs.toFloat(),
+                onValueChange = {
+                    gapDragging = true
+                    localGap = it
+                },
+                onValueChangeFinished = {
+                    onSentenceGapMs(TtsPrefs.coerceSentenceGapMs(localGap.roundToInt()))
+                    gapDragging = false
+                },
+                valueRange = TtsPrefs.MIN_SENTENCE_GAP_MS.toFloat()..TtsPrefs.MAX_SENTENCE_GAP_MS.toFloat(),
+                steps = (TtsPrefs.MAX_SENTENCE_GAP_MS - TtsPrefs.MIN_SENTENCE_GAP_MS) /
+                    TtsPrefs.SENTENCE_GAP_STEP_MS - 1,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(FlowTokens.Space.L))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Word highlight sync",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    formatHighlightSyncLabel(shownSync),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Text(
+                "Shift Edge word highlight earlier (−) or later (+)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            CenterOriginSlider(
+                value = if (syncDragging) localSync else highlightSyncMs.toFloat(),
+                onValueChange = {
+                    syncDragging = true
+                    localSync = it
+                },
+                onValueChangeFinished = {
+                    onHighlightSyncMs(TtsPrefs.coerceHighlightSyncMs(localSync.roundToInt()))
+                    syncDragging = false
+                },
+                valueRange = TtsPrefs.MIN_HIGHLIGHT_SYNC_MS.toFloat()..
+                    TtsPrefs.MAX_HIGHLIGHT_SYNC_MS.toFloat(),
+                steps = (TtsPrefs.MAX_HIGHLIGHT_SYNC_MS - TtsPrefs.MIN_HIGHLIGHT_SYNC_MS) /
+                    TtsPrefs.HIGHLIGHT_SYNC_STEP_MS - 1,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+private fun underlaySubtitle(
+    underlayOn: Boolean,
+    address: String,
+    name: String,
+    connected: Boolean,
+): String {
+    if (!underlayOn) {
+        return "Prevents audio drop out on some hardware at low tones."
+    }
+    if (address.isBlank()) {
+        return "Prevents audio drop out on some hardware at low tones."
+    }
+    val label = name.ifBlank { address }
+    return if (connected) {
+        "Active on $label"
+    } else {
+        "Standby — waiting for $label"
+    }
+}
+
+private fun underlayBtDeviceFieldValue(address: String, name: String): String =
+    when {
+        address.isBlank() -> "None (always on)"
+        name.isNotBlank() -> name
+        else -> address
+    }
+
+private fun underlayBtDeviceSupportingText(
+    address: String,
+    name: String,
+    connected: Boolean,
+): String = when {
+    address.isBlank() -> "Underlay plays whenever playback is on"
+    connected -> "Connected — underlay active"
+    else -> "Standby until ${name.ifBlank { address }} connects"
+}
+
+/** Enabled underlay amplitudes only (`0` / Off is handled by the toggle). */
+private val UNDERLAY_LEVEL_STEPS: FloatArray =
+    TtsPrefs.TONAL_UNDERLAY_STEPS.filter { it < 0f }.toFloatArray()
+
+private const val DEFAULT_UNDERLAY_ON_LEVEL = -60f
+
+private fun underlayLevelSliderIndex(level: Float): Int {
+    var best = 0
+    var bestDist = Float.MAX_VALUE
+    for (i in UNDERLAY_LEVEL_STEPS.indices) {
+        val dist = kotlin.math.abs(UNDERLAY_LEVEL_STEPS[i] - level)
+        if (dist < bestDist) {
+            best = i
+            bestDist = dist
+        }
+    }
+    return best
+}
+
+@Composable
+private fun SettingsFlyoutHeader(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(vertical = FlowTokens.Space.XS),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "Sentence offset",
-            style = MaterialTheme.typography.bodyLarge,
+            title,
+            style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
-        Text(
-            formatSentenceGapLabel(shownGap),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
+        Icon(
+            imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = if (expanded) "Hide $title" else "Show $title",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    Text(
-        when {
-            shownGap < 0 -> "Negative = equal-power crossfade between sentences"
-            shownGap > 0 -> "Positive = pause between sentences"
-            else -> "Zero = butt-join (gapless)"
-        },
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    CenterOriginSlider(
-        value = if (gapDragging) localGap else sentenceGapMs.toFloat(),
-        onValueChange = {
-            gapDragging = true
-            localGap = it
-        },
-        onValueChangeFinished = {
-            onSentenceGapMs(TtsPrefs.coerceSentenceGapMs(localGap.roundToInt()))
-            gapDragging = false
-        },
-        valueRange = TtsPrefs.MIN_SENTENCE_GAP_MS.toFloat()..TtsPrefs.MAX_SENTENCE_GAP_MS.toFloat(),
-        steps = (TtsPrefs.MAX_SENTENCE_GAP_MS - TtsPrefs.MIN_SENTENCE_GAP_MS) /
-            TtsPrefs.SENTENCE_GAP_STEP_MS - 1,
-        modifier = Modifier.fillMaxWidth(),
-    )
-
-    Spacer(Modifier.height(FlowTokens.Space.L))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Word highlight sync",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            formatHighlightSyncLabel(shownSync),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-    Text(
-        "Shift Edge word highlight earlier (−) or later (+)",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    CenterOriginSlider(
-        value = if (syncDragging) localSync else highlightSyncMs.toFloat(),
-        onValueChange = {
-            syncDragging = true
-            localSync = it
-        },
-        onValueChangeFinished = {
-            onHighlightSyncMs(TtsPrefs.coerceHighlightSyncMs(localSync.roundToInt()))
-            syncDragging = false
-        },
-        valueRange = TtsPrefs.MIN_HIGHLIGHT_SYNC_MS.toFloat()..
-            TtsPrefs.MAX_HIGHLIGHT_SYNC_MS.toFloat(),
-        steps = (TtsPrefs.MAX_HIGHLIGHT_SYNC_MS - TtsPrefs.MIN_HIGHLIGHT_SYNC_MS) /
-            TtsPrefs.HIGHLIGHT_SYNC_STEP_MS - 1,
-        modifier = Modifier.fillMaxWidth(),
-    )
 }
 
 private fun formatSentenceGapLabel(ms: Int): String = when {

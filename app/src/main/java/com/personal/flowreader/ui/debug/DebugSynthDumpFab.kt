@@ -1,6 +1,12 @@
 package com.personal.flowreader.ui.debug
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -21,11 +27,12 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -38,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +53,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.R
 import com.personal.flowreader.tts.SynthDebugLog
@@ -57,13 +66,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private val BubbleSize = FlowTokens.Comp.ButtonPrimary
+private val DismissTargetSize = 56.dp
 
 /**
  * Draggable chat-head style bug bubble. Tap opens a full-screen synth log card
- * with live events and a save action.
+ * with live events and a save action. Drag onto the bottom dismiss target to
+ * turn off debug mode (Android bubble-style remove).
+ *
+ * @param onCloseDebugger Turns off debug mode (hides the bubble and stops logging).
  */
 @Composable
-fun DebugSynthDumpFab(modifier: Modifier = Modifier) {
+fun DebugSynthDumpFab(
+    modifier: Modifier = Modifier,
+    onCloseDebugger: () -> Unit,
+) {
     var panelOpen by remember { mutableStateOf(false) }
 
     BoxWithConstraints(
@@ -74,17 +90,34 @@ fun DebugSynthDumpFab(modifier: Modifier = Modifier) {
         val density = LocalDensity.current
         val bubblePx = with(density) { BubbleSize.toPx() }
         val padPx = with(density) { FlowTokens.Space.M.toPx() }
+        val dismissSizePx = with(density) { DismissTargetSize.toPx() }
         val maxX = (constraints.maxWidth - bubblePx - padPx).coerceAtLeast(padPx)
         val maxY = (constraints.maxHeight - bubblePx - padPx).coerceAtLeast(padPx)
+        val dragMaxX = (constraints.maxWidth - bubblePx).coerceAtLeast(0f)
+        val dragMaxY = (constraints.maxHeight - bubblePx).coerceAtLeast(0f)
+        val dismissCenter = Offset(
+            x = constraints.maxWidth / 2f,
+            y = constraints.maxHeight - padPx - dismissSizePx / 2f,
+        )
+        // Hit when bubble center is near the dismiss target (generous grab radius).
+        val dismissHitRadius = bubblePx / 2f + dismissSizePx
 
         var offsetX by remember { mutableFloatStateOf(Float.NaN) }
         var offsetY by remember { mutableFloatStateOf(Float.NaN) }
+        var dragging by remember { mutableStateOf(false) }
+        var overDismiss by remember { mutableStateOf(false) }
+
+        fun bubbleCenter() = Offset(offsetX + bubblePx / 2f, offsetY + bubblePx / 2f)
+
+        fun updateOverDismiss() {
+            overDismiss = (bubbleCenter() - dismissCenter).getDistance() <= dismissHitRadius
+        }
 
         LaunchedEffect(maxX, maxY) {
             if (offsetX.isNaN()) {
                 offsetX = maxX
                 offsetY = padPx
-            } else {
+            } else if (!dragging) {
                 offsetX = offsetX.coerceIn(padPx, maxX)
                 offsetY = offsetY.coerceIn(padPx, maxY)
             }
@@ -96,10 +129,14 @@ fun DebugSynthDumpFab(modifier: Modifier = Modifier) {
                     .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
                     .size(BubbleSize)
                     .background(
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        color = if (overDismiss) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else {
+                            MaterialTheme.colorScheme.tertiaryContainer
+                        },
                         shape = CircleShape,
                     )
-                    .pointerInput(maxX, maxY, padPx) {
+                    .pointerInput(maxX, maxY, padPx, dragMaxX, dragMaxY, dismissCenter, dismissHitRadius) {
                         val touchSlop = viewConfiguration.touchSlop
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -110,15 +147,26 @@ fun DebugSynthDumpFab(modifier: Modifier = Modifier) {
                                 total += delta
                                 if (!dragged && total.getDistance() > touchSlop) {
                                     dragged = true
+                                    dragging = true
                                 }
                                 if (dragged) {
                                     change.consume()
-                                    offsetX = (offsetX + delta.x).coerceIn(padPx, maxX)
-                                    offsetY = (offsetY + delta.y).coerceIn(padPx, maxY)
+                                    offsetX = (offsetX + delta.x).coerceIn(0f, dragMaxX)
+                                    offsetY = (offsetY + delta.y).coerceIn(0f, dragMaxY)
+                                    updateOverDismiss()
                                 }
                             }
                             if (!dragged) {
                                 panelOpen = true
+                            } else if (overDismiss) {
+                                dragging = false
+                                overDismiss = false
+                                onCloseDebugger()
+                            } else {
+                                offsetX = offsetX.coerceIn(padPx, maxX)
+                                offsetY = offsetY.coerceIn(padPx, maxY)
+                                dragging = false
+                                overDismiss = false
                             }
                         }
                     },
@@ -127,16 +175,75 @@ fun DebugSynthDumpFab(modifier: Modifier = Modifier) {
                 Icon(
                     painter = painterResource(R.drawable.ic_bug),
                     contentDescription = "Open synth log",
-                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    tint = if (overDismiss) {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.onTertiaryContainer
+                    },
                     modifier = Modifier.size(FlowTokens.Icon.L),
                 )
             }
         }
 
+        BubbleDismissTarget(
+            visible = dragging,
+            armed = overDismiss,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = FlowTokens.Space.M),
+        )
+
         SynthDebugLogPanel(
             visible = panelOpen,
             onDismiss = { panelOpen = false },
         )
+    }
+}
+
+@Composable
+private fun BubbleDismissTarget(
+    visible: Boolean,
+    armed: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (armed) 1.25f else 1f,
+        label = "dismissTargetScale",
+    )
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn() + scaleIn(initialScale = 0.6f),
+        exit = fadeOut() + scaleOut(targetScale = 0.6f),
+    ) {
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .size(DismissTargetSize)
+                .background(
+                    color = if (armed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Drag here to turn off debugger",
+                tint = if (armed) {
+                    MaterialTheme.colorScheme.onError
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(FlowTokens.Icon.L),
+            )
+        }
     }
 }
 
@@ -208,12 +315,13 @@ private fun SynthDebugLogPanel(
             horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(
+            Button(
                 onClick = {
                     SynthDebugLog.clear()
                     saveStatus = null
                 },
                 enabled = lines.isNotEmpty(),
+                modifier = Modifier.weight(1f),
             ) {
                 Text("Clear")
             }
@@ -234,7 +342,7 @@ private fun SynthDebugLogPanel(
                 },
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Save logs")
+                Text("Save")
             }
         }
         saveStatus?.let { status ->

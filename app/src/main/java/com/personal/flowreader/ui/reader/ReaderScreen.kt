@@ -533,18 +533,6 @@ fun ReaderScreen(
         }
     }
 
-    fun navigateBack() {
-        when {
-            scrollLocked -> scrollLocked = false
-            selectionActive -> clearTextSelection()
-            filterEditor != null -> filterEditor = null
-            overlay == ReaderOverlay.Settings ||
-                overlay == ReaderOverlay.Toc ||
-                overlay == ReaderOverlay.Chrome -> overlay = ReaderOverlay.Hidden
-            else -> leave.value()
-        }
-    }
-
     fun enableScrollLock() {
         scrollLocked = true
         overlay = ReaderOverlay.Hidden
@@ -552,6 +540,23 @@ fun ReaderScreen(
         val target = playbackBlockIndex
         if (target >= 0) {
             scope.launch { centerItem(target) }
+        }
+    }
+
+    fun disableScrollLock() {
+        scrollLocked = false
+        overlay = ReaderOverlay.Chrome
+    }
+
+    fun navigateBack() {
+        when {
+            scrollLocked -> disableScrollLock()
+            selectionActive -> clearTextSelection()
+            filterEditor != null -> filterEditor = null
+            overlay == ReaderOverlay.Settings ||
+                overlay == ReaderOverlay.Toc ||
+                overlay == ReaderOverlay.Chrome -> overlay = ReaderOverlay.Hidden
+            else -> leave.value()
         }
     }
 
@@ -1018,7 +1023,6 @@ fun ReaderScreen(
                     MediaControlCard(
                         visible = chromeOpen,
                         playing = tts.playing,
-                        error = tts.error,
                         modifier = Modifier
                             .fillMaxWidth()
                             .chromeStackCollapse(edgeChipBottom && chromeOpen),
@@ -1033,7 +1037,7 @@ fun ReaderScreen(
 
                 ScrollLockUnlockButton(
                     visible = scrollLocked,
-                    onUnlock = { scrollLocked = false },
+                    onUnlock = { disableScrollLock() },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
@@ -1061,6 +1065,9 @@ fun ReaderScreen(
                 doubleTapPlay = tts.doubleTapPlay,
                 autoScrollWithTts = tts.autoScrollWithTts,
                 minSignal = tts.minSignal,
+                underlayBtAddress = tts.underlayBtAddress,
+                underlayBtName = tts.underlayBtName,
+                underlayBtConnected = tts.underlayBtConnected,
                 sentenceGapMs = tts.sentenceGapMs,
                 highlightSyncMs = tts.highlightSyncMs,
             ),
@@ -1075,6 +1082,8 @@ fun ReaderScreen(
                 onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
                 onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
                 onMinSignal = { level, persist -> vm.tts.setMinSignal(level, persist) },
+                onUnderlayBtDevice = { address, name -> vm.tts.setUnderlayBtDevice(address, name) },
+                underlayBondedDevices = { vm.tts.underlayBondedDevices() },
                 onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
                 onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
             ),

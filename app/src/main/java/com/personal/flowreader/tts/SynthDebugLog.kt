@@ -8,7 +8,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Bounded in-memory ring of synthesizer events for post-stutter dumps.
- * Append is cheap and lock-guarded; only active while [enabled] is true.
+ * Append is cheap and lock-guarded; only active while [enabled] is true
+ * (except [appendError], which force-enables logging first).
  */
 object SynthDebugLog {
     private const val MAX_LINES = 800
@@ -32,19 +33,29 @@ object SynthDebugLog {
 
     fun append(message: String) {
         if (!enabled.get()) return
-        val ts = System.currentTimeMillis()
-        val line = "$ts $message"
-        synchronized(lock) {
-            if (lines.size >= MAX_LINES) lines.removeFirst()
-            lines.addLast(line)
-        }
-        bump()
+        write(message)
+    }
+
+    /** Force-enable logging and record a media/playback error line. */
+    fun appendError(message: String) {
+        enabled.set(true)
+        write("ERROR $message")
     }
 
     fun snapshot(): List<String> = synchronized(lock) { lines.toList() }
 
     fun clear() {
         synchronized(lock) { lines.clear() }
+        bump()
+    }
+
+    private fun write(message: String) {
+        val ts = System.currentTimeMillis()
+        val line = "$ts $message"
+        synchronized(lock) {
+            if (lines.size >= MAX_LINES) lines.removeFirst()
+            lines.addLast(line)
+        }
         bump()
     }
 

@@ -60,6 +60,13 @@ data class TtsPrefs(
      * output so some car head units stay awake.
      */
     val minSignal: Float = DEFAULT_MIN_SIGNAL,
+    /**
+     * When non-empty, underlay stays armed at [minSignal] but only sounds while
+     * this paired Bluetooth device is connected (otherwise standby).
+     */
+    val underlayBtAddress: String = "",
+    /** Display name cache for [underlayBtAddress]. */
+    val underlayBtName: String = "",
     /** Extra pause (+) or crossfade (−) after each spoken sentence (−500…500 ms). */
     val sentenceGapMs: Int = DEFAULT_SENTENCE_GAP_MS,
     /** Offset applied to Edge heard-clock word cues (ms). */
@@ -106,6 +113,22 @@ data class TtsPrefs(
         )
 
         fun isUnderlayEnabled(level: Float): Boolean = level < 0f
+
+        /**
+         * Level fed to the keep-alive oscillator. Prefs keep [minSignal] armed;
+         * when a BT address is set and that device is disconnected, returns 0
+         * (standby) without clearing the stored Level.
+         */
+        fun effectiveMinSignal(
+            minSignal: Float,
+            underlayBtAddress: String,
+            targetConnected: Boolean,
+        ): Float = when {
+            !isUnderlayEnabled(minSignal) -> DEFAULT_MIN_SIGNAL
+            underlayBtAddress.isBlank() -> coerceMinSignal(minSignal)
+            targetConnected -> coerceMinSignal(minSignal)
+            else -> DEFAULT_MIN_SIGNAL
+        }
 
         /** Linear PCM amplitude for [level] (`0` → silence, `-20` → ~0.1). */
         fun underlayLinearGain(level: Float): Float {
@@ -257,6 +280,13 @@ class SettingsStore(context: Context) {
 
     suspend fun setMinSignal(level: Float) {
         store.edit { it[KEY_TTS_TONAL_UNDERLAY] = TtsPrefs.coerceMinSignal(level) }
+    }
+
+    suspend fun setUnderlayBtDevice(address: String, name: String) {
+        store.edit {
+            it[KEY_TTS_UNDERLAY_BT_ADDRESS] = address.trim()
+            it[KEY_TTS_UNDERLAY_BT_NAME] = name.trim()
+        }
     }
 
     suspend fun setSentenceGapMs(ms: Int) {
@@ -411,6 +441,8 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_KEEP_ALIVE = booleanPreferencesKey("tts_keep_alive")
         private val KEY_TTS_MIN_SIGNAL = floatPreferencesKey("tts_min_signal")
         private val KEY_TTS_TONAL_UNDERLAY = floatPreferencesKey("tts_tonal_underlay")
+        private val KEY_TTS_UNDERLAY_BT_ADDRESS = stringPreferencesKey("tts_underlay_bt_address")
+        private val KEY_TTS_UNDERLAY_BT_NAME = stringPreferencesKey("tts_underlay_bt_name")
         private val KEY_TTS_SENTENCE_GAP_MS = intPreferencesKey("tts_sentence_gap_ms")
         private val KEY_TTS_HIGHLIGHT_SYNC_MS = intPreferencesKey("tts_highlight_sync_ms")
         private val KEY_TTS_CLIP_TARGET_CHARS = intPreferencesKey("tts_clip_target_chars")
@@ -483,6 +515,8 @@ class SettingsStore(context: Context) {
                     else -> TtsPrefs.DEFAULT_MIN_SIGNAL
                 },
             ),
+            underlayBtAddress = this[KEY_TTS_UNDERLAY_BT_ADDRESS].orEmpty(),
+            underlayBtName = this[KEY_TTS_UNDERLAY_BT_NAME].orEmpty(),
             sentenceGapMs = TtsPrefs.coerceSentenceGapMs(
                 this[KEY_TTS_SENTENCE_GAP_MS] ?: TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
             ),

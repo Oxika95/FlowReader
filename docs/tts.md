@@ -24,6 +24,7 @@ Priority goals: stability → latency → footprint.
 | Pin card | When playhead leaves the viewport |
 | Margin rail | Cache / loading indicators for Edge clips |
 | Media session | Notification + background keep-alive via `TtsPlaybackService` |
+| Tonal underlay | Quiet noise while playing; optional standby until a paired A2DP device connects |
 
 ## Queue auto-advance
 

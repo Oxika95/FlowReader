@@ -69,6 +69,11 @@ data class TtsUiState(
     val doubleTapPlay: Boolean = true,
     val autoScrollWithTts: Boolean = true,
     val minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
+    /** Paired BT MAC for underlay standby; empty = always on when armed. */
+    val underlayBtAddress: String = "",
+    val underlayBtName: String = "",
+    /** True when [underlayBtAddress] is currently connected (audio/ACL). */
+    val underlayBtConnected: Boolean = false,
     val sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     /** Added to heard media time when resolving Edge word cues (ms). */
     val highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
@@ -103,6 +108,7 @@ class TtsController(
     private val edge = EdgeTtsClient()
     private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
     private val keepAlive = AudioKeepAlive()
+    private val underlayBt = UnderlayBluetoothMonitor(context)
     private val audioEngine = TtsAudioEngine()
     /** Edge word boundaries keyed by sentence index for the attached book/voice. */
     private val wordBoundariesBySentence = ConcurrentHashMap<Int, List<EdgeWordBoundary>>()
@@ -224,6 +230,8 @@ class TtsController(
                 else -> voices.firstOrNull()?.id.orEmpty()
             }
             SynthDebugLog.setEnabled(reader.debugEnabled)
+            underlayBt.setTargetAddress(prefs.underlayBtAddress)
+            underlayBt.start()
             _state.update {
                 it.copy(
                     engineKey = prefs.engineKey,
@@ -234,6 +242,9 @@ class TtsController(
                     doubleTapPlay = prefs.doubleTapPlay,
                     autoScrollWithTts = prefs.autoScrollWithTts,
                     minSignal = prefs.minSignal,
+                    underlayBtAddress = prefs.underlayBtAddress,
+                    underlayBtName = prefs.underlayBtName,
+                    underlayBtConnected = underlayBt.targetConnected.value,
                     sentenceGapMs = prefs.sentenceGapMs,
                     highlightSyncMs = prefs.highlightSyncMs,
                     clipTargetChars = prefs.clipTargetChars,
@@ -243,6 +254,12 @@ class TtsController(
                 )
             }
             refreshCatalog()
+        }
+        scope.launch {
+            underlayBt.targetConnected.collect { connected ->
+                _state.update { it.copy(underlayBtConnected = connected) }
+                syncKeepAlive()
+            }
         }
     }
 
@@ -566,13 +583,33 @@ class TtsController(
     fun setMinSignal(level: Float, persist: Boolean = true) {
         val value = TtsPrefs.coerceMinSignal(level)
         _state.update { it.copy(minSignal = value) }
-        if (!TtsPrefs.isUnderlayEnabled(value)) {
-            keepAlive.stop()
-        } else {
-            keepAlive.setLevel(value)
-            if (_state.value.playing) keepAlive.start()
-        }
+        syncKeepAlive()
         if (persist) scope.launch { settings.setMinSignal(value) }
+    }
+
+    fun setUnderlayBtDevice(address: String, name: String) {
+        val addr = address.trim()
+        val label = name.trim()
+        if (addr == _state.value.underlayBtAddress && label == _state.value.underlayBtName) {
+            return
+        }
+        underlayBt.setTargetAddress(addr)
+        _state.update {
+            it.copy(
+                underlayBtAddress = addr,
+                underlayBtName = label,
+                underlayBtConnected = if (addr.isEmpty()) false else underlayBt.targetConnected.value,
+            )
+        }
+        syncKeepAlive()
+        scope.launch { settings.setUnderlayBtDevice(addr, label) }
+    }
+
+    /** Paired devices for the underlay Bluetooth picker (needs BLUETOOTH_CONNECT on API 31+). */
+    fun underlayBondedDevices(): List<PairedBtDevice> = underlayBt.bondedDevices()
+
+    fun refreshUnderlayBtConnection() {
+        underlayBt.refresh()
     }
 
     fun setSentenceGapMs(ms: Int) {
@@ -650,6 +687,20 @@ class TtsController(
         SynthDebugLog.setEnabled(enabled)
         _state.update { it.copy(debugEnabled = enabled) }
         SynthDebugLog.append("debugEnabled=$enabled")
+    }
+
+    /**
+     * Surfaces a playback error: force-enables the synth debugger (persisted)
+     * and logs the message there (no longer shown on the media card).
+     */
+    private fun reportMediaError(message: String) {
+        val text = message.ifBlank { "TTS failed" }
+        val enable = !_state.value.debugEnabled
+        if (enable) {
+            scope.launch { settings.setDebugEnabled(true) }
+        }
+        _state.update { it.copy(debugEnabled = true, error = null) }
+        SynthDebugLog.appendError(text)
     }
 
     /**
@@ -802,6 +853,7 @@ class TtsController(
         playJob?.cancel()
         playJob = null
         stopSessionAudio()
+        underlayBt.stop()
         systemTts?.stop()
         systemTts?.shutdown()
         systemTts = null
@@ -822,7 +874,7 @@ class TtsController(
         ensureNotificationPermission()
         ensureSession()
         if (!requestAudioFocus()) {
-            _state.update { it.copy(error = "Audio focus unavailable") }
+            reportMediaError("Audio focus unavailable")
             return@withLock
         }
         registerNoisyReceiver()
@@ -1121,7 +1173,8 @@ class TtsController(
                 throw e
             } catch (t: Throwable) {
                 stopSessionAudio()
-                _state.update { it.copy(playing = false, error = t.message ?: "TTS failed") }
+                _state.update { it.copy(playing = false) }
+                reportMediaError(t.message ?: "TTS failed")
                 setSessionState(PlaybackState.STATE_STOPPED)
                 abandonAudioFocus()
                 unregisterNoisyReceiver()
@@ -1466,8 +1519,14 @@ class TtsController(
     }
 
     private fun syncKeepAlive() {
-        if (_state.value.playing && TtsPrefs.isUnderlayEnabled(_state.value.minSignal)) {
-            keepAlive.setLevel(_state.value.minSignal)
+        val st = _state.value
+        val effective = TtsPrefs.effectiveMinSignal(
+            minSignal = st.minSignal,
+            underlayBtAddress = st.underlayBtAddress,
+            targetConnected = st.underlayBtConnected,
+        )
+        if (st.playing && TtsPrefs.isUnderlayEnabled(effective)) {
+            keepAlive.setLevel(effective)
             keepAlive.start()
         } else {
             keepAlive.stop()
