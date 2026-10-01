@@ -1,5 +1,24 @@
 package com.personal.flowreader.ui.settings
 
+import com.personal.flowreader.ui.design.controls.FlowToggleRow
+import com.personal.flowreader.ui.design.controls.FlowSliderRow
+import com.personal.flowreader.ui.design.controls.FlowLabel
+import com.personal.flowreader.ui.design.controls.FlowChipRow
+import com.personal.flowreader.ui.design.controls.FlowChoiceChips
+import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowSection
+import com.personal.flowreader.ui.design.controls.FlowTextField
+import com.personal.flowreader.ui.design.controls.FlowDropdownRow
+import com.personal.flowreader.ui.design.card.FlowFullscreenCard
+import com.personal.flowreader.ui.design.card.FlowCardHeight
+import com.personal.flowreader.ui.design.card.FlowCardVariant
+import com.personal.flowreader.ui.design.card.FlowActionRow
+import com.personal.flowreader.ui.design.card.FlowTextAction
+import com.personal.flowreader.ui.design.card.FlowConfirmCard
+import com.personal.flowreader.ui.design.tabs.FlowTabBar
+import com.personal.flowreader.ui.design.tabs.FlowTabLevel
+import com.personal.flowreader.ui.design.tabs.flowTextTabs
+
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -151,13 +170,10 @@ import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.data.UiScale
 import com.personal.flowreader.ui.common.rememberBookCover
-import com.personal.flowreader.ui.settings.AppSettingsOverlay
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.settings.FilterSettingsCallbacks
 import com.personal.flowreader.ui.settings.FilterSettingsState
-import com.personal.flowreader.ui.settings.ModalHeaderRow
-import com.personal.flowreader.ui.settings.SettingsToggleRow
 import com.personal.flowreader.ui.settings.TtsSettingsCallbacks
 import com.personal.flowreader.ui.settings.TtsSettingsState
 import com.personal.flowreader.ui.theme.FlowTokens
@@ -165,8 +181,6 @@ import com.personal.flowreader.ui.theme.accentPrimary
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import com.personal.flowreader.ui.chrome.ReaderModalScaffold
-import com.personal.flowreader.ui.chrome.ReaderPanelShape
 import com.personal.flowreader.ui.reader.FilterPreviewMode
 
 
@@ -190,11 +204,7 @@ internal fun FiltersSettingsTab(
         FilterScope.Groups -> filtersGroups
     }
 
-    SettingsSubTabRow(
-        selectedTabIndex = scopeTab.coerceIn(0, visibleScopes.lastIndex),
-        labels = visibleScopes.map { it.label },
-        onTabSelected = { scopeTab = it },
-    )
+    FlowTabBar(tabs = flowTextTabs(visibleScopes.map { it.label }, scopeTab.coerceIn(0, visibleScopes.lastIndex)) { scopeTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
 
     Spacer(Modifier.height(FlowTokens.Space.M))
     Row(
@@ -327,154 +337,79 @@ internal fun FilterRuleEditorOverlay(
         }
     }
 
-    ReaderModalScaffold(
+    FlowFullscreenCard(
         visible = visible,
-        contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
-    ) {
-        ModalHeaderRow(
-            title = if (isNew) "New ${scope.label} Filter" else "Edit ${scope.label} Filter",
-            onDismiss = onDismiss,
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = FlowTokens.Pad.CardIn,
-                    vertical = FlowTokens.Space.S,
-                ),
-        ) {
-            SettingsLabel("Title (optional)")
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                singleLine = true,
-                shape = FlowTokens.PanelShape,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(FlowTokens.Space.M))
-            SettingsLabel("Type")
-            ExposedDropdownMenuBox(
-                expanded = typeOpen,
-                onExpandedChange = { typeOpen = it },
-            ) {
-                OutlinedTextField(
-                    value = matchType.label,
-                    onValueChange = {},
-                    readOnly = true,
-                    singleLine = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeOpen) },
-                    shape = FlowTokens.PanelShape,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                )
-                ExposedDropdownMenu(
-                    expanded = typeOpen,
-                    onDismissRequest = { typeOpen = false },
-                ) {
-                    FilterMatchType.entries.forEach { type ->
-                        DropdownMenuItem(
-                            text = { Text(type.label) },
-                            onClick = {
-                                matchType = type
-                                typeOpen = false
-                            },
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(FlowTokens.Space.S))
-            SettingsToggleRow(
-                title = "Whole words only",
-                subtitle = if (regexMode) "Not used for RegEx" else "Match complete words",
-                checked = wholeWords && !regexMode,
-                onCheckedChange = { wholeWords = it },
-                enabled = !regexMode,
-            )
-
-            Spacer(Modifier.height(FlowTokens.Space.XS))
-            SettingsToggleRow(
-                title = "TTS only",
-                subtitle = "Apply when speaking, not on screen",
-                checked = ttsOnly,
-                onCheckedChange = { ttsOnly = it },
-            )
-
-            Spacer(Modifier.height(FlowTokens.Space.S))
-            SettingsLabel("Find")
-            OutlinedTextField(
-                value = pattern,
-                onValueChange = { pattern = it },
-                singleLine = true,
-                isError = patternError != null,
-                supportingText = patternError?.let { { Text(it) } },
-                shape = FlowTokens.PanelShape,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(FlowTokens.Space.S))
-            SettingsLabel("Replace with")
-            OutlinedTextField(
-                value = replacement,
-                onValueChange = { replacement = it },
-                singleLine = true,
-                placeholder = { Text("(empty deletes matches)") },
-                trailingIcon = {
-                    IconButton(
-                        onClick = { onSpeak(replacement) },
-                        enabled = replacement.isNotBlank(),
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak replacement")
-                    }
+        title = if (isNew) "New ${scope.label} Filter" else "Edit ${scope.label} Filter",
+        footer = {
+            FlowActionRow(
+                start = {
+                    if (onDelete != null) FlowTextAction("Delete", onDelete, destructive = true)
                 },
-                shape = FlowTokens.PanelShape,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(FlowTokens.Space.L))
-            SettingsLabel("Preview")
-            ChipRow {
-                FilterPreviewMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = previewMode == mode,
-                        onClick = { previewMode = mode },
-                        label = { Text(mode.label) },
-                    )
-                }
-            }
-            Spacer(Modifier.height(FlowTokens.Space.S))
-            FilterSampleField(
-                annotated = sampleAnnotated,
-                plain = preview.text,
-                onSpeak = onSpeak,
-            )
-
-            Spacer(Modifier.height(FlowTokens.Space.L))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (onDelete != null) {
-                    TextButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(FlowTokens.Icon.M))
-                        Spacer(Modifier.width(FlowTokens.Space.XS))
-                        Text("Delete")
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-                TextButton(
-                    onClick = { onSave(draft) },
+                FlowTextAction("Cancel", onDismiss)
+                FlowTextAction(
+                    "Save",
+                    { onSave(draft) },
                     enabled = pattern.isNotBlank() && patternError == null,
-                ) {
-                    Text("Save")
-                }
+                )
             }
-        }
+        },
+    ) {
+        FlowTextField(value = title, onValueChange = { title = it }, label = "Title (optional)")
+        FlowDropdownRow(
+            selected = matchType,
+            options = FilterMatchType.entries,
+            optionLabel = { it.label },
+            onSelect = { matchType = it },
+            label = "Type",
+        )
+        FlowToggleRow(
+            title = "Whole words only",
+            subtitle = if (regexMode) "Not used for RegEx" else "Match complete words",
+            checked = wholeWords && !regexMode,
+            onCheckedChange = { wholeWords = it },
+            enabled = !regexMode,
+        )
+        FlowToggleRow(
+            title = "TTS only",
+            subtitle = "Apply when speaking, not on screen",
+            checked = ttsOnly,
+            onCheckedChange = { ttsOnly = it },
+        )
+        FlowTextField(
+            value = pattern,
+            onValueChange = { pattern = it },
+            label = "Find",
+            isError = patternError != null,
+            supportingText = patternError,
+        )
+        FlowTextField(
+            value = replacement,
+            onValueChange = { replacement = it },
+            label = "Replace with",
+            placeholder = "(empty deletes matches)",
+            trailingIcon = {
+                IconButton(
+                    onClick = { onSpeak(replacement) },
+                    enabled = replacement.isNotBlank(),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Speak replacement")
+                }
+            },
+        )
+        FlowLabel("Preview", Modifier.padding(top = FlowTokens.Space.S))
+        FlowChoiceChips(
+            options = FilterPreviewMode.entries,
+            selected = previewMode,
+            optionLabel = { it.label },
+            onSelect = { previewMode = it },
+        )
+        FilterSampleField(
+            annotated = sampleAnnotated,
+            plain = preview.text,
+            onSpeak = onSpeak,
+        )
     }
 }
 
@@ -486,7 +421,7 @@ private fun FilterSampleField(
     onSpeak: (String) -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    val shape = FlowTokens.PanelShape
+    val shape = FlowTokens.Shape.Field
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextFieldDefaults.DecorationBox(
             value = plain.ifEmpty { " " },
@@ -531,4 +466,3 @@ private fun FilterSampleField(
         )
     }
 }
-

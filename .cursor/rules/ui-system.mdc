@@ -1,0 +1,39 @@
+---
+description: Flow Reader UI design system — cards, docks, tabs, tokens, overlay stack
+globs: app/src/main/java/com/personal/flowreader/ui/**/*.kt,app/src/main/java/com/personal/flowreader/share/**/*.kt
+alwaysApply: false
+---
+
+# Flow UI system
+
+Full reference: `docs/ui-system/` (README, tokens, layers, cards, elements, recipes).
+
+## Pick the component by role
+
+- Modal content → `FlowFullscreenCard(visible, onDismiss, title, variant, height, tabs, footer) { body }`
+- Confirm/info → `FlowConfirmCard` (never `AlertDialog`)
+- Item metadata → `FlowMediaCard(model = XMediaCardAdapter.model(...))`, route `MediaAction.id`
+- List/grid item → `FlowDisplayCard` in `FlowDisplayList` / `FlowDisplayGrid`
+- Floating over content → `FlowFloatingCard` / `FlowFloatingChip` inside `FlowDock { Item(visible) { } }`
+- Tabs → `FlowTabBar(tabs = listOf(FlowTab.text/icon/action(...)), level = Primary|Secondary)`
+- Screen shell → `FlowScreen(kind, topDock, bottomDock, fab, snackbar) { docks -> }`
+- Controls → `FlowToggleRow`, `FlowSliderRow`, `FlowTextField`, `FlowDropdownRow`, `FlowChoiceChips`,
+  `FlowPrimaryButton`, `FlowSecondaryButton`, `FlowTextAction`, `FlowCircleButton`, `FlowFab`
+
+## Forbidden in feature code
+
+`AlertDialog`, `Dialog`, `ModalBottomSheet`, M3 `Card`, `Scaffold`, new tab-bar composables,
+literal `dp`/alpha/`zIndex` values (use `FlowTokens` / `FlowLayer`), per-feature enter/exit
+animations for cards (components own motion).
+
+## Behavior
+
+- Fullscreen cards stack in open order; keep a parent `visible` while its child is open. Back and
+  scrim tap close only the top card. `dismissible = false` blocks both.
+- Footer order: `FlowActionRow(start = { destructive/extra }) { Cancel; Confirm }`.
+- Body with a `LazyColumn`: `scrollable = false`, `height = FlowCardHeight.Fill`, list gets `Modifier.weight(1f)`.
+- Dock items declared top to bottom; content pads by `FlowScreenPadding`.
+- Tap a display card = primary action; long-press = media card.
+- New media source = new pure-Kotlin adapter + unit test, not new `FlowMediaCard` params.
+
+When adding a token or component, update `docs/ui-system/`.

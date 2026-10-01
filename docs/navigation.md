@@ -35,10 +35,26 @@ flowchart TD
   nextQue --> reader
 ```
 
+## Overlays and Back
+
+`MainActivity` wraps the `NavHost` in one `FlowOverlayHost`. Every fullscreen card (Settings,
+ToC, editors, plugin sheets, media cards, confirmations) registers with it while visible and
+stacks in open order; the top card gets the scrim. See [UI system: layers](ui-system/layers.md).
+
+| State | Back |
+|-------|------|
+| Fullscreen card(s) open | Closes the top card only (Settings → filter editor → Back returns to Settings) |
+| Card with `dismissible = false` (e.g. signing in) | Ignored |
+| Reader, no cards | Library |
+| Library, no cards | Exit |
+
+`ShareIngressActivity` (fallback chooser) and the share overlay window host their own overlay
+stack, so the chooser is the same Compact card in both.
+
 ## Incoming intents
 
 - `VIEW` / `SEND` EPUB → import or link into Files (or Queue if router landing says so), then open reader
-- `SEND` text → ShareIngress → router outcomes (Files, Queue, Crawl, Royal Road, or chooser)
+- `SEND` text → ShareIngress → router outcomes (Files, Queue, Crawl, Plugin, or chooser)
 - Open-with EPUB/TXT and library picker add book via SAF
 
 ## Orientation

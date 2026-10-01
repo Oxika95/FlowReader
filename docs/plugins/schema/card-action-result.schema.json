@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Oxika95/FlowReader/docs/plugins/schema/card-action-result.schema.json",
+  "title": "cardAction() result (CardActionResult), apiVersion 2",
+  "type": "object",
+  "properties": {
+    "card": {
+      "description": "Patch: slots present replace the stored slot (an empty array clears it); absent slots are kept.",
+      "$ref": "work-detail.schema.json#/$defs/card"
+    },
+    "toast": { "type": "string", "description": "Short message shown in the library snackbar" },
+    "reload": { "type": "boolean", "default": false, "description": "Re-run loadWork and replace the card" }
+  }
+}

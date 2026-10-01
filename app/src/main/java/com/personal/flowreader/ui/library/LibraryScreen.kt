@@ -8,44 +8,27 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -61,12 +44,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -78,25 +57,36 @@ import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.LibraryTabId
 import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.data.QueEntry
-import com.personal.flowreader.data.ReaderFont
-import com.personal.flowreader.data.ReaderOrientation
-import com.personal.flowreader.data.ThemeMode
-import com.personal.flowreader.library.plugin.LibrarySourcePlugin
-import com.personal.flowreader.ui.common.FlowSlotTab
-import com.personal.flowreader.ui.common.FlowSlotTabBar
-import com.personal.flowreader.ui.common.FlowSlotTabLabel
-import com.personal.flowreader.ui.settings.FilterRuleEditorOverlay
-import com.personal.flowreader.ui.chrome.ReaderModalScaffold
-import com.personal.flowreader.ui.settings.SettingsOverlay
+import com.personal.flowreader.plugin.InstalledPlugin
+import com.personal.flowreader.ui.design.card.FlowActionRow
+import com.personal.flowreader.ui.design.card.FlowEmptyState
+import com.personal.flowreader.ui.design.card.FlowFullscreenCard
+import com.personal.flowreader.ui.design.card.FlowTextAction
+import com.personal.flowreader.ui.design.card.flowDisplayListPadding
+import com.personal.flowreader.ui.design.controls.FlowFab
+import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowIconButton
+import com.personal.flowreader.ui.design.controls.FlowSection
+import com.personal.flowreader.ui.design.controls.FlowTextField
+import com.personal.flowreader.ui.design.layer.FlowScreen
+import com.personal.flowreader.ui.design.layer.FlowScreenKind
+import com.personal.flowreader.ui.design.tabs.FlowTab
+import com.personal.flowreader.ui.design.tabs.FlowTabBar
+import com.personal.flowreader.ui.plugin.PluginTabContent
+import com.personal.flowreader.ui.plugin.PluginTabFab
+import com.personal.flowreader.ui.plugin.PluginTabOverlays
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.settings.FilterEditorSession
+import com.personal.flowreader.ui.settings.FilterRuleEditorOverlay
 import com.personal.flowreader.ui.settings.FilterSettingsCallbacks
 import com.personal.flowreader.ui.settings.FilterSettingsState
-import com.personal.flowreader.ui.settings.ModalHeaderRow
+import com.personal.flowreader.ui.settings.SettingsOverlay
 import com.personal.flowreader.ui.settings.TtsSettingsCallbacks
 import com.personal.flowreader.ui.settings.TtsSettingsState
+import com.personal.flowreader.ui.theme.FlowLayer
 import com.personal.flowreader.ui.theme.FlowTokens
+import com.personal.flowreader.ui.theme.FlowType
 
 private const val LibraryFilterPreviewSample =
     "The quick brown fox jumps over the lazy dog. Names like Alice and Bob can be replaced."
@@ -104,7 +94,7 @@ private const val LibraryFilterPreviewSample =
 private val BookMimeTypes = arrayOf("application/epub+zip", "text/plain", "*/*")
 
 private class PersistableOpenDocument : ActivityResultContracts.OpenDocument() {
-    override fun createIntent(context: android.content.Context, input: Array<String>): Intent {
+    override fun createIntent(context: Context, input: Array<String>): Intent {
         return super.createIntent(context, input).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             addFlags(
@@ -115,7 +105,10 @@ private class PersistableOpenDocument : ActivityResultContracts.OpenDocument() {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * Library primary screen: header + primary tab bar, the active tab's content, a bottom dock
+ * with the now-playing card while TTS plays, the tab's FAB, and every Library card overlay.
+ */
 @Composable
 fun LibraryScreen(
     vm: LibraryViewModel,
@@ -125,6 +118,7 @@ fun LibraryScreen(
     onOpenQue: (bookId: String, queId: String) -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
+    val installedPlugins by vm.plugins.collectAsState()
     val tts by vm.tts.state.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var settingsOpen by remember { mutableStateOf(false) }
@@ -152,427 +146,314 @@ fun LibraryScreen(
         snackbar.showSnackbar(text)
         vm.consumeError()
     }
-
-    // Top clears the status bar; sides use M3 compact screen margin (16dp).
-    val libraryGutter = FlowTokens.ScreenGutter
     val context = LocalContext.current
+    val activePlugin = (ui.tab as? LibraryTabId.Plugin)?.let { t -> installedPlugins.firstOrNull { it.id == t.pluginId } }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility),
-        ) {
+    FlowScreen(
+        kind = FlowScreenKind.Library,
+        modifier = Modifier.background(MaterialTheme.colorScheme.background),
+        bottomDock = {
+            Item(visible = tts.sessionActive && tts.bookId.isNotBlank()) {
+                NowPlayingCard(
+                    title = tts.bookTitle,
+                    snippet = tts.snippet,
+                    playing = tts.playing,
+                    onOpen = { onOpenBook(tts.bookId) },
+                    onPlayPause = { if (tts.playing) vm.tts.pause() else vm.tts.play() },
+                    onClose = { vm.tts.stop() },
+                )
+            }
+        },
+        fab = {
+            when (ui.tab) {
+                LibraryTabId.Files, is LibraryTabId.Custom -> FlowFab(
+                    icon = Icons.Filled.Add,
+                    contentDescription = "Add file",
+                    onClick = { if (!ui.busy) addDialog = true },
+                )
+                LibraryTabId.Que -> FlowFab(
+                    icon = Icons.Filled.ContentPaste,
+                    contentDescription = "Add from clipboard",
+                    onClick = {
+                        if (ui.busy) return@FlowFab
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val text = cm.primaryClip
+                            ?.takeIf { it.itemCount > 0 }
+                            ?.getItemAt(0)
+                            ?.coerceToText(context)
+                            ?.toString()
+                            .orEmpty()
+                        vm.queueFromClipboard(text)
+                    },
+                )
+                is LibraryTabId.Plugin -> activePlugin?.let { PluginTabFab(it) }
+            }
+        },
+        snackbar = { SnackbarHost(snackbar) },
+    ) { docks ->
+        Column(Modifier.fillMaxSize()) {
             LibraryTopBar(
                 tab = ui.tab,
-                plugins = vm.plugins.enabled(ui.enabledPluginIds),
+                plugins = installedPlugins.filter { it.id in ui.enabledPluginIds },
                 customTabs = ui.customTabs,
                 viewMode = ui.viewMode,
-                inset = libraryGutter,
                 addTabOpen = addTabOpen,
                 onTab = vm::setTab,
                 onViewMode = vm::setViewMode,
                 onAddTab = { addTabOpen = true },
                 onSettings = { settingsOpen = true },
             )
+            val paneModifier = Modifier.weight(1f)
             when (val tab = ui.tab) {
                 LibraryTabId.Files -> LibraryBooksPane(
                     books = ui.books,
                     viewMode = ui.viewMode,
                     busy = ui.busy,
-                    inset = libraryGutter,
                     emptyMessage = "No books yet.\nTap + to add an EPUB or TXT.",
                     onOpen = onOpenBook,
                     onLongOpen = { bookId -> filesSplashId = bookId },
-                    modifier = Modifier.weight(1f),
+                    bottomInset = docks.bottom,
+                    modifier = paneModifier,
                 )
                 is LibraryTabId.Custom -> LibraryBooksPane(
                     books = ui.books,
                     viewMode = ui.viewMode,
                     busy = ui.busy,
-                    inset = libraryGutter,
                     emptyMessage = "Nothing on this shelf yet.\nTap + to add an EPUB or TXT.",
                     onOpen = onOpenBook,
                     onLongOpen = { bookId -> filesSplashId = bookId },
-                    modifier = Modifier.weight(1f),
+                    bottomInset = docks.bottom,
+                    modifier = paneModifier,
                 )
                 LibraryTabId.Que -> QueTab(
                     entries = ui.que,
                     busy = ui.busy,
-                    inset = libraryGutter,
+                    bottomInset = docks.bottom,
                     onOpen = { entry -> onOpenQue(entry.progress.bookId, entry.item.id) },
                     onRemove = { entry -> vm.removeQue(entry.item.id) },
-                    modifier = Modifier.weight(1f),
+                    modifier = paneModifier,
                 )
                 is LibraryTabId.Plugin -> {
-                    val plugin = vm.plugins.get(tab.pluginId)
-                    if (plugin != null) {
-                        plugin.TabContent(
+                    if (activePlugin != null) {
+                        PluginTabContent(
+                            plugin = activePlugin,
                             actions = vm.pluginActions,
-                            modifier = Modifier.weight(1f),
                             viewMode = ui.viewMode,
+                            bottomInset = docks.bottom,
+                            modifier = paneModifier,
                         )
                     } else {
-                        // Plugin tab selected but plugin missing — clear selection rather than
-                        // silently rendering the Files list under the wrong tab.
-                        LaunchedEffect(tab) {
-                            vm.setTab(LibraryTabId.Files)
-                        }
-                        Box(
-                            Modifier.weight(1f).fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "Plugin unavailable",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        // Plugin tab selected but plugin missing: fall back to Files.
+                        LaunchedEffect(tab) { vm.setTab(LibraryTabId.Files) }
+                        FlowEmptyState("Plugin unavailable", paneModifier)
                     }
                 }
             }
         }
 
-        val showLibraryFab = (ui.tab == LibraryTabId.Files || ui.tab is LibraryTabId.Custom) &&
-            !settingsOpen && !addDialog && !addTabOpen && filterEditor == null &&
-            filesSplashId == null
-        if (showLibraryFab) {
-            FilledIconButton(
-                onClick = { if (!ui.busy) addDialog = true },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
-                    .padding(end = libraryGutter, bottom = libraryGutter)
-                    .size(FlowTokens.Comp.Fab),
-            ) {
-                Icon(
-                    Icons.Filled.Add,
-                    contentDescription = "Add file",
-                    modifier = Modifier.size(FlowTokens.Comp.FabIcon),
-                )
-            }
-        }
-
-        if (ui.tab == LibraryTabId.Que &&
-            !settingsOpen && !addDialog && !addTabOpen && filterEditor == null
-        ) {
-            FilledIconButton(
-                onClick = {
-                    if (ui.busy) return@FilledIconButton
-                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val text = cm.primaryClip
-                        ?.takeIf { it.itemCount > 0 }
-                        ?.getItemAt(0)
-                        ?.coerceToText(context)
-                        ?.toString()
-                        .orEmpty()
-                    vm.queueFromClipboard(text)
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
-                    .padding(end = libraryGutter, bottom = libraryGutter)
-                    .size(FlowTokens.Comp.Fab),
-            ) {
-                Icon(
-                    Icons.Filled.ContentPaste,
-                    contentDescription = "Add from clipboard",
-                    modifier = Modifier.size(FlowTokens.Comp.FabIcon),
-                )
-            }
-        }
-
-        SnackbarHost(
-            snackbar,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
-                .padding(bottom = libraryGutter + FlowTokens.Comp.SnackbarFabLift),
-        )
-
         if (ui.busy) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.35f)),
+                    .zIndex(FlowLayer.ContentScrim.z)
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = FlowTokens.Scrim.Busy)),
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator()
             }
         }
+    }
 
-        AddTabOverlay(
-            visible = addTabOpen,
-            plugins = vm.plugins.available,
-            enabledIds = ui.enabledPluginIds,
-            customTabs = ui.customTabs,
-            onSetEnabled = { id, enabled ->
-                vm.setPluginEnabled(id, enabled)
-                addTabOpen = false
+    AddTabOverlay(
+        visible = addTabOpen,
+        plugins = installedPlugins,
+        enabledIds = ui.enabledPluginIds,
+        customTabs = ui.customTabs,
+        onSetEnabled = { id, enabled ->
+            vm.setPluginEnabled(id, enabled)
+            addTabOpen = false
+        },
+        onAddCustom = { title ->
+            vm.addCustomTab(title)
+            addTabOpen = false
+        },
+        onRemoveCustom = { id -> vm.removeCustomTab(id) },
+        onDismiss = { addTabOpen = false },
+    )
+
+    AddBookOverlay(
+        visible = addDialog,
+        onImport = {
+            pendingSource = BookSource.Imported
+            addDialog = false
+            picker.launch(BookMimeTypes)
+        },
+        onLink = {
+            pendingSource = BookSource.Linked
+            addDialog = false
+            picker.launch(BookMimeTypes)
+        },
+        onDismiss = { addDialog = false },
+    )
+
+    val splashBook = filesSplashId?.let { id -> ui.books.find { it.bookId == id } }
+    LaunchedEffect(filesSplashId, splashBook) {
+        if (filesSplashId != null && splashBook == null) filesSplashId = null
+    }
+    FilesBookSplash(
+        book = splashBook,
+        busy = ui.busy,
+        onDismiss = { filesSplashId = null },
+        onOpen = onOpenBook,
+        onRemove = vm::removeFromLibrary,
+    )
+
+    activePlugin?.let { PluginTabOverlays(plugin = it, actions = vm.pluginActions) }
+
+    SettingsOverlay(
+        visible = settingsOpen,
+        appearance = appearance,
+        appearanceCallbacks = appearanceCallbacks,
+        tts = TtsSettingsState(
+            engineKey = tts.engineKey,
+            voiceId = tts.voiceId,
+            engines = tts.engines,
+            voices = tts.voices,
+            speed = tts.speed,
+            pitch = tts.pitch,
+            prefetchCount = tts.prefetchCount,
+            clipTargetChars = tts.clipTargetChars,
+            clipFlexChars = tts.clipFlexChars,
+            doubleTapPlay = tts.doubleTapPlay,
+            autoScrollWithTts = tts.autoScrollWithTts,
+            minSignal = tts.minSignal,
+            underlayBtAddress = tts.underlayBtAddress,
+            underlayBtName = tts.underlayBtName,
+            underlayBtConnected = tts.underlayBtConnected,
+            sentenceGapMs = tts.sentenceGapMs,
+            highlightSyncMs = tts.highlightSyncMs,
+        ),
+        ttsCallbacks = TtsSettingsCallbacks(
+            onEngine = { vm.tts.setEngine(it) },
+            onVoice = { vm.tts.setVoice(it) },
+            onSpeed = { vm.tts.setSpeed(it) },
+            onPitch = { vm.tts.setPitch(it) },
+            onPrefetchCount = { vm.tts.setPrefetchCount(it) },
+            onClipTargetChars = { vm.tts.setClipTargetChars(it) },
+            onClipFlexChars = { vm.tts.setClipFlexChars(it) },
+            onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
+            onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
+            onMinSignal = { level, persist -> vm.tts.setMinSignal(level, persist) },
+            onUnderlayBtDevice = { address, name -> vm.tts.setUnderlayBtDevice(address, name) },
+            underlayBondedDevices = { vm.tts.underlayBondedDevices() },
+            onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
+            onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
+        ),
+        filters = FilterSettingsState(
+            filtersGlobal = ui.filtersGlobal,
+            filtersGroups = ui.filtersGroups,
+            filtersLocal = emptyList(),
+            filterScopes = listOf(FilterScope.Global, FilterScope.Groups),
+        ),
+        filterCallbacks = FilterSettingsCallbacks(
+            onAddFilter = { scope ->
+                filterEditor = FilterEditorSession(scope = scope, rule = FilterRule(), isNew = true)
             },
-            onAddCustom = { title ->
-                vm.addCustomTab(title)
-                addTabOpen = false
+            onEditFilter = { scope, rule ->
+                filterEditor = FilterEditorSession(scope = scope, rule = rule, isNew = false)
             },
-            onRemoveCustom = { id ->
-                vm.removeCustomTab(id)
+            onSetFilterEnabled = { scope, id, enabled -> vm.setFilterEnabled(scope, id, enabled) },
+        ),
+        debugEnabled = appearance.debugEnabled,
+        onDebugEnabled = appearanceCallbacks.onDebugEnabled,
+        onDismiss = { settingsOpen = false },
+    )
+
+    // Stacks above Settings; Back closes the editor first.
+    val editor = filterEditor
+    if (editor != null) {
+        FilterRuleEditorOverlay(
+            visible = true,
+            scope = editor.scope,
+            initial = editor.rule,
+            sampleSeed = LibraryFilterPreviewSample,
+            isNew = editor.isNew,
+            previewApply = { sample, draft, mode -> vm.previewApply(sample, draft, editor.scope, mode) },
+            onSave = { draft ->
+                if (editor.isNew) vm.addFilter(editor.scope, draft) else vm.updateFilter(editor.scope, draft)
+                filterEditor = null
             },
-            onDismiss = { addTabOpen = false },
-        )
-
-        AddBookOverlay(
-            visible = addDialog,
-            onImport = {
-                pendingSource = BookSource.Imported
-                addDialog = false
-                picker.launch(BookMimeTypes)
-            },
-            onLink = {
-                pendingSource = BookSource.Linked
-                addDialog = false
-                picker.launch(BookMimeTypes)
-            },
-            onDismiss = { addDialog = false },
-        )
-
-        val splashBook = filesSplashId?.let { id -> ui.books.find { it.bookId == id } }
-        LaunchedEffect(filesSplashId, splashBook) {
-            if (filesSplashId != null && splashBook == null) filesSplashId = null
-        }
-        FilesBookSplash(
-            book = splashBook,
-            busy = ui.busy,
-            onDismiss = { filesSplashId = null },
-            onOpen = onOpenBook,
-            onRemove = vm::removeFromLibrary,
-        )
-
-        // Plugin overlays sit above tabs/top bar (same layer as Settings).
-        (ui.tab as? LibraryTabId.Plugin)?.let { pluginTab ->
-            vm.plugins.get(pluginTab.pluginId)?.OverlayContent(actions = vm.pluginActions)
-        }
-
-        SettingsOverlay(
-            visible = settingsOpen && filterEditor == null,
-            appearance = appearance,
-            appearanceCallbacks = appearanceCallbacks,
-            tts = TtsSettingsState(
-                engineKey = tts.engineKey,
-                voiceId = tts.voiceId,
-                engines = tts.engines,
-                voices = tts.voices,
-                speed = tts.speed,
-                pitch = tts.pitch,
-                prefetchCount = tts.prefetchCount,
-                clipTargetChars = tts.clipTargetChars,
-                clipFlexChars = tts.clipFlexChars,
-                doubleTapPlay = tts.doubleTapPlay,
-                autoScrollWithTts = tts.autoScrollWithTts,
-                minSignal = tts.minSignal,
-                underlayBtAddress = tts.underlayBtAddress,
-                underlayBtName = tts.underlayBtName,
-                underlayBtConnected = tts.underlayBtConnected,
-                sentenceGapMs = tts.sentenceGapMs,
-                highlightSyncMs = tts.highlightSyncMs,
-            ),
-            ttsCallbacks = TtsSettingsCallbacks(
-                onEngine = { vm.tts.setEngine(it) },
-                onVoice = { vm.tts.setVoice(it) },
-                onSpeed = { vm.tts.setSpeed(it) },
-                onPitch = { vm.tts.setPitch(it) },
-                onPrefetchCount = { vm.tts.setPrefetchCount(it) },
-                onClipTargetChars = { vm.tts.setClipTargetChars(it) },
-                onClipFlexChars = { vm.tts.setClipFlexChars(it) },
-                onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
-                onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
-                onMinSignal = { level, persist -> vm.tts.setMinSignal(level, persist) },
-                onUnderlayBtDevice = { address, name -> vm.tts.setUnderlayBtDevice(address, name) },
-                underlayBondedDevices = { vm.tts.underlayBondedDevices() },
-                onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
-                onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
-            ),
-            filters = FilterSettingsState(
-                filtersGlobal = ui.filtersGlobal,
-                filtersGroups = ui.filtersGroups,
-                filtersLocal = emptyList(),
-                filterScopes = listOf(FilterScope.Global, FilterScope.Groups),
-            ),
-            filterCallbacks = FilterSettingsCallbacks(
-                onAddFilter = { scope ->
-                    filterEditor = FilterEditorSession(scope = scope, rule = FilterRule(), isNew = true)
-                },
-                onEditFilter = { scope, rule ->
-                    filterEditor = FilterEditorSession(scope = scope, rule = rule, isNew = false)
-                },
-                onSetFilterEnabled = { scope, id, enabled ->
-                    vm.setFilterEnabled(scope, id, enabled)
-                },
-            ),
-            debugEnabled = appearance.debugEnabled,
-            onDebugEnabled = appearanceCallbacks.onDebugEnabled,
-            onDismiss = { settingsOpen = false },
-        )
-
-        val editor = filterEditor
-        if (editor != null) {
-            FilterRuleEditorOverlay(
-                visible = true,
-                scope = editor.scope,
-                initial = editor.rule,
-                sampleSeed = LibraryFilterPreviewSample,
-                isNew = editor.isNew,
-                previewApply = { sample, draft, mode ->
-                    vm.previewApply(sample, draft, editor.scope, mode)
-                },
-                onSave = { draft ->
-                    if (editor.isNew) vm.addFilter(editor.scope, draft)
-                    else vm.updateFilter(editor.scope, draft)
+            onDelete = if (editor.isNew) {
+                null
+            } else {
+                {
+                    vm.deleteFilter(editor.scope, editor.rule.id)
                     filterEditor = null
-                },
-                onDelete = if (editor.isNew) {
-                    null
-                } else {
-                    {
-                        vm.deleteFilter(editor.scope, editor.rule.id)
-                        filterEditor = null
-                    }
-                },
-                onSpeak = { vm.tts.speakPreview(it) },
-                onDismiss = { filterEditor = null },
-            )
-        }
+                }
+            },
+            onSpeak = { vm.tts.speakPreview(it) },
+            onDismiss = { filterEditor = null },
+        )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** App title, view-mode and settings actions, then the primary tab bar ending in the "+" action tab. */
 @Composable
 private fun LibraryTopBar(
     tab: LibraryTabId,
-    plugins: List<LibrarySourcePlugin>,
+    plugins: List<InstalledPlugin>,
     customTabs: List<CustomLibraryTab>,
     viewMode: LibraryViewMode,
-    inset: Dp,
     addTabOpen: Boolean,
     onTab: (LibraryTabId) -> Unit,
     onViewMode: (LibraryViewMode) -> Unit,
     onAddTab: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val tabs = buildList {
+    val destinations = buildList {
         add(LibraryTabId.Files to "Files")
         add(LibraryTabId.Que to "Queue")
-        customTabs.sortedBy { it.order }.forEach {
-            add(LibraryTabId.Custom(it.id) to it.title)
-        }
-        plugins.forEach { add(LibraryTabId.Plugin(it.id) to it.title) }
+        customTabs.sortedBy { it.order }.forEach { add(LibraryTabId.Custom(it.id) to it.title) }
+        plugins.forEach { add(LibraryTabId.Plugin(it.id) to it.name) }
     }
+    val tabs = destinations.map { (id, label) ->
+        FlowTab.text(label, selected = !addTabOpen && tab == id, onClick = { onTab(id) }, key = id)
+    } + FlowTab.action(Icons.Filled.Add, "Add tab", open = addTabOpen, onClick = onAddTab)
+
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = inset),
+                .padding(start = FlowTokens.Pad.Screen, end = FlowTokens.Space.XS),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "Flow Reader",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            if (tab == LibraryTabId.Files ||
-                tab is LibraryTabId.Custom ||
-                tab is LibraryTabId.Plugin
-            ) {
-                IconButton(onClick = { onViewMode(LibraryViewMode.List) }) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ViewList,
-                        contentDescription = "List view",
-                        tint = if (viewMode == LibraryViewMode.List) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-                IconButton(onClick = { onViewMode(LibraryViewMode.Shelf) }) {
-                    Icon(
-                        Icons.Filled.GridView,
-                        contentDescription = "Shelf view",
-                        tint = if (viewMode == LibraryViewMode.Shelf) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
+            Text("Flow Reader", style = FlowType.cardTitle, modifier = Modifier.weight(1f))
+            if (tab != LibraryTabId.Que) {
+                val accent = MaterialTheme.colorScheme.primary
+                val muted = MaterialTheme.colorScheme.onSurfaceVariant
+                FlowIconButton(
+                    icon = Icons.AutoMirrored.Filled.ViewList,
+                    contentDescription = "List view",
+                    onClick = { onViewMode(LibraryViewMode.List) },
+                    tint = if (viewMode == LibraryViewMode.List) accent else muted,
+                )
+                FlowIconButton(
+                    icon = Icons.Filled.GridView,
+                    contentDescription = "Shelf view",
+                    onClick = { onViewMode(LibraryViewMode.Shelf) },
+                    tint = if (viewMode == LibraryViewMode.Shelf) accent else muted,
+                )
             }
-            IconButton(onClick = onSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings")
-            }
+            FlowIconButton(icon = Icons.Filled.Settings, contentDescription = "Settings", onClick = onSettings)
         }
-        LibraryTabBar(
-            tabs = tabs,
-            selected = tab,
-            addSelected = addTabOpen,
-            inset = inset,
-            onTab = onTab,
-            onAddTab = onAddTab,
-        )
+        FlowTabBar(tabs = tabs)
     }
-}
-
-@Composable
-private fun LibraryTabBar(
-    tabs: List<Pair<LibraryTabId, String>>,
-    selected: LibraryTabId,
-    addSelected: Boolean,
-    inset: Dp,
-    onTab: (LibraryTabId) -> Unit,
-    onAddTab: () -> Unit,
-) {
-    val slotTabs = buildList {
-        tabs.forEach { (id, label) ->
-            val selectedTab = !addSelected && selected == id
-            add(
-                FlowSlotTab(
-                    selected = selectedTab,
-                    onClick = { onTab(id) },
-                    measureLabel = label,
-                    content = { FlowSlotTabLabel(label, it) },
-                ),
-            )
-        }
-        add(
-            FlowSlotTab(
-                selected = addSelected,
-                onClick = onAddTab,
-                measureLabel = null,
-                content = { sel ->
-                    Icon(
-                        Icons.Filled.Add,
-                        contentDescription = "Add tab",
-                        modifier = Modifier.size(22.dp),
-                        tint = if (sel) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                },
-            ),
-        )
-    }
-    FlowSlotTabBar(tabs = slotTabs, inset = inset)
 }
 
 @Composable
 private fun AddTabOverlay(
     visible: Boolean,
-    plugins: List<LibrarySourcePlugin>,
+    plugins: List<InstalledPlugin>,
     enabledIds: Set<String>,
     customTabs: List<CustomLibraryTab>,
     onSetEnabled: (String, Boolean) -> Unit,
@@ -581,118 +462,57 @@ private fun AddTabOverlay(
     onDismiss: () -> Unit,
 ) {
     var customTitle by remember(visible) { mutableStateOf("") }
-    ReaderModalScaffold(
-        visible = visible,
-        contentPadding = PaddingValues(
-            start = FlowTokens.ModalOuterPadding,
-            end = FlowTokens.ModalOuterPadding,
-            bottom = FlowTokens.ModalOuterPadding,
-        ),
-        onDismiss = onDismiss,
-    ) {
-        ModalHeaderRow(
-            title = "Add a tab",
-            onDismiss = onDismiss,
-            closeContentDescription = "Close",
-        )
-        Column(
-            Modifier.padding(
-                horizontal = FlowTokens.ModalBodyPadding,
-                vertical = FlowTokens.Space.S,
-            ),
-            verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
-        ) {
-            Text(
-                "Custom shelf",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                "Create a shelf and choose it as a Router destination under Import settings.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedTextField(
-                value = customTitle,
-                onValueChange = { customTitle = it },
-                singleLine = true,
-                label = { Text("Tab name") },
-                shape = FlowTokens.PanelShape,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(
-                    onClick = {
-                        val name = customTitle.trim()
-                        if (name.isEmpty()) return@TextButton
+    FlowFullscreenCard(visible = visible, onDismiss = onDismiss, title = "Add a tab") {
+        FlowSection("Custom shelf")
+        FlowHint("Create a shelf and choose it as a Router destination under Import settings.")
+        FlowTextField(value = customTitle, onValueChange = { customTitle = it }, label = "Tab name")
+        FlowActionRow {
+            FlowTextAction(
+                "Add shelf",
+                {
+                    val name = customTitle.trim()
+                    if (name.isNotEmpty()) {
                         onAddCustom(name)
                         customTitle = ""
-                    },
-                    enabled = customTitle.trim().isNotEmpty(),
-                ) {
-                    Text("Add shelf")
+                    }
+                },
+                enabled = customTitle.trim().isNotEmpty(),
+            )
+        }
+        customTabs.sortedBy { it.order }.forEach { tab ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(tab.title, style = FlowType.rowTitle, modifier = Modifier.weight(1f))
+                IconButton(onClick = { onRemoveCustom(tab.id) }) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Remove ${tab.title}")
                 }
             }
-            if (customTabs.isNotEmpty()) {
-                customTabs.sortedBy { it.order }.forEach { tab ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = FlowTokens.Space.XS),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            tab.title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f),
-                        )
-                        IconButton(onClick = { onRemoveCustom(tab.id) }) {
-                            Icon(
-                                Icons.Filled.Delete,
-                                contentDescription = "Remove ${tab.title}",
-                            )
-                        }
-                    }
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = FlowTokens.Space.S))
+
+        FlowSection("Plugins")
+        FlowHint(
+            if (plugins.isEmpty()) {
+                "No plugins installed. Browse repositories in Settings > Import > Plugins."
+            } else {
+                "Enable a plugin to add its tab next to Files and Queue."
+            },
+        )
+        plugins.forEach { plugin ->
+            val on = plugin.id in enabledIds
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSetEnabled(plugin.id, !on) }
+                    .padding(vertical = FlowTokens.Space.S),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(plugin.name, style = FlowType.rowTitle)
+                    if (plugin.manifest.description.isNotBlank()) FlowHint(plugin.manifest.description)
                 }
-            }
-
-            HorizontalDivider(Modifier.padding(vertical = FlowTokens.Space.S))
-
-            Text(
-                "Plugins",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                "Enable a plugin to add its tab next to Files and Queue.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            plugins.forEach { plugin ->
-                val on = plugin.id in enabledIds
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSetEnabled(plugin.id, !on) }
-                        .padding(vertical = FlowTokens.Space.S),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(plugin.title, style = MaterialTheme.typography.bodyLarge)
-                        if (plugin.subtitle.isNotBlank()) {
-                            Text(
-                                plugin.subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    TextButton(onClick = { onSetEnabled(plugin.id, !on) }) {
-                        Text(if (on) "Remove" else "Add")
-                    }
+                TextButton(onClick = { onSetEnabled(plugin.id, !on) }) {
+                    Text(if (on) "Remove" else "Add", style = FlowType.action)
                 }
             }
         }
@@ -706,47 +526,25 @@ private fun AddBookOverlay(
     onLink: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ReaderModalScaffold(
+    FlowFullscreenCard(
         visible = visible,
-        contentPadding = PaddingValues(
-            start = FlowTokens.ModalOuterPadding,
-            end = FlowTokens.ModalOuterPadding,
-            bottom = FlowTokens.ModalOuterPadding,
-        ),
         onDismiss = onDismiss,
-    ) {
-        ModalHeaderRow(
-            title = "Add a book",
-            onDismiss = onDismiss,
-            closeContentDescription = "Close",
-        )
-        Column(
-            Modifier.padding(
-                horizontal = FlowTokens.ModalBodyPadding,
-                vertical = FlowTokens.Space.S,
-            ),
-            verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.M),
-        ) {
-            Text(FileAccessAdvice.forSdk(), style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "Import a copy stores the book inside Flow Reader. It stays available if you move or delete the original.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "Reference in place reads the original file. No extra copy. Access can be lost if the file is moved or the grant is revoked.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-                TextButton(onClick = onLink) { Text("Reference in place") }
-                TextButton(onClick = onImport) { Text("Import a copy") }
+        title = "Add a book",
+        footer = {
+            FlowActionRow {
+                FlowTextAction("Cancel", onDismiss)
+                FlowTextAction("Reference in place", onLink)
+                FlowTextAction("Import a copy", onImport)
             }
-        }
+        },
+    ) {
+        Text(FileAccessAdvice.forSdk(), style = FlowType.body)
+        FlowHint(
+            "Import a copy stores the book inside Flow Reader. It stays available if you move or delete the original.",
+        )
+        FlowHint(
+            "Reference in place reads the original file. No extra copy. Access can be lost if the file is moved or the grant is revoked.",
+        )
     }
 }
 
@@ -754,45 +552,25 @@ private fun AddBookOverlay(
 private fun QueTab(
     entries: List<QueEntry>,
     busy: Boolean,
-    inset: Dp,
+    bottomInset: androidx.compose.ui.unit.Dp,
     onOpen: (QueEntry) -> Unit,
     onRemove: (QueEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxSize()) {
         if (entries.isEmpty() && !busy) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = inset),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "Queue is empty.\nPaste from the clipboard or share text to Flow Reader.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            FlowEmptyState("Queue is empty.\nPaste from the clipboard or share text to Flow Reader.")
+            return@Box
+        }
+        LazyColumn(
+            contentPadding = flowDisplayListPadding(bottomExtra = bottomInset),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            items(entries, key = { it.item.id }) { entry ->
+                QueLineItem(entry = entry, onOpen = { onOpen(entry) }, onRemove = { onRemove(entry) })
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = FlowTokens.Alpha.Divider),
                 )
-            }
-        } else {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    start = inset,
-                    top = inset,
-                    end = inset,
-                    bottom = inset + FlowTokens.FabClearance,
-                ),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(entries, key = { it.item.id }) { entry ->
-                    QueLineItem(
-                        entry = entry,
-                        onOpen = { onOpen(entry) },
-                        onRemove = { onRemove(entry) },
-                    )
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                    )
-                }
             }
         }
     }
@@ -810,36 +588,22 @@ private fun QueLineItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen)
-            .padding(
-                start = FlowTokens.Space.XS,
-                top = FlowTokens.Pad.RowV,
-                bottom = FlowTokens.Pad.RowV,
-                end = FlowTokens.Radius.None,
-            ),
+            .padding(start = FlowTokens.Space.XS, top = FlowTokens.Pad.RowV, bottom = FlowTokens.Pad.RowV),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             entry.progress.title,
-            style = MaterialTheme.typography.bodyLarge,
+            style = FlowType.body,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = if (done) muted else Color.Unspecified,
             modifier = Modifier.weight(1f),
         )
         if (done) {
-            Text(
-                "Done",
-                style = MaterialTheme.typography.labelMedium,
-                color = muted,
-                modifier = Modifier.padding(end = FlowTokens.Space.XS),
-            )
+            Text("Done", style = FlowType.label, color = muted, modifier = Modifier.padding(end = FlowTokens.Space.XS))
         }
         IconButton(onClick = onRemove) {
-            Icon(
-                Icons.Filled.Delete,
-                contentDescription = "Remove from Queue",
-                tint = muted,
-            )
+            Icon(Icons.Filled.Delete, contentDescription = "Remove from Queue", tint = muted)
         }
     }
 }

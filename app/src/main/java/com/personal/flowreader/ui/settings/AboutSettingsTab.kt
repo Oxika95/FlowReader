@@ -1,5 +1,23 @@
 package com.personal.flowreader.ui.settings
 
+import com.personal.flowreader.ui.design.controls.FlowToggleRow
+import com.personal.flowreader.ui.design.controls.FlowSliderRow
+import com.personal.flowreader.ui.design.controls.FlowLabel
+import com.personal.flowreader.ui.design.controls.FlowChipRow
+import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowSection
+import com.personal.flowreader.ui.design.controls.FlowTextField
+import com.personal.flowreader.ui.design.controls.FlowDropdownRow
+import com.personal.flowreader.ui.design.card.FlowFullscreenCard
+import com.personal.flowreader.ui.design.card.FlowCardHeight
+import com.personal.flowreader.ui.design.card.FlowCardVariant
+import com.personal.flowreader.ui.design.card.FlowActionRow
+import com.personal.flowreader.ui.design.card.FlowTextAction
+import com.personal.flowreader.ui.design.card.FlowConfirmCard
+import com.personal.flowreader.ui.design.tabs.FlowTabBar
+import com.personal.flowreader.ui.design.tabs.FlowTabLevel
+import com.personal.flowreader.ui.design.tabs.flowTextTabs
+
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
@@ -52,7 +70,7 @@ internal fun AboutSettingsTab(
         latestError = result.exceptionOrNull()?.message
     }
 
-    // Scroll is owned by ReaderModalScaffold — do not nest verticalScroll here.
+    // Scroll is owned by FlowFullscreenCard — do not nest verticalScroll here.
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             "Flow Reader",
@@ -86,7 +104,7 @@ internal fun AboutSettingsTab(
         )
 
         Spacer(Modifier.height(FlowTokens.Space.L))
-        SettingsToggleRow(
+        FlowToggleRow(
             title = "Debug mode",
             subtitle = "Show a draggable bug bubble; drag to the X to turn off",
             checked = debugEnabled,

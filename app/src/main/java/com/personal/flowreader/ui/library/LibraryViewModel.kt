@@ -17,8 +17,8 @@ import com.personal.flowreader.data.ProgressEntity
 import com.personal.flowreader.data.QueEntry
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.library.plugin.LibraryPluginActions
-import com.personal.flowreader.library.plugin.LibraryPluginRegistry
-import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
+import com.personal.flowreader.plugin.InstalledPlugin
+import com.personal.flowreader.plugin.PluginShareRequest
 import com.personal.flowreader.share.ParseRules
 import com.personal.flowreader.share.RouterLanding
 import com.personal.flowreader.share.ShareAction
@@ -54,7 +54,7 @@ data class LibraryUi(
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val flow = app as FlowApp
     val tts = flow.tts
-    val plugins: LibraryPluginRegistry = flow.plugins
+    val plugins: StateFlow<List<InstalledPlugin>> = flow.pluginManager.installed
     private val _ui = MutableStateFlow(LibraryUi())
     val ui: StateFlow<LibraryUi> = _ui
 
@@ -115,7 +115,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val mode = flow.settings.libraryViewModeOnce()
             val enabled = flow.settings.enabledPluginIdsOnce()
-                .intersect(flow.plugins.pluginIds)
+                .intersect(flow.pluginManager.ids())
             val customTabs = flow.settings.customLibraryTabsOnce()
             val tab = LibraryTabId.parse(
                 flow.settings.libraryTabIdOnce(),
@@ -218,7 +218,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setPluginEnabled(id: String, enabled: Boolean) {
-        if (id !in flow.plugins.pluginIds) return
+        if (id !in flow.pluginManager.ids()) return
         val next = if (enabled) {
             _ui.value.enabledPluginIds + id
         } else {
@@ -350,22 +350,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         refreshAfterIngest(tab, msg)
                     }
-                    ShareDispatch.KIND_RR_PLUGIN -> {
+                    ShareDispatch.KIND_PLUGIN, LEGACY_KIND_RR_PLUGIN -> {
                         val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
-                        flow.pendingRoyalRoadShareUrl.value = url
-                        val enabled = withContext(Dispatchers.IO) {
-                            flow.settings.enabledPluginIdsOnce()
-                        }.toMutableSet().also { it.add(RoyalRoadPlugin.ID) }
-                        withContext(Dispatchers.IO) {
-                            flow.settings.setEnabledPluginIds(enabled)
-                            flow.settings.setLibraryTabId(RoyalRoadPlugin.ID)
-                        }
-                        _ui.value = _ui.value.copy(
-                            enabledPluginIds = enabled,
-                            tab = LibraryTabId.Plugin(RoyalRoadPlugin.ID),
-                            busy = false,
-                            message = "Opening Royal Road…",
-                        )
+                        val pluginId = intent.getStringExtra(ShareDispatch.EXTRA_PLUGIN_ID)
+                            ?.takeIf { it.isNotBlank() } ?: LEGACY_RR_ID
+                        openPluginShare(pluginId, url)
                     }
                 }
             } catch (t: Throwable) {
@@ -451,22 +440,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         refreshAfterIngest(tab, msg)
                     }
-                    is ShareAction.RoyalRoadPlugin -> {
-                        flow.pendingRoyalRoadShareUrl.value = action.url
-                        val enabled = withContext(Dispatchers.IO) {
-                            flow.settings.enabledPluginIdsOnce()
-                        }.toMutableSet().also { it.add(RoyalRoadPlugin.ID) }
-                        withContext(Dispatchers.IO) {
-                            flow.settings.setEnabledPluginIds(enabled)
-                            flow.settings.setLibraryTabId(RoyalRoadPlugin.ID)
-                        }
-                        _ui.value = _ui.value.copy(
-                            enabledPluginIds = enabled,
-                            tab = LibraryTabId.Plugin(RoyalRoadPlugin.ID),
-                            busy = false,
-                            message = "Opening Royal Road…",
-                        )
-                    }
+                    is ShareAction.Plugin -> openPluginShare(action.pluginId, action.url)
                     is ShareAction.ShowChooser -> error("Auto mode must not show chooser")
                 }
             } catch (t: Throwable) {
@@ -476,6 +450,32 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    /** Enable and switch to the plugin tab; the tab consumes [FlowApp.pendingPluginShare]. */
+    private suspend fun openPluginShare(pluginId: String, url: String) {
+        val plugin = flow.pluginManager.get(pluginId)
+        if (plugin == null) {
+            _ui.value = _ui.value.copy(
+                busy = false,
+                error = "The plugin for this link is not installed. Install it from Settings > Import > Plugins.",
+            )
+            return
+        }
+        flow.pendingPluginShare.value = PluginShareRequest(pluginId, url)
+        val enabled = withContext(Dispatchers.IO) {
+            flow.settings.enabledPluginIdsOnce()
+        }.toMutableSet().also { it.add(pluginId) }
+        withContext(Dispatchers.IO) {
+            flow.settings.setEnabledPluginIds(enabled)
+            flow.settings.setLibraryTabId(pluginId)
+        }
+        _ui.value = _ui.value.copy(
+            enabledPluginIds = enabled,
+            tab = LibraryTabId.Plugin(pluginId),
+            busy = false,
+            message = "Opening ${plugin.name}…",
+        )
     }
 
     private suspend fun refreshAfterIngest(tab: LibraryTabId, message: String) {
@@ -830,5 +830,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun consumeError() {
         _ui.value = _ui.value.copy(error = null)
+    }
+
+    private companion object {
+        /** Intents queued by builds before JS plugins. */
+        const val LEGACY_KIND_RR_PLUGIN = "rr_plugin"
+        const val LEGACY_RR_ID = "royalroad"
     }
 }

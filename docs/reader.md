@@ -37,12 +37,41 @@ Show book text as a continuous vertical flow. Tap to reveal title + media cards;
 | Play / Pause | Start or pause TTS |
 | Lock scroll to TTS | Hide chrome and force follow; unlock with **double-tap** on the lock-open control |
 
+### Docks
+
+Chrome lives in two floating docks (`FlowDock`), items stacked edge-inward with a fixed gap:
+
+| Dock | Items (top to bottom) |
+|------|------------------------|
+| Top | Title banner (chrome open) · pin / jump chip (when the target is above) |
+| Bottom | Pin / jump chip (when the target is below) · Media card (chrome open) · Scroll-lock unlock (locked) |
+
+Settings, Contents and their child editors are fullscreen cards that stack; Back closes the top one.
+
+### Current position and home
+
+The **current position** is always a sentence, never a paragraph: the spoken sentence while TTS
+plays, otherwise the saved locus sentence. The **home position** is a horizontal line in the
+viewport (Settings → Layout → UI, 15–85% from the top, default 50%). Every jump settles the current
+sentence's center on that line: TTS follow, pin tap, jump-back chip, double-tap, scroll lock, ToC,
+and opening the book. A sentence taller than the screen starts at the top instead.
+
+With **Show home marker** on, the reader draws a dashed line at home with a handle in the right
+gutter. Drag the handle to move home; on release, if the current sentence is on-screen it settles
+onto the new line.
+
+Math lives in [`ReaderHome.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderHome.kt)
+(unit-tested); the rail reports the current sentence's line bounds (`SentenceSpan`).
+
 ### Pin / jump
 
-- While playing and spoken block is off-screen: **playback pin** with snippet — tap/double-tap resumes follow
-- While paused and saved locus off-screen: **Jump back to saved position**
+- While playing and the spoken **sentence** is off-screen: **playback pin** with snippet — tap/double-tap resumes follow
+- While paused and the saved **sentence** is off-screen: **Jump back to saved position**
+- A paragraph that is still visible does not hide the chip if its current sentence has scrolled past
+- Both dock at the edge nearest the off-screen sentence and return it to home
 
 Free scrolling does **not** update the saved reading position; double-tap play / TTS seek does.
+Leaving the reader does not pause TTS; the Library now-playing card controls it.
 
 ## Gestures
 
@@ -57,7 +86,7 @@ Free scrolling does **not** update the saved reading position; double-tap play /
 
 ![Contents](images/reader-toc.png)
 
-Modal “Contents”; tap a chapter to seek and center.
+Modal “Contents”; tap a chapter to seek and settle its first sentence at home.
 
 ## Text selection
 
@@ -71,6 +100,7 @@ Layout (theme, font, spacing, screen awake), Audio (all Voice + Playback), Filte
 
 - [`ReaderScreen.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderScreen.kt)
 - [`ReaderChrome.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderChrome.kt)
+- [`ReaderHome.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderHome.kt), [`HomeMarker.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/HomeMarker.kt)
 - [`ReaderTouchPolicy.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderTouchPolicy.kt)
 - [`TocOverlay.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/TocOverlay.kt)
 - [`ReaderTextToolbar.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderTextToolbar.kt)

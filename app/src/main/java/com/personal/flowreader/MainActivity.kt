@@ -10,7 +10,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -27,6 +26,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.ui.debug.DebugSynthDumpFab
+import com.personal.flowreader.ui.design.layer.FlowOverlayHost
 import com.personal.flowreader.ui.library.LibraryScreen
 import com.personal.flowreader.ui.library.LibraryViewModel
 import com.personal.flowreader.ui.open.OpenBookViewModel
@@ -117,7 +117,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    Box(Modifier.fillMaxSize()) {
+                    FlowOverlayHost(
+                        system = {
+                            if (openUi.debugEnabled || tts.debugEnabled) {
+                                DebugSynthDumpFab(
+                                    onCloseDebugger = { openVm.setDebugEnabled(false) },
+                                )
+                            }
+                        },
+                    ) {
                         NavHost(
                             navController = nav,
                             startDestination = "library",
@@ -174,11 +182,6 @@ class MainActivity : ComponentActivity() {
                                     },
                                 )
                             }
-                        }
-                        if (openUi.debugEnabled || tts.debugEnabled) {
-                            DebugSynthDumpFab(
-                                onCloseDebugger = { openVm.setDebugEnabled(false) },
-                            )
                         }
                     }
                 }

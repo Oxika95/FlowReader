@@ -1,5 +1,23 @@
 package com.personal.flowreader.ui.debug
 
+import com.personal.flowreader.ui.design.controls.FlowToggleRow
+import com.personal.flowreader.ui.design.controls.FlowSliderRow
+import com.personal.flowreader.ui.design.controls.FlowLabel
+import com.personal.flowreader.ui.design.controls.FlowChipRow
+import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowSection
+import com.personal.flowreader.ui.design.controls.FlowTextField
+import com.personal.flowreader.ui.design.controls.FlowDropdownRow
+import com.personal.flowreader.ui.design.card.FlowFullscreenCard
+import com.personal.flowreader.ui.design.card.FlowCardHeight
+import com.personal.flowreader.ui.design.card.FlowCardVariant
+import com.personal.flowreader.ui.design.card.FlowActionRow
+import com.personal.flowreader.ui.design.card.FlowTextAction
+import com.personal.flowreader.ui.design.card.FlowConfirmCard
+import com.personal.flowreader.ui.design.tabs.FlowTabBar
+import com.personal.flowreader.ui.design.tabs.FlowTabLevel
+import com.personal.flowreader.ui.design.tabs.flowTextTabs
+
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -57,8 +75,6 @@ import androidx.compose.ui.unit.dp
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.R
 import com.personal.flowreader.tts.SynthDebugLog
-import com.personal.flowreader.ui.chrome.ReaderModalScaffold
-import com.personal.flowreader.ui.settings.ModalHeaderRow
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -116,7 +132,8 @@ fun DebugSynthDumpFab(
         LaunchedEffect(maxX, maxY) {
             if (offsetX.isNaN()) {
                 offsetX = maxX
-                offsetY = padPx
+                // Start below the top dock (title card) so the bubble never covers it.
+                offsetY = with(density) { (FlowTokens.Comp.ButtonPrimary * 2).toPx() }.coerceAtMost(maxY)
             } else if (!dragging) {
                 offsetX = offsetX.coerceIn(padPx, maxX)
                 offsetY = offsetY.coerceIn(padPx, maxY)
@@ -264,34 +281,54 @@ private fun SynthDebugLogPanel(
         listState.scrollToItem(lines.lastIndex)
     }
 
-    ReaderModalScaffold(
+    FlowFullscreenCard(
         visible = visible,
-        contentPadding = PaddingValues(FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
-        fillMaxCardHeight = true,
-        contentScrollable = false,
+        title = "Synth log",
+        height = FlowCardHeight.Fill,
+        scrollable = false,
+        footer = {
+            FlowActionRow(
+                start = {
+                    FlowTextAction(
+                        "Clear",
+                        onClick = {
+                            SynthDebugLog.clear()
+                            saveStatus = null
+                        },
+                        enabled = lines.isNotEmpty(),
+                    )
+                },
+            ) {
+                FlowTextAction(
+                    "Save",
+                    onClick = {
+                        scope.launch {
+                            val app = context.applicationContext as FlowApp
+                            saveStatus = withContext(Dispatchers.IO) {
+                                runCatching { app.tts.dumpSynthLog() }.fold(
+                                    onSuccess = { "Saved: ${it.absolutePath}" },
+                                    onFailure = { it.message ?: "Save failed" },
+                                )
+                            }
+                            saveStatus?.let {
+                                Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                )
+            }
+        },
     ) {
-        ModalHeaderRow(
-            title = "Synth log",
-            onDismiss = onDismiss,
-            closeContentDescription = "Close synth log",
-        )
-        Text(
+        FlowHint(
             if (lines.isEmpty()) "No events yet — play TTS to capture synthesizer activity."
             else "${lines.size} events (live)",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(
-                horizontal = FlowTokens.ModalBodyPadding,
-                vertical = FlowTokens.Space.XS,
-            ),
         )
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = FlowTokens.ModalBodyPadding),
+                .fillMaxWidth(),
             contentPadding = PaddingValues(bottom = FlowTokens.Space.S),
             verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.Hair),
         ) {
@@ -305,57 +342,6 @@ private fun SynthDebugLogPanel(
                 )
             }
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = FlowTokens.ModalBodyPadding,
-                    vertical = FlowTokens.Space.S,
-                ),
-            horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Button(
-                onClick = {
-                    SynthDebugLog.clear()
-                    saveStatus = null
-                },
-                enabled = lines.isNotEmpty(),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Clear")
-            }
-            Button(
-                onClick = {
-                    scope.launch {
-                        val app = context.applicationContext as FlowApp
-                        saveStatus = withContext(Dispatchers.IO) {
-                            runCatching { app.tts.dumpSynthLog() }.fold(
-                                onSuccess = { "Saved: ${it.absolutePath}" },
-                                onFailure = { it.message ?: "Save failed" },
-                            )
-                        }
-                        saveStatus?.let {
-                            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Save")
-            }
-        }
-        saveStatus?.let { status ->
-            Text(
-                status,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(
-                    start = FlowTokens.ModalBodyPadding,
-                    end = FlowTokens.ModalBodyPadding,
-                    bottom = FlowTokens.Space.S,
-                ),
-            )
-        }
+        saveStatus?.let { status -> FlowHint(status) }
     }
 }

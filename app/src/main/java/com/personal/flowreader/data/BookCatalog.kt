@@ -94,7 +94,7 @@ class BookCatalog(private val app: FlowApp) {
 
     suspend fun list(): List<ProgressEntity> = app.db.progress().library()
 
-    /** Plugin tab membership (e.g. Royal Road). Not shown on Files. */
+    /** Plugin tab membership. Not shown on Files. */
     suspend fun listPlugin(sourceKind: String): List<ProgressEntity> =
         app.db.progress().pluginLibrary(sourceKind)
 
@@ -206,7 +206,7 @@ class BookCatalog(private val app: FlowApp) {
     }
 
     /**
-     * Upsert a plugin-backed book. [bookId] is stable (e.g. `rr:{fictionId}`) so
+     * Upsert a plugin-backed book. [bookId] is stable (`{bookIdPrefix}:{workId}`) so
      * reopen and TTS streaming resume the same row. Not shown on Files.
      */
     suspend fun upsertPluginBook(
@@ -259,7 +259,7 @@ class BookCatalog(private val app: FlowApp) {
         val now = System.currentTimeMillis()
         val row = ProgressEntity(
             bookId = bookId,
-            title = title.ifBlank { existing?.title.orEmpty() }.ifBlank { "Royal Road" },
+            title = title.ifBlank { existing?.title.orEmpty() }.ifBlank { bookId },
             storedPath = dest.absolutePath,
             sourceUri = sourceUri.ifBlank { existing?.sourceUri.orEmpty() },
             sourceKind = sourceKind,

@@ -57,7 +57,7 @@ Storage: `global_filters` / `group_filters` JSON; Local → Room `book_filters`.
 
 ## Import
 
-Sub-tabs: **Router | Parser**.
+Sub-tabs: **Router | Parser | Plugins**.
 
 ![Router](images/settings-import.png)
 
@@ -77,6 +77,11 @@ Default idea: EPUB → Files; raw text / most URLs → Queue; plugin domains →
 
 Parse rules (`share_parse_rules`): URL match, Default/Custom parser, Content/Title/Remove CSS, Test URL.
 
+### Plugins
+
+Installed plugins (Update, Settings, Uninstall), available plugins from repositories (Install), and the
+repository list (Add repository, Refresh, Remove). See [plugins.md](plugins.md).
+
 ## Layout
 
 Sub-tabs: **Theme | UI | Font**.
@@ -90,7 +95,7 @@ Sub-tabs: **Theme | UI | Font**.
 | Area | Controls | Keys |
 |------|----------|------|
 | Theme | Light / Dark / OLED; Accent hue | `theme`, `accent_hue` |
-| UI | UI scale; Orientation; Chapter headings; Keep screen awake | `ui_scale`, `orientation`, `show_chapter_headings`, `keep_screen_awake` |
+| UI | UI scale; Orientation; Chapter headings; Keep screen awake; Home position (15–85%, default 50%); Show home marker | `ui_scale`, `orientation`, `show_chapter_headings`, `keep_screen_awake`, `home_position`, `show_home_marker` |
 | Font | Sans/Serif/Mono; size; spacing; Justify | `font_family`, `font_scale`, `line_spacing`, `justify_text` |
 
 ## Source

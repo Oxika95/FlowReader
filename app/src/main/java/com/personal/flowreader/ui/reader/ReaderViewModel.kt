@@ -14,9 +14,7 @@ import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.data.TxtIngest
-import com.personal.flowreader.library.plugin.royalroad.RoyalRoadHtml
-import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
-import com.personal.flowreader.library.plugin.royalroad.RoyalRoadReadSession
+import com.personal.flowreader.plugin.store.PluginReadSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -41,7 +39,7 @@ data class ReaderUi(
     val filtersGlobal: List<FilterRule> = emptyList(),
     val filtersGroups: List<FilterRule> = emptyList(),
     val filtersLocal: List<FilterRule> = emptyList(),
-    /** Full ToC titles (RR uses saved session ToC; otherwise [doc] chapters). */
+    /** Full ToC titles (plugin stories use the saved session ToC; otherwise [doc] chapters). */
     val tocTitles: List<String> = emptyList(),
     /** Absolute ToC index for the current locus highlight. */
     val tocIndex: Int = 0,
@@ -62,11 +60,9 @@ class ReaderViewModel(
 
     private var rawDoc: BookDoc? = null
     private var storedPath: String = ""
-    private var rrSession: RoyalRoadReadSession? = null
+    private var pluginSession: PluginReadSession? = null
+    private val isPluginBook: Boolean = flow.pluginBooks.isPluginBook(bookId)
     private val appendMutex = Mutex()
-    /** When true, [onCleared] skips [TtsController.pause] so Que handoff can keep audio seamless. */
-    @Volatile
-    var suppressPauseOnClear: Boolean = false
 
     private data class PendingProgress(
         val chapterIndex: Int,
@@ -108,9 +104,9 @@ class ReaderViewModel(
                     updatedAt = latest.updatedAt,
                 ),
             )
-            if (RoyalRoadHtml.isPluginBookId(id)) {
+            if (isPluginBook) {
                 runCatching {
-                    flow.royalRoad.maintainChapterCache(id, latest.chapterIndex)
+                    flow.pluginBooks.maintainChapterCache(id, latest.chapterIndex)
                 }
             }
         }
@@ -122,8 +118,8 @@ class ReaderViewModel(
                 ?: throw IllegalArgumentException("Book not found")
             storedPath = row.storedPath
             val doc = withContext(Dispatchers.IO) {
-                if (RoyalRoadHtml.isPluginBookId(bookId)) {
-                    loadRoyalRoad(row.sourceUri)
+                if (isPluginBook) {
+                    loadPluginStory()
                 } else {
                     val file = flow.catalog.materialize(row)
                     if (file.extension.equals("txt", true)) TxtIngest.read(file) else EpubIngest.read(file)
@@ -135,19 +131,23 @@ class ReaderViewModel(
             val local = loadLocalFilters()
             // Auto-advance starts each Que document from the beginning so a shared
             // file that was already finished does not immediately re-emit bookFinished.
+            val spoken = tts.state.value.takeIf { it.bookId == bookId }?.sentence
             val locus = if (autoPlay) {
                 Locus()
-            } else if (rrSession != null) {
+            } else if (spoken != null && pluginSession == null) {
+                // Playback may have continued after the reader closed; it is newer than the saved row.
+                Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start)
+            } else if (pluginSession != null) {
                 // Progress stores absolute ToC chapter; BookDoc chapters are relative to startIndex.
-                val rel = (row.chapterIndex - rrSession!!.startIndex).coerceAtLeast(0)
+                val rel = (row.chapterIndex - pluginSession!!.startIndex).coerceAtLeast(0)
                 Locus(rel, row.blockIndex, row.charOffset)
             } else {
                 Locus(row.chapterIndex, row.blockIndex, row.charOffset)
             }
             applyFilters(global, groups, local, locus, invalidateCache = false)
-            if (RoyalRoadHtml.isPluginBookId(bookId)) {
-                tts.setMoreProvider(bookId) { appendRoyalRoadChapter() }
-                viewModelScope.launch { appendRoyalRoadChapter() }
+            if (isPluginBook) {
+                tts.setMoreProvider(bookId) { appendPluginChapter() }
+                viewModelScope.launch { appendPluginChapter() }
             }
             if (autoPlay && !sentencesEmpty()) {
                 tts.play()
@@ -157,22 +157,15 @@ class ReaderViewModel(
         }
     }
 
-    private suspend fun loadRoyalRoad(sourceUri: String): BookDoc {
-        val session = runCatching { flow.royalRoad.resumeRead(bookId) }.getOrElse {
-            val url = sourceUri.takeIf { it.isNotBlank() }
-                ?: throw it
-            val detail = flow.royalRoad.loadWork(url)
-            flow.royalRoad.startReading(detail, 0)
-        }
-        rrSession = session
+    private suspend fun loadPluginStory(): BookDoc {
+        val session = flow.pluginBooks.resumeRead(bookId)
+        pluginSession = session
         persistPluginSnapshot(session)
-        session.toc.getOrNull(session.startIndex)?.url?.let { url ->
-            runCatching { flow.royalRoad.syncProgress(session.bookId, url) }
-        }
+        flow.pluginBooks.syncProgress(session, session.startIndex)
         return BookDoc(session.title, session.chapters)
     }
 
-    private suspend fun persistPluginSnapshot(session: RoyalRoadReadSession) {
+    private suspend fun persistPluginSnapshot(session: PluginReadSession) {
         // Keep book.txt to the stream window so it does not grow without bound.
         val window = (session.keepBehind + 1 + session.prefetchAhead).coerceAtLeast(1)
         val slice = session.chapters.takeLast(window)
@@ -188,16 +181,16 @@ class ReaderViewModel(
         flow.catalog.upsertPluginBook(
             bookId = session.bookId,
             title = session.title,
-            sourceUri = session.fictionUrl,
-            sourceKind = RoyalRoadPlugin.ID,
+            sourceUri = session.workUrl,
+            sourceKind = session.pluginId,
             text = text.ifBlank { session.title },
         )
     }
 
-    suspend fun appendRoyalRoadChapter(): Boolean = appendMutex.withLock {
-        val session = rrSession ?: return false
-        val next = withContext(Dispatchers.IO) { flow.royalRoad.appendNext(session) } ?: return false
-        rrSession = next
+    suspend fun appendPluginChapter(): Boolean = appendMutex.withLock {
+        val session = pluginSession ?: return false
+        val next = withContext(Dispatchers.IO) { flow.pluginBooks.appendNext(session) } ?: return false
+        pluginSession = next
         val addedRaw = next.chapters.last()
         val raw = rawDoc ?: return false
         rawDoc = raw.copy(chapters = raw.chapters + addedRaw)
@@ -218,11 +211,9 @@ class ReaderViewModel(
         )
         withContext(Dispatchers.IO) {
             persistPluginSnapshot(next)
-            next.toc.getOrNull(next.loadedThrough)?.url?.let { url ->
-                flow.royalRoad.syncProgress(next.bookId, url)
-            }
+            flow.pluginBooks.syncProgress(next, next.loadedThrough)
             runCatching {
-                flow.royalRoad.maintainChapterCache(next.bookId, next.loadedThrough)
+                flow.pluginBooks.maintainChapterCache(next.bookId, next.loadedThrough)
             }
         }
         true
@@ -265,7 +256,7 @@ class ReaderViewModel(
         val clamped = clampLocus(locus, filtered.doc)
         if (invalidateCache) tts.invalidateEdgeCache()
         tts.attach(bookId, filtered.doc, clamped, speechFilters = merged.filter { it.ttsOnly })
-        val tocTitles = tocTitlesFor(rrSession, filtered.doc)
+        val tocTitles = tocTitlesFor(pluginSession, filtered.doc)
         _ui.value = ReaderUi(
             title = filtered.doc.title,
             doc = filtered.doc,
@@ -277,11 +268,11 @@ class ReaderViewModel(
             filtersGroups = groups,
             filtersLocal = local,
             tocTitles = tocTitles,
-            tocIndex = tocIndexFor(rrSession, clamped, tocTitles.size),
+            tocIndex = tocIndexFor(pluginSession, clamped, tocTitles.size),
         )
     }
 
-    private fun tocTitlesFor(session: RoyalRoadReadSession?, doc: BookDoc): List<String> {
+    private fun tocTitlesFor(session: PluginReadSession?, doc: BookDoc): List<String> {
         if (session != null && session.toc.isNotEmpty()) {
             return session.toc.mapIndexed { i, link ->
                 link.title.ifBlank { "Chapter ${i + 1}" }
@@ -293,7 +284,7 @@ class ReaderViewModel(
     }
 
     private fun tocIndexFor(
-        session: RoyalRoadReadSession?,
+        session: PluginReadSession?,
         locus: Locus,
         tocSize: Int,
     ): Int {
@@ -475,9 +466,9 @@ class ReaderViewModel(
         (rules.maxOfOrNull { it.order } ?: -1) + 1
 
     suspend fun jumpToChapter(chapterIndex: Int) {
-        val session = rrSession
+        val session = pluginSession
         if (session != null) {
-            seekRoyalRoadChapter(chapterIndex)
+            seekPluginChapter(chapterIndex)
             return
         }
         val doc = _ui.value.doc ?: return
@@ -485,17 +476,15 @@ class ReaderViewModel(
         jumpTo(Locus(ci, 0, 0))
     }
 
-    private suspend fun seekRoyalRoadChapter(absoluteIndex: Int) {
+    private suspend fun seekPluginChapter(absoluteIndex: Int) {
         val loaded = withContext(Dispatchers.IO) {
-            flow.royalRoad.seekToChapter(bookId, absoluteIndex)
+            flow.pluginBooks.seekToChapter(bookId, absoluteIndex)
         }
-        rrSession = loaded
+        pluginSession = loaded
         rawDoc = BookDoc(loaded.title, loaded.chapters)
         withContext(Dispatchers.IO) {
             persistPluginSnapshot(loaded)
-            loaded.toc.getOrNull(loaded.startIndex)?.url?.let { url ->
-                runCatching { flow.royalRoad.syncProgress(loaded.bookId, url) }
-            }
+            flow.pluginBooks.syncProgress(loaded, loaded.startIndex)
         }
         applyFilters(
             _ui.value.filtersGlobal,
@@ -517,7 +506,7 @@ class ReaderViewModel(
         val tocTitles = _ui.value.tocTitles
         _ui.value = _ui.value.copy(
             locus = locus,
-            tocIndex = tocIndexFor(rrSession, locus, tocTitles.size),
+            tocIndex = tocIndexFor(pluginSession, locus, tocTitles.size),
         )
         persist(locus)
     }
@@ -536,8 +525,8 @@ class ReaderViewModel(
             items.size <= 1 -> 0f
             else -> locus.flatIndex(doc!!).toFloat() / items.lastIndex
         }.coerceIn(0f, 1f)
-        // RR sessions start at an absolute ToC index; store absolute chapter for cache/splash.
-        val session = rrSession
+        // Plugin sessions start at an absolute ToC index; store absolute chapter for cache/splash.
+        val session = pluginSession
         val absoluteChapter = if (session != null) {
             (session.startIndex + locus.chapterIndex).coerceIn(0, (session.toc.size - 1).coerceAtLeast(0))
         } else {
@@ -563,9 +552,9 @@ class ReaderViewModel(
                         updatedAt = pending.updatedAt,
                     ),
                 )
-                if (RoyalRoadHtml.isPluginBookId(id)) {
+                if (isPluginBook) {
                     runCatching {
-                        flow.royalRoad.maintainChapterCache(id, pending.chapterIndex)
+                        flow.pluginBooks.maintainChapterCache(id, pending.chapterIndex)
                     }
                 }
             }
@@ -574,13 +563,11 @@ class ReaderViewModel(
         }
     }
 
+    /** Playback keeps running after the reader closes; the Library now-playing card controls it. */
     override fun onCleared() {
         persistNow()
         progressWrites.close()
         tts.setMoreProvider(bookId, null)
-        if (!suppressPauseOnClear) {
-            tts.pause()
-        }
         super.onCleared()
     }
 }

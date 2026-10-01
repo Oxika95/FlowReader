@@ -208,7 +208,9 @@ object ShareUrlMatch {
 }
 
 object RouterRules {
-    /** Flow-tree defaults + Royal Road plugin URLs (list order wins). */
+    const val URL_ANY_ID = "seed-url-any"
+
+    /** Flow-tree defaults (list order wins). Plugin URL rules come from [withPluginHosts]. */
     fun seed(): List<RouterRule> = listOf(
         RouterRule(
             id = "seed-book-files",
@@ -223,34 +225,61 @@ object RouterRules {
             order = 1,
         ),
         RouterRule(
-            id = "seed-royalroad",
-            kind = RouterContentKind.Url,
-            hostPattern = "royalroad.com",
-            matchSubdomains = true,
-            parseUrl = false,
-            destination = RouterLanding.Plugin,
-            pluginId = "royalroad",
-            order = 2,
-        ),
-        RouterRule(
-            id = "seed-royalroadl",
-            kind = RouterContentKind.Url,
-            hostPattern = "royalroadl.com",
-            matchSubdomains = true,
-            parseUrl = false,
-            destination = RouterLanding.Plugin,
-            pluginId = "royalroad",
-            order = 3,
-        ),
-        RouterRule(
-            id = "seed-url-any",
+            id = URL_ANY_ID,
             kind = RouterContentKind.Url,
             hostPattern = "*",
             parseUrl = true,
             destination = RouterLanding.Queue,
-            order = 4,
+            order = 2,
         ),
     )
+
+    fun pluginRuleId(pluginId: String, host: String): String =
+        "plugin-$pluginId-${host.lowercase(Locale.US).trim('.')}"
+
+    /**
+     * Adds one Plugin URL rule per manifest `shareHosts` entry, inserted before the catch-all
+     * URL rule. Rules in [alreadySeeded] are skipped (the user may have deleted them), as are
+     * hosts that already route to the same plugin. Returns the new rules and seeded ids.
+     */
+    fun withPluginHosts(
+        current: List<RouterRule>,
+        manifests: List<com.personal.flowreader.plugin.api.PluginManifest>,
+        alreadySeeded: Set<String>,
+    ): Pair<List<RouterRule>, Set<String>> {
+        val seeded = alreadySeeded.toMutableSet()
+        val additions = ArrayList<RouterRule>()
+        manifests.forEach { manifest ->
+            manifest.shareHosts.forEach { rawHost ->
+                val host = rawHost.lowercase(Locale.US).trim().trim('.').removePrefix("www.")
+                if (host.isEmpty()) return@forEach
+                val id = pluginRuleId(manifest.id, host)
+                if (id in seeded) return@forEach
+                seeded += id
+                val exists = current.any {
+                    it.destination.isPlugin &&
+                        it.pluginId == manifest.id &&
+                        it.hostPattern.lowercase(Locale.US).trim('.').removePrefix("www.") == host
+                }
+                if (!exists) {
+                    additions += RouterRule(
+                        id = id,
+                        kind = RouterContentKind.Url,
+                        hostPattern = host,
+                        matchSubdomains = true,
+                        parseUrl = false,
+                        destination = RouterLanding.Plugin,
+                        pluginId = manifest.id,
+                    )
+                }
+            }
+        }
+        if (additions.isEmpty()) return current to seeded
+        val sorted = current.sortedBy { it.order }
+        val anyIdx = sorted.indexOfFirst { it.id == URL_ANY_ID }.let { if (it < 0) sorted.size else it }
+        val merged = sorted.take(anyIdx) + additions + sorted.drop(anyIdx)
+        return merged.mapIndexed { i, r -> r.copy(order = i) } to seeded
+    }
 
     fun encode(rules: List<RouterRule>): String {
         val body = rules.sortedBy { it.order }.joinToString(",") { rule ->
@@ -339,27 +368,6 @@ object RouterRules {
             pluginRules.forEach { h ->
                 out += h.copy(order = order++)
             }
-        } else {
-            out += RouterRule(
-                id = "seed-royalroad",
-                kind = RouterContentKind.Url,
-                hostPattern = "royalroad.com",
-                matchSubdomains = true,
-                parseUrl = false,
-                destination = RouterLanding.Plugin,
-                pluginId = "royalroad",
-                order = order++,
-            )
-            out += RouterRule(
-                id = "seed-royalroadl",
-                kind = RouterContentKind.Url,
-                hostPattern = "royalroadl.com",
-                matchSubdomains = true,
-                parseUrl = false,
-                destination = RouterLanding.Plugin,
-                pluginId = "royalroad",
-                order = order++,
-            )
         }
 
         val urlLanding = when (urlDest) {
@@ -371,7 +379,7 @@ object RouterRules {
             urlDest == "parse_queue" ||
             urlLanding.id == RouterLanding.FILES
         out += RouterRule(
-            id = "seed-url-any",
+            id = URL_ANY_ID,
             kind = RouterContentKind.Url,
             hostPattern = "*",
             parseUrl = parseDefault || urlLanding.id == RouterLanding.FILES,

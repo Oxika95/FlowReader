@@ -164,5 +164,5 @@ sealed class ShareAction {
         val rule: ParseRule,
         val landing: RouterLanding = RouterLanding.Queue,
     ) : ShareAction()
-    data class RoyalRoadPlugin(val url: String) : ShareAction()
+    data class Plugin(val pluginId: String, val url: String) : ShareAction()
 }

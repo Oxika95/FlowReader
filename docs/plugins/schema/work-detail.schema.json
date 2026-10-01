@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Oxika95/FlowReader/docs/plugins/schema/work-detail.schema.json",
+  "title": "loadWork() result (WorkDetail), apiVersion 2",
+  "type": "object",
+  "required": ["id", "chapters"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "url": { "type": "string" },
+    "author": { "type": "string" },
+    "cover": { "type": "string" },
+    "synopsis": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "status": { "type": "string", "description": "v1; shown as a badge when card.badges is empty" },
+    "rating": { "type": "string", "description": "v1; shown as a 'star' stat when card.stats is empty" },
+    "views": { "type": ["integer", "null"], "description": "v1; shown as an 'eye' stat when card.stats is empty" },
+    "chapters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "title": { "type": "string" },
+          "url": { "type": "string" },
+          "id": { "type": "string" }
+        }
+      }
+    },
+    "card": { "$ref": "#/$defs/card" }
+  },
+  "$defs": {
+    "stat": {
+      "type": "object",
+      "required": ["icon", "value"],
+      "properties": {
+        "icon": { "type": "string", "description": "Icon token" },
+        "value": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" }
+      }
+    },
+    "link": {
+      "type": "object",
+      "required": ["url"],
+      "properties": {
+        "label": { "type": "string" },
+        "url": { "type": "string", "pattern": "^https?://" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+          "not": { "enum": ["read", "download", "refresh", "delete", "share", "open", "remove"] }
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "icon": { "type": "string" },
+        "placement": { "enum": ["rail", "footer"], "default": "rail" },
+        "toggle": { "type": "boolean", "default": false },
+        "on": { "type": "boolean", "default": false },
+        "enabled": { "type": "boolean", "default": true }
+      }
+    },
+    "card": {
+      "type": "object",
+      "description": "Host caps: 6 stats, 4 badges, 3 links, 2 rail + 2 footer actions. Extra entries are dropped.",
+      "properties": {
+        "stats": { "type": "array", "items": { "$ref": "#/$defs/stat" } },
+        "badges": { "type": "array", "items": { "type": "string" } },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/link" } },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/action" } }
+      }
+    }
+  }
+}

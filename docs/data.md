@@ -32,7 +32,9 @@ Theme, TTS, filters JSON, share router/parse rules — see [settings.md](setting
 |------|----------|
 | `filesDir/books/{sha256}/book.epub` | Imported copies |
 | Linked cache | Under cache when referencing in place |
-| `filesDir/plugins/royalroad/` | RR session, ToC, chapters, covers |
+| `filesDir/plugins/installed/{id}/` | Installed plugin `plugin.json` + `index.js` |
+| `filesDir/plugins/data/{id}/` | Plugin story sessions, ToC, chapter cache, lists, settings, key-value store |
+| `shared_prefs/plugin_secret_{id}.xml` | Encrypted plugin secrets and cookies (excluded from backup) |
 
 Book ids are SHA-256 of file bytes ([`BookCatalog.kt`](../app/src/main/java/com/personal/flowreader/data/BookCatalog.kt)).
 

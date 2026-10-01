@@ -41,6 +41,10 @@ data class ReaderPrefs(
     val keepScreenAwake: Boolean = false,
     /** When true, synth debug logging and the floating dump FAB are available. */
     val debugEnabled: Boolean = false,
+    /** See [HomePosition]. */
+    val homePosition: Float = HomePosition.DEFAULT,
+    /** When true, the reader shows a draggable marker at [homePosition]. */
+    val showHomeMarker: Boolean = false,
 )
 
 data class TtsPrefs(
@@ -248,6 +252,14 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_DEBUG_ENABLED] = enabled }
     }
 
+    suspend fun setHomePosition(position: Float) {
+        store.edit { it[KEY_HOME_POSITION] = HomePosition.coerce(position) }
+    }
+
+    suspend fun setShowHomeMarker(enabled: Boolean) {
+        store.edit { it[KEY_SHOW_HOME_MARKER] = enabled }
+    }
+
     suspend fun setEngine(key: String) {
         store.edit { it[KEY_TTS_ENGINE] = key }
     }
@@ -399,6 +411,24 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_SHARE_ROUTER_RULES] = RouterRules.encode(rules) }
     }
 
+    /** Router rule ids already seeded from plugin `shareHosts` (so user deletions stick). */
+    suspend fun seededPluginShareRuleIdsOnce(): Set<String> =
+        decodeIdSet(store.data.first()[KEY_SEEDED_PLUGIN_SHARE_RULES])
+
+    suspend fun setSeededPluginShareRuleIds(ids: Set<String>) {
+        store.edit { it[KEY_SEEDED_PLUGIN_SHARE_RULES] = ids.sorted().joinToString(",") }
+    }
+
+    /** Plugin repository index URLs; null until the user first edits the list. */
+    suspend fun pluginReposOnce(): List<String>? {
+        val raw = store.data.first()[KEY_PLUGIN_REPOS] ?: return null
+        return raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    suspend fun setPluginRepos(urls: List<String>) {
+        store.edit { it[KEY_PLUGIN_REPOS] = urls.joinToString("\n") }
+    }
+
     suspend fun shareParseRulesOnce(): List<ParseRule> {
         val p = store.data.first()
         val raw = p[KEY_SHARE_PARSE_RULES]
@@ -431,6 +461,8 @@ class SettingsStore(context: Context) {
         private val KEY_SHOW_CHAPTER_HEADINGS = booleanPreferencesKey("show_chapter_headings")
         private val KEY_KEEP_SCREEN_AWAKE = booleanPreferencesKey("keep_screen_awake")
         private val KEY_DEBUG_ENABLED = booleanPreferencesKey("debug_enabled")
+        private val KEY_HOME_POSITION = floatPreferencesKey("home_position")
+        private val KEY_SHOW_HOME_MARKER = booleanPreferencesKey("show_home_marker")
         private val KEY_TTS_ENGINE = stringPreferencesKey("tts_engine")
         private val KEY_TTS_VOICE = stringPreferencesKey("tts_voice")
         private val KEY_TTS_SPEED = floatPreferencesKey("tts_speed")
@@ -462,6 +494,8 @@ class SettingsStore(context: Context) {
         private val KEY_SHARE_PLUGIN_HANDOFFS = stringPreferencesKey("share_plugin_handoffs") // legacy
         private val KEY_SHARE_ROUTER_RULES = stringPreferencesKey("share_router_rules")
         private val KEY_SHARE_PARSE_RULES = stringPreferencesKey("share_parse_rules")
+        private val KEY_SEEDED_PLUGIN_SHARE_RULES = stringPreferencesKey("seeded_plugin_share_rules")
+        private val KEY_PLUGIN_REPOS = stringPreferencesKey("plugin_repos")
 
         private fun decodeIdSet(raw: String?): Set<String> =
             raw?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
@@ -483,6 +517,8 @@ class SettingsStore(context: Context) {
             showChapterHeadingsInBody = this[KEY_SHOW_CHAPTER_HEADINGS] ?: false,
             keepScreenAwake = this[KEY_KEEP_SCREEN_AWAKE] ?: false,
             debugEnabled = this[KEY_DEBUG_ENABLED] ?: false,
+            homePosition = HomePosition.coerce(this[KEY_HOME_POSITION] ?: HomePosition.DEFAULT),
+            showHomeMarker = this[KEY_SHOW_HOME_MARKER] ?: false,
         )
 
         private fun Preferences.resolveAccentHue(): Float {

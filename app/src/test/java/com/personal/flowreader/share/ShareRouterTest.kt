@@ -1,5 +1,6 @@
 package com.personal.flowreader.share
 
+import com.personal.flowreader.plugin.api.PluginManifest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -173,8 +174,64 @@ class WebPageIngestTest {
     }
 }
 
+class PluginShareSeedTest {
+    private val rr = PluginManifest(
+        id = "royalroad",
+        name = "Royal Road",
+        version = "1.0.0",
+        apiVersion = 1,
+        shareHosts = listOf("royalroad.com", "www.royalroadl.com"),
+    )
+
+    @Test
+    fun insertsPluginRulesBeforeCatchAll() {
+        val (rules, seeded) = RouterRules.withPluginHosts(RouterRules.seed(), listOf(rr), emptySet())
+        val ids = rules.map { it.id }
+        val anyIdx = ids.indexOf(RouterRules.URL_ANY_ID)
+        assertTrue(ids.indexOf(RouterRules.pluginRuleId("royalroad", "royalroad.com")) in 0 until anyIdx)
+        assertTrue(ids.indexOf(RouterRules.pluginRuleId("royalroad", "royalroadl.com")) in 0 until anyIdx)
+        assertEquals(2, seeded.size)
+        assertEquals(rules.indices.toList(), rules.map { it.order })
+    }
+
+    @Test
+    fun deletedSeedRuleIsNotReAdded() {
+        val (first, seeded) = RouterRules.withPluginHosts(RouterRules.seed(), listOf(rr), emptySet())
+        val deleted = first.filterNot { it.id == RouterRules.pluginRuleId("royalroad", "royalroad.com") }
+        val (again, _) = RouterRules.withPluginHosts(deleted, listOf(rr), seeded)
+        assertEquals(deleted, again)
+    }
+
+    @Test
+    fun legacySeedRuleCountsAsExisting() {
+        val legacy = RouterRules.seed() + RouterRule(
+            id = "seed-royalroad",
+            kind = RouterContentKind.Url,
+            hostPattern = "royalroad.com",
+            parseUrl = false,
+            destination = RouterLanding.Plugin,
+            pluginId = "royalroad",
+            order = 10,
+        )
+        val (rules, _) = RouterRules.withPluginHosts(legacy, listOf(rr), emptySet())
+        assertEquals(1, rules.count { it.pluginId == "royalroad" && it.hostPattern == "royalroad.com" })
+    }
+}
+
 class ShareRouterTest {
-    private val rules = RouterRules.seed()
+    private val rules = RouterRules.withPluginHosts(
+        RouterRules.seed(),
+        listOf(
+            PluginManifest(
+                id = "royalroad",
+                name = "Royal Road",
+                version = "1.0.0",
+                apiVersion = 1,
+                shareHosts = listOf("royalroad.com"),
+            ),
+        ),
+        emptySet(),
+    ).first
     private val parseRules = emptyList<ParseRule>()
     private val auto = SharePrefs(askMode = ShareAskMode.Auto)
     private val ask = SharePrefs(askMode = ShareAskMode.Ask)
@@ -236,7 +293,19 @@ class ShareRouterTest {
             rules,
             parseRules,
         )
-        assertTrue(action is ShareAction.RoyalRoadPlugin)
+        assertTrue(action is ShareAction.Plugin)
+        assertEquals("royalroad", (action as ShareAction.Plugin).pluginId)
+    }
+
+    @Test
+    fun seedAloneHasNoPluginRules() {
+        val action = ShareRouter.decide(
+            SharePayload("https://www.royalroad.com/fiction/1/foo"),
+            auto,
+            RouterRules.seed(),
+            parseRules,
+        )
+        assertTrue(action is ShareAction.Crawl)
     }
 
     @Test

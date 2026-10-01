@@ -87,7 +87,10 @@ object ShareRouter {
             )
         }
 
-    @Suppress("UNUSED_PARAMETER")
     private fun pluginAction(url: String, pluginId: String?): ShareAction =
-        ShareAction.RoyalRoadPlugin(url)
+        if (pluginId.isNullOrBlank()) {
+            ShareAction.Crawl(url, ParseRules.defaultForUrl(url), RouterLanding.Queue)
+        } else {
+            ShareAction.Plugin(pluginId, url)
+        }
 }

@@ -13,7 +13,7 @@ Flow Reader is a personal Android eReader (Kotlin + Jetpack Compose). Open an EP
 | TTS | Edge Neural or system engines, word/sentence highlight, media notification |
 | Filters | Global / Groups / Local text replace for visible text and TTS |
 | Import | Router + Parser rules for shared text/URLs; plugins may own domains |
-| Royal Road | Optional plugin tab for followed/saved serials |
+| Plugins | JS source plugins from repositories (e.g. Royal Road) add tabs for followed/saved serials |
 
 ## Formats
 

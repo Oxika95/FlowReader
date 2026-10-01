@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Oxika95/FlowReader/docs/plugins/schema/plugin.schema.json",
+  "title": "Flow Reader plugin manifest (plugin.json)",
+  "type": "object",
+  "required": ["id", "version", "allowedHosts"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{1,39}$" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "version": { "type": "string", "pattern": "^\\d+(\\.\\d+)*$" },
+    "apiVersion": { "type": "integer", "minimum": 1, "maximum": 2, "default": 1 },
+    "site": { "type": "string", "format": "uri" },
+    "iconUrl": { "type": "string" },
+    "lang": { "type": "string" },
+    "bookIdPrefix": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{1,39}$" },
+    "allowedHosts": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "minRequestIntervalMs": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 500 },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["search", "lists", "auth", "membership", "progressSync", "resolveUrl"] }
+    },
+    "lists": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "icon": { "$ref": "#/$defs/iconToken", "default": "bookmark" },
+          "membershipToggle": { "type": "boolean", "default": true },
+          "syncable": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "required": ["fields"],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key"],
+            "properties": {
+              "key": { "type": "string" },
+              "label": { "type": "string" },
+              "secret": { "type": "boolean", "default": false },
+              "type": { "enum": ["text", "email", "password"] }
+            }
+          }
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "settings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "type"],
+        "properties": {
+          "key": { "type": "string" },
+          "type": { "enum": ["toggle", "int", "choice", "text"] },
+          "label": { "type": "string" },
+          "description": { "type": "string" },
+          "default": { "type": ["boolean", "number", "string"] },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["value"],
+              "properties": { "value": { "type": "string" }, "label": { "type": "string" } }
+            }
+          },
+          "min": { "type": "integer" },
+          "max": { "type": "integer" }
+        }
+      }
+    },
+    "shareHosts": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "iconToken": {
+      "description": "Unknown tokens render as 'bookmark'. Source of truth: FlowIcons.tokens.",
+      "type": "string",
+      "examples": [
+        "add", "favorite", "heart", "schedule", "clock", "bookmark", "star", "check", "visibility", "eye",
+        "list", "flag", "download", "pages", "user", "followers", "comment", "like", "link", "share"
+      ]
+    }
+  }
+}

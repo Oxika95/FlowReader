@@ -1,5 +1,23 @@
 package com.personal.flowreader.ui.settings
 
+import com.personal.flowreader.ui.design.controls.FlowToggleRow
+import com.personal.flowreader.ui.design.controls.FlowSliderRow
+import com.personal.flowreader.ui.design.controls.FlowLabel
+import com.personal.flowreader.ui.design.controls.FlowChipRow
+import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowSection
+import com.personal.flowreader.ui.design.controls.FlowTextField
+import com.personal.flowreader.ui.design.controls.FlowDropdownRow
+import com.personal.flowreader.ui.design.card.FlowFullscreenCard
+import com.personal.flowreader.ui.design.card.FlowCardHeight
+import com.personal.flowreader.ui.design.card.FlowCardVariant
+import com.personal.flowreader.ui.design.card.FlowActionRow
+import com.personal.flowreader.ui.design.card.FlowTextAction
+import com.personal.flowreader.ui.design.card.FlowConfirmCard
+import com.personal.flowreader.ui.design.tabs.FlowTabBar
+import com.personal.flowreader.ui.design.tabs.FlowTabLevel
+import com.personal.flowreader.ui.design.tabs.flowTextTabs
+
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -159,13 +177,10 @@ import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.data.UiScale
 import com.personal.flowreader.ui.common.rememberBookCover
-import com.personal.flowreader.ui.settings.AppSettingsOverlay
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.settings.FilterSettingsCallbacks
 import com.personal.flowreader.ui.settings.FilterSettingsState
-import com.personal.flowreader.ui.settings.ModalHeaderRow
-import com.personal.flowreader.ui.settings.SettingsToggleRow
 import com.personal.flowreader.ui.settings.TtsSettingsCallbacks
 import com.personal.flowreader.ui.settings.TtsSettingsState
 import com.personal.flowreader.ui.theme.FlowTokens
@@ -213,11 +228,7 @@ internal fun AudioSettingsTab(
     var audioTab by remember { mutableIntStateOf(0) }
     val audioTabs = listOf("Voice", "Playback")
 
-    SettingsSubTabRow(
-        selectedTabIndex = audioTab,
-        labels = audioTabs,
-        onTabSelected = { audioTab = it },
-    )
+    FlowTabBar(tabs = flowTextTabs(audioTabs, audioTab) { audioTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
 
     Spacer(Modifier.height(FlowTokens.Space.M))
     when (audioTab) {
@@ -310,7 +321,7 @@ internal fun VoiceSettingsTab(
         ?: voices.firstOrNull()?.label
         ?: "Default"
 
-    SettingsLabel("TTS Engine")
+    FlowLabel("TTS Engine")
     ExposedDropdownMenuBox(
         expanded = engineOpen,
         onExpandedChange = { engineOpen = it },
@@ -321,7 +332,7 @@ internal fun VoiceSettingsTab(
             readOnly = true,
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(engineOpen) },
-            shape = FlowTokens.PanelShape,
+            shape = FlowTokens.Shape.Field,
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable),
@@ -343,7 +354,7 @@ internal fun VoiceSettingsTab(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.M))
-    SettingsLabel("Voice")
+    FlowLabel("Voice")
     ExposedDropdownMenuBox(
         expanded = voiceOpen,
         onExpandedChange = { voiceOpen = it },
@@ -354,7 +365,7 @@ internal fun VoiceSettingsTab(
             readOnly = true,
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(voiceOpen) },
-            shape = FlowTokens.PanelShape,
+            shape = FlowTokens.Shape.Field,
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable),
@@ -376,7 +387,7 @@ internal fun VoiceSettingsTab(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.M))
-    SettingsLabel("Speed")
+    FlowLabel("Speed")
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -403,7 +414,7 @@ internal fun VoiceSettingsTab(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.S))
-    SettingsLabel("Pitch")
+    FlowLabel("Pitch")
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -456,7 +467,7 @@ internal fun VoiceSettingsTab(
     }
     AnimatedVisibility(visible = advancedOpen) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            SettingsLabel("Pre-cache clips")
+            FlowLabel("Pre-cache clips")
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -484,7 +495,7 @@ internal fun VoiceSettingsTab(
             }
 
             Spacer(Modifier.height(FlowTokens.Space.S))
-            SettingsLabel("Clip size")
+            FlowLabel("Clip size")
             Text(
                 "Target characters per spoken clip.",
                 style = MaterialTheme.typography.bodySmall,
@@ -519,7 +530,7 @@ internal fun VoiceSettingsTab(
             }
 
             Spacer(Modifier.height(FlowTokens.Space.S))
-            SettingsLabel("Size leeway")
+            FlowLabel("Size leeway")
             Text(
                 "Characters allowed above or below the target.",
                 style = MaterialTheme.typography.bodySmall,
@@ -631,14 +642,14 @@ internal fun PlaybackSettingsTab(
         loadBondedAndOpen()
     }
 
-    SettingsToggleRow(
+    FlowToggleRow(
         title = "Auto-scroll with playback",
         subtitle = "Keep the spoken text centered until you scroll away",
         checked = autoScrollWithTts,
         onCheckedChange = onAutoScrollWithTts,
     )
     Spacer(Modifier.height(FlowTokens.Space.S))
-    SettingsToggleRow(
+    FlowToggleRow(
         title = "Double-tap starts playback",
         subtitle = "Unavailable on body text while selection is on — use play controls",
         checked = doubleTapPlay,
@@ -646,7 +657,7 @@ internal fun PlaybackSettingsTab(
     )
 
     Spacer(Modifier.height(FlowTokens.Space.L))
-    SettingsToggleRow(
+    FlowToggleRow(
         title = "Tonal underlay",
         subtitle = underlaySubtitle(
             underlayOn = underlayOn,

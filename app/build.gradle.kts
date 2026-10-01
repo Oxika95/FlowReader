@@ -13,8 +13,8 @@ android {
         applicationId = "com.personal.flowreader"
         minSdk = 26
         targetSdk = 36
-        versionCode = 99
-        versionName = "0.99-alpha"
+        versionCode = 100
+        versionName = "1.0-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -64,8 +64,50 @@ dependencies {
     implementation("org.jsoup:jsoup:1.18.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.security:security-crypto:1.0.0")
+    // Pinned: later releases are built with Kotlin 2.3+ metadata.
+    implementation("io.github.dokar3:quickjs-kt:1.0.0-alpha13")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+}
+
+/**
+ * Debug builds seed plugins from a local flow-reader-plugins checkout (default: sibling of
+ * this repo; override with -PflowPluginsDir=...). Release builds ship no plugins.
+ */
+abstract class BundleDevPluginsTask : DefaultTask() {
+    @get:Internal
+    abstract val pluginsDir: DirectoryProperty
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val pluginFiles: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun bundle() {
+        val out = outputDir.get().asFile.resolve("plugins")
+        out.deleteRecursively()
+        out.mkdirs()
+        val root = pluginsDir.get().asFile
+        pluginFiles.files.forEach { f -> f.copyTo(out.resolve(f.relativeTo(root).path), overwrite = true) }
+    }
+}
+
+val devPluginsDir: File = file(
+    providers.gradleProperty("flowPluginsDir").getOrElse(rootDir.resolve("../flow-reader-plugins").path),
+)
+val bundleDevPlugins = tasks.register<BundleDevPluginsTask>("bundleDevPlugins") {
+    pluginsDir.set(devPluginsDir)
+    pluginFiles.from(fileTree(devPluginsDir) { include("*/plugin.json", "*/index.js") })
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(bundleDevPlugins, BundleDevPluginsTask::outputDir)
+    }
 }
 
 tasks.withType<Test> {

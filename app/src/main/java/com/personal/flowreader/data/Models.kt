@@ -140,6 +140,19 @@ object UiScale {
         value.coerceIn(MIN, MAX)
 }
 
+/**
+ * Home position: where the current sentence settles in the reader viewport, as a fraction of
+ * its height from the top. Every jump-to-position and TTS follow scroll targets this line.
+ */
+object HomePosition {
+    const val DEFAULT = 0.5f
+    const val MIN = 0.15f
+    const val MAX = 0.85f
+
+    fun coerce(value: Float): Float =
+        value.coerceIn(MIN, MAX)
+}
+
 enum class ReaderFont {
     Sans,
     Serif,

@@ -1,5 +1,23 @@
 package com.personal.flowreader.ui.settings
 
+import com.personal.flowreader.ui.design.controls.FlowToggleRow
+import com.personal.flowreader.ui.design.controls.FlowSliderRow
+import com.personal.flowreader.ui.design.controls.FlowLabel
+import com.personal.flowreader.ui.design.controls.FlowChipRow
+import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowSection
+import com.personal.flowreader.ui.design.controls.FlowTextField
+import com.personal.flowreader.ui.design.controls.FlowDropdownRow
+import com.personal.flowreader.ui.design.card.FlowFullscreenCard
+import com.personal.flowreader.ui.design.card.FlowCardHeight
+import com.personal.flowreader.ui.design.card.FlowCardVariant
+import com.personal.flowreader.ui.design.card.FlowActionRow
+import com.personal.flowreader.ui.design.card.FlowTextAction
+import com.personal.flowreader.ui.design.card.FlowConfirmCard
+import com.personal.flowreader.ui.design.tabs.FlowTabBar
+import com.personal.flowreader.ui.design.tabs.FlowTabLevel
+import com.personal.flowreader.ui.design.tabs.flowTextTabs
+
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -135,6 +153,7 @@ import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterMatchType
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
+import com.personal.flowreader.data.HomePosition
 import com.personal.flowreader.data.ReaderFont
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -151,13 +170,10 @@ import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.data.UiScale
 import com.personal.flowreader.ui.common.rememberBookCover
-import com.personal.flowreader.ui.settings.AppSettingsOverlay
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.settings.FilterSettingsCallbacks
 import com.personal.flowreader.ui.settings.FilterSettingsState
-import com.personal.flowreader.ui.settings.ModalHeaderRow
-import com.personal.flowreader.ui.settings.SettingsToggleRow
 import com.personal.flowreader.ui.settings.TtsSettingsCallbacks
 import com.personal.flowreader.ui.settings.TtsSettingsState
 import com.personal.flowreader.ui.theme.FlowTokens
@@ -200,8 +216,8 @@ internal fun ThemeSettingsPane(
     var localAccent by remember { mutableFloatStateOf(accentHue) }
     val shownAccent = if (accentDragging) localAccent else accentHue
 
-    SettingsLabel("Theme")
-    ChipRow {
+    FlowLabel("Theme")
+    FlowChipRow {
         ThemeMode.entries.forEach { mode ->
             FilterChip(
                 selected = themeMode == mode,
@@ -212,7 +228,7 @@ internal fun ThemeSettingsPane(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.M))
-    SettingsLabel("Accent color")
+    FlowLabel("Accent color")
     val chromaColors = remember(themeMode) {
         List(13) { i ->
             accentPrimary(i * 30f, themeMode)
@@ -264,7 +280,7 @@ internal fun UiScaleSettingsPane(
     var localScale by remember { mutableFloatStateOf(uiScale) }
     val shownScale = if (scaleDragging) localScale else uiScale
 
-    SettingsLabel("UI scale")
+    FlowLabel("UI scale")
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -306,6 +322,8 @@ internal fun LayoutSettingsTab(
     orientation: ReaderOrientation,
     showChapterHeadingsInBody: Boolean,
     keepScreenAwake: Boolean,
+    homePosition: Float,
+    showHomeMarker: Boolean,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
     onUiScale: (Float) -> Unit,
@@ -316,15 +334,13 @@ internal fun LayoutSettingsTab(
     onOrientation: (ReaderOrientation) -> Unit,
     onShowChapterHeadingsInBody: (Boolean) -> Unit,
     onKeepScreenAwake: (Boolean) -> Unit,
+    onHomePosition: (Float, Boolean) -> Unit,
+    onShowHomeMarker: (Boolean) -> Unit,
 ) {
     var layoutTab by remember { mutableIntStateOf(0) }
     val layoutTabs = listOf("Theme", "UI", "Font")
 
-    SettingsSubTabRow(
-        selectedTabIndex = layoutTab,
-        labels = layoutTabs,
-        onTabSelected = { layoutTab = it },
-    )
+    FlowTabBar(tabs = flowTextTabs(layoutTabs, layoutTab) { layoutTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
 
     Spacer(Modifier.height(FlowTokens.Space.M))
     when (layoutTab) {
@@ -340,8 +356,8 @@ internal fun LayoutSettingsTab(
                 onUiScale = onUiScale,
             )
             Spacer(Modifier.height(FlowTokens.Space.M))
-            SettingsLabel("Orientation")
-            ChipRow {
+            FlowLabel("Orientation")
+            FlowChipRow {
                 ReaderOrientation.entries.forEach { mode ->
                     FilterChip(
                         selected = orientation == mode,
@@ -351,18 +367,25 @@ internal fun LayoutSettingsTab(
                 }
             }
             Spacer(Modifier.height(FlowTokens.Space.L))
-            SettingsToggleRow(
+            FlowToggleRow(
                 title = "Chapter headings in body",
                 subtitle = "Show each chapter title in the reading text",
                 checked = showChapterHeadingsInBody,
                 onCheckedChange = onShowChapterHeadingsInBody,
             )
             Spacer(Modifier.height(FlowTokens.Space.S))
-            SettingsToggleRow(
+            FlowToggleRow(
                 title = "Keep screen awake",
                 subtitle = "Prevent the display from sleeping while reading",
                 checked = keepScreenAwake,
                 onCheckedChange = onKeepScreenAwake,
+            )
+            Spacer(Modifier.height(FlowTokens.Space.L))
+            HomePositionSettings(
+                homePosition = homePosition,
+                showHomeMarker = showHomeMarker,
+                onHomePosition = onHomePosition,
+                onShowHomeMarker = onShowHomeMarker,
             )
         }
         else -> FontSettingsTab(
@@ -379,6 +402,39 @@ internal fun LayoutSettingsTab(
 }
 
 @Composable
+private fun HomePositionSettings(
+    homePosition: Float,
+    showHomeMarker: Boolean,
+    onHomePosition: (Float, Boolean) -> Unit,
+    onShowHomeMarker: (Boolean) -> Unit,
+) {
+    var draft by remember(homePosition) { mutableFloatStateOf(homePosition) }
+    FlowSection("Home position")
+    FlowHint("Where the current sentence settles when you jump back to it or TTS follows along.")
+    Spacer(Modifier.height(FlowTokens.Space.S))
+    FlowSliderRow(
+        label = "Height on screen",
+        value = draft,
+        onValueChange = {
+            draft = it
+            onHomePosition(it, false)
+        },
+        onValueChangeFinished = { onHomePosition(draft, true) },
+        valueRange = HomePosition.MIN..HomePosition.MAX,
+        valueLabel = "${(draft * 100f).roundToInt()}%",
+        startCaption = "Top",
+        endCaption = "Bottom",
+    )
+    Spacer(Modifier.height(FlowTokens.Space.S))
+    FlowToggleRow(
+        title = "Show home marker",
+        subtitle = "A line in the reader at the home position; drag its handle to move it",
+        checked = showHomeMarker,
+        onCheckedChange = onShowHomeMarker,
+    )
+}
+
+@Composable
 internal fun FontSettingsTab(
     fontScale: Float,
     fontFamily: ReaderFont,
@@ -389,8 +445,8 @@ internal fun FontSettingsTab(
     onLineSpacing: (Float) -> Unit,
     onJustifyText: (Boolean) -> Unit,
 ) {
-    SettingsLabel("Font")
-    ChipRow {
+    FlowLabel("Font")
+    FlowChipRow {
         ReaderFont.entries.forEach { font ->
             FilterChip(
                 selected = fontFamily == font,
@@ -401,7 +457,7 @@ internal fun FontSettingsTab(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.M))
-    SettingsLabel("Font size")
+    FlowLabel("Font size")
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -417,7 +473,7 @@ internal fun FontSettingsTab(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.S))
-    SettingsLabel("Spacing")
+    FlowLabel("Spacing")
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -433,7 +489,7 @@ internal fun FontSettingsTab(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.L))
-    SettingsToggleRow(
+    FlowToggleRow(
         title = "Justify text",
         subtitle = "Stretch each line of body text from edge to edge",
         checked = justifyText,

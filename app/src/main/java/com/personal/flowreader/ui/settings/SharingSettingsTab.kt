@@ -1,5 +1,23 @@
 package com.personal.flowreader.ui.settings
 
+import com.personal.flowreader.ui.design.controls.FlowToggleRow
+import com.personal.flowreader.ui.design.controls.FlowSliderRow
+import com.personal.flowreader.ui.design.controls.FlowLabel
+import com.personal.flowreader.ui.design.controls.FlowChipRow
+import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowSection
+import com.personal.flowreader.ui.design.controls.FlowTextField
+import com.personal.flowreader.ui.design.controls.FlowDropdownRow
+import com.personal.flowreader.ui.design.card.FlowFullscreenCard
+import com.personal.flowreader.ui.design.card.FlowCardHeight
+import com.personal.flowreader.ui.design.card.FlowCardVariant
+import com.personal.flowreader.ui.design.card.FlowActionRow
+import com.personal.flowreader.ui.design.card.FlowTextAction
+import com.personal.flowreader.ui.design.card.FlowConfirmCard
+import com.personal.flowreader.ui.design.tabs.FlowTabBar
+import com.personal.flowreader.ui.design.tabs.FlowTabLevel
+import com.personal.flowreader.ui.design.tabs.flowTextTabs
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -66,7 +84,6 @@ import com.personal.flowreader.share.ShareParseMode
 import com.personal.flowreader.share.SharePrefs
 import com.personal.flowreader.share.ShareUrlMatch
 import com.personal.flowreader.share.WebPageIngest
-import com.personal.flowreader.ui.chrome.ReaderModalScaffold
 import com.personal.flowreader.ui.theme.FlowTokens
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -147,11 +164,7 @@ fun SharingSettingsTab(
         Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
     ) {
-        SettingsSubTabRow(
-            selectedTabIndex = subTab,
-            labels = listOf("Router", "Parser"),
-            onTabSelected = { subTab = it },
-        )
+        FlowTabBar(tabs = flowTextTabs(listOf("Router", "Parser", "Plugins"), subTab) { subTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
         Spacer(Modifier.height(FlowTokens.Space.S))
 
         when (subTab) {
@@ -197,7 +210,7 @@ fun SharingSettingsTab(
                     )
                 },
             )
-            else -> ParserPane(
+            1 -> ParserPane(
                 rules = parseRules,
                 onSaveRules = onSaveParseRules,
                 onAdd = {
@@ -224,6 +237,7 @@ fun SharingSettingsTab(
                     )
                 },
             )
+            else -> PluginsSettingsTab()
         }
     }
 }
@@ -242,7 +256,7 @@ private fun RouterPane(
 ) {
     val manualOverride = prefs.askMode == ShareAskMode.Ask
 
-    SettingsLabel("Share")
+    FlowLabel("Share")
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -269,7 +283,7 @@ private fun RouterPane(
     Spacer(Modifier.height(FlowTokens.Space.M))
     RuleListHeader(
         title = "Rules",
-        emptyHint = "No rules. Seed covers book files → Files, raw text → Queue, URLs → Parse → Queue, and Royal Road → Plugin.",
+        emptyHint = "No rules. Seed covers book files → Files, raw text → Queue, URLs → Parse → Queue, and plugin sites → Plugin.",
         rulesEmpty = rules.isEmpty(),
         onAdd = onAdd,
         content = {
@@ -554,133 +568,114 @@ private fun RouterRuleEditorOverlay(
         )
     }
 
-    ReaderModalScaffold(
+    val canSave = (kind != RouterContentKind.Url || matchText.isNotBlank()) &&
+        (destination.id != RouterLanding.PLUGIN || plugins.isNotEmpty())
+    FlowFullscreenCard(
         visible = true,
-        contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
+        title = if (isNew) "New Router Rule" else "Edit Router Rule",
+        bodySpacing = Arrangement.Top,
+        footer = {
+            FlowActionRow {
+                FlowTextAction("Cancel", onDismiss)
+                FlowTextAction("Save", { if (canSave) onSave(build()) }, enabled = canSave)
+            }
+        },
     ) {
-        ModalHeaderRow(
-            title = if (isNew) "New Router Rule" else "Edit Router Rule",
-            onDismiss = onDismiss,
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = FlowTokens.Pad.CardIn,
-                    vertical = FlowTokens.Space.S,
-                ),
-        ) {
-            SettingsLabel("Content")
-            ChipRow {
-                RouterContentKind.entries.forEach { k ->
-                    FilterChip(
-                        selected = kind == k,
-                        onClick = {
-                            kind = k
-                            if (k != RouterContentKind.Url && destination.id == RouterLanding.PLUGIN) {
-                                destination = RouterLanding.Queue
-                            }
-                        },
-                        label = { Text(k.label) },
-                    )
-                }
-            }
-
-            if (kind == RouterContentKind.Url) {
-                Spacer(Modifier.height(FlowTokens.Space.M))
-                MatchFields(
-                    matchText = matchText,
-                    onMatchText = { matchText = it },
-                    matchIsRegex = matchIsRegex,
-                    onMatchIsRegex = { matchIsRegex = it },
-                    allowWildcard = allowWildcard,
-                    onAllowWildcard = { allowWildcard = it },
-                )
-                Spacer(Modifier.height(FlowTokens.Space.S))
-                SettingsToggleRow(
-                    title = "Parse page",
-                    subtitle = "Fetch the URL and extract text (Parser tab CSS). Off = pass the URL string through.",
-                    checked = parseUrl,
-                    onCheckedChange = { parseUrl = it },
-                )
-            } else {
-                Spacer(Modifier.height(FlowTokens.Space.S))
-                Text(
-                    when (kind) {
-                        RouterContentKind.BookFile ->
-                            "ePub / TXT from the library picker or Open with."
-                        RouterContentKind.RawText ->
-                            "Clipboard paste and shared text with no URL."
-                        else -> ""
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            Spacer(Modifier.height(FlowTokens.Space.M))
-            SettingsLabel("Destination")
-            ChipRow {
-                destinations.forEach { dest ->
-                    val enabled = dest.id != RouterLanding.PLUGIN || plugins.isNotEmpty()
-                    FilterChip(
-                        selected = destination.id == dest.id,
-                        onClick = { if (enabled) destination = dest },
-                        enabled = enabled,
-                        label = { Text(dest.label(customTitles)) },
-                    )
-                }
-            }
-
-            if (destination.id == RouterLanding.PLUGIN) {
-                Spacer(Modifier.height(FlowTokens.Space.S))
-                SettingsLabel("Plugin")
-                ExposedDropdownMenuBox(
-                    expanded = pluginMenuOpen,
-                    onExpandedChange = { pluginMenuOpen = it },
-                ) {
-                    OutlinedTextField(
-                        value = pluginTitle,
-                        onValueChange = {},
-                        readOnly = true,
-                        singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(pluginMenuOpen) },
-                        shape = FlowTokens.PanelShape,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = pluginMenuOpen,
-                        onDismissRequest = { pluginMenuOpen = false },
-                    ) {
-                        plugins.forEach { plugin ->
-                            DropdownMenuItem(
-                                text = { Text(plugin.title) },
-                                onClick = {
-                                    pluginId = plugin.id
-                                    pluginMenuOpen = false
-                                },
-                            )
+        FlowLabel("Content")
+        FlowChipRow {
+            RouterContentKind.entries.forEach { k ->
+                FilterChip(
+                    selected = kind == k,
+                    onClick = {
+                        kind = k
+                        if (k != RouterContentKind.Url && destination.id == RouterLanding.PLUGIN) {
+                            destination = RouterLanding.Queue
                         }
+                    },
+                    label = { Text(k.label) },
+                )
+            }
+        }
+
+        if (kind == RouterContentKind.Url) {
+            Spacer(Modifier.height(FlowTokens.Space.M))
+            MatchFields(
+                matchText = matchText,
+                onMatchText = { matchText = it },
+                matchIsRegex = matchIsRegex,
+                onMatchIsRegex = { matchIsRegex = it },
+                allowWildcard = allowWildcard,
+                onAllowWildcard = { allowWildcard = it },
+            )
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            FlowToggleRow(
+                title = "Parse page",
+                subtitle = "Fetch the URL and extract text (Parser tab CSS). Off = pass the URL string through.",
+                checked = parseUrl,
+                onCheckedChange = { parseUrl = it },
+            )
+        } else {
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            Text(
+                when (kind) {
+                    RouterContentKind.BookFile ->
+                        "ePub / TXT from the library picker or Open with."
+                    RouterContentKind.RawText ->
+                        "Clipboard paste and shared text with no URL."
+                    else -> ""
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(Modifier.height(FlowTokens.Space.M))
+        FlowLabel("Destination")
+        FlowChipRow {
+            destinations.forEach { dest ->
+                val enabled = dest.id != RouterLanding.PLUGIN || plugins.isNotEmpty()
+                FilterChip(
+                    selected = destination.id == dest.id,
+                    onClick = { if (enabled) destination = dest },
+                    enabled = enabled,
+                    label = { Text(dest.label(customTitles)) },
+                )
+            }
+        }
+
+        if (destination.id == RouterLanding.PLUGIN) {
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            FlowLabel("Plugin")
+            ExposedDropdownMenuBox(
+                expanded = pluginMenuOpen,
+                onExpandedChange = { pluginMenuOpen = it },
+            ) {
+                OutlinedTextField(
+                    value = pluginTitle,
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(pluginMenuOpen) },
+                    shape = FlowTokens.Shape.Field,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(
+                    expanded = pluginMenuOpen,
+                    onDismissRequest = { pluginMenuOpen = false },
+                ) {
+                    plugins.forEach { plugin ->
+                        DropdownMenuItem(
+                            text = { Text(plugin.title) },
+                            onClick = {
+                                pluginId = plugin.id
+                                pluginMenuOpen = false
+                            },
+                        )
                     }
                 }
-            }
-
-            Spacer(Modifier.height(FlowTokens.Space.L))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-                TextButton(
-                    onClick = {
-                        if (kind == RouterContentKind.Url && matchText.isBlank()) return@TextButton
-                        if (destination.id == RouterLanding.PLUGIN && plugins.isEmpty()) return@TextButton
-                        onSave(build())
-                    },
-                    enabled = (kind != RouterContentKind.Url || matchText.isNotBlank()) &&
-                        (destination.id != RouterLanding.PLUGIN || plugins.isNotEmpty()),
-                ) { Text("Save") }
             }
         }
     }
@@ -905,158 +900,140 @@ private fun ParseRuleEditorOverlay(
         )
     }
 
-    ReaderModalScaffold(
+    val runTest: () -> Unit = runTest@{
+        val url = testUrl.trim()
+        if (url.isBlank()) {
+            testError = "Enter a test URL"
+            testTitle = null
+            testPreview = null
+            return@runTest
+        }
+        testBusy = true
+        testError = null
+        val (c, t, r) = ParseRules.effectiveSelectors(build())
+        scope.launch {
+            try {
+                val article = withContext(Dispatchers.IO) {
+                    WebPageIngest.fetchArticle(url, c, t, r)
+                }
+                testTitle = article.title
+                testPreview = article.text.take(800)
+                testError = null
+            } catch (err: Throwable) {
+                testError = err.message ?: "Test failed"
+                testTitle = null
+                testPreview = null
+            } finally {
+                testBusy = false
+            }
+        }
+    }
+    FlowFullscreenCard(
         visible = true,
-        contentPadding = PaddingValues(bottom = FlowTokens.ModalOuterPadding),
         onDismiss = onDismiss,
-    ) {
-        ModalHeaderRow(
-            title = if (isNew) "New Parse Rule" else "Edit Parse Rule",
-            onDismiss = onDismiss,
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = FlowTokens.Pad.CardIn,
-                    vertical = FlowTokens.Space.S,
-                ),
-        ) {
-            MatchFields(
-                matchText = matchText,
-                onMatchText = { matchText = it },
-                matchIsRegex = matchIsRegex,
-                onMatchIsRegex = { matchIsRegex = it },
-                allowWildcard = allowWildcard,
-                onAllowWildcard = { allowWildcard = it },
-            )
-            Spacer(Modifier.height(FlowTokens.Space.M))
-            SettingsLabel("Parser")
-            ChipRow {
-                ShareParseMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = parseMode == mode,
-                        onClick = { parseMode = mode },
-                        label = { Text(mode.label) },
-                    )
-                }
-            }
-            Text(
-                when (parseMode) {
-                    ShareParseMode.Default ->
-                        "Uses built-in page heuristics (article / main / body). Lands in Queue."
-                    ShareParseMode.Custom ->
-                        "CSS selectors for content, title, and removals. Lands in Queue."
+        title = if (isNew) "New Parse Rule" else "Edit Parse Rule",
+        bodySpacing = Arrangement.Top,
+        footer = {
+            FlowActionRow(
+                start = {
+                    if (showCustom) FlowTextAction(if (testBusy) "Testing…" else "Test", runTest, enabled = !testBusy)
                 },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = FlowTokens.Space.XS),
+            ) {
+                FlowTextAction("Cancel", onDismiss)
+                FlowTextAction("Save", { if (matchText.isNotBlank()) onSave(build()) }, enabled = matchText.isNotBlank())
+            }
+        },
+    ) {
+        MatchFields(
+            matchText = matchText,
+            onMatchText = { matchText = it },
+            matchIsRegex = matchIsRegex,
+            onMatchIsRegex = { matchIsRegex = it },
+            allowWildcard = allowWildcard,
+            onAllowWildcard = { allowWildcard = it },
+        )
+        Spacer(Modifier.height(FlowTokens.Space.M))
+        FlowLabel("Parser")
+        FlowChipRow {
+            ShareParseMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = parseMode == mode,
+                    onClick = { parseMode = mode },
+                    label = { Text(mode.label) },
+                )
+            }
+        }
+        Text(
+            when (parseMode) {
+                ShareParseMode.Default ->
+                    "Uses built-in page heuristics (article / main / body). Lands in Queue."
+                ShareParseMode.Custom ->
+                    "CSS selectors for content, title, and removals. Lands in Queue."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = FlowTokens.Space.XS),
+        )
+        if (showCustom) {
+            Spacer(Modifier.height(FlowTokens.Space.M))
+            FlowLabel("Content CSS")
+            OutlinedTextField(
+                value = contentCss,
+                onValueChange = { contentCss = it },
+                singleLine = true,
+                placeholder = { Text("article, div.post_content, …") },
+                shape = FlowTokens.Shape.Field,
+                modifier = Modifier.fillMaxWidth(),
             )
-            if (showCustom) {
-                Spacer(Modifier.height(FlowTokens.Space.M))
-                SettingsLabel("Content CSS")
-                OutlinedTextField(
-                    value = contentCss,
-                    onValueChange = { contentCss = it },
-                    singleLine = true,
-                    placeholder = { Text("article, div.post_content, …") },
-                    shape = FlowTokens.PanelShape,
-                    modifier = Modifier.fillMaxWidth(),
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            FlowLabel("Title CSS (optional)")
+            OutlinedTextField(
+                value = titleCss,
+                onValueChange = { titleCss = it },
+                singleLine = true,
+                placeholder = { Text("h1, h2.post-title, …") },
+                shape = FlowTokens.Shape.Field,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            FlowLabel("Remove CSS (optional)")
+            OutlinedTextField(
+                value = removeCss,
+                onValueChange = { removeCss = it },
+                singleLine = true,
+                placeholder = { Text(".share, .ads, …") },
+                shape = FlowTokens.Shape.Field,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            FlowLabel("Test URL")
+            OutlinedTextField(
+                value = testUrl,
+                onValueChange = { testUrl = it },
+                singleLine = true,
+                placeholder = { Text("https://…/chapter/1") },
+                shape = FlowTokens.Shape.Field,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            testError?.let { err ->
+                Text(
+                    err,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
+            }
+            testTitle?.let { title ->
                 Spacer(Modifier.height(FlowTokens.Space.S))
-                SettingsLabel("Title CSS (optional)")
-                OutlinedTextField(
-                    value = titleCss,
-                    onValueChange = { titleCss = it },
-                    singleLine = true,
-                    placeholder = { Text("h1, h2.post-title, …") },
-                    shape = FlowTokens.PanelShape,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(FlowTokens.Space.S))
-                SettingsLabel("Remove CSS (optional)")
-                OutlinedTextField(
-                    value = removeCss,
-                    onValueChange = { removeCss = it },
-                    singleLine = true,
-                    placeholder = { Text(".share, .ads, …") },
-                    shape = FlowTokens.PanelShape,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(FlowTokens.Space.S))
-                SettingsLabel("Test URL")
-                OutlinedTextField(
-                    value = testUrl,
-                    onValueChange = { testUrl = it },
-                    singleLine = true,
-                    placeholder = { Text("https://…/chapter/1") },
-                    shape = FlowTokens.PanelShape,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                testError?.let { err ->
+                FlowLabel("Preview")
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                testPreview?.let { body ->
                     Text(
-                        err,
+                        body,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 12,
                     )
                 }
-                testTitle?.let { title ->
-                    Spacer(Modifier.height(FlowTokens.Space.S))
-                    SettingsLabel("Preview")
-                    Text(title, style = MaterialTheme.typography.titleSmall)
-                    testPreview?.let { body ->
-                        Text(
-                            body,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 12,
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(FlowTokens.Space.L))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (showCustom) {
-                    TextButton(
-                        onClick = {
-                            val url = testUrl.trim()
-                            if (url.isBlank()) {
-                                testError = "Enter a test URL"
-                                testTitle = null
-                                testPreview = null
-                                return@TextButton
-                            }
-                            testBusy = true
-                            testError = null
-                            val (c, t, r) = ParseRules.effectiveSelectors(build())
-                            scope.launch {
-                                try {
-                                    val article = withContext(Dispatchers.IO) {
-                                        WebPageIngest.fetchArticle(url, c, t, r)
-                                    }
-                                    testTitle = article.title
-                                    testPreview = article.text.take(800)
-                                    testError = null
-                                } catch (err: Throwable) {
-                                    testError = err.message ?: "Test failed"
-                                    testTitle = null
-                                    testPreview = null
-                                } finally {
-                                    testBusy = false
-                                }
-                            }
-                        },
-                        enabled = !testBusy,
-                    ) {
-                        Text(if (testBusy) "Testing…" else "Test")
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-                TextButton(
-                    onClick = { if (matchText.isNotBlank()) onSave(build()) },
-                    enabled = matchText.isNotBlank(),
-                ) { Text("Save") }
             }
         }
     }
@@ -1071,7 +1048,7 @@ private fun MatchFields(
     allowWildcard: Boolean,
     onAllowWildcard: (Boolean) -> Unit,
 ) {
-    SettingsLabel("URL match")
+    FlowLabel("URL match")
     OutlinedTextField(
         value = matchText,
         onValueChange = onMatchText,
@@ -1085,18 +1062,18 @@ private fun MatchFields(
                 },
             )
         },
-        shape = FlowTokens.PanelShape,
+        shape = FlowTokens.Shape.Field,
         modifier = Modifier.fillMaxWidth(),
     )
     if (!matchIsRegex) {
-        SettingsToggleRow(
+        FlowToggleRow(
             title = "Allow Wildcards",
             subtitle = "Use * to represent one or more unknown characters.",
             checked = allowWildcard,
             onCheckedChange = onAllowWildcard,
         )
     }
-    SettingsToggleRow(
+    FlowToggleRow(
         title = "Enable RegEx",
         subtitle = "Use Regular Expression to match against the URL.",
         checked = matchIsRegex,

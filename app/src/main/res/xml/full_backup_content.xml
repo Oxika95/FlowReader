@@ -3,5 +3,6 @@
 <full-backup-content>
     <exclude domain="sharedpref" path="royalroad_secret.xml" />
     <exclude domain="sharedpref" path="royalroad_secret_fallback.xml" />
-    <exclude domain="file" path="plugins/royalroad/" />
+    <exclude domain="sharedpref" path="plugin_secret_royalroad.xml" />
+    <exclude domain="file" path="plugins/" />
 </full-backup-content>

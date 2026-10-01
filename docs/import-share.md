@@ -16,7 +16,7 @@ See [`AndroidManifest.xml`](../app/src/main/AndroidManifest.xml).
 
 1. ShareIngress reads `EXTRA_TEXT`
 2. [`ShareRouter.decide`](../app/src/main/java/com/personal/flowreader/share/ShareRouter.kt) with prefs + router + parse rules
-3. Outcomes: Files, Queue, Crawl (fetch page), RoyalRoadPlugin, or ShowChooser
+3. Outcomes: Files, Queue, Crawl (fetch page), Plugin (by plugin id), or ShowChooser
 4. Optional floating overlay ([`ShareOverlay.kt`](../app/src/main/java/com/personal/flowreader/share/ShareOverlay.kt)): Plugin vs Parse/Queue, Cancel — needs `SYSTEM_ALERT_WINDOW` when Manual Override is Ask
 5. `ShareDispatch` → MainActivity `ACTION_EXECUTE` → library ingest
 
@@ -26,7 +26,7 @@ See [`AndroidManifest.xml`](../app/src/main/AndroidManifest.xml).
 
 1. EPUB / book files → **Files**
 2. Clipboard / raw text / most URLs → **Queue**
-3. Plugin-owned URLs (e.g. royalroad.com) → **Plugin**
+3. Plugin-owned URLs (each installed plugin's `shareHosts`, e.g. royalroad.com) → **Plugin**
 4. Remaining URLs → parse rules → crawl to Queue or Files
 
 Treat as a URL only when the **entire** shared string is a URL.

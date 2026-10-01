@@ -60,6 +60,14 @@ import kotlin.coroutines.resumeWithException
 
 data class TtsUiState(
     val playing: Boolean = false,
+    /**
+     * True from the first play until playback is stopped (Library card X, notification Stop,
+     * end of book). Pausing keeps the session, so the Library now-playing card stays.
+     */
+    val sessionActive: Boolean = false,
+    /** Book the controller is attached to (Library now-playing card opens it). */
+    val bookId: String = "",
+    val bookTitle: String = "",
     val following: Boolean = true,
     val engineKey: String = TtsEngines.EDGE,
     val voiceId: String = TtsPrefs.DEFAULT_EDGE_VOICE,
@@ -269,6 +277,15 @@ class TtsController(
         start: Locus,
         speechFilters: List<FilterRule> = emptyList(),
     ) {
+        // Reopening the reader on the book that is already playing must not interrupt it.
+        if (bookId == attachedBookId && book == attachedDoc &&
+            speechFilters == this.speechFilters && sentences.isNotEmpty()
+        ) {
+            _state.update { it.copy(following = it.autoScrollWithTts) }
+            return
+        }
+        val sameBook = bookId == attachedBookId
+        val resume = sameBook && _state.value.playing
         // Sync teardown so a new book never shares a live player/loop (QuickNovel stop-before-play).
         playGeneration++
         playJob?.cancel()
@@ -286,6 +303,7 @@ class TtsController(
         attachedBookId = bookId
         bookKey = sanitizeBookKey(bookId)
         bookTitle = book.title
+        _state.value = _state.value.copy(bookId = bookId, bookTitle = book.title)
         chapterTitles = book.chapters.map { it.title }
         attachedDoc = book
         coverArt?.recycle()
@@ -298,6 +316,7 @@ class TtsController(
         _state.update {
             it.copy(
                 playing = false,
+                sessionActive = sameBook && it.sessionActive,
                 following = it.autoScrollWithTts,
                 sentence = null,
                 sentenceIndex = 0,
@@ -329,6 +348,7 @@ class TtsController(
                 )
             }
             updateSessionMetadata()
+            if (resume) startPlayback()
             val center = index
             // Disk work for the rail (drop other books, trim to window, rescan) stays off main.
             val ready = withContext(Dispatchers.IO) {
@@ -507,7 +527,7 @@ class TtsController(
         scope.launch { pausePlayback(PlaybackState.STATE_PAUSED) }
     }
 
-    /** Tear down playback entirely (notification Stop, book switch). */
+    /** Tear down playback entirely and end the session (notification Stop, Library card X). */
     fun stop() {
         scope.launch { pausePlayback(PlaybackState.STATE_STOPPED) }
     }
@@ -888,6 +908,7 @@ class TtsController(
         _state.update {
             it.copy(
                 playing = true,
+                sessionActive = true,
                 following = follow ?: it.autoScrollWithTts,
                 error = null,
             )
@@ -914,7 +935,12 @@ class TtsController(
         previous?.cancelAndJoin()
         stopSessionAudio()
         systemTts?.stop()
-        _state.update { it.copy(playing = false) }
+        _state.update {
+            it.copy(
+                playing = false,
+                sessionActive = it.sessionActive && sessionState != PlaybackState.STATE_STOPPED,
+            )
+        }
         setSessionState(sessionState)
         when (sessionState) {
             PlaybackState.STATE_STOPPED -> {
@@ -1173,7 +1199,7 @@ class TtsController(
                 throw e
             } catch (t: Throwable) {
                 stopSessionAudio()
-                _state.update { it.copy(playing = false) }
+                _state.update { it.copy(playing = false, sessionActive = false) }
                 reportMediaError(t.message ?: "TTS failed")
                 setSessionState(PlaybackState.STATE_STOPPED)
                 abandonAudioFocus()
@@ -1202,7 +1228,7 @@ class TtsController(
                 }
                 if (generation != playGeneration) return
                 stopSessionAudio()
-                _state.update { it.copy(playing = false) }
+                _state.update { it.copy(playing = false, sessionActive = false) }
                 setSessionState(PlaybackState.STATE_STOPPED)
                 abandonAudioFocus()
                 unregisterNoisyReceiver()

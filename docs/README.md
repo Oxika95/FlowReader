@@ -30,9 +30,14 @@ About, Audio, Filters, Import, and Layout — every control.
 
 Share ingress, router rules, overlay chooser, and page crawl.
 
-### [Royal Road](royal-road.md)
+### [Plugins](plugins.md)
 
-Plugin tab, Follow lists, splash, stream, and download.
+Plugin repositories, source tabs, story media card, stream, and download.
+Contract: [Plugin API](plugins/api.md) · [UI contract](plugins/ui-contract.md) · [Media card example](plugins/examples/media-card.md).
+
+### [UI system](ui-system/README.md)
+
+Card types, docks, tabs, layers, tokens, and recipes — the rules for building any screen.
 
 ### [TTS](tts.md)
 

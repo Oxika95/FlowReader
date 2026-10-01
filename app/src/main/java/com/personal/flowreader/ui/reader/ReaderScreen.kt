@@ -29,8 +29,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListItemInfo
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +52,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -114,17 +113,17 @@ import com.personal.flowreader.data.SentenceSplitter
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
-import com.personal.flowreader.ui.chrome.ReaderContentStartPadding
-import com.personal.flowreader.ui.chrome.ReaderPanelFeather
-import com.personal.flowreader.ui.chrome.ReaderPanelSurface
 import com.personal.flowreader.ui.settings.FilterRuleEditorOverlay
 import com.personal.flowreader.ui.settings.SettingsOverlay
 import com.personal.flowreader.ui.settings.FilterSettingsCallbacks
 import com.personal.flowreader.ui.settings.FilterSettingsState
 import com.personal.flowreader.ui.settings.TtsSettingsCallbacks
 import com.personal.flowreader.ui.settings.TtsSettingsState
-import com.personal.flowreader.ui.chrome.ReaderListEndPadding
 import com.personal.flowreader.ui.settings.FilterEditorSession
+import com.personal.flowreader.ui.design.card.FlowFloatingCard
+import com.personal.flowreader.ui.design.card.FlowFloatingChip
+import com.personal.flowreader.ui.design.layer.DockEdge
+import com.personal.flowreader.ui.design.layer.FlowDock
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -157,33 +156,8 @@ private val HighlightSidePad = 4.dp
 private val EdgeBandTopHeight = 56.dp
 private val EdgeBandBottomHeight = 72.dp
 
-/** Now-playing snippet card when the spoken block is scrolled out of view. */
-private enum class PlaybackPinEdge { Top, Bottom }
-
-/** Root-Y center of the current-sentence rail bar. */
-private data class SentenceIndicator(val sentenceIndex: Int, val centerY: Float)
-
-/** Gap between stacked chrome / pin cards — matches reader side gutters. */
-private val PinGap = ReaderContentStartPadding
-private val ChromeScreenPad = ReaderContentStartPadding
-/**
- * Each [ReaderPanelSurface] reserves [ReaderPanelFeather] above and below the solid card.
- * When stacking two feathered cards, collapse both feathers in *layout* (not [Modifier.offset])
- * so solid borders sit [PinGap] apart without leaving empty space under a bottom-aligned stack.
- */
-private val ChromeStackFeatherCollapse = ReaderPanelFeather * 2
-
-private fun Modifier.chromeStackCollapse(enabled: Boolean): Modifier {
-    if (!enabled) return this
-    return layout { measurable, constraints ->
-        val placeable = measurable.measure(constraints)
-        val pull = ChromeStackFeatherCollapse.roundToPx()
-        val height = (placeable.height - pull).coerceAtLeast(0)
-        layout(placeable.width, height) {
-            placeable.placeRelative(0, -pull)
-        }
-    }
-}
+/** Give up waiting for the tracked sentence's geometry and fall back to its paragraph. */
+private const val HomeSpanTimeoutMs = 750L
 
 /** One TTS sentence in a block, with char offsets into the displayed paragraph text. */
 private data class BlockSentence(
@@ -234,9 +208,11 @@ fun ReaderScreen(
     /** Skip the next TTS follow-scroll once when we center the list ourselves (double-tap / pin). */
     var suppressFollowScroll by remember { mutableStateOf(false) }
     var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
-    /** Written from layout; read only inside follow-scroll, not during composition. */
-    var sentenceIndicator by remember { mutableStateOf<SentenceIndicator?>(null) }
-    var listCenterY by remember { mutableFloatStateOf(0f) }
+    /** Root-Y lines of the tracked sentence, written from layout while its paragraph is composed. */
+    var trackedSpan by remember { mutableStateOf<SentenceSpan?>(null) }
+    var listTopY by remember { mutableFloatStateOf(0f) }
+    var listHeight by remember { mutableFloatStateOf(0f) }
+    val homePosition by rememberUpdatedState(appearance.homePosition)
     val view = LocalView.current
     DisposableEffect(keepScreenAwake, view) {
         val previous = view.keepScreenOn
@@ -296,10 +272,7 @@ fun ReaderScreen(
         if (activeQueId.isNullOrBlank()) return@LaunchedEffect
         vm.tts.bookFinished.collect {
             val next = vm.finishQueAndNext()
-            if (next != null) {
-                vm.suppressPauseOnClear = true
-                onAdvanceQue(next.first, next.second)
-            }
+            if (next != null) onAdvanceQue(next.first, next.second)
         }
     }
 
@@ -344,18 +317,20 @@ fun ReaderScreen(
     val progress = if (items.size <= 1) 0f else locusIndex.toFloat() / items.lastIndex
 
     /**
-     * Where to park the edge chip (now-playing snippet or jump-back), or null if the
-     * target block is still on-screen.
+     * Where to park the edge chip (now-playing snippet or jump-back), or null while any line of
+     * the tracked sentence is on-screen. Sentence-level: a visible paragraph whose tracked
+     * sentence is scrolled past still shows the chip.
      */
-    val pinEdge by remember(doc, items, blockIndexOf) {
+    val pinEdge by remember(doc, items, blockIndexOf, allSentences) {
         derivedStateOf {
-            val idx = if (tts.playing) {
-                val s = tts.sentence ?: return@derivedStateOf null
-                blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@derivedStateOf null
+            val si = if (tts.playing) {
+                if (tts.sentence == null) return@derivedStateOf null
+                tts.sentenceIndex
             } else {
-                blockIndexOf[ui.locus.chapterIndex to ui.locus.blockIndex]
-                    ?: return@derivedStateOf null
+                locusSentenceIndex.value
             }
+            val s = allSentences.getOrNull(si) ?: return@derivedStateOf null
+            val idx = blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@derivedStateOf null
 
             // Subscribe to scroll position (layoutInfo alone can miss some updates).
             listState.firstVisibleItemIndex
@@ -364,75 +339,56 @@ fun ReaderScreen(
             val info = listState.layoutInfo
             val visible = info.visibleItemsInfo
             if (visible.isEmpty()) return@derivedStateOf null
-
-            val viewStart = info.viewportStartOffset
-            val viewEnd = info.viewportEndOffset
             val placed = visible.firstOrNull { it.index == idx }
-            if (placed != null) {
-                val top = placed.offset
-                val bottom = placed.offset + placed.size
-                val overlap = minOf(bottom, viewEnd) - maxOf(top, viewStart)
-                // Any real intersection counts as on-screen.
-                if (overlap > 1) return@derivedStateOf null
-                return@derivedStateOf if (bottom <= viewStart) {
-                    PlaybackPinEdge.Top
-                } else {
-                    PlaybackPinEdge.Bottom
-                }
-            }
-
-            val first = visible.first().index
-            val last = visible.last().index
-            when {
-                idx < first -> PlaybackPinEdge.Top
-                idx > last -> PlaybackPinEdge.Bottom
-                idx <= (first + last) / 2 -> PlaybackPinEdge.Top
-                else -> PlaybackPinEdge.Bottom
-            }
-        }
-    }
-
-    val playbackBlockIndex by remember(doc) {
-        derivedStateOf {
-            val s = tts.sentence
-            if (!tts.playing || s == null) -1 else blockIndexOf[s.chapterIndex to s.blockIndex] ?: -1
-        }
-    }
-
-    suspend fun centerItem(index: Int) {
-        if (items.isEmpty()) return
-        val target = index.coerceIn(0, items.lastIndex)
-        programmatic = true
-        try {
-            listState.animateScrollItemToCenter(target)
-            // Wait until LazyList reports idle so a cancelled/settling scroll
-            // cannot be mistaken for a user fling after we clear [programmatic].
-            snapshotFlow { listState.isScrollInProgress }
-                .first { !it }
-        } finally {
-            programmatic = false
-        }
-    }
-
-    /** Center the current-sentence rail bar, not the whole paragraph. */
-    suspend fun centerOnSentenceIndicator(itemIndex: Int, sentenceIndex: Int) {
-        if (items.isEmpty()) return
-        val target = itemIndex.coerceIn(0, items.lastIndex)
-        programmatic = true
-        try {
-            if (listState.layoutInfo.visibleItemsInfo.none { it.index == target }) {
-                listState.scrollToItem(target)
-            }
-            val placed = withTimeoutOrNull(750) {
-                snapshotFlow { sentenceIndicator }
-                    .first { it != null && it.sentenceIndex == sentenceIndex }
-            }
-            if (placed == null) {
-                listState.animateScrollItemToCenter(target)
+                ?: return@derivedStateOf ReaderHome.edgeOfItem(idx, visible.first().index, visible.last().index)
+            val span = trackedSpan?.takeIf { it.sentenceIndex == si }
+            if (span != null) {
+                ReaderHome.edgeOf(span.top, span.bottom, listTopY, listTopY + listHeight)
             } else {
-                val delta = placed.centerY - listCenterY
-                if (abs(delta) > 2f) listState.animateScrollBy(delta)
+                // Geometry not reported yet: judge by the paragraph until the rail lays out.
+                val top = (placed.offset - info.viewportStartOffset).toFloat()
+                ReaderHome.edgeOf(top, top + placed.size, 0f, (info.viewportEndOffset - info.viewportStartOffset).toFloat())
             }
+        }
+    }
+
+    /** Spoken sentence while playing, otherwise the saved locus sentence. */
+    fun trackedSentenceIndex(): Int =
+        if (tts.playing && tts.sentence != null) tts.sentenceIndex else locusSentenceIndex.value
+
+    val homeLookup = rememberUpdatedState(allSentences to blockIndexOf)
+
+    /**
+     * Scroll so [sentenceIndex] sits on the home line. Every jump (follow, pin, jump-back,
+     * double-tap, scroll lock, ToC, book open) goes through here.
+     */
+    suspend fun scrollToHome(sentenceIndex: Int, animated: Boolean = true) {
+        val (sentences, blocks) = homeLookup.value
+        val s = sentences.getOrNull(sentenceIndex) ?: return
+        val itemIndex = blocks[s.chapterIndex to s.blockIndex] ?: return
+        programmatic = true
+        try {
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == itemIndex }) {
+                // A span left over from the paragraph's previous composition is stale.
+                trackedSpan = null
+                listState.scrollToItem(itemIndex)
+            }
+            val span = withTimeoutOrNull(HomeSpanTimeoutMs) {
+                snapshotFlow { trackedSpan }.first { it != null && it.sentenceIndex == sentenceIndex }
+            }
+            val delta = if (span != null) {
+                ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
+            } else {
+                val info = listState.layoutInfo
+                val item = info.visibleItemsInfo.firstOrNull { it.index == itemIndex } ?: return
+                val top = (item.offset - info.viewportStartOffset).toFloat()
+                val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+                ReaderHome.scrollDelta(top, top + item.size, 0f, viewport, homePosition)
+            }
+            if (abs(delta) > 2f) {
+                if (animated) listState.animateScrollBy(delta) else listState.scroll { scrollBy(delta) }
+            }
+            // Wait for idle so a settling scroll is not mistaken for a user fling.
             snapshotFlow { listState.isScrollInProgress }.first { !it }
         } finally {
             programmatic = false
@@ -441,11 +397,11 @@ fun ReaderScreen(
 
     fun jumpToSavedPosition() {
         if (items.isEmpty()) return
-        scope.launch { centerItem(locusIndex.coerceIn(0, items.lastIndex)) }
+        scope.launch { scrollToHome(trackedSentenceIndex()) }
     }
 
     /**
-     * Resume TTS at the saved playhead. If that block is off-screen, keep the viewport
+     * Resume TTS at the saved playhead. If that sentence is off-screen, keep the viewport
      * where it is (now-playing pin will show) instead of auto-scrolling to it.
      */
     fun playResumingSavedPosition() {
@@ -454,23 +410,17 @@ fun ReaderScreen(
         vm.tts.play(follow = !playheadOffScreen)
     }
 
-    // Jump to the saved locus once the book finishes loading.
+    // Put the current sentence home once the book finishes loading.
     LaunchedEffect(doc, ui.loading) {
         if (doc == null || ui.loading || restoredScroll || items.isEmpty()) return@LaunchedEffect
-        val target = (blockIndexOf[ui.locus.chapterIndex to ui.locus.blockIndex] ?: 0)
-            .coerceIn(0, items.lastIndex)
-        programmatic = true
         try {
-            listState.scrollItemToCenter(target)
-            snapshotFlow { listState.isScrollInProgress }
-                .first { !it }
+            scrollToHome(trackedSentenceIndex(), animated = false)
         } finally {
-            programmatic = false
             restoredScroll = true
         }
     }
 
-    // Re-center on each spoken sentence while follow mode is on (or scroll-locked).
+    // Re-home on each spoken sentence while follow mode is on (or scroll-locked).
     LaunchedEffect(
         tts.following,
         tts.playing,
@@ -483,13 +433,12 @@ fun ReaderScreen(
         if (!followScroll || !tts.playing || items.isEmpty() || !restoredScroll) {
             return@LaunchedEffect
         }
-        val s = tts.sentence ?: return@LaunchedEffect
-        val target = blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@LaunchedEffect
+        if (tts.sentence == null) return@LaunchedEffect
         if (suppressFollowScroll) {
             suppressFollowScroll = false
             return@LaunchedEffect
         }
-        centerOnSentenceIndicator(target, tts.sentenceIndex)
+        scrollToHome(tts.sentenceIndex)
     }
 
     val ttsForScroll = rememberUpdatedState(tts)
@@ -537,9 +486,8 @@ fun ReaderScreen(
         scrollLocked = true
         overlay = ReaderOverlay.Hidden
         filterEditor = null
-        val target = playbackBlockIndex
-        if (target >= 0) {
-            scope.launch { centerItem(target) }
+        if (tts.playing && tts.sentence != null) {
+            scope.launch { scrollToHome(tts.sentenceIndex) }
         }
     }
 
@@ -563,10 +511,7 @@ fun ReaderScreen(
     fun resumeFollow() {
         suppressFollowScroll = true
         vm.tts.followAgain()
-        val target = playbackBlockIndex
-        if (target >= 0) {
-            scope.launch { centerItem(target) }
-        }
+        scope.launch { scrollToHome(trackedSentenceIndex()) }
     }
 
     /** All reader gesture outcomes go through here so handlers share one policy. */
@@ -665,8 +610,8 @@ fun ReaderScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .onGloballyPositioned { coords ->
-                                        val top = coords.positionInRoot().y
-                                        listCenterY = top + coords.size.height / 2f
+                                        listTopY = coords.positionInRoot().y
+                                        listHeight = coords.size.height.toFloat()
                                     }
                                     .nestedScroll(stopFollowOnUserScroll)
                                     .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
@@ -778,9 +723,7 @@ fun ReaderScreen(
                                                 generating = tts.generatingSentenceIndices,
                                                 softAccent = colors.secondary,
                                                 onForceRegenerate = { vm.tts.forceRegenerateSentence(it) },
-                                                onCurrentIndicator = { index, centerY ->
-                                                    sentenceIndicator = SentenceIndicator(index, centerY)
-                                                },
+                                                onCurrentSpan = { trackedSpan = it },
                                             )
                                             Text(
                                                 text,
@@ -833,14 +776,15 @@ fun ReaderScreen(
                                                                     ReaderGestureKind.DoubleTap,
                                                                 ) {
                                                                     if (item.isChapterTitle) {
+                                                                        val target = Locus(item.chapterIndex, 0, 0)
                                                                         suppressFollowScroll = true
-                                                                        vm.jumpTo(
-                                                                            Locus(item.chapterIndex, 0, 0),
-                                                                        )
+                                                                        vm.jumpTo(target)
                                                                         if (tts.doubleTapPlay) {
                                                                             vm.tts.play()
                                                                         }
-                                                                        scope.launch { centerItem(index) }
+                                                                        scope.launch {
+                                                                            scrollToHome(SentenceSplitter.indexAt(allSentences, target))
+                                                                        }
                                                                         if (overlay == ReaderOverlay.Hidden) {
                                                                             toggleChrome()
                                                                         }
@@ -868,7 +812,12 @@ fun ReaderScreen(
                                                                     if (tts.doubleTapPlay) {
                                                                         vm.tts.play()
                                                                     }
-                                                                    scope.launch { centerItem(index) }
+                                                                    val homeIndex = sentence?.index
+                                                                        ?: SentenceSplitter.indexAt(
+                                                                            allSentences,
+                                                                            Locus(item.chapterIndex, item.blockIndex, charOffset),
+                                                                        )
+                                                                    scope.launch { scrollToHome(homeIndex) }
                                                                     if (overlay == ReaderOverlay.Hidden) {
                                                                         toggleChrome()
                                                                     }
@@ -921,6 +870,25 @@ fun ReaderScreen(
                     )
                 }
 
+                if (appearance.showHomeMarker && !scrollLocked) {
+                    HomeMarker(
+                        position = appearance.homePosition,
+                        textSize = bodyStyle.fontSize,
+                        onPositionChange = { appearanceCallbacks.onHomePosition(it, false) },
+                        onPositionCommitted = { position ->
+                            appearanceCallbacks.onHomePosition(position, true)
+                            // Settle the current sentence on the new line if the reader is on it.
+                            if (pinEdge == null) {
+                                val target = trackedSentenceIndex()
+                                scope.launch {
+                                    withFrameNanos { }
+                                    scrollToHome(target)
+                                }
+                            }
+                        },
+                    )
+                }
+
                 val overlaysQuiet = !scrollLocked &&
                     overlay != ReaderOverlay.Settings &&
                     overlay != ReaderOverlay.Toc
@@ -943,113 +911,59 @@ fun ReaderScreen(
                     else localStart until localEndExclusive
                 }
                 val chromeOpen = !scrollLocked && overlay == ReaderOverlay.Chrome
-
-                // Top chrome layer: title + optional edge chip, stacked with a relative [PinGap].
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .zIndex(8f)
-                        .padding(top = ChromeScreenPad),
-                ) {
-                    TitleBannerCard(
-                        visible = chromeOpen,
-                        title = ui.title,
-                        chapter = chapterName,
-                        progress = progress,
-                        storedPath = ui.storedPath,
-                        modifier = Modifier.fillMaxWidth(),
-                        onBack = { leave.value() },
-                        onSettings = { overlay = ReaderOverlay.Settings },
-                    )
-                    if (edgeChipTop) {
-                        if (chromeOpen) Spacer(Modifier.height(PinGap))
-                        val chipMod = Modifier
-                            .fillMaxWidth()
-                            .chromeStackCollapse(chromeOpen)
-                        if (showPlayingPin) {
-                            PlaybackPinCard(
-                                snippet = tts.snippet,
-                                bodyStyle = bodyStyle,
-                                wordRangeInSnippet = pinWordRange,
-                                modifier = chipMod,
-                                onTap = {
-                                    onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.SingleTap)
-                                },
-                                onDoubleTap = {
-                                    onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.DoubleTap)
-                                },
-                            )
-                        } else {
-                            JumpToSavedChip(
-                                modifier = chipMod,
-                                onClick = { jumpToSavedPosition() },
-                            )
-                        }
+                val edgeChip: @Composable () -> Unit = {
+                    if (showPlayingPin) {
+                        PlaybackPinCard(
+                            snippet = tts.snippet,
+                            bodyStyle = bodyStyle,
+                            wordRangeInSnippet = pinWordRange,
+                            onTap = { onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.SingleTap) },
+                            onDoubleTap = { onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.DoubleTap) },
+                        )
+                    } else {
+                        FlowFloatingChip("Jump back to saved position", onClick = { jumpToSavedPosition() })
                     }
                 }
 
-                // Bottom chrome layer: optional edge chip + media, stacked with a relative [PinGap].
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .zIndex(8f)
-                        .padding(bottom = ChromeScreenPad),
-                ) {
-                    if (edgeChipBottom) {
-                        val chipMod = Modifier.fillMaxWidth()
-                        if (showPlayingPin) {
-                            PlaybackPinCard(
-                                snippet = tts.snippet,
-                                bodyStyle = bodyStyle,
-                                wordRangeInSnippet = pinWordRange,
-                                modifier = chipMod,
-                                onTap = {
-                                    onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.SingleTap)
-                                },
-                                onDoubleTap = {
-                                    onReaderGesture(ReaderTouchTarget.Pin, ReaderGestureKind.DoubleTap)
-                                },
-                            )
-                        } else {
-                            JumpToSavedChip(
-                                modifier = chipMod,
-                                onClick = { jumpToSavedPosition() },
-                            )
-                        }
-                        if (chromeOpen) Spacer(Modifier.height(PinGap))
+                // Top dock, edge first: title card, then the edge chip when the playhead is above.
+                FlowDock(edge = DockEdge.Top, modifier = Modifier.align(Alignment.TopCenter)) {
+                    Item(visible = chromeOpen) {
+                        TitleBannerCard(
+                            title = ui.title,
+                            chapter = chapterName,
+                            progress = progress,
+                            storedPath = ui.storedPath,
+                            onBack = { leave.value() },
+                            onSettings = { overlay = ReaderOverlay.Settings },
+                        )
                     }
-                    MediaControlCard(
-                        visible = chromeOpen,
-                        playing = tts.playing,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .chromeStackCollapse(edgeChipBottom && chromeOpen),
-                        onPlay = { playResumingSavedPosition() },
-                        onPause = { vm.tts.pause() },
-                        onPrev = { vm.tts.skipPrev() },
-                        onNext = { vm.tts.skipNext() },
-                        onToc = { overlay = ReaderOverlay.Toc },
-                        onScrollLock = { enableScrollLock() },
-                    )
+                    Item(visible = edgeChipTop) { edgeChip() }
                 }
 
-                ScrollLockUnlockButton(
-                    visible = scrollLocked,
-                    onUnlock = { disableScrollLock() },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .zIndex(9f)
-                        .padding(bottom = ChromeScreenPad),
-                )
+                // Bottom dock, top to bottom: edge chip, then the media card (or the unlock control).
+                FlowDock(edge = DockEdge.Bottom, modifier = Modifier.align(Alignment.BottomCenter)) {
+                    Item(visible = edgeChipBottom) { edgeChip() }
+                    Item(visible = chromeOpen) {
+                        MediaControlCard(
+                            playing = tts.playing,
+                            onPlay = { playResumingSavedPosition() },
+                            onPause = { vm.tts.pause() },
+                            onPrev = { vm.tts.skipPrev() },
+                            onNext = { vm.tts.skipNext() },
+                            onToc = { overlay = ReaderOverlay.Toc },
+                            onScrollLock = { enableScrollLock() },
+                        )
+                    }
+                    Item(visible = scrollLocked) {
+                        ScrollLockUnlockButton(onUnlock = { disableScrollLock() })
+                    }
+                }
                 }
             }
         }
 
         SettingsOverlay(
-            visible = overlay == ReaderOverlay.Settings && filterEditor == null,
+            visible = overlay == ReaderOverlay.Settings,
             appearance = appearance,
             appearanceCallbacks = appearanceCallbacks,
             tts = TtsSettingsState(
@@ -1159,12 +1073,12 @@ fun ReaderScreen(
                 suppressFollowScroll = true
                 scope.launch {
                     vm.jumpToChapter(ci)
-                    // After RR seek the loaded stream starts at relative 0; otherwise map ToC → list.
-                    val rel = vm.ui.value.locus.chapterIndex
-                    val target = items.indexOfFirst { it.chapterIndex == rel }
-                        .takeIf { it >= 0 }
-                        ?: 0
-                    centerItem(target)
+                    // A plugin-story seek swaps the doc; let the sentence lookup recompose first.
+                    withFrameNanos { }
+                    val sentences = homeLookup.value.first
+                    if (sentences.isNotEmpty()) {
+                        scrollToHome(SentenceSplitter.indexAt(sentences, vm.ui.value.locus))
+                    }
                 }
             },
             onDismiss = { overlay = ReaderOverlay.Hidden },
@@ -1172,32 +1086,7 @@ fun ReaderScreen(
     }
 }
 
-@Composable
-private fun JumpToSavedChip(
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        ReaderPanelSurface(
-            modifier = Modifier.clickable(onClick = onClick),
-            matchReaderWidth = false,
-        ) {
-            Text(
-                "Jump back to saved position",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(
-                    horizontal = FlowTokens.Space.M,
-                    vertical = FlowTokens.Space.S,
-                ),
-            )
-        }
-    }
-}
-
+/** Now-playing snippet as a floating card; tap / double-tap route through the reader gesture policy. */
 @Composable
 private fun PlaybackPinCard(
     snippet: String,
@@ -1214,14 +1103,14 @@ private fun PlaybackPinCard(
     var textLayout by remember(snippet, bodyStyle.textAlign, bodyStyle.letterSpacing) {
         mutableStateOf<TextLayoutResult?>(null)
     }
-    ReaderPanelSurface(
+    FlowFloatingCard(
         modifier = modifier.pointerInput(snippet) {
             detectTapGestures(
                 onTap = { onTap() },
                 onDoubleTap = { onDoubleTap() },
             )
         },
-        matchReaderWidth = true,
+        contentPadding = PaddingValues(horizontal = FlowTokens.Space.L, vertical = FlowTokens.Space.M),
         borderColor = colors.secondary,
     ) {
         Text(
@@ -1229,20 +1118,15 @@ private fun PlaybackPinCard(
             style = bodyStyle,
             color = colors.onBackground,
             onTextLayout = { textLayout = it },
-            modifier = Modifier
-                .padding(
-                    horizontal = FlowTokens.Space.L,
-                    vertical = FlowTokens.Space.M,
-                )
-                .drawBehind {
-                    val layout = textLayout ?: return@drawBehind
-                    val radius = 6.dp.toPx()
-                    val pad = HighlightSidePad.toPx()
-                    drawTtsHighlightRange(layout, sentenceRange, sentenceHighlightColor, pad, radius)
-                    wordRangeInSnippet?.let {
-                        drawTtsHighlightRange(layout, it, wordHighlightColor, pad, radius)
-                    }
-                },
+            modifier = Modifier.drawBehind {
+                val layout = textLayout ?: return@drawBehind
+                val radius = FlowTokens.HighlightRadius.toPx()
+                val pad = HighlightSidePad.toPx()
+                drawTtsHighlightRange(layout, sentenceRange, sentenceHighlightColor, pad, radius)
+                wordRangeInSnippet?.let {
+                    drawTtsHighlightRange(layout, it, wordHighlightColor, pad, radius)
+                }
+            },
         )
     }
 }
@@ -1365,50 +1249,6 @@ private fun isAndroidLineEndSpace(ch: Char): Boolean =
         (ch in 0x2000.toChar()..0x200A.toChar() && ch != 0x2007.toChar()) ||
         ch == 0x205F.toChar() || ch == 0x3000.toChar()
 
-private suspend fun LazyListState.animateScrollItemToCenter(index: Int) {
-    bringItemToCenter(index, animated = true)
-}
-
-private suspend fun LazyListState.scrollItemToCenter(index: Int) {
-    bringItemToCenter(index, animated = false)
-}
-
-/**
- * Always targets the vertical middle of the viewport.
- * Never leaves the user on LazyList's default "item at top" alignment.
- */
-private suspend fun LazyListState.bringItemToCenter(index: Int, animated: Boolean) {
-    val alreadyVisible = layoutInfo.visibleItemsInfo.any { it.index == index }
-    if (!alreadyVisible) {
-        // Place on-screen first, then correct to center (animated when requested).
-        scrollToItem(index)
-        val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
-        val delta = centerDelta(item)
-        if (kotlin.math.abs(delta) <= 1f) return
-        if (animated) {
-            animateScrollBy(delta)
-        } else {
-            scroll { scrollBy(delta) }
-        }
-        return
-    }
-
-    val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
-    val delta = centerDelta(item)
-    if (kotlin.math.abs(delta) <= 2f) return
-    if (animated) {
-        animateScrollBy(delta)
-    } else {
-        scroll { scrollBy(delta) }
-    }
-}
-
-private fun LazyListState.centerDelta(item: LazyListItemInfo): Float {
-    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-    val itemCenter = item.offset + item.size / 2
-    return (itemCenter - viewport / 2).toFloat()
-}
-
 private fun sentenceAtPosition(
     sentences: List<BlockSentence>,
     layout: TextLayoutResult,
@@ -1469,7 +1309,8 @@ private fun LocusRail(
     generating: Set<Int>,
     softAccent: Color,
     onForceRegenerate: (Int) -> Unit,
-    onCurrentIndicator: (sentenceIndex: Int, centerY: Float) -> Unit,
+    /** Root-Y lines of the current sentence; fires on every layout or scroll move. */
+    onCurrentSpan: (SentenceSpan) -> Unit,
 ) {
     if (sentences.isEmpty()) {
         Spacer(modifier)
@@ -1556,12 +1397,12 @@ private fun LocusRail(
         },
     ) {
         val layout = textLayout
-        val reportCurrent = rememberUpdatedState(onCurrentIndicator)
+        val reportCurrent = rememberUpdatedState(onCurrentSpan)
         fun Modifier.reportIfCurrent(sentenceIndex: Int): Modifier {
             if (sentenceIndex != currentSentenceIndex) return this
             return onGloballyPositioned { coords ->
                 val top = coords.positionInRoot().y
-                reportCurrent.value(sentenceIndex, top + coords.size.height / 2f)
+                reportCurrent.value(SentenceSpan(sentenceIndex, top, top + coords.size.height))
             }
         }
         // Farthest from current drawn first; current gets zIndex 0 (top) when bars lap.

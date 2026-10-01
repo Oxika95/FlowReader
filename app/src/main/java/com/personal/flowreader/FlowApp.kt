@@ -11,9 +11,13 @@ import com.personal.flowreader.data.MIGRATION_4_5
 import com.personal.flowreader.data.MIGRATION_5_6
 import com.personal.flowreader.data.MIGRATION_6_7
 import com.personal.flowreader.data.SettingsStore
-import com.personal.flowreader.library.plugin.LibraryPluginRegistry
-import com.personal.flowreader.library.plugin.royalroad.RoyalRoadPlugin
-import com.personal.flowreader.library.plugin.royalroad.RoyalRoadRepository
+import com.personal.flowreader.plugin.PluginManager
+import com.personal.flowreader.plugin.PluginMigrations
+import com.personal.flowreader.plugin.PluginShareRequest
+import com.personal.flowreader.plugin.repo.PluginInstaller
+import com.personal.flowreader.plugin.repo.RepoManager
+import com.personal.flowreader.plugin.store.PluginBookStore
+import com.personal.flowreader.share.RouterRules
 import com.personal.flowreader.tts.TtsController
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -33,9 +37,13 @@ class FlowApp : Application() {
         private set
     lateinit var catalog: BookCatalog
         private set
-    lateinit var plugins: LibraryPluginRegistry
+    lateinit var pluginManager: PluginManager
         private set
-    lateinit var royalRoad: RoyalRoadRepository
+    lateinit var pluginBooks: PluginBookStore
+        private set
+    lateinit var pluginRepos: RepoManager
+        private set
+    lateinit var pluginInstaller: PluginInstaller
         private set
 
     /** Survives ViewModel clear so progress can still flush to Room. */
@@ -57,17 +65,30 @@ class FlowApp : Application() {
         tts = TtsController(this, settings)
         booksDir = File(filesDir, "books").apply { mkdirs() }
         catalog = BookCatalog(this)
-        royalRoad = RoyalRoadRepository(this)
-        plugins = LibraryPluginRegistry(listOf(RoyalRoadPlugin()))
+        pluginManager = PluginManager(this)
+        PluginMigrations.run(this, pluginManager.root)
+        pluginManager.initialize()
+        pluginBooks = PluginBookStore(pluginManager)
+        pluginRepos = RepoManager(settings)
+        pluginInstaller = PluginInstaller(pluginManager, pluginRepos)
         appScope.launch {
             sweepStaleCache()
             // One share target: disable legacy Flow-Queue alias if still enabled.
             com.personal.flowreader.share.ShareQueAliasController.setEnabled(this@FlowApp, false)
         }
+        appScope.launch {
+            pluginManager.installed.collect { list ->
+                val current = settings.shareRouterRulesOnce()
+                val seeded = settings.seededPluginShareRuleIdsOnce()
+                val (next, nextSeeded) = RouterRules.withPluginHosts(current, list.map { it.manifest }, seeded)
+                if (next != current) settings.setShareRouterRules(next)
+                if (nextSeeded != seeded) settings.setSeededPluginShareRuleIds(nextSeeded)
+            }
+        }
     }
 
-    /** Consumed by Royal Road tab when share router opens a fiction/chapter URL. */
-    val pendingRoyalRoadShareUrl = MutableStateFlow<String?>(null)
+    /** Consumed by the plugin's library tab when the share router opens a URL it owns. */
+    val pendingPluginShare = MutableStateFlow<PluginShareRequest?>(null)
 
 
     /** Drop crashed import temps and leftover filter preview clips. */

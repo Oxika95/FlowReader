@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.AccentHue
+import com.personal.flowreader.data.HomePosition
 import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.ThemeMode
@@ -25,6 +26,8 @@ data class OpenUi(
     val showChapterHeadingsInBody: Boolean = false,
     val keepScreenAwake: Boolean = false,
     val debugEnabled: Boolean = false,
+    val homePosition: Float = HomePosition.DEFAULT,
+    val showHomeMarker: Boolean = false,
 )
 
 class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
@@ -47,6 +50,8 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
                 showChapterHeadingsInBody = prefs.showChapterHeadingsInBody,
                 keepScreenAwake = prefs.keepScreenAwake,
                 debugEnabled = prefs.debugEnabled,
+                homePosition = prefs.homePosition,
+                showHomeMarker = prefs.showHomeMarker,
             )
         }
     }
@@ -103,6 +108,18 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
     fun setKeepScreenAwake(enabled: Boolean) {
         _ui.value = _ui.value.copy(keepScreenAwake = enabled)
         viewModelScope.launch { flow.settings.setKeepScreenAwake(enabled) }
+    }
+
+    /** [persist] false while a drag is in flight; the final value is written on release. */
+    fun setHomePosition(position: Float, persist: Boolean = true) {
+        val value = HomePosition.coerce(position)
+        _ui.value = _ui.value.copy(homePosition = value)
+        if (persist) viewModelScope.launch { flow.settings.setHomePosition(value) }
+    }
+
+    fun setShowHomeMarker(enabled: Boolean) {
+        _ui.value = _ui.value.copy(showHomeMarker = enabled)
+        viewModelScope.launch { flow.settings.setShowHomeMarker(enabled) }
     }
 
     fun setDebugEnabled(enabled: Boolean) {
