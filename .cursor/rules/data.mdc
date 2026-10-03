@@ -1,0 +1,14 @@
+---
+description: Flow Reader persistence (Room ProgressDb, DataStore SettingsStore, BookCatalog, models)
+globs: app/src/main/java/com/personal/flowreader/data/**/*.kt
+alwaysApply: false
+---
+
+# Data and storage
+
+- Room schema change = new `MIGRATION_n_m` in `ProgressDb.kt` + version bump; never destructive.
+- New setting = field in `ReaderPrefs`/`TtsPrefs` (or a `*Once` getter) + setter in `SettingsStore.kt`,
+  wired through `ui/settings/SettingsState.kt`; document the key in `docs/data.md` / `docs/settings.md`.
+- Book ids are SHA-256 of file bytes; don't change id derivation (keys progress, filters, queue).
+- Parsers/splitters (`SentenceSplitter`, `TextFilters`, `Ingest`) are pure and JVM-tested.
+- Reference: `docs/data.md`. History: `../flow-reader-chats/areas/library-queue.md`.

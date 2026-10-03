@@ -1,0 +1,14 @@
+---
+description: Flow Reader import/share routing (ShareIngress, router and parse rules, chooser, crawl)
+globs: app/src/main/java/com/personal/flowreader/share/**/*.kt,app/src/main/java/com/personal/flowreader/ui/settings/SharingSettingsTab.kt
+alwaysApply: false
+---
+
+# Import and share
+
+- Rule matching lives in `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`, `UrlDetector`) and is
+  covered by `ShareRouterTest`; add a test case for every matching change.
+- Stored rule JSON has legacy migrations (`migrateFromLegacy`, `migrateLegacy`); never break decoding
+  of older saved rules.
+- Plugins may own domains (seeded plugin rules); keep `withPluginHosts` behavior intact.
+- Behavior reference: `docs/import-share.md`. History: `../flow-reader-chats/areas/import-share.md`.

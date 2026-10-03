@@ -1,0 +1,14 @@
+---
+description: Flow Reader TTS and audio pipeline (TtsController, audio engine, Edge client, playback service)
+globs: app/src/main/java/com/personal/flowreader/tts/**/*.kt,app/src/main/java/com/personal/flowreader/ui/settings/AudioSettings.kt
+alwaysApply: false
+---
+
+# TTS and audio
+
+- Priorities, in order: stability → latency → footprint (`docs/tts.md`).
+- `TtsController.kt` and `AudioSettings.kt` are large: find members in `docs/agent/index.md` and Read
+  by offset. Don't read them whole.
+- Pure helpers (`Crossfade`, `WordHighlight`, `EdgeHandshake`) have JVM tests; keep new timing/
+  splitting logic pure and tested.
+- History, rejected approaches, device quirks: `../flow-reader-chats/areas/tts-audio.md`.

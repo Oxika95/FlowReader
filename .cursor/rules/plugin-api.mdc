@@ -33,3 +33,6 @@ example `docs/plugins/examples/media-card.md`.
 2. Update `MediaCardAdapters.kt` + `MediaCardAdaptersTest`.
 3. Update `docs/plugins/api.md`, `ui-contract.md`, and the JSON schemas.
 4. Update the Node test host and plugins in `../flow-reader-plugins` if they rely on it.
+
+Full cross-repo checklist (version sync, host mirror, release order): `docs/agent/map.md`.
+History and open threads: `../flow-reader-chats/areas/plugins.md`.

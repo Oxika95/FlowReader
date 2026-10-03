@@ -1,0 +1,13 @@
+---
+description: Flow Reader reader screen (rendering, rail, gestures, chrome, ToC, progress)
+globs: app/src/main/java/com/personal/flowreader/ui/reader/**/*.kt
+alwaysApply: false
+---
+
+# Reader
+
+- `ReaderScreen.kt` is large: find members in `docs/agent/index.md` and Read by offset.
+- Touch routing is pure (`ReaderTouchPolicy.resolveTouch`) with `ReaderTouchPolicyTest`; change the
+  policy there, not in gesture modifiers.
+- Floating chrome goes in the reader's `FlowDock`s; modals are `FlowFullscreenCard` (UI system rule).
+- Behavior reference: `docs/reader.md`. History and open threads: `../flow-reader-chats/areas/reader.md`.

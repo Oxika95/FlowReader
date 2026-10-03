@@ -37,3 +37,4 @@ animations for cards (components own motion).
 - New media source = new pure-Kotlin adapter + unit test, not new `FlowMediaCard` params.
 
 When adding a token or component, update `docs/ui-system/`.
+History, rejected designs, open threads: `../flow-reader-chats/areas/ui-system.md`.

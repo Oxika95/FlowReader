@@ -1,0 +1,13 @@
+# Keep search/indexing on source and docs text; files stay readable on request.
+docs/images/
+docs/_sample_books/
+**/*.png
+**/*.jpg
+**/*.webp
+build/
+app/build/
+.gradle/
+.kotlin/
+gradlew
+gradlew.bat
+gradle/wrapper/

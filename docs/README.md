@@ -47,6 +47,10 @@ Engines, playback, highlight, and queue auto-advance.
 
 DataStore keys, Room tables, and on-disk layout.
 
+### [Agent map](agent/map.md)
+
+Where code lives, what to edit for a change, and the cross-repo checklist. Generated [code index](agent/index.md).
+
 ---
 
 Screenshots use public-domain books from [Project Gutenberg](https://www.gutenberg.org/) (Alice, Pride and Prejudice, Frankenstein, Sherlock Holmes).
