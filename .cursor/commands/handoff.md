@@ -14,7 +14,7 @@ Persist what the next chat needs, commit, and stop. Be terse.
      "untitled", then re-run so `raw/index.md` picks it up.
 3. Run `git status` in all three repos (`flow-reader`, `../flow-reader-plugins`,
    `../flow-reader-chats`). Commit each repo that changed with an area-prefixed message
-   (`tts: ...`, `plugins: ...`, `chats: ...`). Push `flow-reader-chats` only; app and plugins pushes
-   go through `/release`.
+   (`tts: ...`, `plugins: ...`, `chats: ...`). Do not push any repo unless the user says so; app and
+   plugin pushes go through `/release`.
 4. Reply with: commits made (repo + short sha), open threads, and the suggested `/start` line for
    the next chat.
