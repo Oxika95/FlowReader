@@ -29,7 +29,8 @@ See [`AndroidManifest.xml`](../app/src/main/AndroidManifest.xml).
 3. Plugin-owned URLs (each installed plugin's `shareHosts`, e.g. royalroad.com) → **Plugin**
 4. Remaining URLs → parse rules → crawl to Queue or Files
 
-Treat as a URL only when the **entire** shared string is a URL.
+The first `http(s)://` or `www.` URL in the shared text is used, even when surrounded by other text
+(`UrlDetector.firstUrl`); text with no URL is plain text.
 
 ## Web ingest
 

@@ -56,9 +56,10 @@ viewport (Settings → Layout → UI, 15–85% from the top, default 50%). Every
 sentence's center on that line: TTS follow, pin tap, jump-back chip, double-tap, scroll lock, ToC,
 and opening the book. A sentence taller than the screen starts at the top instead.
 
-With **Show home marker** on, the reader draws a dashed line at home with a handle in the right
-gutter. Drag the handle to move home; on release, if the current sentence is on-screen it settles
-onto the new line.
+With **Show home marker** on, the reader draws a solid bar across the text column at home; its
+thickness follows the text size. Drag the bar anywhere along its length to move home (a "Home N%"
+label shows while dragging); on release, if the current sentence is on-screen it settles onto the
+new line.
 
 Math lives in [`ReaderHome.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderHome.kt)
 (unit-tested); the rail reports the current sentence's line bounds (`SentenceSpan`).
