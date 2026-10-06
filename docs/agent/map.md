@@ -35,7 +35,9 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 
 | Change | Files | Also update |
 | --- | --- | --- |
-| Reader rendering, rail, highlight, pin card | `ui/reader/ReaderScreen.kt` (large; use index offsets), `ReaderChrome.kt`, `ReaderHome.kt` | `docs/reader.md` |
+| Reader rendering, pin card | `ui/reader/ReaderScreen.kt` (large; use index offsets), `ReaderChrome.kt`, `ReaderHome.kt` | `docs/reader.md` |
+| Margin rail (cache dots, hold-to-regenerate) | `ui/reader/ReaderRail.kt` | `docs/reader.md` |
+| TTS highlight drawing, justify offsets, hit-test | `ui/reader/ReaderTextLayout.kt` | |
 | Reader gestures / touch routing | `ui/reader/ReaderTouchPolicy.kt` (pure, tested), `ReaderTouchGestures.kt` | `ReaderTouchPolicyTest` |
 | Reader load, progress, filters, ToC | `ui/reader/ReaderViewModel.kt`, `TocOverlay.kt` | |
 | TTS playback, queueing, prefetch, cache | `tts/TtsController.kt` (large) | `docs/tts.md` |
@@ -49,8 +51,9 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | Library tabs, shelves, view mode | `ui/library/LibraryViewModel.kt`, `LibraryScreen.kt`, `data/Models.kt` (`LibraryTabId`) | `docs/library.md` |
 | Queue | `BookCatalog` (`listQue`, `nextUndoneQue`, `markQueDone`), `ProgressDb` (`que_items`) | |
 | A setting (new key) | `data/SettingsStore.kt` (prefs + setter), `ui/settings/SettingsState.kt`, the tab file | `docs/settings.md`, `docs/data.md` |
+| Audio settings UI | `ui/settings/AudioSettings.kt` (tab shell), `VoiceSettingsTab.kt`, `PlaybackSettingsTab.kt` (incl. underlay), `AudioSettingsControls.kt` (flyout header, labels, center slider) | `docs/settings.md` |
 | Room schema | `data/ProgressDb.kt` (add `MIGRATION_n_m`, bump version) | `docs/data.md` |
-| Share routing / parse rules | `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`), `ShareRouter.kt`, `ui/settings/SharingSettingsTab.kt` | `ShareRouterTest`, `docs/import-share.md` |
+| Share routing / parse rules | `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`), `ShareRouter.kt`; UI `ui/settings/SharingSettingsTab.kt` (panes), `ImportRouterRules.kt`, `ImportParseRules.kt`, `ImportRuleControls.kt` | `ShareRouterTest`, `docs/import-share.md` |
 | Web page crawl | `share/WebPageIngest.kt` | |
 | Plugin runtime / `flow.*` host API | `plugin/runtime/*` | Cross-repo checklist |
 | Plugin models, caps, versions | `plugin/api/PluginModels.kt`, `PluginManifest.kt` | Cross-repo checklist |
@@ -62,8 +65,9 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 
 ## Large files (read by offset, never whole)
 
-`TtsController.kt` 2045, `ReaderScreen.kt` 1574, `AudioSettings.kt` 1177, `SharingSettingsTab.kt` 1082,
-`LibraryViewModel.kt` 840, `PluginTabViewModel.kt` 838. Member line numbers are in [index.md](index.md).
+`TtsController.kt` 2045, `ReaderScreen.kt` ~1100 (one composable), `LibraryViewModel.kt` 840,
+`PluginTabViewModel.kt` 838. Member line numbers are in [index.md](index.md). Single-class files can't
+be split by moving code; they need helper-class extraction (separate, tested refactors).
 
 ## Cross-repo change checklist (plugin-visible changes)
 

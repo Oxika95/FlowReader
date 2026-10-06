@@ -168,8 +168,10 @@ Hand-written guide: [map.md](map.md).
 - `ReaderChrome.kt` (240) - TitleBannerCard:64, MediaControlCard:164, ScrollLockUnlockButton:220
 - `ReaderHome.kt` (50) - enum PlaybackPinEdge:10, data SentenceSpan:13, obj ReaderHome:15
 - `ReaderLayout.kt` (14) - ReaderContentStartPadding:11, ReaderListEndPadding:14
-- `ReaderScreen.kt` (1574) **large** - data BlockSentence:163, ReaderScreen:170, PlaybackPinCard:1091, drawTtsHighlightRange:1135, justifyXShift:1210, isAndroidLineEndSpace:1247, sentenceAtPosition:1252, detectRailHold:1269, LocusRail:1303, RailSegmentMark:1470, rememberImmersiveSystemBars:1546
-  - members: clearTextSelection:227, trackedSentenceIndex:356, scrollToHome:365, jumpToSavedPosition:398, playResumingSavedPosition:407, toggleChrome:476, enableScrollLock:485, disableScrollLock:494, navigateBack:499, resumeFollow:511, dispatch:518, onReaderGesture:529, segmentGenerating:1340, segmentReady:1341, canForceRegenerate:1343, drawCacheDotWindows:1347
+- `ReaderRail.kt` (352) - LocusRail:112
+- `ReaderScreen.kt` (1124) **large** - RailGutterWidth:108, data BlockSentence:123, ReaderScreen:130, PlaybackPinCard:1051, rememberImmersiveSystemBars:1096
+  - members: clearTextSelection:187, trackedSentenceIndex:316, scrollToHome:325, jumpToSavedPosition:358, playResumingSavedPosition:367, toggleChrome:436, enableScrollLock:445, disableScrollLock:454, navigateBack:459, resumeFollow:471, dispatch:478, onReaderGesture:489
+- `ReaderTextLayout.kt` (149) - drawTtsHighlightRange:21, sentenceAtPosition:138
 - `ReaderTextToolbar.kt` (153) - class ReaderTextToolbar:20
 - `ReaderTouchGestures.kt` (72) - detectSelectionCancelGestures:16, detectRightEdgeBackSwipe:34
 - `ReaderTouchPolicy.kt` (80) - enum ReaderOverlay:7, enum ReaderTouchTarget:14, enum ReaderGestureKind:22, sealed ReaderTouchAction:28, resolveTouch:41
@@ -181,15 +183,20 @@ Hand-written guide: [map.md](map.md).
 
 - `AboutSettingsTab.kt` (175) - AboutSettingsTab:53
 - `AppearanceSettings.kt` (498) **large** - AppearanceSettings:187, ThemeSettingsPane:209, UiScaleSettingsPane:275, LayoutSettingsTab:314, HomePositionSettings:405, FontSettingsTab:438
-- `AudioSettings.kt` (1177) **large** - AudioSettingsTab:195, VoiceSettingsTab:275, PlaybackSettingsTab:572, underlaySubtitle:884, underlayBtDeviceFieldValue:904, underlayBtDeviceSupportingText:911, underlayLevelSliderIndex:927, SettingsFlyoutHeader:941, formatSentenceGapLabel:967, formatHighlightSyncLabel:973, formatMinSignalLabel:979, CenterOriginSlider:991, CenterOriginSliderTrack:1029
-  - members: loadBondedAndOpen:618, openBtPicker:634
+- `AudioSettings.kt` (100) - AudioSettingsTab:24
+- `AudioSettingsControls.kt` (284) - SettingsFlyoutHeader:48, formatSentenceGapLabel:74, formatHighlightSyncLabel:80, formatMinSignalLabel:86, CenterOriginSlider:98
 - `FilterEditorSession.kt` (11) - data FilterEditorSession:7
 - `FiltersSettings.kt` (468) **large** - FiltersSettingsTab:189, FilterRuleRow:255, FilterRuleEditorOverlay:290, FilterSampleField:418
+- `ImportParseRules.kt` (368) - ReorderableParseList:68, ParseRuleEditorOverlay:193
+- `ImportRouterRules.kt` (387) - ReorderableRouterList:92, RouterRuleEditorOverlay:224
+- `ImportRuleControls.kt` (164) - RuleListHeader:30, DragHandle:69, MatchFields:125
+- `PlaybackSettingsTab.kt` (415) **large** - PlaybackSettingsTab:49, underlaySubtitle:361, underlayBtDeviceFieldValue:381, underlayBtDeviceSupportingText:388, underlayLevelSliderIndex:404
+  - members: loadBondedAndOpen:95, openBtPicker:111
 - `PluginsSettingsTab.kt` (247) - PluginsSettingsTab:65
 - `SettingsOverlay.kt` (216) - SettingsOverlay:30
 - `SettingsState.kt` (129) - data AppearanceSettingsState:15, data AppearanceSettingsCallbacks:31, AppearanceSettingsState:48, AppearanceSettingsCallbacks:64, data TtsSettingsState:81, data TtsSettingsCallbacks:101, data FilterSettingsState:118, data FilterSettingsCallbacks:125
-- `SharingSettingsTab.kt` (1082) **large** - data SharePluginOption:93, sealed ImportRuleEditRequest:98, class DomainRuleEditorState:114, DomainRuleEditorHost:119, SharingSettingsTab:146, RouterPane:246, ParserPane:302, RuleListHeader:324, routerRuleSummary:361, ReorderableRouterList:387, RouterRuleEditorOverlay:519, ReorderableParseList:686, DragHandle:810, ParseRuleEditorOverlay:865, MatchFields:1043
-  - members: Router:99, Parse:107, saveOrdered:394, build:549, saveOrdered:691, build:888
+- `SharingSettingsTab.kt` (265) - data SharePluginOption:37, sealed ImportRuleEditRequest:42, class DomainRuleEditorState:58, DomainRuleEditorHost:63, SharingSettingsTab:90
+- `VoiceSettingsTab.kt` (342) - VoiceSettingsTab:49
 
 ## ui/theme
 
@@ -224,4 +231,4 @@ Hand-written guide: [map.md](map.md).
 - `ui/reader/ReaderHomeTest.kt`
 - `ui/reader/ReaderTouchPolicyTest.kt`
 
-Totals: 107 main files, 25219 lines.
+Totals: 115 main files, 25336 lines.
