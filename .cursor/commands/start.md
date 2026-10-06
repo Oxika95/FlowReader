@@ -1,10 +1,10 @@
 # Start a task
 
-Arguments: `<area> <task description>`. Areas: tts-audio, reader, library-queue, plugins,
-import-share, ui-system, settings, release.
+Usage: /start AREA TASK. Areas: tts-audio, reader, library-queue, plugins, import-share, ui-system,
+settings, release.
 
-1. Read `docs/agent/map.md`, then `../flow-reader-chats/areas/<area>.md` (if present). Read the most
-   recent `../flow-reader-chats/handoffs/*-<area>-*.md` only if the task continues earlier work.
+1. Read `docs/agent/map.md`, then `../flow-reader-chats/areas/AREA.md` (if present). Read the most
+   recent `../flow-reader-chats/handoffs/*-AREA-*.md` only if the task continues earlier work.
 2. For `plugins` (or any change touching `plugin/api`, `plugin/runtime`, `FlowIcons`, media card
    slots): also read `../flow-reader-plugins/AGENTS.md` and follow the cross-repo checklist in `map.md`.
 3. Locate code via `docs/agent/index.md` (line numbers) and Read by offset; search only for what the
