@@ -20,6 +20,8 @@ Sibling repos: `../flow-reader-plugins` (public plugins), `../flow-reader-chats`
 .\gradlew.bat :app:compileDebugKotlin      # compile check
 .\gradlew.bat :app:testDebugUnitTest       # JVM unit tests (app/src/test)
 .\gradlew.bat :app:installDebug            # device; bundles ../flow-reader-plugins when present
+.\scripts\setup-emulator.ps1               # boot windowed AVD flowreader_api36 + push Gutenberg test books
+.\scripts\setup-emulator.ps1 -Recreate -Install -Import   # fresh AVD, app installed, books in library
 .\scripts\gen-agent-index.ps1              # after adding, moving, or splitting files
 ```
 
