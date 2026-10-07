@@ -136,6 +136,7 @@ class TtsController(
     /** Open book shared with the reader; grows chapter by chapter as playback advances. */
     @Volatile
     private var reading: ReadingSession? = null
+    private var pullJob: Job? = null
     /** Stable indices: the window growing or trimming never renumbers the playhead. */
     private val sentences: SentenceTable
         get() = reading?.window?.value?.table ?: SentenceTable.EMPTY
@@ -344,6 +345,8 @@ class TtsController(
         unregisterNoisyReceiver()
         TtsPlaybackService.stop()
         reading?.let { previous -> scope.launch { previous.setFocus(ReadingSession.FOCUS_TTS, null) } }
+        pullJob?.cancel()
+        pullJob = null
         reading = session
         focusedChapter = null
         attachedBookId = bookId
@@ -403,22 +406,53 @@ class TtsController(
     private fun cacheKeyFor(session: ReadingSession): String =
         sanitizeBookKey(session.bookId) + ".o" + session.window.value.origin
 
-    /** Load the chapter after the window so playback continues (also with the reader closed). */
+    /**
+     * Load chapters after the window until one adds sentences, so playback continues past empty
+     * chapters (also with the reader closed). False at the end of the book or on a load error.
+     */
     private suspend fun pullMore(): Boolean {
         val s = reading ?: return false
-        val st = _state.value
-        val loaded = runCatching { s.loadNext(st.clipTargetChars, st.clipFlexChars) }.getOrDefault(false)
-        if (loaded) updateSessionMetadata()
-        return loaded
+        val before = sentences.lastIndex
+        repeat(MAX_EMPTY_PULL) {
+            val st = _state.value
+            val loaded = try {
+                s.loadNext(st.clipTargetChars, st.clipFlexChars)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                SynthDebugLog.append("pullMore failed: ${t.message ?: t.javaClass.simpleName}")
+                false
+            }
+            if (!loaded || reading !== s) return false
+            if (sentences.lastIndex > before) {
+                updateSessionMetadata()
+                return true
+            }
+        }
+        return false
     }
 
-    /** Keep the window around the playhead; chapters far behind it are dropped. */
+    /** Background [pullMore]; one at a time so the loop keeps speaking while a chapter loads. */
+    private fun pullMoreAsync() {
+        if (pullJob?.isActive == true) return
+        pullJob = scope.launch { pullMore() }
+    }
+
+    /**
+     * Keep the window around the playhead: chapters far behind it are dropped, and the chapters
+     * either side are loaded now so crossing into them never waits on a load.
+     */
     private fun focusChapter(sentence: Sentence?) {
         val chapter = sentence?.chapterIndex ?: return
         if (chapter == focusedChapter) return
         focusedChapter = chapter
         val s = reading ?: return
-        scope.launch { s.setFocus(ReadingSession.FOCUS_TTS, chapter) }
+        scope.launch {
+            s.setFocus(ReadingSession.FOCUS_TTS, chapter)
+            val st = _state.value
+            runCatching { s.loadAdjacent(chapter + 1, st.clipTargetChars, st.clipFlexChars) }
+            runCatching { s.loadAdjacent(chapter - 1, st.clipTargetChars, st.clipFlexChars) }
+        }
     }
 
     /** Drop Edge clips so refiltered text is not spoken from stale audio. */
@@ -1204,7 +1238,7 @@ class TtsController(
             }
             val n = effectivePrefetchCount()
             if (sentences.lastIndex - index <= n) {
-                pullMore()
+                pullMoreAsync()
             }
             scheduleAheadPrefetch()
             try {
@@ -1239,7 +1273,9 @@ class TtsController(
             // Negative gap (crossfade) is applied inside speakEdge / TtsAudioEngine.
             if (generation != playGeneration) return
             if (index >= sentences.lastIndex) {
-                if (pullMore() && index < sentences.lastIndex) {
+                pullJob?.join()
+                if (index >= sentences.lastIndex) pullMore()
+                if (index < sentences.lastIndex) {
                     index++
                     continue
                 }
@@ -2066,6 +2102,9 @@ class TtsController(
     companion object {
         /** Max concurrent Edge lookahead synths; nearest gaps fill first. */
         private const val PREFETCH_PARALLELISM = 2
+
+        /** Chapters without text skipped in a row before playback treats it as the book's end. */
+        private const val MAX_EMPTY_PULL = 8
 
         /** `b<bookKey>_s<sentenceIndex>_<voiceKey>.mp3` */
         private val SENTENCE_CACHE_NAME = Regex("""^b([A-Za-z0-9.-]*)_s(\d+)_.*\.mp3$""")

@@ -26,6 +26,8 @@ Download / Refresh / Delete, **Read**). apiVersion 2 plugins add their own stats
 and up to two rail and two footer actions ([example](plugins/examples/media-card.md)).
 
 - **Stream (default):** full ToC on add; chapter bodies on demand; small cache around the current position
+- Each chapter opens with its title as a heading (like an EPUB chapter), shown and spoken; a body
+  that already starts with the title isn't repeated
 - **Download:** All or Partial (start chapter, cache level)
 
 ## Import routing

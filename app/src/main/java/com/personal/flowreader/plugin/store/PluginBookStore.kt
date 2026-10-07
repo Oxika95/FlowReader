@@ -3,7 +3,6 @@ package com.personal.flowreader.plugin.store
 import com.personal.flowreader.data.Block
 import com.personal.flowreader.data.BlockKind
 import com.personal.flowreader.data.Chapter
-import com.personal.flowreader.data.EpubIngest
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.PluginManager
 import com.personal.flowreader.plugin.PluginSource
@@ -13,9 +12,12 @@ import com.personal.flowreader.plugin.api.PluginChapter
 import com.personal.flowreader.plugin.api.PluginErrorCode
 import com.personal.flowreader.plugin.api.PluginException
 import com.personal.flowreader.plugin.api.PluginWorkDetail
+import com.personal.flowreader.share.HtmlParagraphs
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,6 +44,32 @@ class PluginBookStore(private val plugins: PluginManager) {
     }
 
     private fun source(r: Ref): PluginSource = plugins.source(r.plugin.id)
+
+    private val fetchLocks = HashMap<String, Mutex>()
+
+    private fun fetchLock(bookId: String): Mutex = synchronized(fetchLocks) { fetchLocks.getOrPut(bookId) { Mutex() } }
+
+    /**
+     * Title and text of chapter [index]: from disk, else fetched and written. Reader window, TTS
+     * and cache upkeep run concurrently; the lock makes them share one fetch per chapter.
+     */
+    private suspend fun chapterText(
+        r: Ref,
+        session: PluginReadSession,
+        index: Int,
+        sync: Boolean,
+    ): Pair<String, String>? {
+        PluginSessionStore.readChapterText(r.dir, index)?.let { return it }
+        val chapterRef = session.toc.getOrNull(index) ?: return null
+        return fetchLock(session.bookId).withLock {
+            PluginSessionStore.readChapterText(r.dir, index)?.let { return@withLock it }
+            val fetched = source(r).loadChapter(chapterRef, session.workId, session.workUrl)
+            val titled = titleAndText(fetched, chapterRef.title, r.plugin.manifest.bookIdPrefix, index)
+            PluginSessionStore.writeChapter(r.dir, index, titled.first, titled.second)
+            if (sync) syncProgress(session, index)
+            titled
+        }
+    }
 
     private fun read(r: Ref): PluginReadSession? =
         PluginSessionStore.read(r.root, r.workId, r.plugin.id, plugins.bookIdFor(r.plugin.id, r.workId))
@@ -210,10 +238,7 @@ class PluginBookStore(private val plugins: PluginManager) {
         onProgress(downloaded, total)
         for (i in desired.sorted()) {
             if (PluginSessionStore.hasChapter(r.dir, i)) continue
-            val chapterRef = session.toc.getOrNull(i) ?: continue
-            val fetched = source(r).loadChapter(chapterRef, session.workId, session.workUrl)
-            val (title, text) = titleAndText(fetched, chapterRef.title, r.plugin.manifest.bookIdPrefix, i)
-            PluginSessionStore.writeChapter(r.dir, i, title, text)
+            chapterText(r, session, i, sync = false) ?: continue
             if (i > session.loadedThrough) {
                 session.loadedThrough = i
                 PluginSessionStore.writeMeta(r.dir, session.copy(chapters = emptyList()))
@@ -273,17 +298,9 @@ class PluginBookStore(private val plugins: PluginManager) {
     /** Chapter [index] (absolute ToC index): cached text, else fetched, cached and synced. */
     suspend fun chapter(session: PluginReadSession, index: Int): Chapter {
         val r = ref(session.bookId)
-        val prefix = r.plugin.manifest.bookIdPrefix
-        val chapterRef = session.toc.getOrNull(index)
+        val (title, text) = chapterText(r, session, index, sync = true)
             ?: throw PluginException(PluginErrorCode.Error, "Chapter ${index + 1} missing")
-        PluginSessionStore.readChapterText(r.dir, index)?.let { (title, text) ->
-            return Chapter(title, blocksFromPlain(text, prefix, index))
-        }
-        val fetched = source(r).loadChapter(chapterRef, session.workId, session.workUrl)
-        val (title, text) = titleAndText(fetched, chapterRef.title, prefix, index)
-        PluginSessionStore.writeChapter(r.dir, index, title, text)
-        syncProgress(session, index)
-        return Chapter(title, blocksFor(fetched, prefix, index))
+        return Chapter(title, chapterBlocks(title, text, r.plugin.manifest.bookIdPrefix, index))
     }
 
     /** Re-open the stream at an absolute ToC index (reader ToC jumps, splash Read). */
@@ -309,18 +326,8 @@ class PluginBookStore(private val plugins: PluginManager) {
         val prefix = r.plugin.manifest.bookIdPrefix
         val from = session.startIndex + loaded.size
         for (i in from..through) {
-            val chapterRef = session.toc.getOrNull(i) ?: break
-            val cached = PluginSessionStore.readChapterText(r.dir, i)
-            val chapter = if (cached != null) {
-                Chapter(cached.first, blocksFromPlain(cached.second, prefix, i))
-            } else {
-                val fetched = source(r).loadChapter(chapterRef, session.workId, session.workUrl)
-                val (title, text) = titleAndText(fetched, chapterRef.title, prefix, i)
-                PluginSessionStore.writeChapter(r.dir, i, title, text)
-                syncProgress(session, i)
-                Chapter(title, blocksFor(fetched, prefix, i))
-            }
-            loaded += chapter
+            val (title, text) = chapterText(r, session, i, sync = true) ?: break
+            loaded += Chapter(title, chapterBlocks(title, text, prefix, i))
             session.loadedThrough = i
             session.chapters = loaded.toList()
             PluginSessionStore.writeMeta(r.dir, session.copy(chapters = emptyList()))
@@ -349,6 +356,21 @@ class PluginBookStore(private val plugins: PluginManager) {
     }
 
     companion object {
+        /**
+         * Chapter as the reader shows it: a heading with [title] first, as EPUB chapter files
+         * open with their own heading, then the paragraphs of [text].
+         */
+        fun chapterBlocks(title: String, text: String, prefix: String, chapterIndex: Int): List<Block> {
+            val body = blocksFromPlain(text, prefix, chapterIndex)
+            val heading = title.trim()
+            if (heading.isEmpty()) return body
+            val first = body.firstOrNull()
+            if (first != null && first.text.trim().equals(heading, ignoreCase = true)) {
+                return listOf(first.copy(kind = BlockKind.Heading)) + body.drop(1)
+            }
+            return listOf(Block("$prefix-$chapterIndex-title", BlockKind.Heading, heading)) + body
+        }
+
         fun blocksFromPlain(text: String, prefix: String, chapterIndex: Int): List<Block> {
             val paras = text.replace("\r\n", "\n").split(Regex("\\n\\s*\\n"))
                 .map { it.trim() }
@@ -361,11 +383,11 @@ class PluginBookStore(private val plugins: PluginManager) {
 
         fun blocksFor(chapter: PluginChapter, prefix: String, chapterIndex: Int): List<Block> {
             if (chapter.html.isNotBlank()) {
+                val paras = HtmlParagraphs.of(Jsoup.parseBodyFragment(chapter.html).body())
                 // Chapter index in the id: block ids key the reader list across chapters.
-                val blocks = EpubIngest.extractBlocks(chapter.html, "$prefix-$chapterIndex")
-                if (blocks.isNotEmpty()) return blocks
-                val text = Jsoup.parseBodyFragment(chapter.html).body().text().trim()
-                if (text.isNotEmpty()) return blocksFromPlain(text, prefix, chapterIndex)
+                if (paras.isNotEmpty()) {
+                    return paras.mapIndexed { i, p -> Block("$prefix-$chapterIndex-$i", BlockKind.Paragraph, p) }
+                }
             }
             return blocksFromPlain(chapter.text, prefix, chapterIndex)
         }

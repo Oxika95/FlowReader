@@ -23,6 +23,7 @@ import com.personal.flowreader.plugin.repo.RepoManager
 import com.personal.flowreader.plugin.store.PluginBookStore
 import com.personal.flowreader.share.RouterRules
 import com.personal.flowreader.tts.TtsController
+import com.personal.flowreader.ui.reader.QueuePlayback
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +53,8 @@ class FlowApp : Application() {
     lateinit var pluginInstaller: PluginInstaller
         private set
     lateinit var progress: ProgressWriter
+        private set
+    internal lateinit var queue: QueuePlayback
         private set
 
     /** Survives ViewModel clear so progress can still flush to Room. */
@@ -86,6 +89,7 @@ class FlowApp : Application() {
             }
         }
         persistSpokenPosition()
+        queue = QueuePlayback(this).also { it.start() }
         appScope.launch {
             sweepStaleCache()
             // One share target: disable legacy Flow-Queue alias if still enabled.

@@ -157,15 +157,10 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             composable(
-                                route = "reader/{bookId}/que/{queId}?autoPlay={autoPlay}",
+                                route = "reader/{bookId}/que/{queId}",
                                 arguments = listOf(
                                     navArgument("bookId") { type = NavType.StringType },
                                     navArgument("queId") { type = NavType.StringType },
-                                    navArgument("autoPlay") {
-                                        type = NavType.StringType
-                                        nullable = true
-                                        defaultValue = null
-                                    },
                                 ),
                             ) { entry ->
                                 val queId = entry.arguments?.getString("queId")
@@ -175,7 +170,7 @@ class MainActivity : ComponentActivity() {
                                     queId = queId,
                                     onBack = { nav.popBackStack() },
                                     onAdvanceQue = { nextBookId, nextQueId ->
-                                        nav.navigate("reader/$nextBookId/que/$nextQueId?autoPlay=1") {
+                                        nav.navigate("reader/$nextBookId/que/$nextQueId") {
                                             popUpTo("library") { inclusive = false }
                                             launchSingleTop = true
                                         }

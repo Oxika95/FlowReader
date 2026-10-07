@@ -45,7 +45,9 @@ class ReadingSessionTest {
         val s = session(2)
         s.setFocus(ReadingSession.FOCUS_TTS, 2)
         repeat(4) { s.loadNext(200, 50) }
-        // TTS at 2 keeps 1..3; chapters loaded past 3 are dropped as soon as they arrive.
+        // A requested chapter survives its own load; the next focus change trims to 1..3.
+        assertEquals(2..6, s.window.value.loaded)
+        s.setFocus(ReadingSession.FOCUS_TTS, 2)
         assertEquals(2..3, s.window.value.loaded)
         s.setFocus(ReadingSession.FOCUS_READER, 6)
         repeat(4) { s.loadNext(200, 50) }

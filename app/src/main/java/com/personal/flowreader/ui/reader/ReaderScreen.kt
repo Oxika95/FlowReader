@@ -232,10 +232,7 @@ fun ReaderScreen(
     val activeQueId = queId ?: vm.queId
     LaunchedEffect(activeQueId, vm.bookId) {
         if (activeQueId.isNullOrBlank()) return@LaunchedEffect
-        vm.tts.bookFinished.collect {
-            val next = vm.finishQueAndNext()
-            if (next != null) onAdvanceQue(next.first, next.second)
-        }
+        vm.queueAdvanced.collect { if (it.fromQueId == activeQueId) onAdvanceQue(it.bookId, it.queId) }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current

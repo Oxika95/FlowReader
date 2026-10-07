@@ -48,16 +48,16 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | Word highlight timing | `tts/WordHighlight.kt` | `WordHighlightTest` |
 | Media session / background | `tts/TtsPlaybackService.kt`, `AudioKeepAlive.kt`, `UnderlayBluetoothMonitor.kt` | |
 | Sentence splitting | `data/SentenceSplitter.kt`, `KoehnSentenceBreak.kt`, `SentenceLengthNormalizer.kt` | `SentenceSplitterTest` |
-| Text filters (Global/Groups/Local) | `data/TextFilters.kt`; UI `ui/settings/FiltersSettings.kt` (tab, editor), `FilterRuleList.kt` (list, hold-to-edit, reorder, delete); TTS-only rules reach playback via `TtsController.setSpeechFilters` | `TextFiltersTest`, `docs/settings.md` |
+| Text filters (Global/Groups/Local) | `data/TextFilters.kt`; UI `ui/settings/FiltersSettings.kt` (tab, editor), `FilterRuleList.kt` (list) on `EditableRuleList.kt` (shared hold-to-edit, reorder, delete; also Router/Parser lists); TTS-only rules reach playback via `TtsController.setSpeechFilters` | `TextFiltersTest`, `docs/settings.md` |
 | Unspeakable / rejected sentences (skip, log) | `tts/SpeechText.kt` (pure), `TtsController.loop`, `EdgeContentException` in `EdgeTtsClient.kt` | `SpeechTextTest`, `docs/tts.md` |
 | EPUB/TXT ingest, covers | `data/Ingest.kt`, `EpubCover.kt`, `BookCatalog.kt` | `IngestTest` |
 | Library tabs, shelves, view mode | `ui/library/LibraryViewModel.kt`, `LibraryScreen.kt`, `data/Models.kt` (`LibraryTabId`) | `docs/library.md` |
-| Queue | `BookCatalog` (`listQue`, `nextUndoneQue`, `markQueDone`), `ProgressDb` (`que_items`) | |
+| Queue | `BookCatalog` (`listQue`, `nextUndoneQue`, `markQueDone`), `ProgressDb` (`que_items`); auto-advance `ui/reader/QueuePlayback.kt` | `docs/tts.md` |
 | A setting (new key) | `data/SettingsStore.kt` (prefs + setter), `ui/settings/SettingsState.kt`, the tab file | `docs/settings.md`, `docs/data.md` |
 | Audio settings UI | `ui/settings/AudioSettings.kt` (tab shell), `VoiceSettingsTab.kt`, `PlaybackSettingsTab.kt` (incl. underlay), `AudioSettingsControls.kt` (flyout header, labels, center slider) | `docs/settings.md` |
 | Room schema | `data/ProgressDb.kt` (add `MIGRATION_n_m`, bump version) | `docs/data.md` |
 | Share routing / parse rules | `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`), `ShareRouter.kt`; UI `ui/settings/SharingSettingsTab.kt` (panes), `ImportRouterRules.kt`, `ImportParseRules.kt`, `ImportRuleControls.kt` | `ShareRouterTest`, `docs/import-share.md` |
-| Web page crawl | `share/WebPageIngest.kt` | |
+| Web page crawl | `share/WebPageIngest.kt`, `HtmlParagraphs.kt` (HTML → paragraphs, also plugin chapters) | `HtmlParagraphsTest` |
 | Plugin runtime / `flow.*` host API | `plugin/runtime/*` | Cross-repo checklist |
 | Plugin models, caps, versions | `plugin/api/PluginModels.kt`, `PluginManifest.kt` | Cross-repo checklist |
 | Plugin tab UI, story card, downloads | `ui/plugin/PluginTabViewModel.kt` (large), `PluginTab.kt`, `StoryMediaCard.kt`, `DownloadSheet.kt` | `docs/plugins.md` |

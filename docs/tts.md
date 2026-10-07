@@ -26,9 +26,18 @@ Priority goals: stability → latency → footprint.
 | Media session | Notification + background keep-alive via `TtsPlaybackService` |
 | Tonal underlay | Quiet noise while playing; optional standby until a paired A2DP device connects |
 
+## Chapters and documents
+
+- Entering a chapter loads the chapters on either side (local files and plugin streams alike), so
+  crossing a chapter boundary doesn't wait on a load. Empty chapters are skipped; a load error
+  ends playback and is logged (`pullMore failed`).
+- Plugin chapters fetched by the reader window, TTS and cache upkeep share one fetch per chapter.
+
 ## Queue auto-advance
 
-When listening to a queue item, finishing the book marks it done and opens the next unfinished item (`autoPlay=1`).
+Finishing a queue item marks it done and plays the next unfinished item from its start, with or
+without the reader open (`QueuePlayback`, app-level). An open reader on the finished item follows to
+the next one and reuses its session, so audio isn't restarted.
 
 ## Unspeakable sentences
 

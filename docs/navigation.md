@@ -6,7 +6,7 @@
 |-------|--------|
 | `library` (start) | Library |
 | `reader/{bookId}` | Reader for a library book |
-| `reader/{bookId}/que/{queId}?autoPlay=` | Reader for a queue item (optional auto-play) |
+| `reader/{bookId}/que/{queId}` | Reader for a queue item (follows Queue auto-advance) |
 
 Entry: [`MainActivity.kt`](../app/src/main/java/com/personal/flowreader/MainActivity.kt).
 

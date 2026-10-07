@@ -121,7 +121,7 @@ class ReadingSession(
         if (index < 0 || index >= chapterCount()) return@withLock false
         val prepared = loader(index, targetChars, flexChars) ?: return@withLock false
         _window.value = _window.value.with(prepared)
-        trimLocked()
+        trimLocked(also = index)
         true
     }
 
@@ -138,10 +138,12 @@ class ReadingSession(
         _window.value = _window.value.resplit(targetChars, flexChars)
     }
 
-    private fun trimLocked() {
+    /** Drop chapters far from every focus; [also] (a chapter just requested) is kept. */
+    private fun trimLocked(also: Int? = null) {
         if (focus.isEmpty()) return
-        val keep = (focus.values.min() - keepRadius)..(focus.values.max() + keepRadius)
-        _window.value = _window.value.retain(keep)
+        val lo = minOf(focus.values.min() - keepRadius, also ?: Int.MAX_VALUE)
+        val hi = maxOf(focus.values.max() + keepRadius, also ?: Int.MIN_VALUE)
+        _window.value = _window.value.retain(lo..hi)
     }
 
     companion object {

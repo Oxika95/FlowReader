@@ -21,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -59,8 +60,10 @@ class ReaderViewModel(
     private val flow = app as FlowApp
     val bookId: String = savedStateHandle["bookId"] ?: ""
     val queId: String? = savedStateHandle["queId"]
-    private val autoPlay: Boolean = savedStateHandle.get<String>("autoPlay") == "1"
     val tts = flow.tts
+
+    /** Queue playback moved on; a reader showing the finished row follows. */
+    internal val queueAdvanced: SharedFlow<QueueAdvance> = flow.queue.advanced
 
     private val _ui = MutableStateFlow(ReaderUi())
     val ui: StateFlow<ReaderUi> = _ui
@@ -107,13 +110,10 @@ class ReaderViewModel(
             // Playback may have continued after the reader closed; it is newer than the saved row.
             val spoken = tts.state.value.takeIf { it.bookId == bookId }?.sentence
             when {
-                // Auto-advance starts each Que document from the beginning so a shared
-                // file that was already finished does not immediately re-emit bookFinished.
-                autoPlay -> show(Locus(), rules, reuse = null)
                 spoken != null -> show(Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start), rules, reuse)
                 else -> show(savedLocus(row, opened), rules, reuse, anchor = row.anchorText)
             }
-            if (autoPlay && _ui.value.sentences.isNotEmpty()) tts.play()
+            flow.queue.track(bookId, queId)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
@@ -233,20 +233,6 @@ class ReaderViewModel(
         flow.appScope.launch {
             s.setFocus(ReadingSession.FOCUS_READER, null)
             s.setFocus(ReadingSession.FOCUS_READER_END, null)
-        }
-    }
-
-    /**
-     * Mark the current Que row done and return the next unfinished item, if any.
-     * Call only when this reader was opened with a [queId].
-     */
-    suspend fun finishQueAndNext(): Pair<String, String>? {
-        val id = queId ?: return null
-        return withContext(Dispatchers.IO) {
-            val current = flow.catalog.getQue(id) ?: return@withContext null
-            flow.catalog.markQueDone(id)
-            val next = flow.catalog.nextUndoneQue(current.sortOrder) ?: return@withContext null
-            next.progress.bookId to next.item.id
         }
     }
 
