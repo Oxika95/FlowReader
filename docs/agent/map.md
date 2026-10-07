@@ -39,7 +39,9 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | Margin rail (cache dots, hold-to-regenerate) | `ui/reader/ReaderRail.kt` | `docs/reader.md` |
 | TTS highlight drawing, justify offsets, hit-test | `ui/reader/ReaderTextLayout.kt` | |
 | Reader gestures / touch routing | `ui/reader/ReaderTouchPolicy.kt` (pure, tested), `ReaderTouchGestures.kt` | `ReaderTouchPolicyTest` |
-| Reader load, progress, filters, ToC | `ui/reader/ReaderViewModel.kt`, `TocOverlay.kt` | |
+| Reader load, progress, filters, ToC | `ui/reader/ReaderViewModel.kt`, `ReaderBook.kt` (local/plugin book), `ReaderSessions.kt` (window build, locator), `TocOverlay.kt` | `docs/data.md` |
+| Chapter loading window, stable sentence indices | `data/ChapterSource.kt`, `EpubChapterSource.kt`, `TxtChapterSource.kt`, `ReadingSession.kt`, `SentenceTable.kt`, `LocusAnchor.kt` | `ChapterSourceTest`, `ReadingSessionTest`, `SentenceTableTest` |
+| Position writes | `data/ProgressWriter.kt` | `ProgressWriterTest`, `docs/data.md` |
 | TTS playback, queueing, prefetch, cache | `tts/TtsController.kt` (large) | `docs/tts.md` |
 | PCM output, crossfade, gaps | `tts/TtsAudioEngine.kt`, `Crossfade.kt` | `CrossfadeTest` |
 | Edge voices / synth | `tts/EdgeTtsClient.kt`, `EdgeHandshake.kt` | `EdgeTtsClientTest` |

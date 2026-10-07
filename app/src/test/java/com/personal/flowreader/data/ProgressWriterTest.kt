@@ -55,12 +55,30 @@ class ProgressWriterTest {
     }
 
     @Test
-    fun meterSuppliesFraction() {
+    fun locatorMapsWindowLocus() {
         val w = writer()
-        w.setMeter("b") { it.chapterIndex / 10f }
-        assertEquals(0.4f, w.fractionFor("b", Locus(4, 0, 0))!!, 0f)
-        w.setMeter("b", null)
-        assertEquals(null, w.fractionFor("b", Locus(4, 0, 0)))
+        w.setLocator("b") { locus, at ->
+            ProgressUpdate("b", locus.chapterIndex + 3, locus.blockIndex, locus.charOffset, 0.5f, at, "x", "h")
+        }
+        assertEquals(7, w.locate("b", Locus(4, 0, 0), 1L).chapterIndex)
+        w.setLocator("b", null)
+        val plain = w.locate("b", Locus(4, 1, 2), 1L)
+        assertEquals(4, plain.chapterIndex)
+        assertEquals(null, plain.fraction)
+    }
+
+    @Test
+    fun anchorAndHrefStoredAndLegacyFlagCleared() = runBlocking {
+        dao.rows["b"] = row(chapter = 0, at = 1L).copy(locusVersion = 0, anchorText = "old", chapterHref = "a.xhtml")
+        val w = writer()
+        w.submit(update(2, at = 5L))
+        w.drain()
+        assertEquals("old", dao.rows.getValue("b").anchorText)
+        assertEquals(ProgressEntity.LOCUS_CURRENT, dao.rows.getValue("b").locusVersion)
+        w.submit(update(3, at = 6L).copy(anchorText = "new", chapterHref = "b.xhtml"))
+        w.drain()
+        assertEquals("new", dao.rows.getValue("b").anchorText)
+        assertEquals("b.xhtml", dao.rows.getValue("b").chapterHref)
     }
 
     private fun row(chapter: Int, at: Long, progress: Float = 0f) = ProgressEntity(

@@ -9,7 +9,7 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * One reading position to store. [chapterIndex] is absolute (plugin books: ToC index).
- * [fraction] null keeps the stored reading progress.
+ * Null [fraction], [anchorText] or [chapterHref] keeps the stored value.
  */
 data class ProgressUpdate(
     val bookId: String,
@@ -18,7 +18,14 @@ data class ProgressUpdate(
     val charOffset: Int,
     val fraction: Float?,
     val at: Long,
+    val anchorText: String? = null,
+    val chapterHref: String? = null,
 )
+
+/** Maps a locus in the open reading window to a full [ProgressUpdate]. */
+fun interface ProgressLocator {
+    fun locate(locus: Locus, at: Long): ProgressUpdate
+}
 
 /**
  * The only writer of reading positions (reader, TTS with the reader closed, plugin seeks).
@@ -35,7 +42,7 @@ class ProgressWriter(
     private val lastWrittenAt = HashMap<String, Long>()
     private val writeLock = Mutex()
     private val wake = Channel<Unit>(Channel.CONFLATED)
-    private val meters = HashMap<String, (Locus) -> Float>()
+    private val locators = HashMap<String, ProgressLocator>()
 
     init {
         scope.launch {
@@ -46,15 +53,19 @@ class ProgressWriter(
         }
     }
 
-    /** Fraction source for TTS-driven writes; replaced whenever the reader (re)loads [bookId]. */
-    fun setMeter(bookId: String, meter: ((Locus) -> Float)?) {
-        synchronized(meters) {
-            if (meter == null) meters.remove(bookId) else meters[bookId] = meter
+    /** Locator for [bookId]'s current reading window; replaced whenever the reader (re)loads it. */
+    fun setLocator(bookId: String, locator: ProgressLocator?) {
+        synchronized(locators) {
+            if (locator == null) locators.remove(bookId) else locators[bookId] = locator
         }
     }
 
-    fun fractionFor(bookId: String, locus: Locus): Float? =
-        synchronized(meters) { meters[bookId] }?.invoke(locus)?.coerceIn(0f, 1f)
+    /** Update for [locus] in [bookId]'s window; without a locator, indices are stored as given. */
+    fun locate(bookId: String, locus: Locus, at: Long): ProgressUpdate {
+        val locator = synchronized(locators) { locators[bookId] }
+        return locator?.locate(locus, at)
+            ?: ProgressUpdate(bookId, locus.chapterIndex, locus.blockIndex, locus.charOffset, null, at)
+    }
 
     fun submit(update: ProgressUpdate, flush: Boolean = false) {
         if (update.bookId.isBlank()) return
@@ -83,8 +94,11 @@ class ProgressWriter(
                 chapterIndex = update.chapterIndex,
                 blockIndex = update.blockIndex,
                 charOffset = update.charOffset,
-                readingProgress = update.fraction ?: row.readingProgress,
+                readingProgress = update.fraction?.coerceIn(0f, 1f) ?: row.readingProgress,
                 updatedAt = update.at,
+                locusVersion = ProgressEntity.LOCUS_CURRENT,
+                anchorText = update.anchorText ?: row.anchorText,
+                chapterHref = update.chapterHref ?: row.chapterHref,
             ),
         )
         lastWrittenAt[update.bookId] = update.at

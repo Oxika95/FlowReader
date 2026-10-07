@@ -23,35 +23,51 @@ object SentenceSplitter {
         flexChars: Int = DEFAULT_FLEX_CHARS,
     ): List<Sentence> {
         val out = ArrayList<Sentence>()
-        doc.chapters.forEachIndexed { ci, chapter ->
-            chapter.blocks.forEachIndexed { bi, block ->
-                val text = block.text.trim()
-                if (text.isEmpty()) return@forEachIndexed
-                val parts = SentenceLengthNormalizer.normalize(
-                    KoehnSentenceBreak.split(text),
-                    targetChars = targetChars,
-                    flexChars = flexChars,
-                )
-                if (parts.isEmpty()) {
-                    appendCapped(out, ci, bi, text, 0)
-                    return@forEachIndexed
+        doc.chapters.forEachIndexed { ci, chapter -> splitInto(out, ci, chapter, targetChars, flexChars) }
+        return out
+    }
+
+    /** Sentences of one chapter, tagged with [chapterIndex]. */
+    fun splitChapter(
+        chapterIndex: Int,
+        chapter: Chapter,
+        targetChars: Int = DEFAULT_TARGET_CHARS,
+        flexChars: Int = DEFAULT_FLEX_CHARS,
+    ): List<Sentence> = ArrayList<Sentence>().also { splitInto(it, chapterIndex, chapter, targetChars, flexChars) }
+
+    private fun splitInto(
+        out: MutableList<Sentence>,
+        ci: Int,
+        chapter: Chapter,
+        targetChars: Int,
+        flexChars: Int,
+    ) {
+        chapter.blocks.forEachIndexed { bi, block ->
+            val text = block.text.trim()
+            if (text.isEmpty()) return@forEachIndexed
+            val parts = SentenceLengthNormalizer.normalize(
+                KoehnSentenceBreak.split(text),
+                targetChars = targetChars,
+                flexChars = flexChars,
+            )
+            if (parts.isEmpty()) {
+                appendCapped(out, ci, bi, text, 0)
+                return@forEachIndexed
+            }
+            var cursor = 0
+            for (part in parts) {
+                val idx = text.indexOf(part, cursor)
+                val start = if (idx >= 0) {
+                    idx
+                } else {
+                    val key = part.take(16)
+                    val fallback = text.indexOf(key, cursor)
+                    if (fallback >= 0) fallback else cursor
                 }
-                var cursor = 0
-                for (part in parts) {
-                    val idx = text.indexOf(part, cursor)
-                    val start = if (idx >= 0) {
-                        idx
-                    } else {
-                        val key = part.take(16)
-                        val fallback = text.indexOf(key, cursor)
-                        if (fallback >= 0) fallback else cursor
-                    }
-                    appendCapped(out, ci, bi, part, start)
-                    cursor = (start + part.length).coerceAtMost(text.length)
-                }
+                appendCapped(out, ci, bi, part, start)
+                cursor = (start + part.length).coerceAtMost(text.length)
             }
         }
-        return out
     }
 
     private fun appendCapped(

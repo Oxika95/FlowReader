@@ -27,7 +27,8 @@ data class BookDoc(
 
     /**
      * Flat reading list. When [includeChapterTitles] is true, inserts each non-blank
-     * chapter title as a heading row (skipped when the chapter already opens with that heading).
+     * chapter title as a heading row (skipped when the chapter already opens with that heading,
+     * or has no blocks, e.g. outside the loaded window).
      */
     fun readingItems(includeChapterTitles: Boolean): List<ReaderItem> {
         if (!includeChapterTitles) {
@@ -38,6 +39,7 @@ data class BookDoc(
             }
         }
         return chapters.flatMapIndexed { chapterIndex, chapter ->
+            if (chapter.blocks.isEmpty()) return@flatMapIndexed emptyList()
             buildList {
                 val title = chapter.title.trim()
                 val first = chapter.blocks.firstOrNull()

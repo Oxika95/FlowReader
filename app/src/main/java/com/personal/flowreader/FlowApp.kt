@@ -13,6 +13,7 @@ import com.personal.flowreader.data.MIGRATION_3_4
 import com.personal.flowreader.data.MIGRATION_4_5
 import com.personal.flowreader.data.MIGRATION_5_6
 import com.personal.flowreader.data.MIGRATION_6_7
+import com.personal.flowreader.data.MIGRATION_7_8
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.plugin.PluginManager
 import com.personal.flowreader.plugin.PluginMigrations
@@ -66,6 +67,7 @@ class FlowApp : Application() {
                 MIGRATION_4_5,
                 MIGRATION_5_6,
                 MIGRATION_6_7,
+                MIGRATION_7_8,
             )
             .build()
         settings = SettingsStore(this)
@@ -112,16 +114,7 @@ class FlowApp : Application() {
                 .collect { spoken ->
                     val (bookId, sentence) = spoken ?: return@collect
                     val locus = Locus(sentence.chapterIndex, sentence.blockIndex, sentence.start)
-                    progress.submit(
-                        ProgressUpdate(
-                            bookId = bookId,
-                            chapterIndex = tts.absoluteChapter(sentence.chapterIndex),
-                            blockIndex = sentence.blockIndex,
-                            charOffset = sentence.start,
-                            fraction = progress.fractionFor(bookId, locus),
-                            at = System.currentTimeMillis(),
-                        ),
-                    )
+                    progress.submit(progress.locate(bookId, locus, System.currentTimeMillis()))
                 }
         }
     }

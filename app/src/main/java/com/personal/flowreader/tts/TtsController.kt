@@ -18,13 +18,12 @@ import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import androidx.core.content.ContextCompat
 import com.personal.flowreader.FlowApp
-import com.personal.flowreader.data.BookDoc
-import com.personal.flowreader.data.Chapter
 import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.Locus
+import com.personal.flowreader.data.ReadingSession
 import com.personal.flowreader.data.Sentence
-import com.personal.flowreader.data.SentenceSplitter
+import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.data.TtsEngineOption
@@ -134,24 +133,21 @@ class TtsController(
         val seedSec: Double,
     )
 
-    /** Volatile: written on Main, read by cache sweeps on IO. */
+    /** Open book shared with the reader; grows chapter by chapter as playback advances. */
     @Volatile
-    private var sentences: List<Sentence> = emptyList()
+    private var reading: ReadingSession? = null
+    /** Stable indices: the window growing or trimming never renumbers the playhead. */
+    private val sentences: SentenceTable
+        get() = reading?.window?.value?.table ?: SentenceTable.EMPTY
     /** TTS-only filter rules; applied at speak/synthesize time on sentence text. */
     @Volatile
     private var speechFilters: List<FilterRule> = emptyList()
-    /** Sanitized book id; scopes cache file names so books never share clips. */
+    /** Book id + sentence numbering origin; scopes cache file names so clips never mismatch. */
     @Volatile
     private var bookKey = ""
     @Volatile
     private var attachedBookId = ""
-    @Volatile
-    private var moreProvider: (suspend () -> Boolean)? = null
-    @Volatile
-    private var attachedDoc: BookDoc? = null
-    /** Added to sentence chapter indices to get the stored (absolute) chapter; plugin windows. */
-    @Volatile
-    private var chapterOffset = 0
+    private var focusedChapter: Int? = null
     @Volatile
     private var index = 0
     private var playJob: Job? = null
@@ -171,8 +167,6 @@ class TtsController(
     private var suppressSessionPlay = false
     @Volatile
     private var bookTitle: String = ""
-    @Volatile
-    private var chapterTitles: List<String> = emptyList()
     @Volatile
     private var coverArt: Bitmap? = null
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -224,7 +218,7 @@ class TtsController(
         // Prefer the heard sentence (UI index), not the write-ahead playhead.
         val heard = _state.value.sentenceIndex
         val s = sentences.getOrNull(heard) ?: sentences.getOrNull(index) ?: return _state.value.snippet
-        val chapter = chapterTitles.getOrNull(s.chapterIndex).orEmpty()
+        val chapter = reading?.window?.value?.chapterTitle(s.chapterIndex).orEmpty()
         return chapter.ifBlank { s.text.take(120) }
     }
 
@@ -274,25 +268,20 @@ class TtsController(
         }
     }
 
-    /** Stored chapter index for a sentence's [chapterIndex]. */
-    fun absoluteChapter(chapterIndex: Int): Int = chapterOffset + chapterIndex
+    /** Session playback is attached to; a reader reopening the same content reuses it. */
+    fun attachedSession(): ReadingSession? = reading
 
     fun attach(
-        bookId: String,
-        book: BookDoc,
+        session: ReadingSession,
         start: Locus,
         speechFilters: List<FilterRule> = emptyList(),
-        chapterOffset: Int = 0,
     ) {
         // Reopening the reader on the book that is already playing must not interrupt it.
-        if (bookId == attachedBookId && book == attachedDoc &&
-            speechFilters == this.speechFilters && sentences.isNotEmpty() &&
-            chapterOffset == this.chapterOffset
-        ) {
+        if (session === reading && speechFilters == this.speechFilters) {
             _state.update { it.copy(following = it.autoScrollWithTts) }
             return
         }
-        this.chapterOffset = chapterOffset
+        val bookId = session.bookId
         val sameBook = bookId == attachedBookId
         val resume = sameBook && _state.value.playing
         // Sync teardown so a new book never shares a live player/loop (QuickNovel stop-before-play).
@@ -306,57 +295,40 @@ class TtsController(
         abandonAudioFocus()
         unregisterNoisyReceiver()
         TtsPlaybackService.stop()
-        // Always drop the previous book's streaming provider — setMoreProvider(null)
-        // is a no-op once attachedBookId has already moved on.
-        moreProvider = null
+        reading?.let { previous -> scope.launch { previous.setFocus(ReadingSession.FOCUS_TTS, null) } }
+        reading = session
+        focusedChapter = null
         attachedBookId = bookId
-        bookKey = sanitizeBookKey(bookId)
-        bookTitle = book.title
-        _state.value = _state.value.copy(bookId = bookId, bookTitle = book.title)
-        chapterTitles = book.chapters.map { it.title }
-        attachedDoc = book
+        bookKey = cacheKeyFor(session)
+        val title = session.window.value.title
+        bookTitle = title
+        _state.value = _state.value.copy(bookId = bookId, bookTitle = title)
         coverArt?.recycle()
         coverArt = null
         this.speechFilters = speechFilters
-        sentences = emptyList()
-        index = 0
+        index = sentences.indexAt(start)
         wordBoundariesBySentence.clear()
         cuesBySentence.clear()
+        val first = sentences.getOrNull(index)
         _state.update {
             it.copy(
                 playing = false,
                 sessionActive = sameBook && it.sessionActive,
                 following = it.autoScrollWithTts,
-                sentence = null,
-                sentenceIndex = 0,
-                snippet = "",
+                sentence = first,
+                sentenceIndex = index,
+                snippet = first?.text.orEmpty(),
                 error = null,
                 wordHighlight = null,
                 readySentenceIndices = emptySet(),
                 generatingSentenceIndices = emptySet(),
             )
         }
+        focusChapter(first)
         ensureSession()
         updateSessionMetadata()
         setSessionState(PlaybackState.STATE_PAUSED)
         scope.launch {
-            val target = _state.value.clipTargetChars
-            val flex = _state.value.clipFlexChars
-            val split = withContext(Dispatchers.Default) {
-                SentenceSplitter.split(book, targetChars = target, flexChars = flex)
-            }
-            if (attachedBookId != bookId) return@launch
-            sentences = split
-            index = SentenceSplitter.indexAt(sentences, start)
-            val s = sentences.getOrNull(index)
-            _state.update {
-                it.copy(
-                    sentence = s,
-                    sentenceIndex = index,
-                    snippet = s?.text.orEmpty(),
-                )
-            }
-            updateSessionMetadata()
             if (resume) startPlayback()
             val center = index
             // Disk work for the rail (drop other books, trim to window, rescan) stays off main.
@@ -369,7 +341,7 @@ class TtsController(
             _state.update { it.copy(readySentenceIndices = ready) }
             refreshCatalog()
             val cover = withContext(Dispatchers.IO) { loadCoverArt(bookId) }
-            if (bookKey == sanitizeBookKey(bookId)) {
+            if (attachedBookId == bookId) {
                 coverArt?.recycle()
                 coverArt = cover
                 updateSessionMetadata()
@@ -380,48 +352,25 @@ class TtsController(
         }
     }
 
-    /**
-     * Append chapters to the current book without resetting the playhead.
-     * Sentence indices continue after the existing list so Edge prefetch stays valid.
-     */
-    fun extend(addedChapters: List<Chapter>) {
-        if (addedChapters.isEmpty()) return
-        val offset = chapterTitles.size
-        chapterTitles = chapterTitles + addedChapters.map { it.title }
-        val s = _state.value
-        val extra = SentenceSplitter.split(
-            BookDoc(bookTitle, addedChapters),
-            targetChars = s.clipTargetChars,
-            flexChars = s.clipFlexChars,
-        ).map { sent -> sent.copy(chapterIndex = sent.chapterIndex + offset) }
-        if (extra.isEmpty()) return
-        // Keep streaming doc in sync for length-band re-splits.
-        attachedDoc = attachedDoc?.let { prev ->
-            prev.copy(chapters = prev.chapters + addedChapters)
-        } ?: BookDoc(bookTitle, addedChapters)
-        sentences = sentences + extra
-        updateSessionMetadata()
-        if (_state.value.playing) {
-            scheduleAheadPrefetch()
-        }
-        TtsPlaybackService.refresh()
-    }
+    private fun cacheKeyFor(session: ReadingSession): String =
+        sanitizeBookKey(session.bookId) + ".o" + session.window.value.origin
 
-    /**
-     * Optional next-chapter loader for plugin streaming. Cleared when [bookId] no longer matches.
-     */
-    fun setMoreProvider(bookId: String, provider: (suspend () -> Boolean)?) {
-        if (provider == null) {
-            // Clear whenever asked — even if attach() already moved on to another book.
-            moreProvider = null
-        } else if (attachedBookId == bookId) {
-            moreProvider = provider
-        }
-    }
-
+    /** Load the chapter after the window so playback continues (also with the reader closed). */
     private suspend fun pullMore(): Boolean {
-        val provider = moreProvider ?: return false
-        return runCatching { provider() }.getOrDefault(false)
+        val s = reading ?: return false
+        val st = _state.value
+        val loaded = runCatching { s.loadNext(st.clipTargetChars, st.clipFlexChars) }.getOrDefault(false)
+        if (loaded) updateSessionMetadata()
+        return loaded
+    }
+
+    /** Keep the window around the playhead; chapters far behind it are dropped. */
+    private fun focusChapter(sentence: Sentence?) {
+        val chapter = sentence?.chapterIndex ?: return
+        if (chapter == focusedChapter) return
+        focusedChapter = chapter
+        val s = reading ?: return
+        scope.launch { s.setFocus(ReadingSession.FOCUS_TTS, chapter) }
     }
 
     /** Drop Edge clips so refiltered text is not spoken from stale audio. */
@@ -554,7 +503,7 @@ class TtsController(
     fun skipPrev() {
         scope.launch {
             playGate.withLock {
-                if (index <= 0) return@withLock
+                if (index <= sentences.firstIndex) return@withLock
                 index--
                 advancePlayheadLocked()
             }
@@ -678,19 +627,17 @@ class TtsController(
 
     /** Re-chunk sentences after clip-size prefs change; clears Edge cache. */
     private suspend fun resplitAttachedForClipBand() {
-        val doc = attachedDoc ?: return
+        val s0 = reading ?: return
         val bookId = attachedBookId
         val locus = sentences.getOrNull(index)?.let {
             Locus(it.chapterIndex, it.blockIndex, it.start)
         } ?: Locus(0, 0, 0)
         val target = _state.value.clipTargetChars
         val flex = _state.value.clipFlexChars
-        val split = withContext(Dispatchers.Default) {
-            SentenceSplitter.split(doc, targetChars = target, flexChars = flex)
-        }
-        if (attachedBookId != bookId) return
-        sentences = split
-        index = SentenceSplitter.indexAt(sentences, locus)
+        withContext(Dispatchers.Default) { s0.resplit(target, flex) }
+        if (attachedBookId != bookId || reading !== s0) return
+        bookKey = cacheKeyFor(s0)
+        index = sentences.indexAt(locus)
         val s = sentences.getOrNull(index)
         _state.update {
             it.copy(
@@ -842,7 +789,7 @@ class TtsController(
     }
 
     fun jumpTo(locus: Locus) {
-        index = SentenceSplitter.indexAt(sentences, locus)
+        index = sentences.indexAt(locus)
         _state.update {
             it.copy(following = it.autoScrollWithTts)
         }
@@ -1112,6 +1059,7 @@ class TtsController(
         _state.update {
             it.copy(sentence = s, sentenceIndex = index, snippet = s?.text.orEmpty())
         }
+        focusChapter(s)
         updateSessionMetadata()
         TtsPlaybackService.refresh()
         pruneCacheToWindow(index)
@@ -1127,6 +1075,7 @@ class TtsController(
         _state.update {
             it.copy(sentence = s, sentenceIndex = heardIndex, snippet = s.text)
         }
+        focusChapter(s)
         updateSessionMetadata()
         TtsPlaybackService.refresh()
     }
@@ -1324,7 +1273,7 @@ class TtsController(
 
     /** Start prefetch for [i] without canceling any other sentence's job. */
     private fun launchPrefetchJob(i: Int) {
-        if (i < 0 || i > sentences.lastIndex) return
+        if (i < sentences.firstIndex || i > sentences.lastIndex) return
         if (edgeJobs[i]?.isActive == true) return
         lateinit var job: Job
         job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
@@ -1342,7 +1291,7 @@ class TtsController(
 
     /** Request lookahead fill without canceling in-flight work for the same sentence. */
     private fun ensurePrefetchJob(i: Int) {
-        if (i < 0 || i > sentences.lastIndex) return
+        if (i < sentences.firstIndex || i > sentences.lastIndex) return
         if (peekReadyCacheFile(i) != null) return
         scheduleAheadPrefetch()
     }
@@ -1454,7 +1403,7 @@ class TtsController(
 
     /** Non-blocking: file present on disk with bytes. Does not start or join synth. */
     private fun peekReadyCacheFile(i: Int): File? {
-        if (i < 0 || i > sentences.lastIndex) return null
+        if (i < sentences.firstIndex || i > sentences.lastIndex) return null
         val f = cacheFile(i)
         return if (f.exists() && f.length() > 0L) f else null
     }
@@ -1957,7 +1906,7 @@ class TtsController(
     private fun cacheWindow(center: Int = index): IntRange {
         val n = effectivePrefetchCount()
         if (sentences.isEmpty()) return IntRange.EMPTY
-        val lo = (center - n).coerceAtLeast(0)
+        val lo = (center - n).coerceAtLeast(sentences.firstIndex)
         val hi = (center + n).coerceAtMost(sentences.lastIndex)
         return lo..hi
     }

@@ -264,20 +264,26 @@ class PluginBookStore(private val plugins: PluginManager) {
         return seekToChapter(bookId, startIndex.coerceIn(0, existing.toc.lastIndex))
     }
 
-    /**
-     * Hydrate only the saved reading chapter ([savedChapter], absolute ToC index) into memory;
-     * maintain the cache around it. The stream restarts there so reopen never lands on an
-     * older stream start.
-     */
-    suspend fun resumeRead(bookId: String, savedChapter: Int): PluginReadSession {
+    /** Story metadata for windowed reading (work fetched once if missing); no chapters loaded. */
+    suspend fun openStory(bookId: String): PluginReadSession {
         val r = ref(bookId)
-        val existing = read(r)?.takeIf { it.toc.isNotEmpty() } ?: fetchAndStoreWork(r.plugin.id, r.workId)
-        val target = savedChapter.coerceIn(0, existing.toc.lastIndex)
-        val session = existing.copy(startIndex = target, chapters = emptyList(), loadedThrough = target - 1)
-        if (target != existing.startIndex) PluginSessionStore.writeMeta(r.dir, session)
-        val loaded = loadThrough(r, session, target)
-        runCatching { maintainChapterCache(bookId, target) }
-        return loaded
+        return read(r)?.takeIf { it.toc.isNotEmpty() } ?: fetchAndStoreWork(r.plugin.id, r.workId)
+    }
+
+    /** Chapter [index] (absolute ToC index): cached text, else fetched, cached and synced. */
+    suspend fun chapter(session: PluginReadSession, index: Int): Chapter {
+        val r = ref(session.bookId)
+        val prefix = r.plugin.manifest.bookIdPrefix
+        val chapterRef = session.toc.getOrNull(index)
+            ?: throw PluginException(PluginErrorCode.Error, "Chapter ${index + 1} missing")
+        PluginSessionStore.readChapterText(r.dir, index)?.let { (title, text) ->
+            return Chapter(title, blocksFromPlain(text, prefix, index))
+        }
+        val fetched = source(r).loadChapter(chapterRef, session.workId, session.workUrl)
+        val (title, text) = titleAndText(fetched, chapterRef.title, prefix, index)
+        PluginSessionStore.writeChapter(r.dir, index, title, text)
+        syncProgress(session, index)
+        return Chapter(title, blocksFor(fetched, prefix, index))
     }
 
     /** Re-open the stream at an absolute ToC index (reader ToC jumps, splash Read). */
@@ -290,14 +296,6 @@ class PluginBookStore(private val plugins: PluginManager) {
         PluginSessionStore.writeMeta(r.dir, session)
         val loaded = loadThrough(r, session, start)
         maintainChapterCache(bookId, start)
-        return loaded
-    }
-
-    suspend fun appendNext(session: PluginReadSession): PluginReadSession? {
-        val next = session.nextIndex() ?: return null
-        val r = ref(session.bookId)
-        val loaded = loadThrough(r, session, next)
-        runCatching { maintainChapterCache(loaded.bookId, next) }
         return loaded
     }
 

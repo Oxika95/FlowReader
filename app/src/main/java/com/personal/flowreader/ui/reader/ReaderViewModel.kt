@@ -7,18 +7,22 @@ import androidx.lifecycle.viewModelScope
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.BookDoc
 import com.personal.flowreader.data.BookFiltersEntity
-import com.personal.flowreader.data.EpubIngest
+import com.personal.flowreader.data.ChapterSource
 import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.Locus
-import com.personal.flowreader.data.ProgressUpdate
+import com.personal.flowreader.data.LocusAnchor
+import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.ReadingSession
+import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.data.TextFilters
-import com.personal.flowreader.data.TxtIngest
-import com.personal.flowreader.plugin.store.PluginReadSession
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -26,7 +30,10 @@ import kotlinx.coroutines.withContext
 
 data class ReaderUi(
     val title: String = "",
+    /** Loaded chapters only; chapters outside the reading window have no blocks. */
     val doc: BookDoc? = null,
+    /** Sentences of the loaded chapters (stable indices, see [SentenceTable]). */
+    val sentences: SentenceTable = SentenceTable.EMPTY,
     val locus: Locus = Locus(),
     val error: String? = null,
     val loading: Boolean = true,
@@ -37,10 +44,12 @@ data class ReaderUi(
     val filtersGlobal: List<FilterRule> = emptyList(),
     val filtersGroups: List<FilterRule> = emptyList(),
     val filtersLocal: List<FilterRule> = emptyList(),
-    /** Full ToC titles (plugin stories use the saved session ToC; otherwise [doc] chapters). */
+    /** ToC row labels. */
     val tocTitles: List<String> = emptyList(),
-    /** Absolute ToC index for the current locus highlight. */
+    /** ToC row for the current locus highlight. */
     val tocIndex: Int = 0,
+    /** Whole-book progress 0–1 at [locus]. */
+    val fraction: Float = 0f,
 )
 
 class ReaderViewModel(
@@ -56,11 +65,11 @@ class ReaderViewModel(
     private val _ui = MutableStateFlow(ReaderUi())
     val ui: StateFlow<ReaderUi> = _ui
 
-    private var rawDoc: BookDoc? = null
-    private var storedPath: String = ""
-    private var pluginSession: PluginReadSession? = null
-    private val isPluginBook: Boolean = flow.pluginBooks.isPluginBook(bookId)
-    private val appendMutex = Mutex()
+    private var book: ReaderBook? = null
+    private var session: ReadingSession? = null
+    private var windowJob: Job? = null
+    private val showLock = Mutex()
+    private var viewport: IntRange? = null
 
     /**
      * True once the user or TTS moved the position after load. The loaded (possibly clamped)
@@ -76,111 +85,154 @@ class ReaderViewModel(
         try {
             val row = flow.db.progress().get(bookId)
                 ?: throw IllegalArgumentException("Book not found")
-            storedPath = row.storedPath
-            val doc = withContext(Dispatchers.IO) {
-                if (isPluginBook) {
-                    loadPluginStory(row.chapterIndex)
-                } else {
-                    val file = flow.catalog.materialize(row)
-                    if (file.extension.equals("txt", true)) TxtIngest.read(file) else EpubIngest.read(file)
-                }
-            }
-            rawDoc = doc
+            val opened = withContext(Dispatchers.IO) { openBook(row) }
+            if (opened.chapterCount == 0) throw IllegalStateException("No readable chapters")
+            book = opened
             val global = flow.settings.globalFiltersOnce()
             val groups = flow.settings.groupFiltersOnce()
             val local = loadLocalFilters()
-            // Auto-advance starts each Que document from the beginning so a shared
-            // file that was already finished does not immediately re-emit bookFinished.
+            _ui.update {
+                it.copy(
+                    title = opened.title,
+                    storedPath = row.storedPath,
+                    filtersGlobal = global,
+                    filtersGroups = groups,
+                    filtersLocal = local,
+                    tocTitles = opened.toc.map { (_, label) -> label },
+                )
+            }
+            val rules = TextFilters.merge(global, groups, local)
+            val reuse = tts.attachedSession()
+                ?.takeIf { it.bookId == bookId && it.contentKey == ReaderSessions.contentKey(rules) }
+            // Playback may have continued after the reader closed; it is newer than the saved row.
             val spoken = tts.state.value.takeIf { it.bookId == bookId }?.sentence
-            val locus = if (autoPlay) {
-                Locus()
-            } else if (spoken != null && pluginSession == null) {
-                // Playback may have continued after the reader closed; it is newer than the saved row.
-                Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start)
-            } else if (pluginSession != null) {
-                // Progress stores absolute ToC chapter; BookDoc chapters are relative to startIndex.
-                val rel = (row.chapterIndex - pluginSession!!.startIndex).coerceAtLeast(0)
-                Locus(rel, row.blockIndex, row.charOffset)
-            } else {
-                Locus(row.chapterIndex, row.blockIndex, row.charOffset)
+            when {
+                // Auto-advance starts each Que document from the beginning so a shared
+                // file that was already finished does not immediately re-emit bookFinished.
+                autoPlay -> show(Locus(), rules, reuse = null)
+                spoken != null -> show(Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start), rules, reuse)
+                else -> show(savedLocus(row, opened), rules, reuse, anchor = row.anchorText)
             }
-            applyFilters(global, groups, local, locus, invalidateCache = false)
-            if (isPluginBook) {
-                tts.setMoreProvider(bookId) { appendPluginChapter() }
-                viewModelScope.launch { appendPluginChapter() }
-            }
-            if (autoPlay && !sentencesEmpty()) {
-                tts.play()
-            }
+            if (autoPlay && _ui.value.sentences.isNotEmpty()) tts.play()
+        } catch (e: CancellationException) {
+            throw e
         } catch (t: Throwable) {
             _ui.value = ReaderUi(error = t.message ?: "Failed to open", loading = false)
         }
     }
 
-    private suspend fun loadPluginStory(savedChapter: Int): BookDoc {
-        val session = flow.pluginBooks.resumeRead(bookId, savedChapter)
-        pluginSession = session
-        flow.pluginBooks.syncProgress(session, session.startIndex)
-        return BookDoc(session.title, session.chapters)
+    private suspend fun openBook(row: ProgressEntity): ReaderBook =
+        if (flow.pluginBooks.isPluginBook(bookId)) {
+            val story = flow.pluginBooks.openStory(bookId)
+            ReaderBook.plugin(flow.pluginBooks, story)
+        } else {
+            ReaderBook.local(ChapterSource.open(flow.catalog.materialize(row), row.title))
+        }
+
+    /** Saved position in current chapter indices; pre-chapter-source rows are mapped once. */
+    private suspend fun savedLocus(row: ProgressEntity, book: ReaderBook): Locus {
+        val stored = Locus(row.chapterIndex, row.blockIndex, row.charOffset)
+        val locus = if (row.locusVersion < ProgressEntity.LOCUS_CURRENT) {
+            val mapped = withContext(Dispatchers.IO) { book.legacyLocus(stored) }
+            flow.db.progress().upsert(
+                row.copy(
+                    chapterIndex = mapped.chapterIndex,
+                    blockIndex = mapped.blockIndex,
+                    charOffset = mapped.charOffset,
+                    locusVersion = ProgressEntity.LOCUS_CURRENT,
+                    chapterHref = book.href(mapped.chapterIndex),
+                ),
+            )
+            mapped
+        } else {
+            val byHref = book.indexOfHref(row.chapterHref)
+            if (byHref >= 0) stored.copy(chapterIndex = byHref) else stored
+        }
+        return locus.copy(chapterIndex = locus.chapterIndex.coerceIn(0, book.chapterCount - 1))
     }
 
-    private suspend fun persistPluginSnapshot(session: PluginReadSession) {
-        // Keep book.txt to the stream window so it does not grow without bound.
-        val window = (session.keepBehind + 1 + session.prefetchAhead).coerceAtLeast(1)
-        val slice = session.chapters.takeLast(window)
-        val text = slice.joinToString("\n\n") { chapter ->
-            buildString {
-                if (chapter.title.isNotBlank()) {
-                    append(chapter.title)
-                    append("\n\n")
+    /**
+     * Show [start]: reuse [reuse] when it already holds that chapter, else open a session around
+     * it. TTS attaches to the same session; [anchor] re-finds a saved position whose indices drifted.
+     */
+    private suspend fun show(
+        start: Locus,
+        rules: List<FilterRule>,
+        reuse: ReadingSession?,
+        anchor: String = "",
+        invalidateCache: Boolean = false,
+    ) = showLock.withLock {
+        val b = book ?: return@withLock
+        val clip = tts.state.value
+        val s = reuse?.takeIf { it.window.value.chapters.containsKey(start.chapterIndex) }
+            ?: ReaderSessions.open(bookId, b, start.chapterIndex, rules, clip.clipTargetChars, clip.clipFlexChars)
+        val window = s.window.value
+        val anchored = window.chapters[start.chapterIndex]
+            ?.let { LocusAnchor.resolve(it.chapter, start, anchor) }
+            ?: start
+        val locus = ReaderSessions.readable(window, anchored)
+        if (invalidateCache) tts.invalidateEdgeCache()
+        session?.takeIf { it !== s }?.let { releaseFocus(it) }
+        session = s
+        viewport = null
+        flow.progress.setLocator(bookId, ReaderSessions.locator(bookId, b, s))
+        tts.attach(s, locus, speechFilters = rules.filter { it.ttsOnly })
+        s.setFocus(ReadingSession.FOCUS_READER, locus.chapterIndex)
+        s.setFocus(ReadingSession.FOCUS_READER_END, locus.chapterIndex)
+        _ui.update {
+            it.copy(
+                doc = window.doc,
+                sentences = window.table,
+                replacedRangesByBlockId = window.replacedRangesByBlockId,
+                locus = locus,
+                loading = false,
+                error = null,
+                tocIndex = b.tocRowOf(locus.chapterIndex),
+                fraction = ReaderSessions.fraction(b, window, locus),
+            )
+        }
+        collectWindow(s)
+        viewModelScope.launch {
+            s.loadAdjacent(locus.chapterIndex + 1, clip.clipTargetChars, clip.clipFlexChars)
+            s.loadAdjacent(locus.chapterIndex - 1, clip.clipTargetChars, clip.clipFlexChars)
+        }
+    }
+
+    private fun collectWindow(s: ReadingSession) {
+        windowJob?.cancel()
+        windowJob = viewModelScope.launch {
+            s.window.collect { w ->
+                _ui.update {
+                    it.copy(doc = w.doc, sentences = w.table, replacedRangesByBlockId = w.replacedRangesByBlockId)
                 }
-                append(chapter.blocks.joinToString("\n\n") { it.text })
             }
         }
-        flow.catalog.upsertPluginBook(
-            bookId = session.bookId,
-            title = session.title,
-            sourceUri = session.workUrl,
-            sourceKind = session.pluginId,
-            text = text.ifBlank { session.title },
-        )
     }
 
-    suspend fun appendPluginChapter(): Boolean = appendMutex.withLock {
-        val session = pluginSession ?: return false
-        val next = withContext(Dispatchers.IO) { flow.pluginBooks.appendNext(session) } ?: return false
-        pluginSession = next
-        val addedRaw = next.chapters.last()
-        val raw = rawDoc ?: return false
-        rawDoc = raw.copy(chapters = raw.chapters + addedRaw)
-        val merged = TextFilters.merge(
-            _ui.value.filtersGlobal,
-            _ui.value.filtersGroups,
-            _ui.value.filtersLocal,
-        )
-        val filtered = TextFilters.applyVisual(rawDoc!!, merged)
-        val addedFiltered = filtered.doc.chapters.takeLast(1)
-        tts.extend(addedFiltered)
-        val tocTitles = tocTitlesFor(next, filtered.doc)
-        _ui.value = _ui.value.copy(
-            doc = filtered.doc,
-            replacedRangesByBlockId = filtered.replacedRangesByBlockId,
-            tocTitles = tocTitles,
-            tocIndex = tocIndexFor(next, _ui.value.locus, tocTitles.size),
-        )
-        withContext(Dispatchers.IO) {
-            persistPluginSnapshot(next)
-            flow.pluginBooks.syncProgress(next, next.loadedThrough)
-            runCatching {
-                flow.pluginBooks.maintainChapterCache(next.bookId, next.loadedThrough)
-            }
+    /**
+     * Chapters [first]..[last] are on screen: keep them and one neighbour each side loaded,
+     * drop the rest (unless TTS is reading there).
+     */
+    fun onViewport(first: Int, last: Int) {
+        val s = session ?: return
+        val visible = first..last
+        if (visible == viewport) return
+        viewport = visible
+        viewModelScope.launch {
+            s.setFocus(ReadingSession.FOCUS_READER, first)
+            s.setFocus(ReadingSession.FOCUS_READER_END, last)
+            val clip = tts.state.value
+            val range = s.window.value.loaded ?: return@launch
+            if (last >= range.last) s.loadAdjacent(range.last + 1, clip.clipTargetChars, clip.clipFlexChars)
+            if (first <= range.first) s.loadAdjacent(range.first - 1, clip.clipTargetChars, clip.clipFlexChars)
         }
-        true
     }
 
-    private fun sentencesEmpty(): Boolean {
-        val doc = _ui.value.doc ?: return true
-        return doc.chapters.all { it.blocks.isEmpty() }
+    private fun releaseFocus(s: ReadingSession) {
+        flow.appScope.launch {
+            s.setFocus(ReadingSession.FOCUS_READER, null)
+            s.setFocus(ReadingSession.FOCUS_READER_END, null)
+        }
     }
 
     /**
@@ -202,178 +254,38 @@ class ReaderViewModel(
         return TextFilters.decodeRules(json)
     }
 
-    private fun applyFilters(
-        global: List<FilterRule>,
-        groups: List<FilterRule>,
-        local: List<FilterRule>,
-        locus: Locus = _ui.value.locus,
-        invalidateCache: Boolean,
-    ) {
-        val raw = rawDoc ?: return
-        val merged = TextFilters.merge(global, groups, local)
-        val filtered = TextFilters.applyVisual(raw, merged)
-        val clamped = clampLocus(locus, filtered.doc)
-        if (invalidateCache) tts.invalidateEdgeCache()
-        tts.attach(
-            bookId,
-            filtered.doc,
-            clamped,
-            speechFilters = merged.filter { it.ttsOnly },
-            chapterOffset = pluginSession?.startIndex ?: 0,
-        )
-        val meterDoc = filtered.doc
-        flow.progress.setMeter(bookId) { ReaderProgressPolicy.fraction(meterDoc, it) }
-        val tocTitles = tocTitlesFor(pluginSession, filtered.doc)
-        _ui.value = ReaderUi(
-            title = filtered.doc.title,
-            doc = filtered.doc,
-            locus = clamped,
-            loading = false,
-            storedPath = storedPath,
-            replacedRangesByBlockId = filtered.replacedRangesByBlockId,
-            filtersGlobal = global,
-            filtersGroups = groups,
-            filtersLocal = local,
-            tocTitles = tocTitles,
-            tocIndex = tocIndexFor(pluginSession, clamped, tocTitles.size),
-        )
-    }
-
-    private fun tocTitlesFor(session: PluginReadSession?, doc: BookDoc): List<String> {
-        if (session != null && session.toc.isNotEmpty()) {
-            return session.toc.mapIndexed { i, link ->
-                link.title.ifBlank { "Chapter ${i + 1}" }
-            }
-        }
-        return doc.chapters.mapIndexed { i, ch ->
-            ch.title.ifBlank { "Chapter ${i + 1}" }
-        }
-    }
-
-    private fun tocIndexFor(
-        session: PluginReadSession?,
-        locus: Locus,
-        tocSize: Int,
-    ): Int {
-        if (tocSize <= 0) return 0
-        return if (session != null) {
-            (session.startIndex + locus.chapterIndex).coerceIn(0, tocSize - 1)
-        } else {
-            locus.chapterIndex.coerceIn(0, tocSize - 1)
-        }
-    }
-
-    private fun reapply(
+    private suspend fun reapply(
         global: List<FilterRule> = _ui.value.filtersGlobal,
         groups: List<FilterRule> = _ui.value.filtersGroups,
         local: List<FilterRule> = _ui.value.filtersLocal,
     ) {
-        applyFilters(global, groups, local, invalidateCache = true)
+        _ui.update { it.copy(filtersGlobal = global, filtersGroups = groups, filtersLocal = local) }
+        if (book == null) return
+        show(_ui.value.locus, TextFilters.merge(global, groups, local), reuse = null, invalidateCache = true)
     }
 
-    private fun clampLocus(locus: Locus, doc: BookDoc): Locus {
-        if (doc.chapters.isEmpty()) return Locus()
-        val ci = locus.chapterIndex.coerceIn(0, doc.chapters.lastIndex)
-        val blocks = doc.chapters[ci].blocks
-        if (blocks.isEmpty()) return Locus(ci, 0, 0)
-        val bi = locus.blockIndex.coerceIn(0, blocks.lastIndex)
-        val len = blocks[bi].text.length
-        return Locus(ci, bi, locus.charOffset.coerceIn(0, len))
-    }
-
-    fun addFilter(scope: FilterScope, rule: FilterRule) {
+    private fun editFilters(scope: FilterScope, edit: (List<FilterRule>) -> List<FilterRule>) {
         viewModelScope.launch {
+            val ui = _ui.value
             when (scope) {
-                FilterScope.Global -> {
-                    val next = _ui.value.filtersGlobal + rule.copy(order = nextOrder(_ui.value.filtersGlobal))
-                    persistGlobal(next)
-                    reapply(global = next)
-                }
-                FilterScope.Groups -> {
-                    val next = _ui.value.filtersGroups + rule.copy(order = nextOrder(_ui.value.filtersGroups))
-                    persistGroups(next)
-                    reapply(groups = next)
-                }
-                FilterScope.Local -> {
-                    val next = _ui.value.filtersLocal + rule.copy(order = nextOrder(_ui.value.filtersLocal))
-                    persistLocal(next)
-                    reapply(local = next)
-                }
+                FilterScope.Global -> edit(ui.filtersGlobal).let { flow.settings.setGlobalFilters(it); reapply(global = it) }
+                FilterScope.Groups -> edit(ui.filtersGroups).let { flow.settings.setGroupFilters(it); reapply(groups = it) }
+                FilterScope.Local -> edit(ui.filtersLocal).let { persistLocal(it); reapply(local = it) }
             }
         }
     }
 
-    fun updateFilter(scope: FilterScope, rule: FilterRule) {
-        viewModelScope.launch {
-            when (scope) {
-                FilterScope.Global -> {
-                    val next = _ui.value.filtersGlobal.map { if (it.id == rule.id) rule else it }
-                    persistGlobal(next)
-                    reapply(global = next)
-                }
-                FilterScope.Groups -> {
-                    val next = _ui.value.filtersGroups.map { if (it.id == rule.id) rule else it }
-                    persistGroups(next)
-                    reapply(groups = next)
-                }
-                FilterScope.Local -> {
-                    val next = _ui.value.filtersLocal.map { if (it.id == rule.id) rule else it }
-                    persistLocal(next)
-                    reapply(local = next)
-                }
-            }
-        }
-    }
+    fun addFilter(scope: FilterScope, rule: FilterRule) =
+        editFilters(scope) { it + rule.copy(order = nextOrder(it)) }
 
-    fun setFilterEnabled(scope: FilterScope, id: String, enabled: Boolean) {
-        viewModelScope.launch {
-            when (scope) {
-                FilterScope.Global -> {
-                    val next = _ui.value.filtersGlobal.map {
-                        if (it.id == id) it.copy(enabled = enabled) else it
-                    }
-                    persistGlobal(next)
-                    reapply(global = next)
-                }
-                FilterScope.Groups -> {
-                    val next = _ui.value.filtersGroups.map {
-                        if (it.id == id) it.copy(enabled = enabled) else it
-                    }
-                    persistGroups(next)
-                    reapply(groups = next)
-                }
-                FilterScope.Local -> {
-                    val next = _ui.value.filtersLocal.map {
-                        if (it.id == id) it.copy(enabled = enabled) else it
-                    }
-                    persistLocal(next)
-                    reapply(local = next)
-                }
-            }
-        }
-    }
+    fun updateFilter(scope: FilterScope, rule: FilterRule) =
+        editFilters(scope) { list -> list.map { if (it.id == rule.id) rule else it } }
 
-    fun deleteFilter(scope: FilterScope, id: String) {
-        viewModelScope.launch {
-            when (scope) {
-                FilterScope.Global -> {
-                    val next = _ui.value.filtersGlobal.filterNot { it.id == id }
-                    persistGlobal(next)
-                    reapply(global = next)
-                }
-                FilterScope.Groups -> {
-                    val next = _ui.value.filtersGroups.filterNot { it.id == id }
-                    persistGroups(next)
-                    reapply(groups = next)
-                }
-                FilterScope.Local -> {
-                    val next = _ui.value.filtersLocal.filterNot { it.id == id }
-                    persistLocal(next)
-                    reapply(local = next)
-                }
-            }
-        }
-    }
+    fun setFilterEnabled(scope: FilterScope, id: String, enabled: Boolean) =
+        editFilters(scope) { list -> list.map { if (it.id == id) it.copy(enabled = enabled) else it } }
+
+    fun deleteFilter(scope: FilterScope, id: String) =
+        editFilters(scope) { list -> list.filterNot { it.id == id } }
 
     fun previewApply(
         sample: String,
@@ -404,18 +316,9 @@ class ReaderViewModel(
     }
 
     fun currentBlockSample(): String {
-        val doc = rawDoc ?: _ui.value.doc ?: return ""
         val locus = _ui.value.locus
-        val chapter = doc.chapters.getOrNull(locus.chapterIndex) ?: return ""
+        val chapter = session?.window?.value?.chapters?.get(locus.chapterIndex)?.raw ?: return ""
         return chapter.blocks.getOrNull(locus.blockIndex)?.text.orEmpty()
-    }
-
-    private suspend fun persistGlobal(rules: List<FilterRule>) {
-        flow.settings.setGlobalFilters(rules)
-    }
-
-    private suspend fun persistGroups(rules: List<FilterRule>) {
-        flow.settings.setGroupFilters(rules)
     }
 
     private suspend fun persistLocal(rules: List<FilterRule>) {
@@ -432,35 +335,17 @@ class ReaderViewModel(
     private fun nextOrder(rules: List<FilterRule>): Int =
         (rules.maxOfOrNull { it.order } ?: -1) + 1
 
-    suspend fun jumpToChapter(chapterIndex: Int) {
-        val session = pluginSession
-        if (session != null) {
-            seekPluginChapter(chapterIndex)
+    /** Jump to ToC row [row]; chapters outside the window open a new one around them. */
+    suspend fun jumpToChapter(row: Int) {
+        val b = book ?: return
+        val chapter = (b.toc.getOrNull(row)?.first ?: row).coerceIn(0, b.chapterCount - 1)
+        val loaded = session?.window?.value?.chapters?.get(chapter)
+        if (loaded != null && loaded.chapter.blocks.isNotEmpty()) {
+            jumpTo(Locus(chapter, 0, 0))
             return
         }
-        val doc = _ui.value.doc ?: return
-        val ci = chapterIndex.coerceIn(0, doc.chapters.lastIndex)
-        jumpTo(Locus(ci, 0, 0))
-    }
-
-    private suspend fun seekPluginChapter(absoluteIndex: Int) {
-        val loaded = withContext(Dispatchers.IO) {
-            flow.pluginBooks.seekToChapter(bookId, absoluteIndex)
-        }
-        pluginSession = loaded
-        rawDoc = BookDoc(loaded.title, loaded.chapters)
-        withContext(Dispatchers.IO) {
-            persistPluginSnapshot(loaded)
-            flow.pluginBooks.syncProgress(loaded, loaded.startIndex)
-        }
-        applyFilters(
-            _ui.value.filtersGlobal,
-            _ui.value.filtersGroups,
-            _ui.value.filtersLocal,
-            locus = Locus(0, 0, 0),
-            invalidateCache = true,
-        )
-        // Persist absolute progress at the seek target.
+        val ui = _ui.value
+        show(Locus(chapter, 0, 0), TextFilters.merge(ui.filtersGlobal, ui.filtersGroups, ui.filtersLocal), session)
         positionMoved = true
         persist(_ui.value.locus)
     }
@@ -472,11 +357,15 @@ class ReaderViewModel(
 
     fun onLocus(locus: Locus) {
         positionMoved = true
-        val tocTitles = _ui.value.tocTitles
-        _ui.value = _ui.value.copy(
-            locus = locus,
-            tocIndex = tocIndexFor(pluginSession, locus, tocTitles.size),
-        )
+        val b = book
+        val window = session?.window?.value
+        _ui.update {
+            it.copy(
+                locus = locus,
+                tocIndex = b?.tocRowOf(locus.chapterIndex) ?: it.tocIndex,
+                fraction = if (b != null && window != null) ReaderSessions.fraction(b, window, locus) else it.fraction,
+            )
+        }
         persist(locus)
     }
 
@@ -487,32 +376,14 @@ class ReaderViewModel(
 
     private fun persist(locus: Locus, flush: Boolean = false) {
         val ui = _ui.value
-        val doc = ui.doc
-        if (!ReaderProgressPolicy.mayPersist(bookId, doc != null, ui.loading, ui.error, positionMoved)) return
-        // Plugin sessions start at an absolute ToC index; store absolute chapter for cache/splash.
-        val session = pluginSession
-        val absoluteChapter = if (session != null) {
-            (session.startIndex + locus.chapterIndex).coerceIn(0, (session.toc.size - 1).coerceAtLeast(0))
-        } else {
-            locus.chapterIndex
-        }
-        flow.progress.submit(
-            ProgressUpdate(
-                bookId = bookId,
-                chapterIndex = absoluteChapter,
-                blockIndex = locus.blockIndex,
-                charOffset = locus.charOffset,
-                fraction = ReaderProgressPolicy.fraction(doc!!, locus),
-                at = System.currentTimeMillis(),
-            ),
-            flush = flush,
-        )
+        if (!ReaderProgressPolicy.mayPersist(bookId, ui.doc != null, ui.loading, ui.error, positionMoved)) return
+        flow.progress.submit(flow.progress.locate(bookId, locus, System.currentTimeMillis()), flush = flush)
     }
 
     /** Playback keeps running after the reader closes; the Library now-playing card controls it. */
     override fun onCleared() {
         persistNow()
-        tts.setMoreProvider(bookId, null)
+        session?.let { releaseFocus(it) }
         super.onCleared()
     }
 }

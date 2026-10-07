@@ -185,6 +185,9 @@ class BookCatalog(private val app: FlowApp) {
             } else {
                 existing?.libraryTabId.orEmpty()
             },
+            locusVersion = existing?.locusVersion ?: ProgressEntity.LOCUS_CURRENT,
+            anchorText = existing?.anchorText.orEmpty(),
+            chapterHref = existing?.chapterHref.orEmpty(),
         )
         app.db.progress().upsert(row)
 
@@ -236,6 +239,7 @@ class BookCatalog(private val app: FlowApp) {
             updatedAt = now,
             inLibrary = false,
             readingProgress = existing?.readingProgress ?: 0f,
+            anchorText = if (moved) "" else existing?.anchorText.orEmpty(),
         )
         app.db.progress().upsert(row)
         return row
@@ -273,6 +277,7 @@ class BookCatalog(private val app: FlowApp) {
             updatedAt = now,
             inLibrary = false,
             readingProgress = existing?.readingProgress ?: 0f,
+            anchorText = existing?.anchorText.orEmpty(),
         )
         app.db.progress().upsert(row)
         return row
@@ -393,6 +398,9 @@ class BookCatalog(private val app: FlowApp) {
                 inLibrary = true,
                 readingProgress = existing?.readingProgress ?: 0f,
                 libraryTabId = shelf.ifEmpty { existing?.libraryTabId.orEmpty() },
+                locusVersion = existing?.locusVersion ?: ProgressEntity.LOCUS_CURRENT,
+                anchorText = existing?.anchorText.orEmpty(),
+                chapterHref = existing?.chapterHref.orEmpty(),
             )
             app.db.progress().upsert(row)
             return row
@@ -451,12 +459,12 @@ class BookCatalog(private val app: FlowApp) {
 
     private fun ingestTitle(file: File, ext: String, uri: Uri): String {
         if (ext == "txt") {
-            val name = queryDisplayName(uri)
+            return queryDisplayName(uri)
                 ?.substringBeforeLast('.')
                 ?.ifBlank { null }
-            return TxtIngest.readText(name ?: "Text", file.readText()).title
+                ?: "Text"
         }
-        return EpubIngest.read(file).title
+        return EpubIngest.readTitle(file)
     }
 
     private fun persistReadAccess(uri: Uri) {

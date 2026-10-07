@@ -32,7 +32,18 @@ data class ProgressEntity(
      * Ignored when [inLibrary] is false (Que-only).
      */
     val libraryTabId: String = "",
-)
+    /** Meaning of the locus indices; rows below [LOCUS_CURRENT] are mapped on next open. */
+    val locusVersion: Int = LOCUS_CURRENT,
+    /** Text at the locus, to re-find it if indices drift (see `LocusAnchor`). */
+    val anchorText: String = "",
+    /** Stable key of the locus chapter (EPUB entry path), checked before [chapterIndex]. */
+    val chapterHref: String = "",
+) {
+    companion object {
+        /** 0: whole-book parse (EPUB non-empty chapters, TXT one chapter). 1: `ChapterSource` indices. */
+        const val LOCUS_CURRENT = 1
+    }
+}
 
 @Entity(tableName = "book_filters")
 data class BookFiltersEntity(
@@ -196,9 +207,17 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE progress ADD COLUMN locusVersion INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE progress ADD COLUMN anchorText TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE progress ADD COLUMN chapterHref TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [ProgressEntity::class, BookFiltersEntity::class, QueItemEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

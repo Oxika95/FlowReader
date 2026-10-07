@@ -35,7 +35,11 @@ Show book text as a continuous vertical flow. Tap to reveal title + media cards;
 | Contents | TOC overlay |
 | Prev / Next sentence | Seek TTS locus |
 | Play / Pause | Start or pause TTS |
-| Lock scroll to TTS | Hide chrome and force follow; unlock with **double-tap** on the lock-open control |
+| Lock scroll to TTS | Hide chrome, force follow, disable text selection; locked controls (play/pause centered, unlock on the lock button's spot) each need a **double-tap** |
+
+Long-press the title banner to open the book's media card (same card as the library long-press:
+Files card for local books, story card for plugin books). Open/Read and Remove/Delete are hidden
+because the book is already open.
 
 ### Docks
 
@@ -44,7 +48,7 @@ Chrome lives in two floating docks (`FlowDock`), items stacked edge-inward with 
 | Dock | Items (top to bottom) |
 |------|------------------------|
 | Top | Title banner (chrome open) · pin / jump chip (when the target is above) |
-| Bottom | Pin / jump chip (when the target is below) · Media card (chrome open) · Scroll-lock unlock (locked) |
+| Bottom | Pin / jump chip (when the target is below) · Media card (chrome open) · Scroll-lock play/pause + unlock (locked) |
 
 Settings, Contents and their child editors are fullscreen cards that stack; Back closes the top one.
 
@@ -74,24 +78,37 @@ Math lives in [`ReaderHome.kt`](../app/src/main/java/com/personal/flowreader/ui/
 Free scrolling does **not** update the saved reading position; double-tap play / TTS seek does.
 Leaving the reader does not pause TTS; the Library now-playing card controls it.
 
+### Loading
+
+Opening a book reads only the saved chapter, plus following chapters while it has no text (covers,
+title pages). The neighbouring chapters load right after first paint. Scrolling or playback into
+the first or last loaded chapter loads the next one; chapters far from both the viewport and the
+TTS playhead are dropped (see [data.md](data.md#book-loading)). A ToC jump to a chapter outside the
+window opens a new window there. The progress bar is whole-book progress by chapter size.
+
 ## Gestures
 
 | Gesture | Result |
 |---------|--------|
 | Single tap body / gap / edge band | Toggle chrome (or clear selection / dismiss overlay) |
-| Double tap body | Start TTS at sentence (if “Double-tap starts playback”); disabled while selecting |
+| Double tap body | Seek to the sentence, settle it at home, start TTS (if “Double-tap starts playback”); never toggles chrome; disabled while selecting |
+| Double tap the sentence being spoken | Settle it at home and resume follow; playback continues (no restart) |
 | Swipe left from right edge (~24dp) | Back to library |
-| Double-tap unlock | Exit scroll lock |
+| Long-press title banner | Book media card |
+| Double-tap unlock / play-pause (scroll lock) | Exit scroll lock / toggle playback |
 
 ## TOC
 
 ![Contents](images/reader-toc.png)
 
-Modal “Contents”; tap a chapter to seek and settle its first sentence at home.
+Modal “Contents”; tap a chapter to seek and settle its first sentence at home. EPUB rows come from
+the nav document (or NCX); spine entries without a ToC label are not listed.
 
 ## Text selection
 
-System ActionMode: Copy, Share, Web search, Select all. Double-tap while selecting clears selection.
+System ActionMode: Copy, Share, Web search, Filter. **Filter** opens a new **Local** filter with the
+selection as the find pattern. Double-tap while selecting clears selection. Selection is off while
+scroll-locked.
 
 ## Related settings
 

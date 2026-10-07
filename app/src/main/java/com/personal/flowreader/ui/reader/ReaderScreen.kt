@@ -82,7 +82,6 @@ import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.ReaderFont
-import com.personal.flowreader.data.SentenceSplitter
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
@@ -192,15 +191,7 @@ fun ReaderScreen(
     val items = remember(doc, showChapterHeadingsInBody) {
         doc?.readingItems(includeChapterTitles = showChapterHeadingsInBody).orEmpty()
     }
-    val allSentences = remember(doc, tts.clipTargetChars, tts.clipFlexChars) {
-        doc?.let {
-            SentenceSplitter.split(
-                it,
-                targetChars = tts.clipTargetChars,
-                flexChars = tts.clipFlexChars,
-            )
-        }.orEmpty()
-    }
+    val allSentences = ui.sentences
     /** (chapter, block) → flat item index; the reader looks this up on every frame. */
     val blockIndexOf = remember(items) {
         buildMap(items.size) {
@@ -212,7 +203,7 @@ fun ReaderScreen(
     // Only computed while paused, and only when the locus actually moves.
     val locusSentenceIndex = remember(allSentences) {
         derivedStateOf {
-            if (allSentences.isEmpty()) 0 else SentenceSplitter.indexAt(allSentences, ui.locus)
+            allSentences.indexAt(ui.locus)
         }
     }
     val currentSentenceIndex = if (tts.playing && tts.sentence != null) {
@@ -274,7 +265,7 @@ fun ReaderScreen(
             ch.title.ifBlank { "Chapter ${i + 1}" }
         }.orEmpty()
     }
-    val progress = if (items.size <= 1) 0f else locusIndex.toFloat() / items.lastIndex
+    val progress = ui.fraction
 
     /**
      * Where to park the edge chip (now-playing snippet or jump-back), or null while any line of
@@ -431,6 +422,15 @@ fun ReaderScreen(
         tts.sentence?.let { s ->
             vm.onLocus(Locus(s.chapterIndex, s.blockIndex, s.start))
         }
+    }
+
+    LaunchedEffect(listState, items) {
+        snapshotFlow {
+            val visible = listState.layoutInfo.visibleItemsInfo
+            val first = visible.firstOrNull()?.let { items.getOrNull(it.index) } ?: return@snapshotFlow null
+            val last = visible.lastOrNull()?.let { items.getOrNull(it.index) } ?: return@snapshotFlow null
+            first.chapterIndex to last.chapterIndex
+        }.collect { range -> range?.let { vm.onViewport(it.first, it.second) } }
     }
 
     fun toggleChrome() {
@@ -620,12 +620,8 @@ fun ReaderScreen(
                                         }
                                     }
                                     val blockSentences = remember(allSentences, item.chapterIndex, item.blockIndex) {
-                                        allSentences.mapIndexedNotNull { si, s ->
-                                            if (s.chapterIndex == item.chapterIndex && s.blockIndex == item.blockIndex) {
-                                                BlockSentence(si, s.start, s.end)
-                                            } else {
-                                                null
-                                            }
+                                        allSentences.inBlock(item.chapterIndex, item.blockIndex).mapNotNull { si ->
+                                            allSentences.getOrNull(si)?.let { s -> BlockSentence(si, s.start, s.end) }
                                         }
                                     }
                                     var textLayout by remember(item.block.id, justifyText) {
@@ -743,7 +739,7 @@ fun ReaderScreen(
                                                                             vm.tts.play()
                                                                         }
                                                                         scope.launch {
-                                                                            scrollToHome(SentenceSplitter.indexAt(allSentences, target))
+                                                                            scrollToHome(allSentences.indexAt(target))
                                                                         }
                                                                         if (overlay == ReaderOverlay.Hidden) {
                                                                             toggleChrome()
@@ -773,8 +769,7 @@ fun ReaderScreen(
                                                                         vm.tts.play()
                                                                     }
                                                                     val homeIndex = sentence?.index
-                                                                        ?: SentenceSplitter.indexAt(
-                                                                            allSentences,
+                                                                        ?: allSentences.indexAt(
                                                                             Locus(item.chapterIndex, item.blockIndex, charOffset),
                                                                         )
                                                                     scope.launch { scrollToHome(homeIndex) }
@@ -1033,11 +1028,11 @@ fun ReaderScreen(
                 suppressFollowScroll = true
                 scope.launch {
                     vm.jumpToChapter(ci)
-                    // A plugin-story seek swaps the doc; let the sentence lookup recompose first.
+                    // A chapter outside the window swaps the doc; let the sentence lookup recompose first.
                     withFrameNanos { }
                     val sentences = homeLookup.value.first
                     if (sentences.isNotEmpty()) {
-                        scrollToHome(SentenceSplitter.indexAt(sentences, vm.ui.value.locus))
+                        scrollToHome(sentences.indexAt(vm.ui.value.locus))
                     }
                 }
             },
