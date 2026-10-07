@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Toc
@@ -31,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -59,7 +61,10 @@ import com.personal.flowreader.ui.theme.FlowType
 /** Horizontal inset so the cover band ends before the side icon buttons. */
 private val BannerCoverSideInset = FlowTokens.Comp.ButtonPrimary
 
-/** Top dock: back, title + chapter over a blurred cover band, settings; progress on the bottom edge. */
+/**
+ * Top dock: back, title + chapter over a blurred cover band, settings; progress on the bottom edge.
+ * Long-press opens the book's media card.
+ */
 @Composable
 internal fun TitleBannerCard(
     title: String,
@@ -68,10 +73,15 @@ internal fun TitleBannerCard(
     storedPath: String,
     onBack: () -> Unit,
     onSettings: () -> Unit,
+    onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cover by rememberBookCover(storedPath, maxEdge = FlowTokens.CoverEdge.Banner)
-    FlowFloatingCard(modifier = modifier, contentPadding = PaddingValues(FlowTokens.Space.None)) {
+    FlowFloatingCard(
+        modifier = modifier,
+        contentPadding = PaddingValues(FlowTokens.Space.None),
+        onLongClick = onLongPress,
+    ) {
         if (cover != null) {
             BannerCoverUnderlay(
                 cover = cover!!,
@@ -213,28 +223,63 @@ internal fun MediaControlCard(
 }
 
 /**
- * Bottom dock, scroll-lock mode: the unlock control alone, centered on the same point as the
- * media card's lock button (card content pad + half the 48dp button minus half this circle).
+ * Bottom dock, scroll-lock mode: play/pause centered (where the media card's play control sits)
+ * and unlock on the same point as the media card's lock button (card content pad + half the 48dp
+ * button minus half this circle). Both need a double-tap so stray touches do nothing.
  */
 @Composable
-internal fun ScrollLockUnlockButton(onUnlock: () -> Unit, modifier: Modifier = Modifier) {
+internal fun ScrollLockControls(
+    playing: Boolean,
+    onPlay: () -> Unit,
+    onPause: () -> Unit,
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val endPad = FlowTokens.Pad.FloatingCard + (FlowTokens.Comp.ButtonPrimary - FlowTokens.Comp.CircleButton) / 2
+    val togglePlay = { if (playing) onPause() else onPlay() }
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(FlowTokens.Comp.Fab),
     ) {
-        Box(
+        DoubleTapCircle(
+            label = if (playing) "Pause" else "Play",
+            onDoubleTap = togglePlay,
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            Icon(
+                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (playing) "Double-tap to pause" else "Double-tap to play",
+            )
+        }
+        DoubleTapCircle(
+            label = "Unlock scroll",
+            onDoubleTap = onUnlock,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = endPad)
-                .size(FlowTokens.Comp.CircleButton)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh, androidx.compose.foundation.shape.CircleShape)
-                .semantics { onClick(label = "Unlock scroll") { onUnlock(); true } }
-                .pointerInput(onUnlock) { detectTapGestures(onDoubleTap = { onUnlock() }) },
-            contentAlignment = Alignment.Center,
+                .padding(end = endPad),
         ) {
             Icon(Icons.Filled.LockOpen, contentDescription = "Double-tap to unlock scroll")
         }
+    }
+}
+
+@Composable
+private fun DoubleTapCircle(
+    label: String,
+    onDoubleTap: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val action by rememberUpdatedState(onDoubleTap)
+    Box(
+        modifier = modifier
+            .size(FlowTokens.Comp.CircleButton)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+            .semantics { onClick(label = label) { action(); true } }
+            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { action() }) },
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }

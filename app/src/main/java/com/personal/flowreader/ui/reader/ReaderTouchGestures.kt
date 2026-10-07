@@ -3,11 +3,27 @@ package com.personal.flowreader.ui.reader
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.positionChange
 import kotlin.math.abs
 import kotlinx.coroutines.withTimeoutOrNull
+
+/** Cross-paragraph selection; with [enabled] false, long-press selects nothing (no toolbar). */
+@Composable
+internal fun ReaderSelectionContainer(
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    SelectionContainer(modifier = modifier) {
+        if (enabled) content() else DisableSelection(content)
+    }
+}
 
 /**
  * Double-tap while selection is visible: observe on Initial pass so selection

@@ -12,6 +12,7 @@ import com.personal.flowreader.ui.design.card.media.MediaActionKind
 import com.personal.flowreader.ui.design.card.media.MediaActionOwner
 import com.personal.flowreader.ui.design.card.media.PluginMediaCardAdapter
 import com.personal.flowreader.ui.design.card.media.PluginMediaInfo
+import com.personal.flowreader.ui.design.card.media.withoutHostActions
 import com.personal.flowreader.ui.theme.FlowTokens
 
 /**
@@ -30,12 +31,13 @@ internal fun StoryMediaCard(
     onDelete: () -> Unit,
     onToggleList: (String) -> Unit,
     onPluginAction: (actionId: String, on: Boolean?) -> Unit,
+    hiddenActions: Set<String> = emptySet(),
 ) {
     val story = ui.story
     val context = LocalContext.current
     val book = story?.let { s -> ui.books.find { it.bookId == s.bookId } }
     val cover by rememberBookCover(book, maxEdge = FlowTokens.CoverEdge.Hero)
-    val model = remember(story, ui.busy, ui.downloadProgress, ui.partialStartIndex, ui.error, ui.showDownload) {
+    val model = remember(story, ui.busy, ui.downloadProgress, ui.partialStartIndex, ui.error, ui.showDownload, hiddenActions) {
         story?.let { s ->
             PluginMediaCardAdapter.model(
                 manifest = ui.manifest,
@@ -59,7 +61,7 @@ internal fun StoryMediaCard(
                 busy = ui.busy,
                 downloadProgress = ui.downloadProgress,
                 error = ui.error?.takeIf { !ui.showDownload },
-            )
+            ).withoutHostActions(hiddenActions)
         }
     }
     FlowMediaCard(

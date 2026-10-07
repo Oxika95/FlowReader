@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -180,8 +179,20 @@ fun ReaderScreen(
     }
     var selectionActive by remember { mutableStateOf(false) }
     var selectionEpoch by remember { mutableIntStateOf(0) }
+    var bookCardRequests by remember { mutableIntStateOf(0) }
     val textToolbar = remember(view) {
-        ReaderTextToolbar(view) { selectionActive = it }
+        ReaderTextToolbar(
+            view,
+            onSelectionUiChanged = { selectionActive = it },
+            onFilter = { text ->
+                selectionEpoch++
+                filterEditor = FilterEditorSession(
+                    scope = FilterScope.Local,
+                    rule = FilterRule(pattern = text),
+                    isNew = true,
+                )
+            },
+        )
     }
     fun clearTextSelection() {
         textToolbar.hide()
@@ -446,6 +457,7 @@ fun ReaderScreen(
         scrollLocked = true
         overlay = ReaderOverlay.Hidden
         filterEditor = null
+        if (selectionActive) clearTextSelection()
         if (tts.playing && tts.sentence != null) {
             scope.launch { scrollToHome(tts.sentenceIndex) }
         }
@@ -469,7 +481,9 @@ fun ReaderScreen(
     }
 
     fun resumeFollow() {
-        suppressFollowScroll = true
+        // Only when follow actually turns on: the follow effect re-runs and consumes the flag.
+        val live = vm.tts.state.value
+        if (live.playing && live.autoScrollWithTts && !live.following) suppressFollowScroll = true
         vm.tts.followAgain()
         scope.launch { scrollToHome(trackedSentenceIndex()) }
     }
@@ -552,7 +566,8 @@ fun ReaderScreen(
                 ) {
                 CompositionLocalProvider(LocalTextToolbar provides textToolbar) {
                     key(selectionEpoch) {
-                        SelectionContainer(
+                        ReaderSelectionContainer(
+                            enabled = !scrollLocked,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .pointerInput(selectionActive) {
@@ -741,9 +756,6 @@ fun ReaderScreen(
                                                                         scope.launch {
                                                                             scrollToHome(allSentences.indexAt(target))
                                                                         }
-                                                                        if (overlay == ReaderOverlay.Hidden) {
-                                                                            toggleChrome()
-                                                                        }
                                                                         return@onReaderGesture
                                                                     }
                                                                     val layout = textLayout
@@ -755,6 +767,14 @@ fun ReaderScreen(
                                                                         )
                                                                     } else {
                                                                         blockSentences.firstOrNull()
+                                                                    }
+                                                                    val live = vm.tts.state.value
+                                                                    if (live.playing && live.sentence != null &&
+                                                                        sentence?.index == live.sentenceIndex
+                                                                    ) {
+                                                                        // Already speaking it: re-home and follow, don't restart.
+                                                                        resumeFollow()
+                                                                        return@onReaderGesture
                                                                     }
                                                                     val charOffset = sentence?.start ?: 0
                                                                     suppressFollowScroll = true
@@ -773,9 +793,6 @@ fun ReaderScreen(
                                                                             Locus(item.chapterIndex, item.blockIndex, charOffset),
                                                                         )
                                                                     scope.launch { scrollToHome(homeIndex) }
-                                                                    if (overlay == ReaderOverlay.Hidden) {
-                                                                        toggleChrome()
-                                                                    }
                                                                 }
                                                             },
                                                         )
@@ -890,6 +907,7 @@ fun ReaderScreen(
                             storedPath = ui.storedPath,
                             onBack = { leave.value() },
                             onSettings = { overlay = ReaderOverlay.Settings },
+                            onLongPress = { bookCardRequests++ },
                         )
                     }
                     Item(visible = edgeChipTop) { edgeChip() }
@@ -910,7 +928,12 @@ fun ReaderScreen(
                         )
                     }
                     Item(visible = scrollLocked) {
-                        ScrollLockUnlockButton(onUnlock = { disableScrollLock() })
+                        ScrollLockControls(
+                            playing = tts.playing,
+                            onPlay = { vm.tts.play() },
+                            onPause = { vm.tts.pause() },
+                            onUnlock = { disableScrollLock() },
+                        )
                     }
                 }
                 }
@@ -1018,6 +1041,8 @@ fun ReaderScreen(
                 onDismiss = { filterEditor = null },
             )
         }
+
+        ReaderBookCard(bookId = vm.bookId, openRequests = bookCardRequests)
 
         TocOverlay(
             visible = overlay == ReaderOverlay.Toc,

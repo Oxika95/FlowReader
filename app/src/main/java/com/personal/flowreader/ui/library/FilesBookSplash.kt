@@ -14,6 +14,7 @@ import com.personal.flowreader.ui.design.card.media.FileMediaCardAdapter
 import com.personal.flowreader.ui.design.card.media.FileMediaInfo
 import com.personal.flowreader.ui.design.card.media.FlowMediaCard
 import com.personal.flowreader.ui.design.card.media.MediaActionIds
+import com.personal.flowreader.ui.design.card.media.withoutHostActions
 import com.personal.flowreader.ui.theme.FlowTokens
 import java.io.File
 
@@ -25,11 +26,12 @@ fun FilesBookSplash(
     onDismiss: () -> Unit,
     onOpen: (String) -> Unit,
     onRemove: (String) -> Unit,
+    hiddenActions: Set<String> = emptySet(),
 ) {
     val context = LocalContext.current
     val cover by rememberBookCover(book, maxEdge = FlowTokens.CoverEdge.Hero)
-    val model = remember(book, busy) {
-        book?.let { FileMediaCardAdapter.model(fileMediaInfo(it), busy) }
+    val model = remember(book, busy, hiddenActions) {
+        book?.let { FileMediaCardAdapter.model(fileMediaInfo(it), busy).withoutHostActions(hiddenActions) }
     }
     FlowMediaCard(
         visible = book != null,

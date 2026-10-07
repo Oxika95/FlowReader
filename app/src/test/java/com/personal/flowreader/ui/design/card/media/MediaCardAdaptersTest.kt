@@ -151,6 +151,21 @@ class MediaCardAdaptersTest {
     }
 
     @Test
+    fun withoutHostActions_dropsHostIdsOnly() {
+        val card = PluginCard(
+            actions = listOf(
+                PluginCardAction("comments", "Comments", placement = PluginActionPlacement.Footer),
+                PluginCardAction("later", "Later", placement = PluginActionPlacement.Rail),
+            ),
+        )
+        val m = model(info(card = card)).withoutHostActions(
+            setOf(MediaActionIds.READ, MediaActionIds.DELETE, "later"),
+        )
+        assertEquals(listOf("download", "refresh", "comments"), m.footer.map { it.id })
+        assertEquals(listOf("list:follow", "list:favorite", "share", "later"), m.rail.map { it.id })
+    }
+
+    @Test
     fun formatBytes_units() {
         assertEquals("512 B", FileMediaCardAdapter.formatBytes(512))
         assertEquals("2 KB", FileMediaCardAdapter.formatBytes(2_048))

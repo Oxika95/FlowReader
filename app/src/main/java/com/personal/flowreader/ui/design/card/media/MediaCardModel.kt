@@ -84,6 +84,13 @@ object MediaActionIds {
     fun listIdOf(actionId: String): String? = actionId.removePrefix(LIST_PREFIX).takeIf { actionId.startsWith(LIST_PREFIX) }
 }
 
+/** Drop host actions by id from the rail and footer; plugin actions are never removed. */
+fun MediaCardModel.withoutHostActions(ids: Set<String>): MediaCardModel {
+    if (ids.isEmpty()) return this
+    fun MediaAction.hidden() = owner == MediaActionOwner.Host && id in ids
+    return copy(rail = rail.filterNot { it.hidden() }, footer = footer.filterNot { it.hidden() })
+}
+
 /** Compact number formatting for stats ("1.2K", "3.4M"). */
 fun formatCount(value: Long): String = when {
     value >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", value / 1_000_000.0)

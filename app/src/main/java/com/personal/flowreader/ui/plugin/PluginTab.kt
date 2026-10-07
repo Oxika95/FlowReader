@@ -210,30 +210,7 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
         onOpenUrl = { vm.openUrl() },
         onOpen = vm::openWork,
     )
-    StoryMediaCard(
-        visible = ui.story != null,
-        ui = ui,
-        onDismiss = vm::closeStory,
-        onRead = { vm.readStory(actions) },
-        onDownload = vm::openDownloadOptions,
-        onRefreshToc = vm::refreshStoryToc,
-        onDelete = vm::deleteStory,
-        onToggleList = vm::toggleList,
-        onPluginAction = vm::runCardAction,
-    )
-    DownloadSheet(
-        visible = ui.showDownload && ui.story != null,
-        ui = ui,
-        onDismiss = vm::closeDownloadOptions,
-        onPane = vm::setDownloadPane,
-        onDownloadAll = vm::downloadAllChapters,
-        onPartialStartDraft = vm::setPartialStartDraft,
-        onResolvePartialStart = vm::resolvePartialStartDraft,
-        onPartialCount = vm::setPartialCountDraft,
-        onDownloadPartial = { vm.downloadPartialChapters() },
-        onCacheLevel = vm::setCacheLevelDraft,
-        onBeginPartial = vm::beginPartialDownloadFromSettings,
-    )
+    PluginStoryOverlays(vm = vm, onRead = { vm.readStory(actions) })
     AccountSheet(
         ui = ui,
         onDismiss = { vm.setShowAccount(false) },
@@ -257,5 +234,40 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
         visible = ui.showSettings,
         pluginId = plugin.id,
         onDismiss = { vm.setShowSettings(false) },
+    )
+}
+
+/** Story media card and its download sheet; shared by the plugin tab and the reader title card. */
+@Composable
+fun PluginStoryOverlays(
+    vm: PluginTabViewModel,
+    onRead: () -> Unit,
+    hiddenActions: Set<String> = emptySet(),
+) {
+    val ui by vm.ui.collectAsState()
+    StoryMediaCard(
+        visible = ui.story != null,
+        ui = ui,
+        onDismiss = vm::closeStory,
+        onRead = onRead,
+        onDownload = vm::openDownloadOptions,
+        onRefreshToc = vm::refreshStoryToc,
+        onDelete = vm::deleteStory,
+        onToggleList = vm::toggleList,
+        onPluginAction = vm::runCardAction,
+        hiddenActions = hiddenActions,
+    )
+    DownloadSheet(
+        visible = ui.showDownload && ui.story != null,
+        ui = ui,
+        onDismiss = vm::closeDownloadOptions,
+        onPane = vm::setDownloadPane,
+        onDownloadAll = vm::downloadAllChapters,
+        onPartialStartDraft = vm::setPartialStartDraft,
+        onResolvePartialStart = vm::resolvePartialStartDraft,
+        onPartialCount = vm::setPartialCountDraft,
+        onDownloadPartial = { vm.downloadPartialChapters() },
+        onCacheLevel = vm::setCacheLevelDraft,
+        onBeginPartial = vm::beginPartialDownloadFromSettings,
     )
 }

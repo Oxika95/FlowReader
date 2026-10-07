@@ -14,17 +14,17 @@ import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.TextToolbarStatus
 
 /**
- * Floating ActionMode toolbar for reader selection: Copy, Share, Web search, Select all.
+ * Floating ActionMode toolbar for reader selection: Copy, Share, Web search, Filter.
  * Selected text is obtained via Compose's copy callback + clipboard (SelectionContainer).
  */
 internal class ReaderTextToolbar(
     private val view: View,
     private val onSelectionUiChanged: (Boolean) -> Unit = {},
+    private val onFilter: (String) -> Unit = {},
 ) : TextToolbar {
     private var actionMode: ActionMode? = null
     private var menuRect: Rect = Rect.Zero
     private var onCopyRequested: (() -> Unit)? = null
-    private var onSelectAllRequested: (() -> Unit)? = null
 
     override var status: TextToolbarStatus = TextToolbarStatus.Hidden
         private set
@@ -38,7 +38,6 @@ internal class ReaderTextToolbar(
     ) {
         this.menuRect = rect
         this.onCopyRequested = onCopyRequested
-        this.onSelectAllRequested = onSelectAllRequested
         val mode = actionMode
         if (mode == null) {
             actionMode = view.startActionMode(callback, ActionMode.TYPE_FLOATING)
@@ -55,7 +54,6 @@ internal class ReaderTextToolbar(
         actionMode = null
         status = TextToolbarStatus.Hidden
         onCopyRequested = null
-        onSelectAllRequested = null
         onSelectionUiChanged(false)
     }
 
@@ -107,10 +105,8 @@ internal class ReaderTextToolbar(
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
             menu.add(0, ID_WEB_SEARCH, 2, "Web search")
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
-            if (onSelectAllRequested != null) {
-                menu.add(0, ID_SELECT_ALL, 3, android.R.string.selectAll)
-                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
-            }
+            menu.add(0, ID_FILTER, 3, "Filter")
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
             return true
         }
 
@@ -121,7 +117,7 @@ internal class ReaderTextToolbar(
                 ID_COPY -> onCopyRequested?.invoke()
                 ID_SHARE -> copyThen { share(it) }
                 ID_WEB_SEARCH -> copyThen { webSearch(it) }
-                ID_SELECT_ALL -> onSelectAllRequested?.invoke()
+                ID_FILTER -> copyThen { onFilter(it) }
                 else -> return false
             }
             mode.finish()
@@ -148,6 +144,6 @@ internal class ReaderTextToolbar(
         private const val ID_COPY = 1
         private const val ID_SHARE = 2
         private const val ID_WEB_SEARCH = 3
-        private const val ID_SELECT_ALL = 4
+        private const val ID_FILTER = 4
     }
 }

@@ -27,6 +27,7 @@ fun FlowFloatingCard(
     contentPadding: PaddingValues = PaddingValues(FlowTokens.Pad.FloatingCard),
     borderColor: Color = MaterialTheme.colorScheme.outlineVariant,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     FlowSurface(
@@ -34,6 +35,7 @@ fun FlowFloatingCard(
         style = FlowSurfaceStyle.Panel,
         borderColor = borderColor,
         onClick = onClick,
+        onLongClick = onLongClick,
     ) {
         Box(Modifier.fillMaxWidth().padding(contentPadding), content = content)
     }

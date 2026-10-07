@@ -21,7 +21,7 @@ Plugin-facing contract: [plugins/ui-contract.md](../plugins/ui-contract.md).
 | Screen | Shell | System bars | Top dock | Bottom dock | FAB |
 | --- | --- | --- | --- | --- | --- |
 | Library | `FlowScreen(Library)` | Visible; docks/actions clear them | — | `NowPlayingCard` while TTS plays | Per tab (add book / paste / plugin add) |
-| Reader | Custom `Box` + two `FlowDock`s | Hidden (immersive) | `TitleBannerCard`, edge chip | Edge chip, `MediaControlCard`, scroll-lock unlock | — |
+| Reader | Custom `Box` + two `FlowDock`s | Hidden (immersive) | `TitleBannerCard`, edge chip | Edge chip, `MediaControlCard`, `ScrollLockControls` | — |
 
 Both screens sit inside one `FlowOverlayHost` (in `MainActivity`), so fullscreen cards stack
 over either screen the same way.
