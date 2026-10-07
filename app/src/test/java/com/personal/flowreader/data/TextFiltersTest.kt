@@ -21,6 +21,15 @@ class TextFiltersTest {
     }
 
     @Test
+    fun editedRuleUsesItsNewPattern() {
+        val rule = FilterRule(pattern = "foo", replacement = "x", matchType = FilterMatchType.CaseSensitive)
+        assertEquals("x Foo", TextFilters.apply("foo Foo", listOf(rule)).text)
+        val insensitive = rule.copy(matchType = FilterMatchType.CaseInsensitive)
+        assertEquals("x x", TextFilters.apply("foo Foo", listOf(insensitive)).text)
+        assertEquals("foo Foo", TextFilters.apply("foo Foo", listOf(rule.copy(pattern = "(", matchType = FilterMatchType.RegEx))).text)
+    }
+
+    @Test
     fun blankReplacementHasNoRanges() {
         val rules = listOf(
             FilterRule(pattern = "x", replacement = "", wholeWords = false),

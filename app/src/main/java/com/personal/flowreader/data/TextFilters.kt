@@ -322,8 +322,25 @@ object TextFilters {
         return sb.toString() to newFlags.toBooleanArray()
     }
 
+    private data class PatternKey(val pattern: String, val matchType: FilterMatchType, val wholeWords: Boolean)
+
+    /** Rules run once per block; compiling per call dominated filtering large chapters. */
+    private val patterns = object : LinkedHashMap<PatternKey, Pattern?>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<PatternKey, Pattern?>) = size > 256
+    }
+
     private fun compile(rule: FilterRule): Pattern? {
         if (rule.pattern.isEmpty()) return null
+        val key = PatternKey(rule.pattern, rule.matchType, rule.wholeWords)
+        synchronized(patterns) {
+            if (patterns.containsKey(key)) return patterns[key]
+        }
+        val compiled = compileUncached(rule)
+        synchronized(patterns) { patterns[key] = compiled }
+        return compiled
+    }
+
+    private fun compileUncached(rule: FilterRule): Pattern? {
         return try {
             when (rule.matchType) {
                 FilterMatchType.RegEx -> Pattern.compile(rule.pattern)

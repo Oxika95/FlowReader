@@ -172,6 +172,15 @@ class WebPageIngestTest {
         assertTrue(article.text.contains("Hello body"))
         assertTrue(!article.text.contains("Buy now"))
     }
+
+    @Test
+    fun paragraphsKeepBlankLineBreaks() {
+        val article = WebPageIngest.extractArticle(
+            html = "<html><body><article><p>One.</p><p>Two.</p></article></body></html>",
+            url = "https://example.com/a",
+        )
+        assertEquals("One.\n\nTwo.", article.text)
+    }
 }
 
 class PluginShareSeedTest {
