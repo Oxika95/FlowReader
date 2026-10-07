@@ -209,7 +209,7 @@ private fun SharingSettingsHost(ruleEditor: com.personal.flowreader.ui.settings.
             app.appScope.launch { app.settings.setShareRouterRules(next) }
         },
         onSaveParseRules = { next ->
-            parseRules = next
+            parseRules = com.personal.flowreader.share.ParseRules.withDefault(next)
             app.appScope.launch { app.settings.setShareParseRules(next) }
         },
     )

@@ -6,186 +6,89 @@ import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowTextAction
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
-import kotlin.math.roundToInt
 import com.personal.flowreader.share.ParseRule
 import com.personal.flowreader.share.ParseRules
 import com.personal.flowreader.share.ShareParseMode
 import com.personal.flowreader.share.ShareUrlMatch
 import com.personal.flowreader.share.WebPageIngest
 import com.personal.flowreader.ui.theme.FlowTokens
-import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalFoundationApi::class)
+/** Parse rules; the protected Default rule stays last. Hold a rule to reorder or delete. */
 @Composable
-internal fun ReorderableParseList(
+internal fun ParseRuleList(
     rules: List<ParseRule>,
     onSave: (List<ParseRule>) -> Unit,
+    onAdd: () -> Unit,
     onEdit: (ParseRule) -> Unit,
 ) {
-    fun saveOrdered(list: List<ParseRule>) {
-        onSave(list.mapIndexed { index, rule -> rule.copy(order = index) })
-    }
-    var menuRuleId by remember { mutableStateOf<String?>(null) }
-    var reordering by remember { mutableStateOf(false) }
-    val working = remember { mutableStateListOf<ParseRule>() }
-    var draggingId by remember { mutableStateOf<String?>(null) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val rowHeights = remember { mutableStateMapOf<String, Int>() }
-
-    if (reordering) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(
-                onClick = {
-                    saveOrdered(working.toList())
-                    reordering = false
-                    draggingId = null
-                    dragOffset = 0f
-                },
-            ) { Text("Done") }
-        }
-    }
-
-    val shown = if (reordering) working else rules
-    shown.forEach { rule ->
-        key(rule.id) {
-            val dragging = reordering && draggingId == rule.id
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .zIndex(if (dragging) 1f else 0f)
-                    .offset { IntOffset(0, if (dragging) dragOffset.roundToInt() else 0) }
-                    .onSizeChanged { rowHeights[rule.id] = it.height },
-            ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .then(
-                            if (reordering) Modifier
-                            else Modifier.combinedClickable(
-                                onClick = { onEdit(rule) },
-                                onLongClick = { menuRuleId = rule.id },
-                            ),
-                        )
-                        .padding(vertical = FlowTokens.Space.S),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (reordering) {
-                        DragHandle(
-                            ruleId = rule.id,
-                            working = working,
-                            rowHeights = rowHeights,
-                            idOf = { it.id },
-                            draggingId = { draggingId = it },
-                            onDragOffset = { dragOffset = it },
-                        )
-                    }
-                    Column(Modifier.weight(1f).padding(end = FlowTokens.Space.S)) {
-                        Text(
-                            ShareUrlMatch.formatMatch(rule),
-                            style = MaterialTheme.typography.bodyLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            "${rule.parseMode.label} → Queue",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (!reordering) {
-                        CompositionLocalProvider(
-                            LocalMinimumInteractiveComponentSize provides 16.dp,
-                        ) {
-                            Switch(
-                                checked = rule.enabled,
-                                onCheckedChange = { enabled ->
-                                    onSave(rules.map { if (it.id == rule.id) it.copy(enabled = enabled) else it })
-                                },
-                            )
-                            IconButton(
-                                onClick = { saveOrdered(rules.filterNot { it.id == rule.id }) },
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete rule")
-                            }
-                        }
-                    }
-                }
-                DropdownMenu(
-                    expanded = menuRuleId == rule.id,
-                    onDismissRequest = { menuRuleId = null },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Copy") },
-                        onClick = {
-                            menuRuleId = null
-                            val index = rules.indexOfFirst { it.id == rule.id }
-                            val copy = rule.copy(id = UUID.randomUUID().toString())
-                            saveOrdered(rules.toMutableList().apply { add(index + 1, copy) })
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Move") },
-                        onClick = {
-                            menuRuleId = null
-                            working.clear()
-                            working.addAll(rules)
-                            reordering = true
-                        },
-                    )
-                }
+    EditableRuleList(
+        rules = rules,
+        idOf = { it.id },
+        nameOf = ::parseRuleTitle,
+        text = RuleListText(
+            title = "Parse rules",
+            empty = "No parse rules.",
+            hint = "First match wins. Default parses every other URL and can't be deleted. Hold a rule to reorder or delete.",
+        ),
+        onAdd = onAdd,
+        onEdit = onEdit,
+        onReorder = { ids ->
+            val byId = rules.associateBy { it.id }
+            onSave(ids.mapNotNull(byId::get))
+        },
+        onDelete = { ids -> onSave(rules.filterNot { it.id in ids && !ParseRules.isProtected(it) }) },
+        locked = ParseRules::isProtected,
+        trailing = { rule ->
+            if (!ParseRules.isProtected(rule)) {
+                Switch(
+                    checked = rule.enabled,
+                    onCheckedChange = { enabled ->
+                        onSave(rules.map { if (it.id == rule.id) it.copy(enabled = enabled) else it })
+                    },
+                )
             }
+        },
+    ) { rule, modifier ->
+        Column(modifier) {
+            Text(
+                parseRuleTitle(rule),
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${rule.parseMode.label} → Queue",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
+
+private fun parseRuleTitle(rule: ParseRule): String =
+    if (ParseRules.isProtected(rule)) "Default · any URL" else ShareUrlMatch.formatMatch(rule)
 
 
 @Composable
@@ -211,9 +114,19 @@ internal fun ParseRuleEditorOverlay(
     var testPreview by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val showCustom = parseMode == ShareParseMode.Custom
+    val protected = ParseRules.isProtected(initial)
 
     fun build(): ParseRule {
         val parsed = ShareUrlMatch.parseMatchInput(matchText, matchIsRegex)
+        if (protected) {
+            return initial.copy(
+                parseMode = parseMode,
+                contentCss = contentCss.trim().ifBlank { null },
+                titleCss = titleCss.trim().ifBlank { null },
+                removeCss = removeCss.trim().ifBlank { null },
+                testUrl = testUrl.trim().ifBlank { null },
+            )
+        }
         return initial.copy(
             hostPattern = parsed.host,
             pathPattern = parsed.path,
@@ -258,27 +171,41 @@ internal fun ParseRuleEditorOverlay(
     FlowFullscreenCard(
         visible = true,
         onDismiss = onDismiss,
-        title = if (isNew) "New Parse Rule" else "Edit Parse Rule",
+        title = when {
+            protected -> "Default Parser"
+            isNew -> "New Parse Rule"
+            else -> "Edit Parse Rule"
+        },
         bodySpacing = Arrangement.Top,
         footer = {
+            val canSave = protected || matchText.isNotBlank()
             FlowActionRow(
                 start = {
-                    if (showCustom) FlowTextAction(if (testBusy) "Testing…" else "Test", runTest, enabled = !testBusy)
+                    FlowTextAction(if (testBusy) "Testing…" else "Test", runTest, enabled = !testBusy)
                 },
             ) {
                 FlowTextAction("Cancel", onDismiss)
-                FlowTextAction("Save", { if (matchText.isNotBlank()) onSave(build()) }, enabled = matchText.isNotBlank())
+                FlowTextAction("Save", { if (canSave) onSave(build()) }, enabled = canSave)
             }
         },
     ) {
-        MatchFields(
-            matchText = matchText,
-            onMatchText = { matchText = it },
-            matchIsRegex = matchIsRegex,
-            onMatchIsRegex = { matchIsRegex = it },
-            allowWildcard = allowWildcard,
-            onAllowWildcard = { allowWildcard = it },
-        )
+        if (protected) {
+            FlowLabel("URL match")
+            Text(
+                "Any URL no rule above matches. Always on; can't be deleted.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            MatchFields(
+                matchText = matchText,
+                onMatchText = { matchText = it },
+                matchIsRegex = matchIsRegex,
+                onMatchIsRegex = { matchIsRegex = it },
+                allowWildcard = allowWildcard,
+                onAllowWildcard = { allowWildcard = it },
+            )
+        }
         Spacer(Modifier.height(FlowTokens.Space.M))
         FlowLabel("Parser")
         FlowChipRow {
@@ -332,35 +259,35 @@ internal fun ParseRuleEditorOverlay(
                 shape = FlowTokens.Shape.Field,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.height(FlowTokens.Space.S))
-            FlowLabel("Test URL")
-            OutlinedTextField(
-                value = testUrl,
-                onValueChange = { testUrl = it },
-                singleLine = true,
-                placeholder = { Text("https://…/chapter/1") },
-                shape = FlowTokens.Shape.Field,
-                modifier = Modifier.fillMaxWidth(),
+        }
+        Spacer(Modifier.height(FlowTokens.Space.S))
+        FlowLabel("Test URL")
+        OutlinedTextField(
+            value = testUrl,
+            onValueChange = { testUrl = it },
+            singleLine = true,
+            placeholder = { Text("https://…/chapter/1") },
+            shape = FlowTokens.Shape.Field,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        testError?.let { err ->
+            Text(
+                err,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
             )
-            testError?.let { err ->
+        }
+        testTitle?.let { title ->
+            Spacer(Modifier.height(FlowTokens.Space.S))
+            FlowLabel("Preview")
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            testPreview?.let { body ->
                 Text(
-                    err,
+                    body,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 12,
                 )
-            }
-            testTitle?.let { title ->
-                Spacer(Modifier.height(FlowTokens.Space.S))
-                FlowLabel("Preview")
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                testPreview?.let { body ->
-                    Text(
-                        body,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 12,
-                    )
-                }
             }
         }
     }

@@ -76,7 +76,7 @@ Sub-tabs: **Router | Parser | Plugins**.
 | Control | Key / notes |
 |---------|-------------|
 | Manual Override | `share_ask_mode` — Ask vs Auto; Ask needs display-over permission |
-| Rules list | Enable, delete, long-press Copy/Move, drag reorder → `share_router_rules` |
+| Rules list | Enable switch; hold for edit mode (drag reorder, multi-select, Delete) like Filters → `share_router_rules` |
 | Rule editor | Content (Book files / Raw text / URL), URL match, Parse page, Destination (Files / Queue / shelves / Plugin) |
 
 Default idea: EPUB → Files; raw text / most URLs → Queue; plugin domains → plugin.
@@ -84,6 +84,8 @@ Default idea: EPUB → Files; raw text / most URLs → Queue; plugin domains →
 ### Parser
 
 Parse rules (`share_parse_rules`): URL match, Default/Custom parser, Content/Title/Remove CSS, Test URL.
+Hold a rule for edit mode (drag reorder, multi-select, Delete) like Filters. The **Default** rule
+(any URL) is always last and protected: no delete, switch, or drag; tap edits its parser mode / CSS.
 
 ### Plugins
 

@@ -414,6 +414,26 @@ object RouterRules {
 }
 
 object ParseRules {
+    const val DEFAULT_ID = "seed-parse-default"
+
+    fun isProtected(rule: ParseRule): Boolean = rule.id == DEFAULT_ID
+
+    /**
+     * [rules] in order, then the protected catch-all "Default" rule (matches any URL, always
+     * enabled). Its parser mode and CSS are user-editable; its match and place are not.
+     */
+    fun withDefault(rules: List<ParseRule>): List<ParseRule> {
+        val stored = rules.firstOrNull(::isProtected)
+        val fallback = (stored ?: ParseRule(id = DEFAULT_ID, hostPattern = "*")).copy(
+            hostPattern = "*",
+            pathPattern = null,
+            pathIsRegex = false,
+            matchSubdomains = true,
+            enabled = true,
+        )
+        return (rules.filterNot(::isProtected) + fallback).mapIndexed { i, rule -> rule.copy(order = i) }
+    }
+
     /** CSS used at crawl time — Custom only; Default uses built-in heuristics. */
     fun effectiveSelectors(rule: ParseRule): Triple<String?, String?, String?> {
         if (rule.parseMode != ShareParseMode.Custom) return Triple(null, null, null)

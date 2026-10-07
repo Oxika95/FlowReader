@@ -225,20 +225,13 @@ private fun RouterPane(
     }
 
     Spacer(Modifier.height(FlowTokens.Space.M))
-    RuleListHeader(
-        title = "Rules",
-        emptyHint = "No rules. Seed covers book files → Files, raw text → Queue, URLs → Parse → Queue, and plugin sites → Plugin.",
-        rulesEmpty = rules.isEmpty(),
+    RouterRuleList(
+        rules = rules,
+        plugins = plugins,
+        customTitles = customTitles,
+        onSave = onSaveRules,
         onAdd = onAdd,
-        content = {
-            ReorderableRouterList(
-                rules = rules,
-                plugins = plugins,
-                customTitles = customTitles,
-                onSave = onSaveRules,
-                onEdit = onEdit,
-            )
-        },
+        onEdit = onEdit,
     )
 }
 
@@ -249,17 +242,10 @@ private fun ParserPane(
     onAdd: () -> Unit,
     onEdit: (ParseRule) -> Unit,
 ) {
-    RuleListHeader(
-        title = "Parse rules",
-        emptyHint = "No parse rules. URL rules with Parse on use Default heuristics when nothing matches.",
-        rulesEmpty = rules.isEmpty(),
+    ParseRuleList(
+        rules = rules,
+        onSave = onSaveRules,
         onAdd = onAdd,
-        content = {
-            ReorderableParseList(
-                rules = rules,
-                onSave = onSaveRules,
-                onEdit = onEdit,
-            )
-        },
+        onEdit = onEdit,
     )
 }

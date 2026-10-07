@@ -7,61 +7,34 @@ import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowTextAction
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
-import kotlin.math.roundToInt
 import com.personal.flowreader.share.RouterContentKind
 import com.personal.flowreader.share.RouterLanding
 import com.personal.flowreader.share.RouterRule
 import com.personal.flowreader.share.ShareUrlMatch
 import com.personal.flowreader.ui.theme.FlowTokens
-import java.util.UUID
 
 private fun routerRuleSummary(
     rule: RouterRule,
@@ -87,135 +60,65 @@ private fun routerRuleSummary(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/** Router rules; tap edits, the switch enables, hold to reorder or delete. */
 @Composable
-internal fun ReorderableRouterList(
+internal fun RouterRuleList(
     rules: List<RouterRule>,
     plugins: List<SharePluginOption>,
     customTitles: Map<String, String>,
     onSave: (List<RouterRule>) -> Unit,
+    onAdd: () -> Unit,
     onEdit: (RouterRule) -> Unit,
 ) {
     fun saveOrdered(list: List<RouterRule>) {
         onSave(list.mapIndexed { index, rule -> rule.copy(order = index) })
     }
-    var menuRuleId by remember { mutableStateOf<String?>(null) }
-    var reordering by remember { mutableStateOf(false) }
-    val working = remember { mutableStateListOf<RouterRule>() }
-    var draggingId by remember { mutableStateOf<String?>(null) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val rowHeights = remember { mutableStateMapOf<String, Int>() }
-
-    if (reordering) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(
-                onClick = {
-                    saveOrdered(working.toList())
-                    reordering = false
-                    draggingId = null
-                    dragOffset = 0f
+    EditableRuleList(
+        rules = rules,
+        idOf = { it.id },
+        nameOf = ::routerRuleTitle,
+        text = RuleListText(
+            title = "Rules",
+            empty = "No rules. Seed covers book files → Files, raw text → Queue, URLs → Parse → Queue, and plugin sites → Plugin.",
+            hint = "First match wins: put specific rules above broad ones. Hold a rule to reorder or delete.",
+        ),
+        onAdd = onAdd,
+        onEdit = onEdit,
+        onReorder = { ids ->
+            val byId = rules.associateBy { it.id }
+            saveOrdered(ids.mapNotNull(byId::get))
+        },
+        onDelete = { ids -> saveOrdered(rules.filterNot { it.id in ids }) },
+        trailing = { rule ->
+            Switch(
+                checked = rule.enabled,
+                onCheckedChange = { enabled ->
+                    onSave(rules.map { if (it.id == rule.id) it.copy(enabled = enabled) else it })
                 },
-            ) { Text("Done") }
+            )
+        },
+    ) { rule, modifier ->
+        Column(modifier) {
+            Text(
+                routerRuleTitle(rule),
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                routerRuleSummary(rule, plugins, customTitles),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
+}
 
-    val shown = if (reordering) working else rules
-    shown.forEach { rule ->
-        key(rule.id) {
-            val dragging = reordering && draggingId == rule.id
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .zIndex(if (dragging) 1f else 0f)
-                    .offset { IntOffset(0, if (dragging) dragOffset.roundToInt() else 0) }
-                    .onSizeChanged { rowHeights[rule.id] = it.height },
-            ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .then(
-                            if (reordering) Modifier
-                            else Modifier.combinedClickable(
-                                onClick = { onEdit(rule) },
-                                onLongClick = { menuRuleId = rule.id },
-                            ),
-                        )
-                        .padding(vertical = FlowTokens.Space.S),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (reordering) {
-                        DragHandle(
-                            ruleId = rule.id,
-                            working = working,
-                            rowHeights = rowHeights,
-                            idOf = { it.id },
-                            draggingId = { draggingId = it },
-                            onDragOffset = { dragOffset = it },
-                        )
-                    }
-                    Column(Modifier.weight(1f).padding(end = FlowTokens.Space.S)) {
-                        Text(
-                            when (rule.kind) {
-                                RouterContentKind.Url -> ShareUrlMatch.formatMatch(rule)
-                                else -> rule.kind.label
-                            },
-                            style = MaterialTheme.typography.bodyLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            routerRuleSummary(rule, plugins, customTitles),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    if (!reordering) {
-                        CompositionLocalProvider(
-                            LocalMinimumInteractiveComponentSize provides 16.dp,
-                        ) {
-                            Switch(
-                                checked = rule.enabled,
-                                onCheckedChange = { enabled ->
-                                    onSave(rules.map { if (it.id == rule.id) it.copy(enabled = enabled) else it })
-                                },
-                            )
-                            IconButton(
-                                onClick = { saveOrdered(rules.filterNot { it.id == rule.id }) },
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete rule")
-                            }
-                        }
-                    }
-                }
-                DropdownMenu(
-                    expanded = menuRuleId == rule.id,
-                    onDismissRequest = { menuRuleId = null },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Copy") },
-                        onClick = {
-                            menuRuleId = null
-                            val index = rules.indexOfFirst { it.id == rule.id }
-                            val copy = rule.copy(id = UUID.randomUUID().toString())
-                            saveOrdered(rules.toMutableList().apply { add(index + 1, copy) })
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Move") },
-                        onClick = {
-                            menuRuleId = null
-                            working.clear()
-                            working.addAll(rules)
-                            reordering = true
-                        },
-                    )
-                }
-            }
-        }
-    }
+private fun routerRuleTitle(rule: RouterRule): String = when (rule.kind) {
+    RouterContentKind.Url -> ShareUrlMatch.formatMatch(rule)
+    else -> rule.kind.label
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

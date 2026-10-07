@@ -429,23 +429,24 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_PLUGIN_REPOS] = urls.joinToString("\n") }
     }
 
+    /** Parse rules, always ending with the protected Default rule ([ParseRules.withDefault]). */
     suspend fun shareParseRulesOnce(): List<ParseRule> {
         val p = store.data.first()
         val raw = p[KEY_SHARE_PARSE_RULES]
         if (!raw.isNullOrBlank()) {
-            return ParseRules.decode(raw)
+            return ParseRules.withDefault(ParseRules.decode(raw))
         }
         val legacy = p[KEY_SHARE_DOMAIN_RULES]
         if (!legacy.isNullOrBlank()) {
             val (_, parses) = ParseRules.migrateLegacy(legacy)
             store.edit { it[KEY_SHARE_PARSE_RULES] = ParseRules.encode(parses) }
-            return parses
+            return ParseRules.withDefault(parses)
         }
-        return emptyList()
+        return ParseRules.withDefault(emptyList())
     }
 
     suspend fun setShareParseRules(rules: List<ParseRule>) {
-        store.edit { it[KEY_SHARE_PARSE_RULES] = ParseRules.encode(rules) }
+        store.edit { it[KEY_SHARE_PARSE_RULES] = ParseRules.encode(ParseRules.withDefault(rules)) }
     }
 
     companion object {

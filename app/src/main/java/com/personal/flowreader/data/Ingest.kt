@@ -112,10 +112,21 @@ object TxtIngest {
         return BookDoc(title, listOf(chapter))
     }
 
-    /** Blank-line separated paragraphs, single newlines folded to spaces. */
-    internal fun paragraphs(text: String, prefix: String): List<Block> =
-        text.replace("\r\n", "\n").split(Regex("\\n\\s*\\n"))
-            .map { it.trim().replace("\n", " ") }
+    /**
+     * Blank-line separated paragraphs with single newlines folded to spaces (hard-wrapped books).
+     * Text with no blank line at all (pasted, shared) keeps one paragraph per line.
+     */
+    internal fun paragraphs(text: String, prefix: String): List<Block> {
+        val normalized = text.replace("\r\n", "\n").replace('\r', '\n')
+            .replace('\u2028', '\n').replace("\u2029", "\n\n")
+        val splitter = if (BLANK_LINE.containsMatchIn(normalized)) BLANK_LINE else NEWLINE
+        return normalized.split(splitter)
+            .map { it.trim().replace(WRAP, " ") }
             .filter { it.isNotEmpty() }
             .mapIndexed { i, p -> Block("$prefix$i", BlockKind.Paragraph, p) }
+    }
+
+    private val BLANK_LINE = Regex("\\n\\s*\\n")
+    private val NEWLINE = Regex("\\n")
+    private val WRAP = Regex("\\s*\\n\\s*")
 }

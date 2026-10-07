@@ -1,6 +1,5 @@
 package com.personal.flowreader.share
 
-import com.personal.flowreader.data.EpubIngest
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -66,9 +65,7 @@ object WebPageIngest {
             runCatching { root.select(removeCss).remove() }
         }
         // Paragraphs survive as blank-line breaks, so the saved text reflows and splits into chapters.
-        val text = EpubIngest.extractBlocks(root, "w").joinToString("\n\n") { it.text }
-            .ifBlank { root.text() }
-            .trim()
+        val text = HtmlParagraphs.of(root).joinToString("\n\n")
         if (text.isBlank()) throw IllegalArgumentException("No text content found on page")
         return WebArticle(title = title.trim(), text = text, url = url)
     }

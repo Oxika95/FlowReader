@@ -381,3 +381,86 @@ class ShareRouterTest {
         assertEquals(RouterLanding.FILES, ShareRouter.bookFileLanding(rules).id)
     }
 }
+
+class DefaultParseRuleTest {
+    private val site = ParseRule(id = "site", hostPattern = "example.com", parseMode = ShareParseMode.Custom, contentCss = "div.text")
+
+    @Test
+    fun addedLastWhenMissing() {
+        val rules = ParseRules.withDefault(listOf(site))
+        assertEquals(listOf("site", ParseRules.DEFAULT_ID), rules.map { it.id })
+        assertEquals(listOf(0, 1), rules.map { it.order })
+    }
+
+    @Test
+    fun keptLastEnabledAndMatchingAnyUrl() {
+        val tampered = ParseRule(
+            id = ParseRules.DEFAULT_ID,
+            hostPattern = "only.example.org",
+            pathPattern = "/x",
+            enabled = false,
+            parseMode = ShareParseMode.Custom,
+            removeCss = ".ads",
+        )
+        val rules = ParseRules.withDefault(listOf(tampered, site))
+        val default = rules.last()
+        assertEquals(ParseRules.DEFAULT_ID, default.id)
+        assertTrue(default.enabled)
+        assertEquals("*", default.hostPattern)
+        assertNull(default.pathPattern)
+        assertEquals(ShareParseMode.Custom, default.parseMode)
+        assertEquals(".ads", default.removeCss)
+        assertEquals(1, rules.count { ParseRules.isProtected(it) })
+    }
+
+    @Test
+    fun catchesUrlsNoOtherRuleMatches() {
+        val rules = ParseRules.withDefault(listOf(site))
+        assertEquals("site", ShareUrlMatch.matchParse("https://example.com/ch/1", rules)?.id)
+        assertEquals(ParseRules.DEFAULT_ID, ShareUrlMatch.matchParse("https://other.net/a", rules)?.id)
+    }
+}
+
+class HtmlParagraphsTest {
+    private fun paras(html: String) = HtmlParagraphs.of(org.jsoup.Jsoup.parseBodyFragment(html).body())
+
+    @Test
+    fun blockBoundariesNeverJoinWords() {
+        assertEquals(listOf("Hello", "World"), paras("<div>Hello</div><div>World</div>"))
+        assertEquals(listOf("End.", "Next"), paras("<p>End.</p><p>Next</p>"))
+    }
+
+    @Test
+    fun brBreaksParagraphs() {
+        assertEquals(listOf("One.", "Two.", "Three."), paras("<div>One.<br>Two.<br><br>Three.</div>"))
+    }
+
+    @Test
+    fun looseTextBesideParagraphsIsKept() {
+        assertEquals(listOf("Intro text", "Para.", "Tail"), paras("<div>Intro text<p>Para.</p>Tail</div>"))
+    }
+
+    @Test
+    fun nestedBlocksReadOnce() {
+        assertEquals(listOf("Quoted."), paras("<blockquote><p>Quoted.</p></blockquote>"))
+    }
+
+    @Test
+    fun inlineMarkupKeepsSourceSpacing() {
+        assertEquals(listOf("A bold word and joined"), paras("<p>A <b>bold</b> word and <i>join</i>ed</p>"))
+    }
+
+    @Test
+    fun sourceNewlinesAreSpaces() {
+        assertEquals(listOf("Wrapped in source"), paras("<p>Wrapped\n   in\nsource</p>"))
+    }
+
+    @Test
+    fun pageWithoutParagraphTagsKeepsBreaks() {
+        val article = WebPageIngest.extractArticle(
+            html = "<html><body><article>First line.<br><br>Second line.</article></body></html>",
+            url = "https://example.com/a",
+        )
+        assertEquals("First line.\n\nSecond line.", article.text)
+    }
+}

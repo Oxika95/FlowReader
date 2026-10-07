@@ -36,6 +36,16 @@ The first `http(s)://` or `www.` URL in the shared text is used, even when surro
 
 [`WebPageIngest.kt`](../app/src/main/java/com/personal/flowreader/share/WebPageIngest.kt) + Parser CSS selectors (content / title / remove).
 
+- The first matching parse rule wins; the protected **Default** rule (`seed-parse-default`, any URL)
+  is always last, can't be deleted or disabled, and only its parser mode / CSS are editable.
+- Text is saved paragraph by paragraph ([`HtmlParagraphs.kt`](../app/src/main/java/com/personal/flowreader/share/HtmlParagraphs.kt)):
+  every block element, `<br>` and `<pre>` line ends a paragraph, so words never join across a
+  break; text directly inside a `<div>` is kept and nested blocks are read once. Plugin chapter
+  HTML uses the same rules.
+- Shared/pasted raw text: blank lines separate paragraphs (single newlines fold to spaces, for
+  hard-wrapped books); text with no blank line keeps one paragraph per line. Lone `\r` and Unicode
+  line/paragraph separators count as newlines. Already-imported items keep their stored text.
+
 ## Related UI
 
 Configure rules under Settings → **Import** ([settings.md](settings.md)). Custom shelves from Library → Add a tab appear as destinations.

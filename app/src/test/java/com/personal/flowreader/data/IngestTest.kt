@@ -17,6 +17,24 @@ class IngestTest {
     }
 
     @Test
+    fun txtFoldsHardWrapsWhenBlankLinesSeparateParagraphs() {
+        val blocks = TxtIngest.paragraphs("One line\nwrapped.\n\nTwo.", "t")
+        assertEquals(listOf("One line wrapped.", "Two."), blocks.map { it.text })
+    }
+
+    @Test
+    fun txtWithoutBlankLinesKeepsEachLine() {
+        val blocks = TxtIngest.paragraphs("First para.\nSecond para.\r\nThird.", "t")
+        assertEquals(listOf("First para.", "Second para.", "Third."), blocks.map { it.text })
+    }
+
+    @Test
+    fun txtLoneCarriageReturnAndUnicodeSeparatorsBreak() {
+        val blocks = TxtIngest.paragraphs("Alpha\rBeta\u2029Gamma\u2028Delta", "t")
+        assertEquals(listOf("Alpha Beta", "Gamma Delta"), blocks.map { it.text })
+    }
+
+    @Test
     fun htmlBlocksFromParagraphs() {
         val blocks = EpubIngest.extractBlocks("<p>One</p><h2>Head</h2><p>Two</p>", "c0")
         assertEquals(3, blocks.size)
