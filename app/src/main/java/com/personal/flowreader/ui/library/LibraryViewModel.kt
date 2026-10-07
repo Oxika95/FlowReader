@@ -724,11 +724,21 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun deleteFilter(scope: FilterScope, id: String) {
+    fun deleteFilters(scope: FilterScope, ids: Set<String>) {
         viewModelScope.launch {
             when (scope) {
-                FilterScope.Global -> persistGlobal(_ui.value.filtersGlobal.filterNot { it.id == id })
-                FilterScope.Groups -> persistGroups(_ui.value.filtersGroups.filterNot { it.id == id })
+                FilterScope.Global -> persistGlobal(_ui.value.filtersGlobal.filterNot { it.id in ids })
+                FilterScope.Groups -> persistGroups(_ui.value.filtersGroups.filterNot { it.id in ids })
+                FilterScope.Local -> Unit
+            }
+        }
+    }
+
+    fun reorderFilters(scope: FilterScope, ids: List<String>) {
+        viewModelScope.launch {
+            when (scope) {
+                FilterScope.Global -> persistGlobal(TextFilters.reorder(_ui.value.filtersGlobal, ids))
+                FilterScope.Groups -> persistGroups(TextFilters.reorder(_ui.value.filtersGroups, ids))
                 FilterScope.Local -> Unit
             }
         }
@@ -764,11 +774,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun persistGlobal(rules: List<FilterRule>) {
         flow.settings.setGlobalFilters(rules)
         _ui.value = _ui.value.copy(filtersGlobal = rules)
+        tts.setSpeechFilters(rules, _ui.value.filtersGroups)
     }
 
     private suspend fun persistGroups(rules: List<FilterRule>) {
         flow.settings.setGroupFilters(rules)
         _ui.value = _ui.value.copy(filtersGroups = rules)
+        tts.setSpeechFilters(_ui.value.filtersGlobal, rules)
     }
 
     private fun nextOrder(rules: List<FilterRule>): Int =

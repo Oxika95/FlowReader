@@ -109,6 +109,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -192,6 +193,8 @@ internal fun FiltersSettingsTab(
     onAdd: (FilterScope) -> Unit,
     onEdit: (FilterScope, FilterRule) -> Unit,
     onSetEnabled: (FilterScope, String, Boolean) -> Unit,
+    onReorder: (FilterScope, List<String>) -> Unit,
+    onDelete: (FilterScope, Set<String>) -> Unit,
     scopes: List<FilterScope> = FilterScope.entries,
 ) {
     var scopeTab by remember { mutableIntStateOf(0) }
@@ -206,81 +209,16 @@ internal fun FiltersSettingsTab(
     FlowTabBar(tabs = flowTextTabs(visibleScopes.map { it.label }, scopeTab.coerceIn(0, visibleScopes.lastIndex)) { scopeTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
 
     Spacer(Modifier.height(FlowTokens.Space.M))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Rules",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f),
+    // Edit mode (selection, drag order) belongs to one scope; switching tabs leaves it.
+    key(scope) {
+        FilterRuleList(
+            rules = rules,
+            onAdd = { onAdd(scope) },
+            onEdit = { onEdit(scope, it) },
+            onSetEnabled = { id, enabled -> onSetEnabled(scope, id, enabled) },
+            onReorder = { onReorder(scope, it) },
+            onDelete = { onDelete(scope, it) },
         )
-        TextButton(onClick = { onAdd(scope) }) {
-            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(FlowTokens.Icon.M))
-            Spacer(Modifier.width(FlowTokens.Space.XS))
-            Text("Add")
-        }
-    }
-
-    if (rules.isEmpty()) {
-        Text(
-            "No filters yet. Add a rule to replace text in the reader and TTS.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = FlowTokens.Space.S),
-        )
-    } else {
-        rules.sortedBy { it.order }.forEach { rule ->
-            FilterRuleRow(
-                rule = rule,
-                onToggle = { onSetEnabled(scope, rule.id, it) },
-                onClick = { onEdit(scope, rule) },
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-        }
-    }
-
-    val enabledCount = rules.count { it.enabled }
-    Text(
-        "Enabled $enabledCount of ${rules.size}",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = FlowTokens.Space.M),
-    )
-}
-
-@Composable
-private fun FilterRuleRow(
-    rule: FilterRule,
-    onToggle: (Boolean) -> Unit,
-    onClick: () -> Unit,
-) {
-    val title = rule.title.ifBlank { rule.pattern.ifBlank { "Untitled rule" } }
-    val replacementLabel = rule.replacement.ifEmpty { "(empty)" }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = FlowTokens.Space.M),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f).padding(end = FlowTokens.Space.S)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                "${rule.pattern} → $replacementLabel",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Switch(checked = rule.enabled, onCheckedChange = onToggle)
     }
 }
 
@@ -294,7 +232,6 @@ internal fun FilterRuleEditorOverlay(
     isNew: Boolean,
     previewApply: (sample: String, draft: FilterRule, mode: FilterPreviewMode) -> FilterApplyResult,
     onSave: (FilterRule) -> Unit,
-    onDelete: (() -> Unit)?,
     onSpeak: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -341,11 +278,7 @@ internal fun FilterRuleEditorOverlay(
         onDismiss = onDismiss,
         title = if (isNew) "New ${scope.label} Filter" else "Edit ${scope.label} Filter",
         footer = {
-            FlowActionRow(
-                start = {
-                    if (onDelete != null) FlowTextAction("Delete", onDelete, destructive = true)
-                },
-            ) {
+            FlowActionRow {
                 FlowTextAction("Cancel", onDismiss)
                 FlowTextAction(
                     "Save",

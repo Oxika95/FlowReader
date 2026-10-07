@@ -176,7 +176,8 @@ class ReaderViewModel(
         session = s
         viewport = null
         flow.progress.setLocator(bookId, ReaderSessions.locator(bookId, b, s))
-        tts.attach(s, locus, speechFilters = rules.filter { it.ttsOnly })
+        _ui.value.let { tts.setSpeechFilters(it.filtersGlobal, it.filtersGroups, it.filtersLocal) }
+        tts.attach(s, locus)
         s.setFocus(ReadingSession.FOCUS_READER, locus.chapterIndex)
         s.setFocus(ReadingSession.FOCUS_READER_END, locus.chapterIndex)
         _ui.update {
@@ -284,8 +285,11 @@ class ReaderViewModel(
     fun setFilterEnabled(scope: FilterScope, id: String, enabled: Boolean) =
         editFilters(scope) { list -> list.map { if (it.id == id) it.copy(enabled = enabled) else it } }
 
-    fun deleteFilter(scope: FilterScope, id: String) =
-        editFilters(scope) { list -> list.filterNot { it.id == id } }
+    fun deleteFilters(scope: FilterScope, ids: Set<String>) =
+        editFilters(scope) { list -> list.filterNot { it.id in ids } }
+
+    fun reorderFilters(scope: FilterScope, ids: List<String>) =
+        editFilters(scope) { list -> TextFilters.reorder(list, ids) }
 
     fun previewApply(
         sample: String,

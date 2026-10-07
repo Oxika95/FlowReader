@@ -96,6 +96,13 @@ fun DebugSynthDumpFab(
     onCloseDebugger: () -> Unit,
 ) {
     var panelOpen by remember { mutableStateOf(false) }
+    val openRequested by SynthDebugLog.openRequested.collectAsState()
+    LaunchedEffect(openRequested) {
+        if (openRequested) {
+            panelOpen = true
+            SynthDebugLog.consumeOpenRequest()
+        }
+    }
 
     BoxWithConstraints(
         modifier = modifier

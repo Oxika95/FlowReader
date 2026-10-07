@@ -72,7 +72,6 @@ internal fun <T> DragHandle(
     rowHeights: Map<String, Int>,
     idOf: (T) -> String,
     draggingId: (String?) -> Unit,
-    dragOffset: Float,
     onDragOffset: (Float) -> Unit,
 ) {
     Icon(
@@ -82,8 +81,12 @@ internal fun <T> DragHandle(
         modifier = Modifier
             .padding(end = FlowTokens.Space.S)
             .pointerInput(ruleId) {
+                // Accumulated here: the pointerInput block outlives recompositions, so a
+                // composition parameter read inside onDrag would stay at its first value.
+                var offset = 0f
                 detectDragGestures(
                     onDragStart = {
+                        offset = 0f
                         draggingId(ruleId)
                         onDragOffset(0f)
                     },
@@ -97,7 +100,7 @@ internal fun <T> DragHandle(
                     },
                     onDrag = { change, amount ->
                         change.consume()
-                        var offset = dragOffset + amount.y
+                        offset += amount.y
                         onDragOffset(offset)
                         val index = working.indexOfFirst { idOf(it) == ruleId }
                         if (index < 0) return@detectDragGestures

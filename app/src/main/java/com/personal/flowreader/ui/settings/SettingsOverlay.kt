@@ -102,6 +102,8 @@ internal fun SettingsOverlay(
                 onAdd = filterCallbacks.onAddFilter,
                 onEdit = filterCallbacks.onEditFilter,
                 onSetEnabled = filterCallbacks.onSetFilterEnabled,
+                onReorder = filterCallbacks.onReorderFilters,
+                onDelete = filterCallbacks.onDeleteFilters,
             )
             3 -> SharingSettingsHost(ruleEditor)
             else -> LayoutSettingsTab(

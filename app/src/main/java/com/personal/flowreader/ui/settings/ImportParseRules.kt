@@ -124,7 +124,6 @@ internal fun ReorderableParseList(
                             rowHeights = rowHeights,
                             idOf = { it.id },
                             draggingId = { draggingId = it },
-                            dragOffset = dragOffset,
                             onDragOffset = { dragOffset = it },
                         )
                     }

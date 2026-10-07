@@ -16,6 +16,8 @@ MainActivity
 
 `ShareIngressActivity` and the share overlay window each host their own `FlowOverlayHost`.
 
+Within content, `FlowLayer.ContentLifted` raises a list row being dragged over its siblings.
+
 ## Overlay stack (`FlowOverlayHost`, `rememberFlowOverlay`)
 
 - A fullscreen card registers itself while `visible = true`, wherever it is composed (a screen,

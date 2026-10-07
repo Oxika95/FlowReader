@@ -21,6 +21,19 @@ object SynthDebugLog {
     /** Bumps on each append/clear so UI can refresh a live snapshot. */
     val revision: StateFlow<Long> = _revision.asStateFlow()
 
+    private val _openRequested = MutableStateFlow(false)
+
+    /** True until the log panel opens; stays set if the bubble isn't composed yet. */
+    val openRequested: StateFlow<Boolean> = _openRequested.asStateFlow()
+
+    fun requestOpen() {
+        _openRequested.value = true
+    }
+
+    fun consumeOpenRequest() {
+        _openRequested.value = false
+    }
+
     fun setEnabled(value: Boolean) {
         enabled.set(value)
         if (!value) {

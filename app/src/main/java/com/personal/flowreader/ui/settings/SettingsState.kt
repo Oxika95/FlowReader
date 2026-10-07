@@ -126,4 +126,7 @@ data class FilterSettingsCallbacks(
     val onAddFilter: (FilterScope) -> Unit,
     val onEditFilter: (FilterScope, FilterRule) -> Unit,
     val onSetFilterEnabled: (FilterScope, String, Boolean) -> Unit,
+    /** Rule ids in their new order. */
+    val onReorderFilters: (FilterScope, List<String>) -> Unit,
+    val onDeleteFilters: (FilterScope, Set<String>) -> Unit,
 )

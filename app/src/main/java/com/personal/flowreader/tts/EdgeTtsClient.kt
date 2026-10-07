@@ -31,6 +31,9 @@ data class EdgeAudio(
     val boundaries: List<EdgeWordBoundary> = emptyList(),
 )
 
+/** Edge refused this text (empty, too long, or no audio for it); retrying won't help. */
+class EdgeContentException(message: String) : IllegalArgumentException(message)
+
 class EdgeTtsClient(
     private val http: OkHttpClient = defaultHttp(),
 ) {
@@ -46,12 +49,12 @@ class EdgeTtsClient(
         ratePercent: Int = 0,
         pitchPercent: Int = 0,
     ): EdgeAudio {
-        val trimmed = text.trim()
+        val trimmed = SpeechText.xmlSafe(text).trim()
         if (trimmed.isEmpty()) {
-            throw IllegalArgumentException("Nothing to synthesize.")
+            throw EdgeContentException("Nothing to synthesize.")
         }
         if (trimmed.length > MAX_UTTERANCE_CHARS) {
-            throw IllegalArgumentException(
+            throw EdgeContentException(
                 "Utterance too long (${trimmed.length} chars; max $MAX_UTTERANCE_CHARS).",
             )
         }
@@ -111,7 +114,8 @@ class EdgeTtsClient(
             )
         }
         SynthDebugLog.append("edge race all failed n=${errors.size}")
-        throw errors.lastOrNull()
+        throw errors.firstOrNull { it is EdgeContentException }
+            ?: errors.lastOrNull()
             ?: IllegalStateException("All Edge race attempts failed.")
     }
 
@@ -181,7 +185,7 @@ class EdgeTtsClient(
                             if (audio.size() == 0) {
                                 if (cont.isActive) {
                                     cont.resumeWithException(
-                                        IllegalStateException("No audio data received."),
+                                        EdgeContentException("No audio data received."),
                                     )
                                 }
                             } else if (cont.isActive) {

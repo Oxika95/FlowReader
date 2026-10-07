@@ -72,7 +72,7 @@ class TtsAudioEngine {
         pendingRemainder = null
         pendingMediaSeedSec = 0.0
         framesWritten = 0L
-        synchronized(decodeCacheLock) { decodeCache.clear() }
+        clearDecodeCache()
         val t = track
         track = null
         trackSampleRate = 0
@@ -85,6 +85,11 @@ class TtsAudioEngine {
             runCatching { t.release() }
         }
         cancelled.set(false)
+    }
+
+    /** Decoded clips are keyed by path; call when cached files are deleted or rewritten. */
+    fun clearDecodeCache() {
+        synchronized(decodeCacheLock) { decodeCache.clear() }
     }
 
     /** Warm the decode cache for [file] without playing. */

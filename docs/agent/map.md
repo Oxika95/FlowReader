@@ -48,7 +48,8 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | Word highlight timing | `tts/WordHighlight.kt` | `WordHighlightTest` |
 | Media session / background | `tts/TtsPlaybackService.kt`, `AudioKeepAlive.kt`, `UnderlayBluetoothMonitor.kt` | |
 | Sentence splitting | `data/SentenceSplitter.kt`, `KoehnSentenceBreak.kt`, `SentenceLengthNormalizer.kt` | `SentenceSplitterTest` |
-| Text filters (Global/Groups/Local) | `data/TextFilters.kt`; UI `ui/settings/FiltersSettings.kt` | `TextFiltersTest`, `docs/settings.md` |
+| Text filters (Global/Groups/Local) | `data/TextFilters.kt`; UI `ui/settings/FiltersSettings.kt` (tab, editor), `FilterRuleList.kt` (list, hold-to-edit, reorder, delete); TTS-only rules reach playback via `TtsController.setSpeechFilters` | `TextFiltersTest`, `docs/settings.md` |
+| Unspeakable / rejected sentences (skip, log) | `tts/SpeechText.kt` (pure), `TtsController.loop`, `EdgeContentException` in `EdgeTtsClient.kt` | `SpeechTextTest`, `docs/tts.md` |
 | EPUB/TXT ingest, covers | `data/Ingest.kt`, `EpubCover.kt`, `BookCatalog.kt` | `IngestTest` |
 | Library tabs, shelves, view mode | `ui/library/LibraryViewModel.kt`, `LibraryScreen.kt`, `data/Models.kt` (`LibraryTabId`) | `docs/library.md` |
 | Queue | `BookCatalog` (`listQue`, `nextUndoneQue`, `markQueDone`), `ProgressDb` (`que_items`) | |

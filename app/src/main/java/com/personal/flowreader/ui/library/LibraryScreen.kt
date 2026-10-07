@@ -363,6 +363,8 @@ fun LibraryScreen(
                 filterEditor = FilterEditorSession(scope = scope, rule = rule, isNew = false)
             },
             onSetFilterEnabled = { scope, id, enabled -> vm.setFilterEnabled(scope, id, enabled) },
+            onReorderFilters = { scope, ids -> vm.reorderFilters(scope, ids) },
+            onDeleteFilters = { scope, ids -> vm.deleteFilters(scope, ids) },
         ),
         debugEnabled = appearance.debugEnabled,
         onDebugEnabled = appearanceCallbacks.onDebugEnabled,
@@ -382,14 +384,6 @@ fun LibraryScreen(
             onSave = { draft ->
                 if (editor.isNew) vm.addFilter(editor.scope, draft) else vm.updateFilter(editor.scope, draft)
                 filterEditor = null
-            },
-            onDelete = if (editor.isNew) {
-                null
-            } else {
-                {
-                    vm.deleteFilter(editor.scope, editor.rule.id)
-                    filterEditor = null
-                }
             },
             onSpeak = { vm.tts.speakPreview(it) },
             onDismiss = { filterEditor = null },

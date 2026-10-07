@@ -111,6 +111,13 @@ object TextFilters {
     ): List<FilterRule> =
         global.sortedBy { it.order } + groups.sortedBy { it.order } + local.sortedBy { it.order }
 
+    /** Rules in [ids] order (unlisted rules keep their relative order at the end), `order` renumbered. */
+    fun reorder(rules: List<FilterRule>, ids: List<String>): List<FilterRule> {
+        val rank = ids.withIndex().associate { (i, id) -> id to i }
+        return rules.sortedWith(compareBy({ rank[it.id] ?: Int.MAX_VALUE }, { it.order }))
+            .mapIndexed { i, rule -> rule.copy(order = i) }
+    }
+
     fun validatePattern(rule: FilterRule): String? {
         if (rule.pattern.isEmpty()) return null
         if (rule.matchType != FilterMatchType.RegEx) return null
@@ -344,21 +351,28 @@ object TextFilters {
         return try {
             when (rule.matchType) {
                 FilterMatchType.RegEx -> Pattern.compile(rule.pattern)
-                FilterMatchType.CaseSensitive -> {
-                    val body = Pattern.quote(rule.pattern)
-                    val src = if (rule.wholeWords) "\\b$body\\b" else body
-                    Pattern.compile(src)
-                }
-                FilterMatchType.CaseInsensitive -> {
-                    val body = Pattern.quote(rule.pattern)
-                    val src = if (rule.wholeWords) "\\b$body\\b" else body
-                    Pattern.compile(src, Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE)
-                }
+                FilterMatchType.CaseSensitive -> Pattern.compile(literalSource(rule))
+                FilterMatchType.CaseInsensitive ->
+                    Pattern.compile(literalSource(rule), Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE)
             }
         } catch (_: PatternSyntaxException) {
             null
         }
     }
+
+    /**
+     * Whole-word boundaries only on edges that are word characters: `\b` next to punctuation
+     * (`Mr.`, `*`, `—`) requires a letter on the far side, so such patterns never matched.
+     */
+    private fun literalSource(rule: FilterRule): String {
+        val body = Pattern.quote(rule.pattern)
+        if (!rule.wholeWords) return body
+        val start = if (isWordChar(rule.pattern.first())) "\\b" else ""
+        val end = if (isWordChar(rule.pattern.last())) "\\b" else ""
+        return start + body + end
+    }
+
+    private fun isWordChar(ch: Char): Boolean = ch.isLetterOrDigit() || ch == '_'
 
     private fun flagsToRanges(flags: BooleanArray): List<IntRange> {
         if (flags.isEmpty()) return emptyList()

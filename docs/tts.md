@@ -30,6 +30,18 @@ Priority goals: stability → latency → footprint.
 
 When listening to a queue item, finishing the book marks it done and opens the next unfinished item (`autoPlay=1`).
 
+## Unspeakable sentences
+
+- Text with no letters or digits after TTS-only filters (scene breaks like `* * *`, lone
+  punctuation, text a filter emptied) is skipped silently; with debug on, the log gets a
+  `skip i=… nothing to say` line.
+- Edge rejecting a sentence (`EdgeContentException`: nothing to synthesize, too long, no audio
+  returned) skips it and keeps playing: debug turns on, the log records
+  `ERROR skipped i=…: <reason> text="…" spoken="…"`, and the log panel opens.
+- Network/other failures still stop playback (logged as `ERROR`).
+- A failed lookahead clip isn't retried by prefetch; the playhead retries or skips it when it gets
+  there. Characters XML forbids (control chars, lone surrogates) are stripped before Edge SSML.
+
 ## Debug
 
 About → Debug mode shows a synth dump FAB for Edge logs.

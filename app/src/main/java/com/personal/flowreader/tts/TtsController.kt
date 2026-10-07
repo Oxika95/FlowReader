@@ -142,6 +142,14 @@ class TtsController(
     /** TTS-only filter rules; applied at speak/synthesize time on sentence text. */
     @Volatile
     private var speechFilters: List<FilterRule> = emptyList()
+    /** Part of every clip name so audio made with other TTS-only rules is never replayed. */
+    @Volatile
+    private var speechFilterKey = ""
+    private var speechGlobal: List<FilterRule> = emptyList()
+    private var speechGroups: List<FilterRule> = emptyList()
+    private var speechLocal: List<FilterRule> = emptyList()
+    /** Lookahead skips these until the playhead reaches them (no instant retry loop). */
+    private val prefetchFailed: MutableSet<Int> = ConcurrentHashMap.newKeySet()
     /** Book id + sentence numbering origin; scopes cache file names so clips never mismatch. */
     @Volatile
     private var bookKey = ""
@@ -271,13 +279,53 @@ class TtsController(
     /** Session playback is attached to; a reader reopening the same content reuses it. */
     fun attachedSession(): ReadingSession? = reading
 
+    /**
+     * Filter rules from the reader (all scopes) or Library settings (Global/Groups, keeping the
+     * attached book's Local rules). Only TTS-only rules matter here; a change re-keys the clip
+     * cache so the next clips are synthesized from the new text.
+     */
+    fun setSpeechFilters(
+        global: List<FilterRule>,
+        groups: List<FilterRule>,
+        local: List<FilterRule> = speechLocal,
+    ) {
+        speechGlobal = global
+        speechGroups = groups
+        speechLocal = local
+        val next = TextFilters.merge(global, groups, local)
+            .filter { it.ttsOnly && it.enabled && it.pattern.isNotEmpty() }
+        if (next == speechFilters) return
+        speechFilters = next
+        speechFilterKey = speechFilterKeyOf(next)
+        SynthDebugLog.append("speechFilters n=${next.size} key=$speechFilterKey")
+        if (attachedBookId.isEmpty()) return
+        cancelEdgeJobs()
+        prefetchFailed.clear()
+        wordBoundariesBySentence.clear()
+        cuesBySentence.clear()
+        val bookId = attachedBookId
+        scope.launch {
+            val ready = withContext(Dispatchers.IO) { scanReadySentenceIndices() }
+            if (attachedBookId != bookId) return@launch
+            _state.update { it.copy(readySentenceIndices = ready, generatingSentenceIndices = emptySet()) }
+            scheduleAheadPrefetch()
+        }
+    }
+
+    private fun speechFilterKeyOf(rules: List<FilterRule>): String {
+        if (rules.isEmpty()) return ""
+        val signature = rules.joinToString("\u0001") {
+            "${it.matchType.name}\u0002${it.wholeWords}\u0002${it.pattern}\u0002${it.replacement}"
+        }
+        return Integer.toHexString(signature.hashCode())
+    }
+
     fun attach(
         session: ReadingSession,
         start: Locus,
-        speechFilters: List<FilterRule> = emptyList(),
     ) {
         // Reopening the reader on the book that is already playing must not interrupt it.
-        if (session === reading && speechFilters == this.speechFilters) {
+        if (session === reading) {
             _state.update { it.copy(following = it.autoScrollWithTts) }
             return
         }
@@ -305,7 +353,7 @@ class TtsController(
         _state.value = _state.value.copy(bookId = bookId, bookTitle = title)
         coverArt?.recycle()
         coverArt = null
-        this.speechFilters = speechFilters
+        prefetchFailed.clear()
         index = sentences.indexAt(start)
         wordBoundariesBySentence.clear()
         cuesBySentence.clear()
@@ -677,6 +725,14 @@ class TtsController(
         }
         _state.update { it.copy(debugEnabled = true, error = null) }
         SynthDebugLog.appendError(text)
+    }
+
+    /** Playback continues past [i]; the log opens with the text Edge refused. */
+    private fun reportSkippedSentence(i: Int, text: String, reason: String) {
+        val spoken = speechText(text)
+        val detail = if (spoken == text) "" else " spoken=\"$spoken\""
+        reportMediaError("skipped i=$i: $reason text=\"$text\"$detail")
+        SynthDebugLog.requestOpen()
     }
 
     /**
@@ -1152,9 +1208,15 @@ class TtsController(
             }
             scheduleAheadPrefetch()
             try {
-                speak(s, generation)
+                if (SpeechText.isSpeakable(speechText(s.text))) {
+                    speak(s, generation)
+                } else {
+                    SynthDebugLog.append("skip i=$index nothing to say text=\"${s.text}\"")
+                }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: EdgeContentException) {
+                reportSkippedSentence(index, s.text, e.message ?: "Edge rejected text")
             } catch (t: Throwable) {
                 stopSessionAudio()
                 _state.update { it.copy(playing = false, sessionActive = false) }
@@ -1266,6 +1328,7 @@ class TtsController(
             if (slots <= 0) break
             if (peekReadyCacheFile(target) != null) continue
             if (edgeJobs[target]?.isActive == true) continue
+            if (target in prefetchFailed) continue
             launchPrefetchJob(target)
             slots--
         }
@@ -1313,8 +1376,10 @@ class TtsController(
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Throwable) {
-            // Lookahead is best-effort.
+        } catch (t: Throwable) {
+            // Lookahead is best-effort; the playhead retries (or skips) this sentence itself.
+            prefetchFailed.add(i)
+            SynthDebugLog.append("prefetch fail i=$i: ${t.message ?: t.javaClass.simpleName}")
         }
     }
 
@@ -1353,7 +1418,16 @@ class TtsController(
                 SynthDebugLog.append(
                     "ensureNextDeferred start i=${i + 1} slack=${slackMs()}",
                 )
-                ensureSentenceCached(i + 1, generation)
+                try {
+                    ensureSentenceCached(i + 1, generation)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    // The loop retries (or skips) i + 1 on its own turn; this clip still ends cleanly.
+                    prefetchFailed.add(i + 1)
+                    SynthDebugLog.append("ensureNextDeferred fail i=${i + 1}: ${t.message}")
+                    return@resolve null
+                }
                 SynthDebugLog.append(
                     "ensureNextDeferred done i=${i + 1} " +
                         "waitMs=${System.currentTimeMillis() - waitStart} slack=${slackMs()}",
@@ -1460,10 +1534,15 @@ class TtsController(
             wordBoundariesBySentence.remove(i)
             cuesBySentence.remove(i)
         }
+        val text = speechText(s.text)
+        if (!SpeechText.isSpeakable(text)) {
+            prefetchFailed.add(i)
+            return false
+        }
         publishGenerating(i)
         return try {
             val audio = edge.synthesize(
-                text = speechText(s.text),
+                text = text,
                 voice = edgeVoiceId(),
                 ratePercent = ratePercent(),
                 pitchPercent = pitchPercent(),
@@ -1477,6 +1556,7 @@ class TtsController(
             } else {
                 cuesBySentence.remove(i)
             }
+            prefetchFailed.remove(i)
             publishReady(i)
             true
         } catch (e: CancellationException) {
@@ -1869,6 +1949,7 @@ class TtsController(
 
     private fun voiceCacheKey(): String =
         "${_state.value.engineKey}_${edgeVoiceId()}_${ratePercent()}_${pitchPercent()}"
+            .plus(if (speechFilterKey.isEmpty()) "" else "_f$speechFilterKey")
             .replace(VOICE_KEY_UNSAFE, "_")
 
     private fun sanitizeBookKey(bookId: String): String = bookId.replace(BOOK_KEY_UNSAFE, "-")
@@ -1967,6 +2048,8 @@ class TtsController(
      */
     private suspend fun clearEdgeCache() {
         cancelEdgeJobs()
+        prefetchFailed.clear()
+        audioEngine.clearDecodeCache()
         clearAudioStatus()
         wordBoundariesBySentence.clear()
         cuesBySentence.clear()

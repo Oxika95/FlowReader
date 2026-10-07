@@ -8,6 +8,8 @@ package com.personal.flowreader.ui.theme
 enum class FlowLayer(val z: Float) {
     /** Screen content: lists, reading column, tab bars. */
     Content(0f),
+    /** A list row being dragged over its siblings. */
+    ContentLifted(1f),
     /** Non-interactive or tap-band layers over content (busy scrim, reader edge bands). */
     ContentScrim(10f),
     /** Top/bottom floating docks. */

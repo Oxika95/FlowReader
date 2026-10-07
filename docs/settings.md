@@ -51,7 +51,15 @@ Sub-tabs: **Voice | Playback**.
 
 Library Settings: **Global | Groups**. Reader Settings also **Local** (per book).
 
-Rules apply to **visible text and TTS**, not raw HTML. Editor fields: Title, Type (case / regex), Whole words, TTS only, Find, Replace, Preview, Delete / Save.
+Rules apply to **visible text and TTS**, not raw HTML. Editor fields: Title, Type (case / regex), Whole words, TTS only, Find, Replace, Preview, Cancel / Save.
+
+- Rules run top to bottom (Global, then Groups, then Local). **Whole words** adds a word boundary
+  only on pattern edges that are letters/digits, so `Mr.` or `* * *` still match.
+- **TTS only** rules change spoken text, never the page, and apply per sentence (a pattern can't
+  span two sentences). Changes from Library or Reader settings reach playback immediately; Edge
+  clip names include a hash of the TTS-only rules, so audio made with older rules is never replayed.
+- **Hold** a rule to enter edit mode: drag handles reorder (saved on drop), checkboxes select,
+  **All/None** toggles the selection, **Delete** asks for confirmation, **Done** or Back exits.
 
 Storage: `global_filters` / `group_filters` JSON; Local → Room `book_filters`.
 
@@ -103,7 +111,7 @@ Sub-tabs: **Theme | UI | Font**.
 - [`SettingsOverlay.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/SettingsOverlay.kt)
 - [`AboutSettingsTab.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/AboutSettingsTab.kt)
 - [`AudioSettings.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/AudioSettings.kt)
-- [`FiltersSettings.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/FiltersSettings.kt)
+- [`FiltersSettings.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/FiltersSettings.kt), [`FilterRuleList.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/FilterRuleList.kt) (edit mode)
 - [`SharingSettingsTab.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/SharingSettingsTab.kt)
 - [`AppearanceSettings.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/AppearanceSettings.kt)
 - [`SettingsStore.kt`](../app/src/main/java/com/personal/flowreader/data/SettingsStore.kt)

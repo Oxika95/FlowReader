@@ -96,6 +96,30 @@ class TextFiltersTest {
     }
 
     @Test
+    fun wholeWordsWithPunctuationEdges() {
+        val abbrev = FilterRule(pattern = "Mr.", replacement = "Mister", ttsOnly = true)
+        assertEquals("Mister Smith and Mrs. Jones", TextFilters.applySpeech("Mr. Smith and Mrs. Jones", listOf(abbrev)))
+        val stars = FilterRule(pattern = "* * *", replacement = "")
+        assertEquals("", TextFilters.apply("* * *", listOf(stars)).text)
+        val dash = FilterRule(pattern = "—", replacement = ", ")
+        assertEquals("yes, no", TextFilters.apply("yes—no", listOf(dash)).text)
+        val word = FilterRule(pattern = "cat", replacement = "dog")
+        assertEquals("dog concat", TextFilters.apply("cat concat", listOf(word)).text)
+    }
+
+    @Test
+    fun reorderFollowsIdsAndRenumbers() {
+        val a = FilterRule(id = "a", order = 0, pattern = "x", replacement = "y")
+        val b = FilterRule(id = "b", order = 1, pattern = "y", replacement = "z")
+        val c = FilterRule(id = "c", order = 2, pattern = "q")
+        val reordered = TextFilters.reorder(listOf(a, b, c), listOf("b", "a"))
+        assertEquals(listOf("b", "a", "c"), reordered.map { it.id })
+        assertEquals(listOf(0, 1, 2), reordered.map { it.order })
+        assertEquals("y", TextFilters.apply("x", reordered).text)
+        assertEquals("z", TextFilters.apply("x", listOf(a, b)).text)
+    }
+
+    @Test
     fun invalidRegexSkipped() {
         val rules = listOf(
             FilterRule(pattern = "[", replacement = "x", matchType = FilterMatchType.RegEx),
