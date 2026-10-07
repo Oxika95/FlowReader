@@ -149,6 +149,9 @@ class TtsController(
     private var moreProvider: (suspend () -> Boolean)? = null
     @Volatile
     private var attachedDoc: BookDoc? = null
+    /** Added to sentence chapter indices to get the stored (absolute) chapter; plugin windows. */
+    @Volatile
+    private var chapterOffset = 0
     @Volatile
     private var index = 0
     private var playJob: Job? = null
@@ -271,19 +274,25 @@ class TtsController(
         }
     }
 
+    /** Stored chapter index for a sentence's [chapterIndex]. */
+    fun absoluteChapter(chapterIndex: Int): Int = chapterOffset + chapterIndex
+
     fun attach(
         bookId: String,
         book: BookDoc,
         start: Locus,
         speechFilters: List<FilterRule> = emptyList(),
+        chapterOffset: Int = 0,
     ) {
         // Reopening the reader on the book that is already playing must not interrupt it.
         if (bookId == attachedBookId && book == attachedDoc &&
-            speechFilters == this.speechFilters && sentences.isNotEmpty()
+            speechFilters == this.speechFilters && sentences.isNotEmpty() &&
+            chapterOffset == this.chapterOffset
         ) {
             _state.update { it.copy(following = it.autoScrollWithTts) }
             return
         }
+        this.chapterOffset = chapterOffset
         val sameBook = bookId == attachedBookId
         val resume = sameBook && _state.value.playing
         // Sync teardown so a new book never shares a live player/loop (QuickNovel stop-before-play).

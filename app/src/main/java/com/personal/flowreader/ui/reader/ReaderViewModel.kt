@@ -12,13 +12,11 @@ import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.Locus
+import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.data.TxtIngest
 import com.personal.flowreader.plugin.store.PluginReadSession
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -64,52 +62,14 @@ class ReaderViewModel(
     private val isPluginBook: Boolean = flow.pluginBooks.isPluginBook(bookId)
     private val appendMutex = Mutex()
 
-    private data class PendingProgress(
-        val chapterIndex: Int,
-        val blockIndex: Int,
-        val charOffset: Int,
-        val readingProgress: Float,
-        val updatedAt: Long,
-    )
-
-    /** Conflated so rapid scroll keeps only the newest locus. */
-    private val progressWrites = Channel<PendingProgress>(Channel.CONFLATED)
-    private var progressWriter: Job? = null
+    /**
+     * True once the user or TTS moved the position after load. The loaded (possibly clamped)
+     * locus is never written back, so an interrupted or failed load cannot overwrite progress.
+     */
+    private var positionMoved = false
 
     init {
-        progressWriter = flow.appScope.launch { runProgressWriter() }
         viewModelScope.launch { load() }
-    }
-
-    private suspend fun runProgressWriter() {
-        val id = bookId
-        if (id.isBlank()) return
-        for (pending in progressWrites) {
-            // Debounce: wait briefly; CONFLATED channel drops intermediates.
-            delay(300)
-            var latest = pending
-            while (true) {
-                val next = progressWrites.tryReceive().getOrNull() ?: break
-                latest = next
-            }
-            val row = flow.db.progress().get(id) ?: continue
-            // Ignore stale writes that would rewind a newer on-disk locus.
-            if (row.updatedAt > latest.updatedAt) continue
-            flow.db.progress().upsert(
-                row.copy(
-                    chapterIndex = latest.chapterIndex,
-                    blockIndex = latest.blockIndex,
-                    charOffset = latest.charOffset,
-                    readingProgress = latest.readingProgress,
-                    updatedAt = latest.updatedAt,
-                ),
-            )
-            if (isPluginBook) {
-                runCatching {
-                    flow.pluginBooks.maintainChapterCache(id, latest.chapterIndex)
-                }
-            }
-        }
     }
 
     private suspend fun load() {
@@ -119,7 +79,7 @@ class ReaderViewModel(
             storedPath = row.storedPath
             val doc = withContext(Dispatchers.IO) {
                 if (isPluginBook) {
-                    loadPluginStory()
+                    loadPluginStory(row.chapterIndex)
                 } else {
                     val file = flow.catalog.materialize(row)
                     if (file.extension.equals("txt", true)) TxtIngest.read(file) else EpubIngest.read(file)
@@ -157,10 +117,9 @@ class ReaderViewModel(
         }
     }
 
-    private suspend fun loadPluginStory(): BookDoc {
-        val session = flow.pluginBooks.resumeRead(bookId)
+    private suspend fun loadPluginStory(savedChapter: Int): BookDoc {
+        val session = flow.pluginBooks.resumeRead(bookId, savedChapter)
         pluginSession = session
-        persistPluginSnapshot(session)
         flow.pluginBooks.syncProgress(session, session.startIndex)
         return BookDoc(session.title, session.chapters)
     }
@@ -255,7 +214,15 @@ class ReaderViewModel(
         val filtered = TextFilters.applyVisual(raw, merged)
         val clamped = clampLocus(locus, filtered.doc)
         if (invalidateCache) tts.invalidateEdgeCache()
-        tts.attach(bookId, filtered.doc, clamped, speechFilters = merged.filter { it.ttsOnly })
+        tts.attach(
+            bookId,
+            filtered.doc,
+            clamped,
+            speechFilters = merged.filter { it.ttsOnly },
+            chapterOffset = pluginSession?.startIndex ?: 0,
+        )
+        val meterDoc = filtered.doc
+        flow.progress.setMeter(bookId) { ReaderProgressPolicy.fraction(meterDoc, it) }
         val tocTitles = tocTitlesFor(pluginSession, filtered.doc)
         _ui.value = ReaderUi(
             title = filtered.doc.title,
@@ -494,6 +461,7 @@ class ReaderViewModel(
             invalidateCache = true,
         )
         // Persist absolute progress at the seek target.
+        positionMoved = true
         persist(_ui.value.locus)
     }
 
@@ -503,6 +471,7 @@ class ReaderViewModel(
     }
 
     fun onLocus(locus: Locus) {
+        positionMoved = true
         val tocTitles = _ui.value.tocTitles
         _ui.value = _ui.value.copy(
             locus = locus,
@@ -517,14 +486,9 @@ class ReaderViewModel(
     }
 
     private fun persist(locus: Locus, flush: Boolean = false) {
-        val id = bookId
-        if (id.isBlank()) return
-        val doc = _ui.value.doc
-        val items = doc?.items.orEmpty()
-        val readingProgress = when {
-            items.size <= 1 -> 0f
-            else -> locus.flatIndex(doc!!).toFloat() / items.lastIndex
-        }.coerceIn(0f, 1f)
+        val ui = _ui.value
+        val doc = ui.doc
+        if (!ReaderProgressPolicy.mayPersist(bookId, doc != null, ui.loading, ui.error, positionMoved)) return
         // Plugin sessions start at an absolute ToC index; store absolute chapter for cache/splash.
         val session = pluginSession
         val absoluteChapter = if (session != null) {
@@ -532,41 +496,22 @@ class ReaderViewModel(
         } else {
             locus.chapterIndex
         }
-        val pending = PendingProgress(
-            chapterIndex = absoluteChapter,
-            blockIndex = locus.blockIndex,
-            charOffset = locus.charOffset,
-            readingProgress = readingProgress,
-            updatedAt = System.currentTimeMillis(),
+        flow.progress.submit(
+            ProgressUpdate(
+                bookId = bookId,
+                chapterIndex = absoluteChapter,
+                blockIndex = locus.blockIndex,
+                charOffset = locus.charOffset,
+                fraction = ReaderProgressPolicy.fraction(doc!!, locus),
+                at = System.currentTimeMillis(),
+            ),
+            flush = flush,
         )
-        if (flush) {
-            flow.appScope.launch {
-                val row = flow.db.progress().get(id) ?: return@launch
-                if (row.updatedAt > pending.updatedAt) return@launch
-                flow.db.progress().upsert(
-                    row.copy(
-                        chapterIndex = pending.chapterIndex,
-                        blockIndex = pending.blockIndex,
-                        charOffset = pending.charOffset,
-                        readingProgress = pending.readingProgress,
-                        updatedAt = pending.updatedAt,
-                    ),
-                )
-                if (isPluginBook) {
-                    runCatching {
-                        flow.pluginBooks.maintainChapterCache(id, pending.chapterIndex)
-                    }
-                }
-            }
-        } else {
-            progressWrites.trySend(pending)
-        }
     }
 
     /** Playback keeps running after the reader closes; the Library now-playing card controls it. */
     override fun onCleared() {
         persistNow()
-        progressWrites.close()
         tts.setMoreProvider(bookId, null)
         super.onCleared()
     }

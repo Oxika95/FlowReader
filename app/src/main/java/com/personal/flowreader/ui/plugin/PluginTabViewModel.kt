@@ -588,6 +588,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             sourceUri = started.workUrl,
             sourceKind = pluginId,
             text = text.ifBlank { started.title },
+            startChapter = started.startIndex,
         )
         return started
     }

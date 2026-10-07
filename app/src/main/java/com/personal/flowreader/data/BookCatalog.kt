@@ -208,6 +208,8 @@ class BookCatalog(private val app: FlowApp) {
     /**
      * Upsert a plugin-backed book. [bookId] is stable (`{bookIdPrefix}:{workId}`) so
      * reopen and TTS streaming resume the same row. Not shown on Files.
+     * [startChapter] (absolute ToC index) moves the saved position to that chapter's start
+     * when it differs from the saved chapter.
      */
     suspend fun upsertPluginBook(
         bookId: String,
@@ -215,20 +217,22 @@ class BookCatalog(private val app: FlowApp) {
         sourceUri: String,
         sourceKind: String,
         text: String,
+        startChapter: Int? = null,
     ): ProgressEntity {
         val existing = app.db.progress().get(bookId)
         val dest = pluginBookFile(bookId)
         dest.writeText(text)
         val now = System.currentTimeMillis()
+        val moved = startChapter != null && startChapter != existing?.chapterIndex
         val row = ProgressEntity(
             bookId = bookId,
             title = title,
             storedPath = dest.absolutePath,
             sourceUri = sourceUri,
             sourceKind = sourceKind,
-            chapterIndex = existing?.chapterIndex ?: 0,
-            blockIndex = existing?.blockIndex ?: 0,
-            charOffset = existing?.charOffset ?: 0,
+            chapterIndex = if (moved) startChapter!! else existing?.chapterIndex ?: 0,
+            blockIndex = if (moved) 0 else existing?.blockIndex ?: 0,
+            charOffset = if (moved) 0 else existing?.charOffset ?: 0,
             updatedAt = now,
             inLibrary = false,
             readingProgress = existing?.readingProgress ?: 0f,

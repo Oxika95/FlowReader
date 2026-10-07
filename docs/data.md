@@ -26,6 +26,15 @@ Theme, TTS, filters JSON, share router/parse rules — see [settings.md](setting
 | `book_filters` | Per-book Local filter JSON |
 | `que_items` | Queue rows (`done`, `sortOrder`) |
 
+### Reading position writes
+
+All position writes go through `FlowApp.progress`
+([`ProgressWriter.kt`](../app/src/main/java/com/personal/flowreader/data/ProgressWriter.kt)): debounced,
+app-scoped (outlives the reader), and per book a write older than the last stored one is dropped.
+Sources: reader jumps (`ReaderViewModel.persist`, only after load and only once the position moved),
+and every spoken TTS sentence (`FlowApp.persistSpokenPosition`, also with the reader closed).
+Plugin books store the absolute ToC chapter.
+
 ## Files
 
 | Path | Contents |

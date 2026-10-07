@@ -264,12 +264,17 @@ class PluginBookStore(private val plugins: PluginManager) {
         return seekToChapter(bookId, startIndex.coerceIn(0, existing.toc.lastIndex))
     }
 
-    /** Hydrate only the saved reading chapter into memory; maintain the cache around it. */
-    suspend fun resumeRead(bookId: String): PluginReadSession {
+    /**
+     * Hydrate only the saved reading chapter ([savedChapter], absolute ToC index) into memory;
+     * maintain the cache around it. The stream restarts there so reopen never lands on an
+     * older stream start.
+     */
+    suspend fun resumeRead(bookId: String, savedChapter: Int): PluginReadSession {
         val r = ref(bookId)
         val existing = read(r)?.takeIf { it.toc.isNotEmpty() } ?: fetchAndStoreWork(r.plugin.id, r.workId)
-        val target = existing.startIndex.coerceIn(0, existing.toc.lastIndex)
-        val session = existing.copy(chapters = emptyList(), loadedThrough = target - 1)
+        val target = savedChapter.coerceIn(0, existing.toc.lastIndex)
+        val session = existing.copy(startIndex = target, chapters = emptyList(), loadedThrough = target - 1)
+        if (target != existing.startIndex) PluginSessionStore.writeMeta(r.dir, session)
         val loaded = loadThrough(r, session, target)
         runCatching { maintainChapterCache(bookId, target) }
         return loaded
@@ -358,7 +363,8 @@ class PluginBookStore(private val plugins: PluginManager) {
 
         fun blocksFor(chapter: PluginChapter, prefix: String, chapterIndex: Int): List<Block> {
             if (chapter.html.isNotBlank()) {
-                val blocks = EpubIngest.extractBlocks(chapter.html, prefix)
+                // Chapter index in the id: block ids key the reader list across chapters.
+                val blocks = EpubIngest.extractBlocks(chapter.html, "$prefix-$chapterIndex")
                 if (blocks.isNotEmpty()) return blocks
                 val text = Jsoup.parseBodyFragment(chapter.html).body().text().trim()
                 if (text.isNotEmpty()) return blocksFromPlain(text, prefix, chapterIndex)

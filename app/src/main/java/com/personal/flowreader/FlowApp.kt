@@ -4,6 +4,9 @@ import android.app.Application
 import androidx.room.Room
 import com.personal.flowreader.data.AppDatabase
 import com.personal.flowreader.data.BookCatalog
+import com.personal.flowreader.data.Locus
+import com.personal.flowreader.data.ProgressUpdate
+import com.personal.flowreader.data.ProgressWriter
 import com.personal.flowreader.data.MIGRATION_1_2
 import com.personal.flowreader.data.MIGRATION_2_3
 import com.personal.flowreader.data.MIGRATION_3_4
@@ -24,6 +27,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class FlowApp : Application() {
@@ -44,6 +49,8 @@ class FlowApp : Application() {
     lateinit var pluginRepos: RepoManager
         private set
     lateinit var pluginInstaller: PluginInstaller
+        private set
+    lateinit var progress: ProgressWriter
         private set
 
     /** Survives ViewModel clear so progress can still flush to Room. */
@@ -71,6 +78,12 @@ class FlowApp : Application() {
         pluginBooks = PluginBookStore(pluginManager)
         pluginRepos = RepoManager(settings)
         pluginInstaller = PluginInstaller(pluginManager, pluginRepos)
+        progress = ProgressWriter(db.progress(), appScope) { update ->
+            if (pluginBooks.isPluginBook(update.bookId)) {
+                pluginBooks.maintainChapterCache(update.bookId, update.chapterIndex)
+            }
+        }
+        persistSpokenPosition()
         appScope.launch {
             sweepStaleCache()
             // One share target: disable legacy Flow-Queue alias if still enabled.
@@ -89,6 +102,29 @@ class FlowApp : Application() {
 
     /** Consumed by the plugin's library tab when the share router opens a URL it owns. */
     val pendingPluginShare = MutableStateFlow<PluginShareRequest?>(null)
+
+    /** Playback keeps going with the reader closed; every spoken sentence is the new position. */
+    private fun persistSpokenPosition() {
+        appScope.launch {
+            tts.state
+                .map { s -> s.sentence?.takeIf { s.playing && s.bookId.isNotBlank() }?.let { s.bookId to it } }
+                .distinctUntilChanged()
+                .collect { spoken ->
+                    val (bookId, sentence) = spoken ?: return@collect
+                    val locus = Locus(sentence.chapterIndex, sentence.blockIndex, sentence.start)
+                    progress.submit(
+                        ProgressUpdate(
+                            bookId = bookId,
+                            chapterIndex = tts.absoluteChapter(sentence.chapterIndex),
+                            blockIndex = sentence.blockIndex,
+                            charOffset = sentence.start,
+                            fraction = progress.fractionFor(bookId, locus),
+                            at = System.currentTimeMillis(),
+                        ),
+                    )
+                }
+        }
+    }
 
 
     /** Drop crashed import temps and leftover filter preview clips. */
