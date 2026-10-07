@@ -9,7 +9,6 @@ import com.personal.flowreader.ui.design.controls.FlowSection
 import com.personal.flowreader.ui.design.controls.FlowTextField
 import com.personal.flowreader.ui.design.controls.FlowDropdownRow
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
-import com.personal.flowreader.ui.design.card.FlowCardHeight
 import com.personal.flowreader.ui.design.card.FlowCardVariant
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowTextAction
@@ -285,7 +284,6 @@ private fun SynthDebugLogPanel(
         visible = visible,
         onDismiss = onDismiss,
         title = "Synth log",
-        height = FlowCardHeight.Fill,
         scrollable = false,
         footer = {
             FlowActionRow(
@@ -327,7 +325,7 @@ private fun SynthDebugLogPanel(
         LazyColumn(
             state = listState,
             modifier = Modifier
-                .weight(1f)
+                .weight(1f, fill = false)
                 .fillMaxWidth(),
             contentPadding = PaddingValues(bottom = FlowTokens.Space.S),
             verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.Hair),

@@ -39,7 +39,7 @@ fun ArchiveEditorCard(visible: Boolean, draft: Draft, onDismiss: () -> Unit, onS
 
 - Compose it next to its trigger; it renders in the window overlay automatically.
 - Opened from another card? Keep the parent `visible`; the child stacks on top.
-- Long list body? `scrollable = false`, `height = FlowCardHeight.Fill`, `LazyColumn(Modifier.weight(1f))`.
+- Long list body? `scrollable = false`, `LazyColumn(Modifier.weight(1f, fill = false))`.
 - Confirmation? `FlowConfirmCard`, not `AlertDialog`.
 
 ## Add a settings section or row

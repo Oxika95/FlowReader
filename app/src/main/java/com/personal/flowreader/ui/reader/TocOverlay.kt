@@ -19,13 +19,12 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import com.personal.flowreader.ui.design.card.FlowCardHeight
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.FlowType
 import kotlinx.coroutines.flow.first
 
-/** Table of contents: a Fill-height fullscreen card with the current chapter centered. */
+/** Table of contents: a fullscreen card with the current chapter centered. */
 @Composable
 internal fun TocOverlay(
     visible: Boolean,
@@ -55,7 +54,6 @@ internal fun TocOverlay(
         visible = visible,
         onDismiss = onDismiss,
         title = "Contents",
-        height = FlowCardHeight.Fill,
         scrollable = false,
         bodyPadding = PaddingValues(bottom = FlowTokens.Space.S),
     ) {
@@ -63,7 +61,7 @@ internal fun TocOverlay(
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f, fill = false),
         ) {
             itemsIndexed(chapters, key = { index, _ -> index }) { index, name ->
                 val current = index == safeIndex

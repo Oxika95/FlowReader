@@ -10,7 +10,6 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import com.personal.flowreader.ui.design.card.FlowCardHeight
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.design.tabs.FlowTabLevel
@@ -49,7 +48,6 @@ internal fun SettingsOverlay(
         visible = visible,
         onDismiss = onDismiss,
         title = "Settings",
-        height = FlowCardHeight.Fill,
         tabs = {
             FlowTabBar(
                 tabs = flowTextTabs(SettingsSections, tab) { tab = it },

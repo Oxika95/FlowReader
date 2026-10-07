@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,13 +46,6 @@ enum class FlowCardVariant {
     Compact,
 }
 
-enum class FlowCardHeight {
-    /** Height follows content, capped by the window. */
-    Wrap,
-    /** Always the full available height (long lists: ToC, logs). */
-    Fill,
-}
-
 /**
  * The one fullscreen card. Registers with the window's overlay stack while [visible]:
  * opening another card on top stacks it (Back and scrim tap dismiss only the top card).
@@ -61,7 +53,8 @@ enum class FlowCardHeight {
  * Slots, top to bottom: [title] header (optional back arrow and close button), pinned [tabs],
  * scrolling body ([content]), pinned [footer] (use [FlowActionRow]).
  *
- * Set [scrollable] false when the body is a lazy list; give it `Modifier.weight(1f)`.
+ * Height follows content; once it reaches the window the body scrolls.
+ * Set [scrollable] false when the body is a lazy list; give it `Modifier.weight(1f, fill = false)`.
  * See `docs/ui-system/cards.md`.
  */
 @Composable
@@ -71,7 +64,6 @@ fun FlowFullscreenCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     variant: FlowCardVariant = FlowCardVariant.Standard,
-    height: FlowCardHeight = FlowCardHeight.Wrap,
     dismissible: Boolean = true,
     onBack: (() -> Unit)? = null,
     showClose: Boolean = variant != FlowCardVariant.Hero,
@@ -99,15 +91,10 @@ fun FlowFullscreenCard(
                     },
                 )
                 .fillMaxWidth()
-                .then(if (height == FlowCardHeight.Fill) Modifier.fillMaxHeight() else Modifier)
                 // Taps inside the card never reach the scrim.
                 .pointerInput(Unit) { detectTapGestures { } },
         ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .then(if (height == FlowCardHeight.Fill) Modifier.fillMaxHeight() else Modifier),
-            ) {
+            Column(Modifier.fillMaxWidth()) {
                 val hasHeader = title != null || onBack != null || showClose
                 if (hasHeader) {
                     FlowCardHeader(
@@ -121,7 +108,7 @@ fun FlowFullscreenCard(
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = height == FlowCardHeight.Fill)
+                        .weight(1f, fill = false)
                         .then(
                             if (scrollable) {
                                 Modifier.verticalScroll(scroll, enabled = scroll.maxValue > 0)

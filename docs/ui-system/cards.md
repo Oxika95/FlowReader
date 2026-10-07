@@ -18,7 +18,6 @@ FlowFullscreenCard(
     visible = open,
     onDismiss = { open = false },
     title = "Settings",
-    height = FlowCardHeight.Fill,                 // Wrap (default) | Fill
     tabs = { FlowTabBar(tabs = flowTextTabs(Sections, tab) { tab = it }, inset = FlowTokens.Pad.CardBody) },
     footer = { FlowActionRow { FlowTextAction("Cancel", onCancel); FlowTextAction("Save", onSave) } },
 ) {
@@ -29,17 +28,17 @@ FlowFullscreenCard(
 | Param | Meaning |
 | --- | --- |
 | `variant` | `Standard` (header + body + footer), `Hero` (no header/body padding, darker scrim, feathered; media card), `Compact` (narrow; confirmations) |
-| `height` | `Wrap` follows content up to the window; `Fill` always full height (lists, logs) |
 | `dismissible` | `false` blocks Back, scrim tap and the close button (e.g. while signing in) |
 | `onBack` | Shows a back arrow (multi-pane cards such as Download → Partial) |
 | `showClose` | Close button top-right (default on except `Hero`) |
-| `scrollable` | `false` when the body hosts a `LazyColumn` (give it `Modifier.weight(1f)`) |
+| `scrollable` | `false` when the body hosts a `LazyColumn` (give it `Modifier.weight(1f, fill = false)`) |
 | `bodyPadding` / `bodySpacing` | Defaults: `Pad.CardBody` sides, `Space.S` between children |
 | `tabs` | Pinned under the header (does not scroll) |
 | `footer` | Pinned under the body. Use `FlowActionRow(start = { destructive / secondary }) { Cancel; Confirm }` |
 
 Slots top to bottom: header, tabs, body, footer. Max width `Comp.CardMaxWidth`
-(`CompactCardMaxWidth` for `Compact`).
+(`CompactCardMaxWidth` for `Compact`). Height always follows content; once the card reaches the
+window (minus screen padding) the body scrolls and header, tabs and footer stay pinned.
 
 **Footer order:** start side = Delete / Test / extra; end side = Cancel, then the confirming
 action rightmost. Destructive actions use `destructive = true`.
@@ -78,7 +77,7 @@ FlowDock(DockEdge.Bottom, Modifier.align(Alignment.BottomCenter)) {
 | `MediaControlCard` | Reader | Bottom |
 | `PlaybackPinCard` (accent border) | Reader | Top or bottom (edge nearest the off-screen sentence) |
 | Jump-back chip (`FlowFloatingChip`) | Reader | Same edge rule |
-| `ScrollLockUnlockButton` | Reader | Bottom, aligned with the media card's lock button |
+| `ScrollLockControls` | Reader | Bottom: play/pause centered, unlock aligned with the media card's lock button |
 | `NowPlayingCard` | Library | Bottom (while TTS plays) |
 
 ## Display card

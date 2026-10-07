@@ -31,7 +31,8 @@ animations for cards (components own motion).
 - Fullscreen cards stack in open order; keep a parent `visible` while its child is open. Back and
   scrim tap close only the top card. `dismissible = false` blocks both.
 - Footer order: `FlowActionRow(start = { destructive/extra }) { Cancel; Confirm }`.
-- Body with a `LazyColumn`: `scrollable = false`, `height = FlowCardHeight.Fill`, list gets `Modifier.weight(1f)`.
+- Fullscreen card height always wraps content and scrolls on overflow.
+- Body with a `LazyColumn`: `scrollable = false`, list gets `Modifier.weight(1f, fill = false)`.
 - Dock items declared top to bottom; content pads by `FlowScreenPadding`.
 - Tap a display card = primary action; long-press = media card.
 - New media source = new pure-Kotlin adapter + unit test, not new `FlowMediaCard` params.
