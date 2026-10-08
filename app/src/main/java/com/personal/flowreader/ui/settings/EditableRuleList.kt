@@ -62,7 +62,8 @@ internal data class RuleListText(
  * Ordered rules. Tap edits, [trailing] holds per-row controls. Holding a rule enters edit mode:
  * drag handles reorder (saved on drop), checkboxes select, Delete removes the selection after a
  * confirmation. Done or Back leaves edit mode. [locked] rows stay after the others, can't be
- * moved, selected or deleted, and are still tappable to edit.
+ * moved, selected or deleted, and are still tappable to edit. Without [onAdd] the header only
+ * shows in edit mode.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -71,7 +72,7 @@ internal fun <T> EditableRuleList(
     idOf: (T) -> String,
     nameOf: (T) -> String,
     text: RuleListText,
-    onAdd: () -> Unit,
+    onAdd: (() -> Unit)?,
     onEdit: (T) -> Unit,
     onReorder: (List<String>) -> Unit,
     onDelete: (Set<String>) -> Unit,
@@ -127,18 +128,20 @@ internal fun <T> EditableRuleList(
 
     BackHandler(enabled = editing && pendingDelete == null) { exitEdit() }
 
-    RuleListHeader(
-        title = text.title,
-        editing = editing,
-        selectedCount = selected.size,
-        allSelected = editing && selected.size == working.size,
-        onAdd = onAdd,
-        onToggleAll = {
-            selected = if (selected.size == working.size) emptySet() else working.mapTo(HashSet(), idOf)
-        },
-        onDelete = { pendingDelete = selected },
-        onDone = ::exitEdit,
-    )
+    if (editing || onAdd != null) {
+        RuleListHeader(
+            title = text.title,
+            editing = editing,
+            selectedCount = selected.size,
+            allSelected = editing && selected.size == working.size,
+            onAdd = onAdd ?: {},
+            onToggleAll = {
+                selected = if (selected.size == working.size) emptySet() else working.mapTo(HashSet(), idOf)
+            },
+            onDelete = { pendingDelete = selected },
+            onDone = ::exitEdit,
+        )
+    }
 
     if (rules.isEmpty()) {
         Text(

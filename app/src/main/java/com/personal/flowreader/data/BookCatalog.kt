@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import androidx.room.withTransaction
 import com.personal.flowreader.FlowApp
 import java.io.File
 import java.io.InputStream
@@ -120,6 +121,13 @@ class BookCatalog(private val app: FlowApp) {
     suspend fun markQueDone(id: String) {
         val item = app.db.que().get(id) ?: return
         app.db.que().upsert(item.copy(done = true))
+    }
+
+    /** Rows in [ids] take sortOrder 0, 1, 2… in that order; rows not listed keep theirs. */
+    suspend fun reorderQue(ids: List<String>) {
+        app.db.withTransaction {
+            ids.forEachIndexed { i, id -> app.db.que().setSortOrder(id, i) }
+        }
     }
 
     /**

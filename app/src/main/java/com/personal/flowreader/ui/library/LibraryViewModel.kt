@@ -641,12 +641,23 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         routeImportText(trimmed)
     }
 
-    fun removeQue(id: String) {
+    fun removeQue(ids: Set<String>) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { flow.catalog.removeQue(id) }
+            withContext(Dispatchers.IO) { ids.forEach { flow.catalog.removeQue(it) } }
             val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
             val books = withContext(Dispatchers.IO) { booksForTab(_ui.value.tab) }
             _ui.value = _ui.value.copy(que = que, books = books)
+        }
+    }
+
+    /** Queue row ids in their new order. */
+    fun reorderQue(ids: List<String>) {
+        val byId = _ui.value.que.associateBy { it.item.id }
+        _ui.value = _ui.value.copy(que = ids.mapNotNull { byId[it] })
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { flow.catalog.reorderQue(ids) }
+            val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
+            _ui.value = _ui.value.copy(que = que)
         }
     }
 

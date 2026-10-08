@@ -15,8 +15,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
@@ -75,6 +75,8 @@ import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.plugin.PluginTabContent
 import com.personal.flowreader.ui.plugin.PluginTabFab
 import com.personal.flowreader.ui.plugin.PluginTabOverlays
+import com.personal.flowreader.ui.settings.EditableRuleList
+import com.personal.flowreader.ui.settings.RuleListText
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.settings.FilterEditorSession
@@ -230,7 +232,8 @@ fun LibraryScreen(
                     busy = ui.busy,
                     bottomInset = docks.bottom,
                     onOpen = { entry -> onOpenQue(entry.progress.bookId, entry.item.id) },
-                    onRemove = { entry -> vm.removeQue(entry.item.id) },
+                    onReorder = vm::reorderQue,
+                    onRemove = vm::removeQue,
                     modifier = paneModifier,
                 )
                 is LibraryTabId.Plugin -> {
@@ -550,7 +553,8 @@ private fun QueTab(
     busy: Boolean,
     bottomInset: androidx.compose.ui.unit.Dp,
     onOpen: (QueEntry) -> Unit,
-    onRemove: (QueEntry) -> Unit,
+    onReorder: (List<String>) -> Unit,
+    onRemove: (Set<String>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxSize()) {
@@ -558,48 +562,47 @@ private fun QueTab(
             FlowEmptyState("Queue is empty.\nPaste from the clipboard or share text to Flow Reader.")
             return@Box
         }
-        LazyColumn(
-            contentPadding = flowDisplayListPadding(bottomExtra = bottomInset),
-            modifier = Modifier.fillMaxSize(),
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(flowDisplayListPadding(bottomExtra = bottomInset)),
         ) {
-            items(entries, key = { it.item.id }) { entry ->
-                QueLineItem(entry = entry, onOpen = { onOpen(entry) }, onRemove = { onRemove(entry) })
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = FlowTokens.Alpha.Divider),
+            EditableRuleList(
+                rules = entries,
+                idOf = { it.item.id },
+                nameOf = { it.progress.title },
+                text = RuleListText(
+                    title = "Queue",
+                    empty = "",
+                    hint = "Plays top to bottom as one document. Hold an item to reorder or remove.",
+                    editingHint = "Drag the handle to change the order. The Queue plays top to bottom.",
+                    noun = "item",
+                ),
+                onAdd = null,
+                onEdit = onOpen,
+                onReorder = onReorder,
+                onDelete = onRemove,
+                trailing = { entry ->
+                    if (entry.item.done) {
+                        Text(
+                            "Done",
+                            style = FlowType.label,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = FlowTokens.Space.XS),
+                        )
+                    }
+                },
+            ) { entry, rowModifier ->
+                Text(
+                    entry.progress.title,
+                    style = FlowType.body,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (entry.item.done) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified,
+                    modifier = rowModifier.padding(start = FlowTokens.Space.XS),
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun QueLineItem(
-    entry: QueEntry,
-    onOpen: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    val done = entry.item.done
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpen)
-            .padding(start = FlowTokens.Space.XS, top = FlowTokens.Pad.RowV, bottom = FlowTokens.Pad.RowV),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            entry.progress.title,
-            style = FlowType.body,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = if (done) muted else Color.Unspecified,
-            modifier = Modifier.weight(1f),
-        )
-        if (done) {
-            Text("Done", style = FlowType.label, color = muted, modifier = Modifier.padding(end = FlowTokens.Space.XS))
-        }
-        IconButton(onClick = onRemove) {
-            Icon(Icons.Filled.Delete, contentDescription = "Remove from Queue", tint = muted)
         }
     }
 }

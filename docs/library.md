@@ -57,7 +57,7 @@ Lists pad by the dock height, so the card never covers the last row.
 | Empty copy | Paste or share text into Flow Reader |
 | Row tap | Open queue reader route |
 | Done label | Finished while listening |
-| Delete | Remove from queue |
+| Hold a row | Edit mode (shared `EditableRuleList`, same as filter and Import lists): drag handles reorder (`sortOrder` rewritten on drop), checkboxes select, All/None, Delete with confirmation; Done or Back leaves |
 | FAB paste | Clipboard → Import router |
 
 Queue is for share/clipboard ingest and TTS auto-advance — not for dumping plugin stories.

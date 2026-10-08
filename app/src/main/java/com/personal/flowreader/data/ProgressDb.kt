@@ -138,6 +138,9 @@ interface QueDao {
     @Query("DELETE FROM que_items WHERE id = :id")
     suspend fun delete(id: String)
 
+    @Query("UPDATE que_items SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun setSortOrder(id: String, sortOrder: Int)
+
     @Query("DELETE FROM que_items WHERE bookId = :bookId")
     suspend fun deleteForBook(bookId: String)
 
