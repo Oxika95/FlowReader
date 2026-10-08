@@ -27,6 +27,7 @@ Sub-tabs: **Voice | Playback**.
 | Control | Key |
 |---------|-----|
 | TTS Engine | `tts_engine` (Edge TTS, System Default, installed engines) |
+| Language (Edge only; filters the Voice list; starts on the current voice's language, English by default) | not stored |
 | Voice | `tts_voice` (default `en-US-AndrewNeural`) |
 | Speed 0.5–2.5× | `tts_speed` |
 | Pitch 0.5–2 | `tts_pitch` |

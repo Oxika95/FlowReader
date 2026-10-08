@@ -8,7 +8,12 @@ Listen while reading. Engines and voices live under Settings → **Audio**; the 
 
 ## Engines
 
-- **Edge TTS** — Neural voices (default `en-US-AndrewNeural`), clip prefetch and size controls
+- **Edge TTS** — Neural voices (default `en-US-AndrewNeural`), clip prefetch and size controls.
+  Every Edge voice is offered (about 320 in 140 locales), picked by Language then Voice. The list comes
+  from Edge's `voices/list` endpoint, cached in `filesDir/edge_voices.json` and refreshed at most
+  weekly; before the first download the bundled snapshot `resources/tts/edge_voices.json` is used
+  (`EdgeVoiceCatalog`, `EdgeVoiceStore`). SSML `xml:lang` follows the voice's locale. Sentence
+  splitting is tuned for English, so clip boundaries in other languages can be rougher.
 - **System Default** / other installed engines — Android TTS
 
 Priority goals: stability → latency → footprint.

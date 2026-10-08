@@ -212,6 +212,8 @@ data class TtsEngineOption(
 data class TtsVoiceOption(
     val id: String,
     val label: String,
+    /** Language the voice is listed under ("English"); blank = no language picker. */
+    val language: String = "",
 )
 
 enum class BookSource {

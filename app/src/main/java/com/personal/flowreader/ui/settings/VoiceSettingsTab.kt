@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
+import com.personal.flowreader.tts.EdgeVoiceCatalog
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -94,6 +95,16 @@ internal fun VoiceSettingsTab(
     val voiceLabel = voices.firstOrNull { it.id == voiceId }?.label
         ?: voices.firstOrNull()?.label
         ?: "Default"
+    val languages = remember(voices) { voices.map { it.language }.filter { it.isNotBlank() }.distinct() }
+    var languageOpen by remember { mutableStateOf(false) }
+    var language by remember(voiceId, languages) {
+        mutableStateOf(
+            voices.firstOrNull { it.id == voiceId }?.language?.takeIf { it.isNotBlank() }
+                ?: EdgeVoiceCatalog.DEFAULT_LANGUAGE.takeIf { it in languages }
+                ?: languages.firstOrNull().orEmpty(),
+        )
+    }
+    val shownVoices = if (languages.isEmpty()) voices else voices.filter { it.language == language }
 
     FlowLabel("TTS Engine")
     ExposedDropdownMenuBox(
@@ -127,6 +138,41 @@ internal fun VoiceSettingsTab(
         }
     }
 
+    if (languages.isNotEmpty()) {
+        Spacer(Modifier.height(FlowTokens.Space.M))
+        FlowLabel("Language")
+        ExposedDropdownMenuBox(
+            expanded = languageOpen,
+            onExpandedChange = { languageOpen = it },
+        ) {
+            OutlinedTextField(
+                value = language,
+                onValueChange = {},
+                readOnly = true,
+                singleLine = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(languageOpen) },
+                shape = FlowTokens.Shape.Field,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+            )
+            ExposedDropdownMenu(
+                expanded = languageOpen,
+                onDismissRequest = { languageOpen = false },
+            ) {
+                languages.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            language = option
+                            languageOpen = false
+                        },
+                    )
+                }
+            }
+        }
+    }
+
     Spacer(Modifier.height(FlowTokens.Space.M))
     FlowLabel("Voice")
     ExposedDropdownMenuBox(
@@ -134,7 +180,7 @@ internal fun VoiceSettingsTab(
         onExpandedChange = { voiceOpen = it },
     ) {
         OutlinedTextField(
-            value = voiceLabel,
+            value = if (shownVoices.any { it.id == voiceId } || shownVoices.isEmpty()) voiceLabel else "Choose a voice",
             onValueChange = {},
             readOnly = true,
             singleLine = true,
@@ -148,7 +194,7 @@ internal fun VoiceSettingsTab(
             expanded = voiceOpen,
             onDismissRequest = { voiceOpen = false },
         ) {
-            voices.forEach { option ->
+            shownVoices.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(option.label) },
                     onClick = {

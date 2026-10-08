@@ -245,11 +245,7 @@ class EdgeTtsClient(
         val url = EdgeHandshake.url(id, System.currentTimeMillis() / 1000)
         val request = Request.Builder()
             .url(url)
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                    "(KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
-            )
+            .header("User-Agent", EdgeHandshake.USER_AGENT)
             .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
             .build()
 

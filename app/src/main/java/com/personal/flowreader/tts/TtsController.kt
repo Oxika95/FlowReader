@@ -116,6 +116,12 @@ class TtsController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val edge = EdgeTtsClient()
     private val edgeNet = EdgeNetwork(context, edge.http)
+    private val edgeVoiceStore = EdgeVoiceStore(File(context.filesDir, "edge_voices.json"), edge.http)
+    /** Full Edge voice list; empty until loaded, then [EdgeVoices] stands in. */
+    @Volatile
+    private var edgeVoices: List<EdgeVoice> = emptyList()
+    @Volatile
+    private var edgeVoiceOptions: List<TtsVoiceOption> = EdgeVoices
     /** Consecutive playhead network failures; drives the retry backoff. */
     private var networkFailures = 0
     private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
@@ -242,6 +248,7 @@ class TtsController(
         scope.launch {
             val prefs = settings.ttsOnce()
             val reader = settings.readerOnce()
+            setEdgeVoices(withContext(Dispatchers.IO) { edgeVoiceStore.load() })
             val voices = voicesFor(prefs.engineKey)
             val voiceId = when {
                 voices.any { it.id == prefs.voiceId } -> prefs.voiceId
@@ -276,6 +283,12 @@ class TtsController(
                 )
             }
             refreshCatalog()
+            withContext(Dispatchers.IO) { edgeVoiceStore.refreshIfStale() }?.let { fresh ->
+                setEdgeVoices(fresh)
+                if (_state.value.engineKey == TtsEngines.EDGE) {
+                    _state.update { it.copy(voices = edgeVoiceOptions) }
+                }
+            }
         }
         scope.launch {
             underlayBt.targetConnected.collect { connected ->
@@ -1037,9 +1050,15 @@ class TtsController(
         }
     }
 
+    private fun setEdgeVoices(voices: List<EdgeVoice>) {
+        if (voices.isEmpty()) return
+        edgeVoices = voices
+        edgeVoiceOptions = EdgeVoiceCatalog.options(voices)
+    }
+
     private fun voicesFor(engineKey: String): List<TtsVoiceOption> {
         return when (engineKey) {
-            TtsEngines.EDGE -> EdgeVoices
+            TtsEngines.EDGE -> edgeVoiceOptions
             else -> {
                 val tts = systemTts
                 if (tts != null && systemReady) systemVoices(tts)
@@ -1591,9 +1610,11 @@ class TtsController(
     /** Edge race over the lanes [edgeNet] picks for the current network; the outcome feeds back into it. */
     private suspend fun synthesizeEdge(text: String, tag: String): EdgeAudio {
         val lanes = withContext(Dispatchers.IO) { edgeNet.lanes() }
+        val voice = edgeVoiceId()
         return edge.synthesize(
             text = text,
-            voice = edgeVoiceId(),
+            voice = voice,
+            lang = EdgeVoiceCatalog.langOf(voice, edgeVoices),
             ratePercent = ratePercent(),
             pitchPercent = pitchPercent(),
             lanes = lanes,
@@ -2027,7 +2048,7 @@ class TtsController(
 
     private fun edgeVoiceId(): String {
         val id = _state.value.voiceId
-        return if (id.isNotBlank() && EdgeVoices.any { it.id == id }) id else EdgeVoices.first().id
+        return if (id.isNotBlank() && edgeVoiceOptions.any { it.id == id }) id else TtsPrefs.DEFAULT_EDGE_VOICE
     }
 
     private fun cacheFile(i: Int): File = File(cacheDir, "b${bookKey}_s${i}_${voiceCacheKey()}.mp3")
@@ -2164,15 +2185,16 @@ class TtsController(
         private val BOOK_KEY_UNSAFE = Regex("[^A-Za-z0-9.-]")
         private val VOICE_KEY_UNSAFE = Regex("[^A-Za-z0-9._-]")
 
+        /** Used only if both the downloaded list and the bundled snapshot are unreadable. */
         val EdgeVoices = listOf(
-            TtsVoiceOption("en-US-AndrewNeural", "Andrew"),
-            TtsVoiceOption("en-US-AriaNeural", "Aria"),
-            TtsVoiceOption("en-US-JennyNeural", "Jenny"),
-            TtsVoiceOption("en-US-GuyNeural", "Guy"),
-            TtsVoiceOption("en-US-MichelleNeural", "Michelle"),
-            TtsVoiceOption("en-GB-SoniaNeural", "Sonia (UK)"),
-            TtsVoiceOption("en-GB-RyanNeural", "Ryan (UK)"),
-            TtsVoiceOption("en-AU-NatashaNeural", "Natasha (AU)"),
+            TtsVoiceOption("en-US-AndrewNeural", "Andrew · United States · Male", "English"),
+            TtsVoiceOption("en-US-AriaNeural", "Aria · United States · Female", "English"),
+            TtsVoiceOption("en-US-JennyNeural", "Jenny · United States · Female", "English"),
+            TtsVoiceOption("en-US-GuyNeural", "Guy · United States · Male", "English"),
+            TtsVoiceOption("en-US-MichelleNeural", "Michelle · United States · Female", "English"),
+            TtsVoiceOption("en-GB-SoniaNeural", "Sonia · United Kingdom · Female", "English"),
+            TtsVoiceOption("en-GB-RyanNeural", "Ryan · United Kingdom · Male", "English"),
+            TtsVoiceOption("en-AU-NatashaNeural", "Natasha · Australia · Female", "English"),
         )
     }
 }
