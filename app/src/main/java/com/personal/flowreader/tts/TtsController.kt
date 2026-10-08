@@ -76,6 +76,8 @@ data class TtsUiState(
     val doubleTapPlay: Boolean = true,
     /** Edge may send over mobile data while Wi-Fi is weak or failing. */
     val mobileDataFallback: Boolean = true,
+    val autoPlayOnShare: Boolean = false,
+    val shareInterruptsPlayback: Boolean = false,
     val autoScrollWithTts: Boolean = true,
     val minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
     /** Paired BT MAC for underlay standby; empty = always on when armed. */
@@ -269,6 +271,8 @@ class TtsController(
                     prefetchCount = prefs.prefetchCount,
                     doubleTapPlay = prefs.doubleTapPlay,
                     mobileDataFallback = prefs.mobileDataFallback,
+                    autoPlayOnShare = prefs.autoPlayOnShare,
+                    shareInterruptsPlayback = prefs.shareInterruptsPlayback,
                     autoScrollWithTts = prefs.autoScrollWithTts,
                     minSignal = prefs.minSignal,
                     underlayBtAddress = prefs.underlayBtAddress,
@@ -640,6 +644,18 @@ class TtsController(
         if (enabled == _state.value.doubleTapPlay) return
         _state.update { it.copy(doubleTapPlay = enabled) }
         scope.launch { settings.setDoubleTapPlay(enabled) }
+    }
+
+    fun setAutoPlayOnShare(enabled: Boolean) {
+        if (enabled == _state.value.autoPlayOnShare) return
+        _state.update { it.copy(autoPlayOnShare = enabled) }
+        scope.launch { settings.setAutoPlayOnShare(enabled) }
+    }
+
+    fun setShareInterruptsPlayback(enabled: Boolean) {
+        if (enabled == _state.value.shareInterruptsPlayback) return
+        _state.update { it.copy(shareInterruptsPlayback = enabled) }
+        scope.launch { settings.setShareInterruptsPlayback(enabled) }
     }
 
     fun setMobileDataFallback(enabled: Boolean) {

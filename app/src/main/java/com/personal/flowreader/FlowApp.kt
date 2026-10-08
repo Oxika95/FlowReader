@@ -57,6 +57,10 @@ class FlowApp : Application() {
     internal lateinit var queue: QueuePlayback
         private set
 
+    /** Book a share opened for Auto Play on Share; the reader starts TTS once it loads this book. */
+    @Volatile
+    var pendingSharePlay: String? = null
+
     /** Survives ViewModel clear so progress can still flush to Room. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 

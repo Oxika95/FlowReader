@@ -132,6 +132,10 @@ class ReaderViewModel(
                 spoken != null -> show(Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start), rules, reuse)
                 else -> show(savedLocus(row, opened), rules, reuse, anchor = row.anchorText)
             }
+            if (flow.pendingSharePlay == bookId) {
+                flow.pendingSharePlay = null
+                tts.play()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {

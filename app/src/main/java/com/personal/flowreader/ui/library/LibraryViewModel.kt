@@ -298,6 +298,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                             )
                         }
                         refreshAfterIngest(tabForShelf(shelf), "Added ${result.progress.title}")
+                        autoPlayShare(result.progress.bookId)
                     }
                     ShareDispatch.KIND_QUEUE -> {
                         val text = intent.getStringExtra(ShareDispatch.EXTRA_TEXT).orEmpty()
@@ -311,6 +312,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                             )
                         }
                         refreshAfterIngest(LibraryTabId.Que, "Queued ${result.progress.title}")
+                        autoPlayShare(result.progress.bookId)
                     }
                     ShareDispatch.KIND_CRAWL -> {
                         val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
@@ -349,6 +351,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                             "Added ${result.progress.title}"
                         }
                         refreshAfterIngest(tab, msg)
+                        autoPlayShare(result.progress.bookId)
                     }
                     ShareDispatch.KIND_PLUGIN, LEGACY_KIND_RR_PLUGIN -> {
                         val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
@@ -476,6 +479,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             busy = false,
             message = "Opening ${plugin.name}…",
         )
+    }
+
+    /** Auto Play on Share: open the shared book in the reader, which starts TTS once loaded. */
+    private fun autoPlayShare(bookId: String) {
+        val state = tts.state.value
+        if (!state.autoPlayOnShare || (state.playing && !state.shareInterruptsPlayback)) return
+        flow.pendingSharePlay = bookId
+        _ui.value = _ui.value.copy(pendingOpenBookId = bookId)
     }
 
     private suspend fun refreshAfterIngest(tab: LibraryTabId, message: String) {

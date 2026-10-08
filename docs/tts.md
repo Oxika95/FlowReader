@@ -30,6 +30,7 @@ Priority goals: stability → latency → footprint.
 | Margin rail | Cache / loading indicators for Edge clips |
 | Media session | Notification + background keep-alive via `TtsPlaybackService` |
 | Tonal underlay | Quiet noise while playing; optional standby until a paired A2DP device connects |
+| Auto Play on Share | Off by default. Text, file and web-page shares (`LibraryViewModel.executeShareIntent`) open the saved book in the reader and call `play()` once it loads (`FlowApp.pendingSharePlay`), only when nothing is playing unless **Interrupt Playback** is on. Plugin links, clipboard paste and "Open with" are unchanged |
 
 ## Chapters and documents
 

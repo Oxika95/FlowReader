@@ -59,6 +59,10 @@ data class TtsPrefs(
     val doubleTapPlay: Boolean = true,
     /** When true, Edge TTS may send over mobile data while Wi-Fi is weak or failing. */
     val mobileDataFallback: Boolean = true,
+    /** When true, a share opens in the reader and starts TTS if nothing is playing. */
+    val autoPlayOnShare: Boolean = false,
+    /** With [autoPlayOnShare], a share also replaces what is playing. */
+    val shareInterruptsPlayback: Boolean = false,
     /** When true, the list keeps the spoken block centered until the user scrolls away. */
     val autoScrollWithTts: Boolean = true,
     /**
@@ -302,6 +306,14 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_TTS_DOUBLE_TAP_PLAY] = enabled }
     }
 
+    suspend fun setAutoPlayOnShare(enabled: Boolean) {
+        store.edit { it[KEY_TTS_AUTO_PLAY_ON_SHARE] = enabled }
+    }
+
+    suspend fun setShareInterruptsPlayback(enabled: Boolean) {
+        store.edit { it[KEY_TTS_SHARE_INTERRUPTS] = enabled }
+    }
+
     suspend fun setMobileDataFallback(enabled: Boolean) {
         store.edit { it[KEY_TTS_MOBILE_DATA_FALLBACK] = enabled }
     }
@@ -509,6 +521,8 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_PREFETCH = intPreferencesKey("tts_prefetch")
         private val KEY_TTS_DOUBLE_TAP_PLAY = booleanPreferencesKey("tts_double_tap_play")
         private val KEY_TTS_MOBILE_DATA_FALLBACK = booleanPreferencesKey("tts_mobile_data_fallback")
+        private val KEY_TTS_AUTO_PLAY_ON_SHARE = booleanPreferencesKey("tts_auto_play_on_share")
+        private val KEY_TTS_SHARE_INTERRUPTS = booleanPreferencesKey("tts_share_interrupts")
         private val KEY_TTS_AUTO_SCROLL = booleanPreferencesKey("tts_auto_scroll")
         private val KEY_TTS_KEEP_ALIVE = booleanPreferencesKey("tts_keep_alive")
         private val KEY_TTS_MIN_SIGNAL = floatPreferencesKey("tts_min_signal")
@@ -589,6 +603,8 @@ class SettingsStore(context: Context) {
                 .coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH),
             doubleTapPlay = this[KEY_TTS_DOUBLE_TAP_PLAY] ?: true,
             mobileDataFallback = this[KEY_TTS_MOBILE_DATA_FALLBACK] ?: true,
+            autoPlayOnShare = this[KEY_TTS_AUTO_PLAY_ON_SHARE] ?: false,
+            shareInterruptsPlayback = this[KEY_TTS_SHARE_INTERRUPTS] ?: false,
             autoScrollWithTts = this[KEY_TTS_AUTO_SCROLL] ?: true,
             minSignal = TtsPrefs.migrateMinSignal(
                 this[KEY_TTS_TONAL_UNDERLAY] ?: when {
