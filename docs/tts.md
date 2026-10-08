@@ -47,7 +47,9 @@ The Queue is read as one document: every row in Queue order (done ones too) join
 composite book (`QueueBook`, session id `queue`, built by `QueueStreams`). Scrolling and TTS run
 from one item into the next with no break, with the reader open or closed. When playback moves on
 from item N to item N+1, `QueuePlayback` marks N done; the end of the stream marks the last item
-done, then continues into rows added since the stream was built (an open reader reloads onto it).
+done. `QueuePlayback` also watches `que_items`: rows appended at the end and Done changes are
+swapped into the open session (TTS keeps playing and reads on into new rows); reordered or removed
+rows rebuild the session at the spoken text and re-attach TTS (the current sentence restarts once).
 Positions are still stored per item (the locator maps the stream position back to the item's own
 chapter, block and progress fraction), so the Queue tab keeps its progress bars.
 

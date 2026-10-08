@@ -87,7 +87,14 @@ Default idea: EPUB → Files; raw text / most URLs → Queue; plugin domains →
 
 ### Parser
 
-Parse rules (`share_parse_rules`): URL match, Default/Custom parser, Content/Title/Remove CSS, Test URL.
+Parse rules (`share_parse_rules`): Test URL, URL match, Default/Custom parser, then Custom fields in
+order **Title, Body, Previous Button, Next Button, Remove** (comma-separated), Crawl limit (shown when
+Next is set, default 100). Footer: **Test** (preview + per-field match summary) and **Pick**
+(on-page picker for the Test URL, see [import-share.md](import-share.md#on-page-picker)).
+While both are filled, the URL match outline is green when it covers the Test URL and red (with a
+warning) when it doesn't (shares from that URL would use another rule).
+URL match: `www.` is ignored; with **Allow Wildcards** on, `*` matches any characters in host or
+path (`*royalroad.com*`, `example.com/fiction/*/chapter/*`; a trailing `/*` also matches the parent).
 Hold a rule for edit mode (drag reorder, multi-select, Delete) like Filters. The **Default** rule
 (any URL) is always last and protected: no delete, switch, or drag; tap edits its parser mode / CSS.
 

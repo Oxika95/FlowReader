@@ -46,21 +46,30 @@ internal class QueueBook(val segments: List<QueueSegment>) {
     /** Indent level per ToC row: 0 = Queue item, 1 = a chapter inside it. */
     val tocLevels: List<Int>
 
+    /** ToC grouped by Queue item, rows indexing [ReaderBook.toc] of [reader]. */
+    val tocItems: List<QueueTocItem>
+
     init {
         val rows = ArrayList<Pair<Int, String>>()
         val levels = ArrayList<Int>()
+        val items = ArrayList<QueueTocItem>()
         segments.forEachIndexed { seg, s ->
+            val itemRow = rows.size
             rows += bases[seg] to s.title
             levels += 0
+            val chapters = ArrayList<Pair<Int, String>>()
             if (s.book.toc.size > 1) {
                 s.book.toc.forEach { (chapter, label) ->
+                    chapters += rows.size to label
                     rows += (bases[seg] + chapter) to label
                     levels += 1
                 }
             }
+            items += QueueTocItem(s.queId, s.title, s.done, itemRow, chapters)
         }
         toc = rows
         tocLevels = levels
+        tocItems = items
     }
 
     val reader: ReaderBook = ReaderBook(
@@ -117,6 +126,23 @@ internal class QueueBook(val segments: List<QueueSegment>) {
         return local.copy(chapterIndex = bases[segment] + local.chapterIndex.coerceIn(0, count - 1))
     }
 
+    /**
+     * [locus] in [from] mapped into this stream by Queue row. A removed row lands at the start of
+     * the next surviving row (else the previous one); null when this stream is empty.
+     */
+    fun remap(locus: Locus, from: QueueBook): Locus? {
+        if (segments.isEmpty()) return null
+        if (from.segments.isEmpty()) return Locus(0, 0, 0)
+        val (seg, local) = from.toLocal(locus)
+        val same = indexOfQue(from.segments[seg].queId)
+        if (same >= 0) return toGlobal(same, local)
+        val survivor = ((seg + 1 until from.segments.size) + (seg - 1 downTo 0))
+            .map { indexOfQue(from.segments[it].queId) }
+            .firstOrNull { it >= 0 }
+            ?: 0
+        return Locus(bases[survivor], 0, 0)
+    }
+
     /** Global + Groups + the item's own Local rules for [chapter]. */
     fun rulesFor(chapter: Int, global: List<FilterRule>, groups: List<FilterRule>): List<FilterRule> =
         TextFilters.merge(global, groups, segmentAt(chapter)?.local.orEmpty())
@@ -169,5 +195,44 @@ internal class QueueBook(val segments: List<QueueSegment>) {
         /** Session and locator id of the Queue stream (never a real book id). */
         const val ID = "queue"
         const val TITLE = "Queue"
+    }
+}
+
+/** One Queue item in the Contents card: its ToC row and its nested chapter rows. */
+data class QueueTocItem(
+    val queId: String,
+    val title: String,
+    val done: Boolean,
+    val row: Int,
+    val chapters: List<Pair<Int, String>>,
+)
+
+/** How a rebuilt Queue differs from the open stream. */
+internal enum class QueueChange {
+    Same,
+
+    /** Same rows in the same order; only Done flags changed. */
+    DoneOnly,
+
+    /** The old rows are an ordered prefix: existing chapter indices are unchanged. */
+    Appended,
+
+    /** Reordered, removed or inserted rows: chapter indices moved. */
+    Edited,
+    ;
+
+    companion object {
+        fun classify(old: QueueBook, new: QueueBook): QueueChange {
+            val oldIds = old.segments.map { it.queId }
+            val newIds = new.segments.map { it.queId }
+            val prefix = newIds.size >= oldIds.size && newIds.subList(0, oldIds.size) == oldIds &&
+                old.segments.indices.all { old.segments[it].book.chapterCount == new.segments[it].book.chapterCount }
+            return when {
+                !prefix -> Edited
+                newIds.size > oldIds.size -> Appended
+                old.segments.map { it.done } == new.segments.map { it.done } -> Same
+                else -> DoneOnly
+            }
+        }
     }
 }

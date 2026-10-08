@@ -133,12 +133,22 @@ data class ParseRule(
     val enabled: Boolean = true,
     val matchSubdomains: Boolean = true,
     val parseMode: ShareParseMode = ShareParseMode.Default,
+    /** Body selector (stored under the original key). */
     val contentCss: String? = null,
     val titleCss: String? = null,
     val removeCss: String? = null,
+    val prevCss: String? = null,
+    val nextCss: String? = null,
+    /** Most pages one crawl follows through Next. */
+    val crawlLimit: Int = DEFAULT_CRAWL_LIMIT,
     val testUrl: String? = null,
     val order: Int = 0,
-)
+) {
+    companion object {
+        const val DEFAULT_CRAWL_LIMIT = 100
+        const val MAX_CRAWL_LIMIT = 2000
+    }
+}
 
 data class SharePayload(
     val text: String,

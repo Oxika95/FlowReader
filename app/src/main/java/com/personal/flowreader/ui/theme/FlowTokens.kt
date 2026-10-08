@@ -157,6 +157,9 @@ object FlowTokens {
     /** Neutral gray for cache-behind indicators (reader rail + segment strip). */
     val NeutralCacheGray = Color(0xFF8A8A8A)
 
+    /** Positive state outline (e.g. URL match covers the Test URL); pairs with `colorScheme.error`. */
+    val MatchGreen = Color(0xFF66BB6A)
+
     /** Splash title line-height multiplier (titleLarge.fontSize * this). */
     const val SplashTitleLineHeight = 1.15f
 

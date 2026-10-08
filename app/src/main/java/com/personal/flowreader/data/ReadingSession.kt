@@ -62,6 +62,9 @@ class ReadingWindow private constructor(
         origin,
     )
 
+    /** Same chapters under a new title list (the book gained chapters after the window). */
+    fun withTitles(titles: List<String>): ReadingWindow = ReadingWindow(title, titles, chapters, table, origin)
+
     fun retain(keep: IntRange): ReadingWindow {
         val range = loaded ?: return this
         if (keep.first <= range.first && keep.last >= range.last) return this
@@ -98,8 +101,7 @@ class ReadingWindow private constructor(
  */
 class ReadingSession(
     val bookId: String,
-    /** Filters + parser identity; a reader reopening with the same key reuses this session. */
-    val contentKey: Int,
+    contentKey: Int,
     initial: ReadingWindow,
     private val chapterCount: () -> Int,
     private val loader: suspend (index: Int, targetChars: Int, flexChars: Int) -> PreparedChapter?,
@@ -111,7 +113,21 @@ class ReadingSession(
     private val mutex = Mutex()
     private val focus = HashMap<String, Int>()
 
+    /** Filters + parser identity; a reader reopening with the same key reuses this session. */
+    @Volatile
+    var contentKey: Int = contentKey
+        private set
+
     val count: Int get() = chapterCount()
+
+    /**
+     * The book behind [chapterCount] / loader changed without moving existing chapters (chapters
+     * appended): new [titles] and identity, loaded chapters and sentence indices kept.
+     */
+    suspend fun updateSource(titles: List<String>, contentKey: Int) = mutex.withLock {
+        this.contentKey = contentKey
+        _window.value = _window.value.withTitles(titles)
+    }
 
     /** Load [index] if it is directly before or after the window. */
     suspend fun loadAdjacent(index: Int, targetChars: Int, flexChars: Int): Boolean = mutex.withLock {

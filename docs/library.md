@@ -55,7 +55,7 @@ Lists pad by the dock height, so the card never covers the last row.
 | Element | Behavior |
 |---------|----------|
 | Empty copy | Paste or share text into Flow Reader |
-| Row tap | Open the Queue stream (all rows as one document) at that row; Contents lists rows with their chapters nested |
+| Row tap | Open the Queue stream (all rows as one document) at that row; Contents lists rows with their chapters nested, updates live, and has the same hold-to-edit (see [reader.md](reader.md#toc)) |
 | Done label | Finished while listening |
 | Hold a row | Edit mode (shared `EditableRuleList`, same as filter and Import lists): drag handles reorder (`sortOrder` rewritten on drop), checkboxes select, All/None, Delete with confirmation; Done or Back leaves |
 | FAB paste | Clipboard → Import router |

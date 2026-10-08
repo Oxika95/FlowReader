@@ -47,6 +47,7 @@ internal object ReaderSessions {
     /**
      * Session holding [center] (and following chapters while it has nothing to read). [rulesFor]
      * gives each chapter its filters (a Queue stream mixes books with different Local rules).
+     * [current] is read on every load, so a book that only gains chapters can be swapped in.
      */
     suspend fun open(
         bookId: String,
@@ -57,14 +58,15 @@ internal object ReaderSessions {
         flexChars: Int,
         contentKey: Int = contentKey(rules),
         rulesFor: (Int) -> List<FilterRule> = { rules },
+        current: () -> ReaderBook = { book },
     ): ReadingSession {
         val first = prepare(book, center, rulesFor(center), targetChars, flexChars)
         val session = ReadingSession(
             bookId = bookId,
             contentKey = contentKey,
             initial = ReadingWindow.of(book.title, book.chapterTitles, listOf(first), origin = center),
-            chapterCount = { book.chapterCount },
-            loader = { i, t, f -> prepare(book, i, rulesFor(i), t, f) },
+            chapterCount = { current().chapterCount },
+            loader = { i, t, f -> prepare(current(), i, rulesFor(i), t, f) },
         )
         var next = center + 1
         while (session.window.value.table.isEmpty() && next < book.chapterCount && next - center <= MAX_EMPTY_SKIP) {

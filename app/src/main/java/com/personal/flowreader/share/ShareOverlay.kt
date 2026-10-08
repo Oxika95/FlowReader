@@ -55,6 +55,7 @@ object ShareDispatch {
     const val EXTRA_SELECTOR = "share_selector"
     const val EXTRA_TITLE_CSS = "share_title_css"
     const val EXTRA_REMOVE_CSS = "share_remove_css"
+    const val EXTRA_PARSE_RULE_ID = "share_parse_rule_id"
 
     const val KIND_FILES = "files"
     const val KIND_QUEUE = "queue"
@@ -96,10 +97,12 @@ object ShareDispatch {
                 i.putExtra(EXTRA_KIND, KIND_CRAWL)
                 i.putExtra(EXTRA_URL, action.url)
                 i.putExtra(EXTRA_LANDING, action.landing.id)
-                val (content, title, remove) = ParseRules.effectiveSelectors(action.rule)
-                content?.let { i.putExtra(EXTRA_SELECTOR, it) }
-                title?.let { i.putExtra(EXTRA_TITLE_CSS, it) }
-                remove?.let { i.putExtra(EXTRA_REMOVE_CSS, it) }
+                i.putExtra(EXTRA_PARSE_RULE_ID, action.rule.id)
+                ParseRules.effectiveSelectors(action.rule)?.let { sel ->
+                    sel.body?.let { i.putExtra(EXTRA_SELECTOR, it) }
+                    sel.title?.let { i.putExtra(EXTRA_TITLE_CSS, it) }
+                    sel.remove?.let { i.putExtra(EXTRA_REMOVE_CSS, it) }
+                }
             }
             is ShareAction.Plugin -> {
                 i.putExtra(EXTRA_KIND, KIND_PLUGIN)

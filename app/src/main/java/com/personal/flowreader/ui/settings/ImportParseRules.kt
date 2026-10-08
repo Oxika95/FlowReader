@@ -9,6 +9,8 @@ import com.personal.flowreader.ui.design.card.FlowTextAction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -107,36 +109,39 @@ internal fun ParseRuleEditorOverlay(
     var contentCss by remember(initial.id) { mutableStateOf(initial.contentCss.orEmpty()) }
     var titleCss by remember(initial.id) { mutableStateOf(initial.titleCss.orEmpty()) }
     var removeCss by remember(initial.id) { mutableStateOf(initial.removeCss.orEmpty()) }
+    var prevCss by remember(initial.id) { mutableStateOf(initial.prevCss.orEmpty()) }
+    var nextCss by remember(initial.id) { mutableStateOf(initial.nextCss.orEmpty()) }
+    var crawlLimit by remember(initial.id) { mutableStateOf(initial.crawlLimit.toString()) }
     var testUrl by remember(initial.id) { mutableStateOf(initial.testUrl.orEmpty()) }
     var testBusy by remember { mutableStateOf(false) }
     var testError by remember { mutableStateOf<String?>(null) }
     var testTitle by remember { mutableStateOf<String?>(null) }
     var testPreview by remember { mutableStateOf<String?>(null) }
+    var testSummary by remember { mutableStateOf<String?>(null) }
+    var pickerOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val showCustom = parseMode == ShareParseMode.Custom
     val protected = ParseRules.isProtected(initial)
 
     fun build(): ParseRule {
-        val parsed = ShareUrlMatch.parseMatchInput(matchText, matchIsRegex)
-        if (protected) {
-            return initial.copy(
-                parseMode = parseMode,
-                contentCss = contentCss.trim().ifBlank { null },
-                titleCss = titleCss.trim().ifBlank { null },
-                removeCss = removeCss.trim().ifBlank { null },
-                testUrl = testUrl.trim().ifBlank { null },
-            )
-        }
-        return initial.copy(
-            hostPattern = parsed.host,
-            pathPattern = parsed.path,
-            pathIsRegex = parsed.isRegex,
-            matchSubdomains = !parsed.isRegex && allowWildcard,
+        val fields = initial.copy(
             parseMode = parseMode,
             contentCss = contentCss.trim().ifBlank { null },
             titleCss = titleCss.trim().ifBlank { null },
             removeCss = removeCss.trim().ifBlank { null },
+            prevCss = prevCss.trim().ifBlank { null },
+            nextCss = nextCss.trim().ifBlank { null },
+            crawlLimit = (crawlLimit.trim().toIntOrNull() ?: ParseRule.DEFAULT_CRAWL_LIMIT)
+                .coerceIn(1, ParseRule.MAX_CRAWL_LIMIT),
             testUrl = testUrl.trim().ifBlank { null },
+        )
+        if (protected) return fields
+        val parsed = ShareUrlMatch.parseMatchInput(matchText, matchIsRegex)
+        return fields.copy(
+            hostPattern = parsed.host,
+            pathPattern = parsed.path,
+            pathIsRegex = parsed.isRegex,
+            matchSubdomains = !parsed.isRegex && allowWildcard,
         )
     }
 
@@ -150,19 +155,22 @@ internal fun ParseRuleEditorOverlay(
         }
         testBusy = true
         testError = null
-        val (c, t, r) = ParseRules.effectiveSelectors(build())
+        val rule = build()
+        val selectors = ParseRules.effectiveSelectors(rule)
         scope.launch {
             try {
                 val article = withContext(Dispatchers.IO) {
-                    WebPageIngest.fetchArticle(url, c, t, r)
+                    WebPageIngest.fetchArticle(url, selectors)
                 }
                 testTitle = article.title
                 testPreview = article.text.take(800)
+                testSummary = article.diagnostics?.summary()
                 testError = null
             } catch (err: Throwable) {
                 testError = err.message ?: "Test failed"
                 testTitle = null
                 testPreview = null
+                testSummary = null
             } finally {
                 testBusy = false
             }
@@ -182,6 +190,9 @@ internal fun ParseRuleEditorOverlay(
             FlowActionRow(
                 start = {
                     FlowTextAction(if (testBusy) "Testing…" else "Test", runTest, enabled = !testBusy)
+                    if (showCustom) {
+                        FlowTextAction("Pick", { pickerOpen = true }, enabled = testUrl.isNotBlank())
+                    }
                 },
             ) {
                 FlowTextAction("Cancel", onDismiss)
@@ -189,6 +200,16 @@ internal fun ParseRuleEditorOverlay(
             }
         },
     ) {
+        FlowLabel("Test URL")
+        OutlinedTextField(
+            value = testUrl,
+            onValueChange = { testUrl = it },
+            singleLine = true,
+            placeholder = { Text("https://…/chapter/1") },
+            shape = FlowTokens.Shape.Field,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(FlowTokens.Space.S))
         if (protected) {
             FlowLabel("URL match")
             Text(
@@ -204,6 +225,9 @@ internal fun ParseRuleEditorOverlay(
                 onMatchIsRegex = { matchIsRegex = it },
                 allowWildcard = allowWildcard,
                 onAllowWildcard = { allowWildcard = it },
+                matches = testUrl.trim().takeIf { it.isNotBlank() && matchText.isNotBlank() }?.let { url ->
+                    runCatching { ParseRules.appliesTo(build(), url) }.getOrDefault(false)
+                },
             )
         }
         Spacer(Modifier.height(FlowTokens.Space.M))
@@ -222,7 +246,8 @@ internal fun ParseRuleEditorOverlay(
                 ShareParseMode.Default ->
                     "Uses built-in page heuristics (article / main / body). Lands in Queue."
                 ShareParseMode.Custom ->
-                    "CSS selectors for content, title, and removals. Lands in Queue."
+                    "CSS selectors matched against the page as downloaded (no scripts run). " +
+                        "Body keeps every match; nothing matched is an error. Pick selects on the Test URL."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -230,47 +255,25 @@ internal fun ParseRuleEditorOverlay(
         )
         if (showCustom) {
             Spacer(Modifier.height(FlowTokens.Space.M))
-            FlowLabel("Content CSS")
-            OutlinedTextField(
-                value = contentCss,
-                onValueChange = { contentCss = it },
-                singleLine = true,
-                placeholder = { Text("article, div.post_content, …") },
-                shape = FlowTokens.Shape.Field,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(FlowTokens.Space.S))
-            FlowLabel("Title CSS (optional)")
-            OutlinedTextField(
-                value = titleCss,
-                onValueChange = { titleCss = it },
-                singleLine = true,
-                placeholder = { Text("h1, h2.post-title, …") },
-                shape = FlowTokens.Shape.Field,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(FlowTokens.Space.S))
-            FlowLabel("Remove CSS (optional)")
-            OutlinedTextField(
-                value = removeCss,
-                onValueChange = { removeCss = it },
-                singleLine = true,
-                placeholder = { Text(".share, .ads, …") },
-                shape = FlowTokens.Shape.Field,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            CssField("Title (optional)", titleCss, { titleCss = it }, "h1, h2.chapter-title")
+            CssField("Body", contentCss, { contentCss = it }, "div.chapter-content")
+            CssField("Previous Button (optional)", prevCss, { prevCss = it }, "a.prev, a[rel=prev]")
+            CssField("Next Button (optional)", nextCss, { nextCss = it }, "a.next, a[rel=next]")
+            CssField("Remove (optional, comma-separated)", removeCss, { removeCss = it }, ".ads, .share, .author-note")
+            if (nextCss.isNotBlank()) {
+                FlowLabel("Crawl limit (pages)")
+                OutlinedTextField(
+                    value = crawlLimit,
+                    onValueChange = { v -> crawlLimit = v.filter(Char::isDigit).take(4) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = FlowTokens.Shape.Field,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
-        Spacer(Modifier.height(FlowTokens.Space.S))
-        FlowLabel("Test URL")
-        OutlinedTextField(
-            value = testUrl,
-            onValueChange = { testUrl = it },
-            singleLine = true,
-            placeholder = { Text("https://…/chapter/1") },
-            shape = FlowTokens.Shape.Field,
-            modifier = Modifier.fillMaxWidth(),
-        )
         testError?.let { err ->
+            Spacer(Modifier.height(FlowTokens.Space.S))
             Text(
                 err,
                 style = MaterialTheme.typography.bodySmall,
@@ -280,6 +283,13 @@ internal fun ParseRuleEditorOverlay(
         testTitle?.let { title ->
             Spacer(Modifier.height(FlowTokens.Space.S))
             FlowLabel("Preview")
+            testSummary?.let { summary ->
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             Text(title, style = MaterialTheme.typography.titleSmall)
             testPreview?.let { body ->
                 Text(
@@ -291,4 +301,38 @@ internal fun ParseRuleEditorOverlay(
             }
         }
     }
+    if (pickerOpen) {
+        PagePickerOverlay(
+            url = testUrl.trim(),
+            initial = PickerFields(
+                title = titleCss,
+                body = contentCss,
+                prev = prevCss,
+                next = nextCss,
+                remove = removeCss,
+            ),
+            onDismiss = { pickerOpen = false },
+            onDone = { f ->
+                titleCss = f.title
+                contentCss = f.body
+                prevCss = f.prev
+                nextCss = f.next
+                removeCss = f.remove
+                pickerOpen = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun CssField(label: String, value: String, onChange: (String) -> Unit, placeholder: String) {
+    FlowLabel(label)
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        singleLine = true,
+        placeholder = { Text(placeholder) },
+        shape = FlowTokens.Shape.Field,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }

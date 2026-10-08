@@ -100,16 +100,18 @@ object ShareUrlMatch {
         )
 
     fun matchesHost(host: String, hostPattern: String, matchSubdomains: Boolean): Boolean {
-        var pattern = hostPattern.lowercase(Locale.US).trim().trim('.')
+        var pattern = hostPattern.lowercase(Locale.US).trim().trim('.').removePrefix("www.")
+        val h = host.lowercase(Locale.US).trim('.').removePrefix("www.")
         if (pattern.isEmpty() || pattern == "*") return true
         if (pattern.startsWith("*.")) {
             pattern = pattern.removePrefix("*.").trim('.')
             if (pattern.isEmpty()) return true
-            if (host == pattern) return true
-            return matchSubdomains && host.endsWith(".$pattern")
+            if (h == pattern) return true
+            return matchSubdomains && h.endsWith(".$pattern")
         }
-        if (host == pattern) return true
-        return matchSubdomains && host.endsWith(".$pattern")
+        if (matchSubdomains && '*' in pattern) return globMatches(h, pattern)
+        if (h == pattern) return true
+        return matchSubdomains && h.endsWith(".$pattern")
     }
 
     fun matches(
@@ -124,14 +126,24 @@ object ShareUrlMatch {
             return matchesRegex(host, path, pathPattern ?: return false)
         }
         return matchesHost(host, hostPattern, matchSubdomains) &&
-            matchesPath(path, pathPattern)
+            matchesPath(path, pathPattern, wildcards = matchSubdomains)
     }
 
-    fun matchesPath(path: String, pathPattern: String?): Boolean {
+    // With wildcards, `*` matches any run of characters (including `/`); a trailing "/*" also matches the bare parent.
+    fun matchesPath(path: String, pathPattern: String?, wildcards: Boolean = true): Boolean {
         if (pathPattern.isNullOrBlank()) return true
         val p = UrlDetector.normalizePath(path)
         val pattern = UrlDetector.normalizePath(pathPattern)
+        if (wildcards && '*' in pattern) {
+            if (pattern.endsWith("/*") && p == pattern.dropLast(2).ifEmpty { "/" }) return true
+            return globMatches(p, pattern)
+        }
         return p == pattern || p.startsWith("$pattern/")
+    }
+
+    private fun globMatches(value: String, glob: String): Boolean {
+        val regex = glob.split('*').joinToString(".*") { Pattern.quote(it) }
+        return Pattern.compile(regex).matcher(value).matches()
     }
 
     private fun matchesRegex(host: String, path: String, rawPattern: String): Boolean {
@@ -434,10 +446,25 @@ object ParseRules {
         return (rules.filterNot(::isProtected) + fallback).mapIndexed { i, rule -> rule.copy(order = i) }
     }
 
-    /** CSS used at crawl time — Custom only; Default uses built-in heuristics. */
-    fun effectiveSelectors(rule: ParseRule): Triple<String?, String?, String?> {
-        if (rule.parseMode != ShareParseMode.Custom) return Triple(null, null, null)
-        return Triple(rule.contentCss, rule.titleCss, rule.removeCss)
+    /** Fields used at crawl time — Custom only; null = Default built-in heuristics. */
+    fun effectiveSelectors(rule: ParseRule): ParseSelectors? {
+        if (rule.parseMode != ShareParseMode.Custom) return null
+        return ParseSelectors.of(
+            title = rule.titleCss,
+            body = rule.contentCss,
+            prev = rule.prevCss,
+            next = rule.nextCss,
+            remove = rule.removeCss,
+        )
+    }
+
+    /** Next-link crawling is offered only for Custom rules with a Next selector. */
+    fun canCrawl(rule: ParseRule): Boolean = effectiveSelectors(rule)?.next != null
+
+    /** True when shared [url] would be routed to [rule] (ignoring rules ordered above it). */
+    fun appliesTo(rule: ParseRule, url: String): Boolean {
+        val host = UrlDetector.hostOf(url) ?: return false
+        return ShareUrlMatch.matches(host, UrlDetector.pathOf(url) ?: "/", rule)
     }
 
     fun defaultForUrl(url: String): ParseRule =
@@ -460,6 +487,9 @@ object ParseRules {
                 ShareJson.appendJson(this, "contentCss", rule.contentCss.orEmpty()); append(',')
                 ShareJson.appendJson(this, "titleCss", rule.titleCss.orEmpty()); append(',')
                 ShareJson.appendJson(this, "removeCss", rule.removeCss.orEmpty()); append(',')
+                ShareJson.appendJson(this, "prevCss", rule.prevCss.orEmpty()); append(',')
+                ShareJson.appendJson(this, "nextCss", rule.nextCss.orEmpty()); append(',')
+                append("\"crawlLimit\":").append(rule.crawlLimit).append(',')
                 ShareJson.appendJson(this, "testUrl", rule.testUrl.orEmpty()); append(',')
                 append("\"order\":").append(rule.order)
                 append('}')
@@ -491,6 +521,10 @@ object ParseRules {
                     contentCss = content,
                     titleCss = ShareJson.readString(obj, "titleCss").ifBlank { null },
                     removeCss = ShareJson.readString(obj, "removeCss").ifBlank { null },
+                    prevCss = ShareJson.readString(obj, "prevCss").ifBlank { null },
+                    nextCss = ShareJson.readString(obj, "nextCss").ifBlank { null },
+                    crawlLimit = ShareJson.readInt(obj, "crawlLimit", ParseRule.DEFAULT_CRAWL_LIMIT)
+                        .coerceIn(1, ParseRule.MAX_CRAWL_LIMIT),
                     testUrl = ShareJson.readString(obj, "testUrl").ifBlank { null },
                     order = ShareJson.readInt(obj, "order", index),
                 )

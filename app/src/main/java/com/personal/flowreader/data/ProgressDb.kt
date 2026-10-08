@@ -11,6 +11,7 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "progress")
 data class ProgressEntity(
@@ -122,6 +123,9 @@ interface BookFiltersDao {
 interface QueDao {
     @Query("SELECT * FROM que_items ORDER BY sortOrder ASC, addedAt ASC")
     suspend fun all(): List<QueItemEntity>
+
+    @Query("SELECT * FROM que_items ORDER BY sortOrder ASC, addedAt ASC")
+    fun observeAll(): Flow<List<QueItemEntity>>
 
     @Query("SELECT * FROM que_items WHERE id = :id")
     suspend fun get(id: String): QueItemEntity?

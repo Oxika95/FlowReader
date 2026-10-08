@@ -19,8 +19,11 @@ import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.PluginShareRequest
+import com.personal.flowreader.share.ParseRule
 import com.personal.flowreader.share.ParseRules
 import com.personal.flowreader.share.RouterLanding
+import com.personal.flowreader.share.ShareParseMode
+import com.personal.flowreader.share.WebCrawl
 import com.personal.flowreader.share.ShareAction
 import com.personal.flowreader.share.ShareAskMode
 import com.personal.flowreader.share.ShareDispatch
@@ -49,6 +52,23 @@ data class LibraryUi(
     val error: String? = null,
     /** When set, MainActivity should navigate to the reader for this bookId. */
     val pendingOpenBookId: String? = null,
+    /** A shared page whose rule has a Next selector: ask before crawling. */
+    val crawlPrompt: WebImportRequest? = null,
+    val crawlProgress: CrawlProgress? = null,
+)
+
+data class WebImportRequest(
+    val url: String,
+    val rule: ParseRule,
+    val landing: RouterLanding,
+    val autoPlay: Boolean,
+)
+
+data class CrawlProgress(
+    val pages: Int,
+    val limit: Int,
+    val lastTitle: String,
+    val stopping: Boolean = false,
 )
 
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
@@ -320,38 +340,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                             intent.getStringExtra(ShareDispatch.EXTRA_LANDING),
                             RouterLanding.Queue,
                         )
-                        val contentCss = intent.getStringExtra(ShareDispatch.EXTRA_SELECTOR)
-                        val titleCss = intent.getStringExtra(ShareDispatch.EXTRA_TITLE_CSS)
-                        val removeCss = intent.getStringExtra(ShareDispatch.EXTRA_REMOVE_CSS)
-                        val article = withContext(Dispatchers.IO) {
-                            WebPageIngest.fetchArticle(url, contentCss, titleCss, removeCss)
-                        }
-                        val result = withContext(Dispatchers.IO) {
-                            if (landing.isQueue) {
-                                flow.catalog.addText(
-                                    text = article.text,
-                                    titleHint = article.title,
-                                    inLibrary = false,
-                                    enqueue = true,
-                                )
-                            } else {
-                                flow.catalog.addText(
-                                    text = article.text,
-                                    titleHint = article.title,
-                                    inLibrary = true,
-                                    enqueue = false,
-                                    libraryTabId = landing.libraryShelfId,
-                                )
-                            }
-                        }
-                        val tab = tabForLanding(landing)
-                        val msg = if (landing.isQueue) {
-                            "Queued ${result.progress.title}"
-                        } else {
-                            "Added ${result.progress.title}"
-                        }
-                        refreshAfterIngest(tab, msg)
-                        autoPlayShare(result.progress.bookId)
+                        startWebImport(WebImportRequest(url, parseRuleFor(intent), landing, autoPlay = true))
                     }
                     ShareDispatch.KIND_PLUGIN, LEGACY_KIND_RR_PLUGIN -> {
                         val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
@@ -411,38 +400,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         refreshAfterIngest(LibraryTabId.Que, "Queued ${result.progress.title}")
                     }
-                    is ShareAction.Crawl -> {
-                        val (content, titleCss, remove) = ParseRules.effectiveSelectors(action.rule)
-                        val article = withContext(Dispatchers.IO) {
-                            WebPageIngest.fetchArticle(action.url, content, titleCss, remove)
-                        }
-                        val landing = action.landing
-                        val result = withContext(Dispatchers.IO) {
-                            if (landing.isQueue) {
-                                flow.catalog.addText(
-                                    text = article.text,
-                                    titleHint = article.title,
-                                    inLibrary = false,
-                                    enqueue = true,
-                                )
-                            } else {
-                                flow.catalog.addText(
-                                    text = article.text,
-                                    titleHint = article.title,
-                                    inLibrary = true,
-                                    enqueue = false,
-                                    libraryTabId = landing.libraryShelfId,
-                                )
-                            }
-                        }
-                        val tab = tabForLanding(landing)
-                        val msg = if (landing.isQueue) {
-                            "Queued ${result.progress.title}"
-                        } else {
-                            "Added ${result.progress.title}"
-                        }
-                        refreshAfterIngest(tab, msg)
-                    }
+                    is ShareAction.Crawl ->
+                        startWebImport(WebImportRequest(action.url, action.rule, action.landing, autoPlay = false))
                     is ShareAction.Plugin -> openPluginShare(action.pluginId, action.url)
                     is ShareAction.ShowChooser -> error("Auto mode must not show chooser")
                 }
@@ -479,6 +438,112 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             busy = false,
             message = "Opening ${plugin.name}…",
         )
+    }
+
+    private suspend fun parseRuleFor(intent: Intent): ParseRule {
+        val id = intent.getStringExtra(ShareDispatch.EXTRA_PARSE_RULE_ID)
+        if (!id.isNullOrBlank()) {
+            withContext(Dispatchers.IO) { flow.settings.shareParseRulesOnce() }
+                .firstOrNull { it.id == id }
+                ?.let { return it }
+        }
+        val body = intent.getStringExtra(ShareDispatch.EXTRA_SELECTOR)
+        return ParseRule(
+            hostPattern = "",
+            parseMode = if (body.isNullOrBlank()) ShareParseMode.Default else ShareParseMode.Custom,
+            contentCss = body,
+            titleCss = intent.getStringExtra(ShareDispatch.EXTRA_TITLE_CSS),
+            removeCss = intent.getStringExtra(ShareDispatch.EXTRA_REMOVE_CSS),
+        )
+    }
+
+    /** Rules with a Next selector ask first: this page only, or crawl into one book. */
+    private suspend fun startWebImport(request: WebImportRequest) {
+        if (ParseRules.canCrawl(request.rule)) {
+            _ui.value = _ui.value.copy(busy = false, crawlPrompt = request)
+            return
+        }
+        importWebPage(request)
+    }
+
+    fun answerCrawlPrompt(crawl: Boolean) {
+        val request = _ui.value.crawlPrompt ?: return
+        _ui.value = _ui.value.copy(crawlPrompt = null, busy = true, error = null, message = null)
+        viewModelScope.launch {
+            try {
+                if (crawl) crawlWeb(request) else importWebPage(request)
+            } catch (t: Throwable) {
+                _ui.value = _ui.value.copy(busy = false, crawlProgress = null, error = t.message ?: "Could not import")
+            }
+        }
+    }
+
+    fun dismissCrawlPrompt() {
+        _ui.value = _ui.value.copy(crawlPrompt = null)
+    }
+
+    @Volatile
+    private var crawlStopRequested = false
+
+    fun stopCrawl() {
+        crawlStopRequested = true
+        _ui.value.crawlProgress?.let { _ui.value = _ui.value.copy(crawlProgress = it.copy(stopping = true)) }
+    }
+
+    private suspend fun importWebPage(request: WebImportRequest) {
+        val article = withContext(Dispatchers.IO) {
+            WebPageIngest.fetchArticle(request.url, ParseRules.effectiveSelectors(request.rule))
+        }
+        val landing = request.landing
+        val result = withContext(Dispatchers.IO) {
+            flow.catalog.addText(
+                text = article.text,
+                titleHint = article.title,
+                inLibrary = !landing.isQueue,
+                enqueue = landing.isQueue,
+                libraryTabId = landing.libraryShelfId,
+            )
+        }
+        finishWebImport(request, result.progress, result.progress.title)
+    }
+
+    private suspend fun crawlWeb(request: WebImportRequest) {
+        val selectors = ParseRules.effectiveSelectors(request.rule) ?: return importWebPage(request)
+        val limit = request.rule.crawlLimit
+        crawlStopRequested = false
+        _ui.value = _ui.value.copy(crawlProgress = CrawlProgress(0, limit, ""))
+        try {
+            val crawl = WebCrawl(selectors, limit, fetchHtml = { WebPageIngest.fetchHtml(it) })
+            val result = withContext(Dispatchers.IO) {
+                crawl.run(request.url, stopRequested = { crawlStopRequested }) { count, page ->
+                    val current = _ui.value.crawlProgress ?: return@run
+                    _ui.value = _ui.value.copy(crawlProgress = current.copy(pages = count, lastTitle = page.title))
+                }
+            }
+            val title = WebCrawl.bookTitle(result.pages)
+            val landing = request.landing
+            val saved = withContext(Dispatchers.IO) {
+                flow.catalog.addEpub(
+                    bytes = WebCrawl.toEpub(result.pages, request.url),
+                    title = title,
+                    inLibrary = !landing.isQueue,
+                    enqueue = landing.isQueue,
+                    libraryTabId = landing.libraryShelfId,
+                )
+            }
+            val count = result.pages.size
+            val label = "${saved.progress.title} ($count ${if (count == 1) "chapter" else "chapters"})"
+            finishWebImport(request, saved.progress, label)
+            result.error?.let { _ui.value = _ui.value.copy(error = "Crawl stopped early: $it") }
+        } finally {
+            _ui.value = _ui.value.copy(crawlProgress = null)
+        }
+    }
+
+    private suspend fun finishWebImport(request: WebImportRequest, row: ProgressEntity, label: String) {
+        val landing = request.landing
+        refreshAfterIngest(tabForLanding(landing), if (landing.isQueue) "Queued $label" else "Added $label")
+        if (request.autoPlay) autoPlayShare(row.bookId)
     }
 
     /** Auto Play on Share: open the shared book in the reader, which starts TTS once loaded. */

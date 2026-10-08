@@ -63,7 +63,8 @@ internal data class RuleListText(
  * drag handles reorder (saved on drop), checkboxes select, Delete removes the selection after a
  * confirmation. Done or Back leaves edit mode. [locked] rows stay after the others, can't be
  * moved, selected or deleted, and are still tappable to edit. Without [onAdd] the header only
- * shows in edit mode.
+ * shows in edit mode. [below] draws under a row outside edit mode; [deleteNote] adds a line to
+ * the delete confirmation for the selected ids.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -79,6 +80,8 @@ internal fun <T> EditableRuleList(
     locked: (T) -> Boolean = { false },
     footer: String? = null,
     trailing: @Composable RowScope.(T) -> Unit = {},
+    below: (@Composable (T) -> Unit)? = null,
+    deleteNote: (Set<String>) -> String? = { null },
     content: @Composable (T, Modifier) -> Unit,
 ) {
     val movable = remember(rules) { rules.filterNot(locked) }
@@ -170,6 +173,7 @@ internal fun <T> EditableRuleList(
                 RuleRow(
                     onClick = { if (editing) toggle(id) else onEdit(rule) },
                     onLongClick = { if (editing) toggle(id) else enterEdit(id) },
+                    below = if (editing || below == null) null else { { below(rule) } },
                 ) {
                     if (editing) {
                         DragHandle(
@@ -230,7 +234,9 @@ internal fun <T> EditableRuleList(
         FlowConfirmCard(
             visible = true,
             title = if (ids.size == 1) "Delete this ${text.noun}?" else "Delete ${ids.size} ${text.noun}s?",
-            message = names.joinToString("\n") { "• $it" } + "\n\nThis can't be undone.",
+            message = names.joinToString("\n") { "• $it" } +
+                deleteNote(ids)?.let { "\n\n$it" }.orEmpty() +
+                "\n\nThis can't be undone.",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = {
@@ -248,6 +254,7 @@ internal fun <T> EditableRuleList(
 private fun RuleRow(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
+    below: (@Composable () -> Unit)? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     Column {
@@ -259,6 +266,7 @@ private fun RuleRow(
             verticalAlignment = Alignment.CenterVertically,
             content = content,
         )
+        below?.invoke()
         HorizontalDivider(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = FlowTokens.Alpha.Divider),
         )

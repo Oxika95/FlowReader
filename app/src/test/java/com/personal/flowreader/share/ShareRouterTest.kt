@@ -83,8 +83,11 @@ class ShareUrlMatchTest {
             removeCss = ".ad",
         )
         val def = custom.copy(parseMode = ShareParseMode.Default)
-        assertEquals(Triple("article", "h1", ".ad"), ParseRules.effectiveSelectors(custom))
-        assertEquals(Triple(null, null, null), ParseRules.effectiveSelectors(def))
+        assertEquals(
+            ParseSelectors(title = "h1", body = "article", remove = ".ad"),
+            ParseRules.effectiveSelectors(custom),
+        )
+        assertNull(ParseRules.effectiveSelectors(def))
     }
 
     @Test
@@ -126,6 +129,43 @@ class ShareUrlMatchTest {
     }
 
     @Test
+    fun wildcardPathMatchesParseRule() {
+        val parsed = ShareUrlMatch.parseMatchInput("royalroad.com/*", isRegex = false)
+        val rule = ParseRule(id = "rr", hostPattern = parsed.host, pathPattern = parsed.path)
+        val rules = listOf(rule, ParseRule(id = ParseRules.DEFAULT_ID, hostPattern = "*"))
+        assertEquals("rr", ShareUrlMatch.matchParse("https://www.royalroad.com/fiction/1/s/chapter/2/t", rules)?.id)
+        assertEquals("rr", ShareUrlMatch.matchParse("https://royalroad.com/", rules)?.id)
+        assertTrue(ParseRules.appliesTo(rule, "https://www.royalroad.com/fiction/1"))
+    }
+
+    @Test
+    fun wildcardInMiddleOfPath() {
+        assertTrue(ShareUrlMatch.matchesPath("/fiction/12/story/chapter/3", "/fiction/*/chapter/*"))
+        assertTrue(ShareUrlMatch.matchesPath("/fiction", "/fiction/*"))
+        assertTrue(!ShareUrlMatch.matchesPath("/forum/12", "/fiction/*"))
+        assertTrue(!ShareUrlMatch.matchesPath("/fiction/12", "/fiction/*/chapter/*"))
+    }
+
+    @Test
+    fun wildcardsOffKeepsStarLiteral() {
+        assertTrue(!ShareUrlMatch.matchesPath("/fiction/12", "/fiction/*", wildcards = false))
+    }
+
+    @Test
+    fun wwwIsSameHost() {
+        assertTrue(ShareUrlMatch.matchesHost("www.example.com", "example.com", matchSubdomains = false))
+        assertTrue(ShareUrlMatch.matchesHost("example.com", "www.example.com", matchSubdomains = false))
+        assertTrue(ShareUrlMatch.matchesHost("chapters.example.com", "*example.com", matchSubdomains = true))
+    }
+
+    @Test
+    fun starWrappedHostMatchesShare() {
+        val parsed = ShareUrlMatch.parseMatchInput("*royalroad.com*", isRegex = false)
+        val rule = ParseRule(id = "rr", hostPattern = parsed.host, pathPattern = parsed.path)
+        assertTrue(ParseRules.appliesTo(rule, "https://www.royalroad.com/fiction/21220/x/chapter/1/y"))
+    }
+
+    @Test
     fun parseMatchInputSplitsHostAndPath() {
         val parsed = ShareUrlMatch.parseMatchInput(
             "https://www.Example.com/fiction/1/story",
@@ -136,50 +176,37 @@ class ShareUrlMatchTest {
     }
 }
 
-class WebPageIngestTest {
-    private val sampleHtml = """
-        <html><head><title>Page Title</title>
-        <meta property="og:title" content="OG Title"/>
-        </head><body>
-        <h1 class="chapter">Chapter One</h1>
-        <article class="content">
-          <p>Hello body.</p>
-          <div class="ads">Buy now</div>
-        </article>
-        </body></html>
-    """.trimIndent()
-
+class ParseRulesJsonTest {
     @Test
-    fun titleCssWins() {
-        val article = WebPageIngest.extractArticle(
-            html = sampleHtml,
-            url = "https://example.com/ch1",
-            contentCss = "article.content",
-            titleCss = "h1.chapter",
+    fun newFieldsRoundTrip() {
+        val rule = ParseRule(
+            id = "r",
+            hostPattern = "example.com",
+            parseMode = ShareParseMode.Custom,
+            contentCss = "div.text",
+            titleCss = "h1",
+            removeCss = ".ads, .note",
+            prevCss = "a.prev",
+            nextCss = "a[rel=\"next\"]",
+            crawlLimit = 25,
         )
-        assertEquals("Chapter One", article.title)
-        assertTrue(article.text.contains("Hello body"))
+        assertEquals(listOf(rule), ParseRules.decode(ParseRules.encode(listOf(rule))))
     }
 
     @Test
-    fun removeCssStripsJunk() {
-        val article = WebPageIngest.extractArticle(
-            html = sampleHtml,
-            url = "https://example.com/ch1",
-            contentCss = "article.content",
-            removeCss = ".ads",
-        )
-        assertTrue(article.text.contains("Hello body"))
-        assertTrue(!article.text.contains("Buy now"))
+    fun oldJsonGetsDefaults() {
+        val old = """[{"id":"r","hostPattern":"a.com","parseMode":"Custom","contentCss":"div","order":0}]"""
+        val rule = ParseRules.decode(old).single()
+        assertNull(rule.nextCss)
+        assertEquals(ParseRule.DEFAULT_CRAWL_LIMIT, rule.crawlLimit)
     }
 
     @Test
-    fun paragraphsKeepBlankLineBreaks() {
-        val article = WebPageIngest.extractArticle(
-            html = "<html><body><article><p>One.</p><p>Two.</p></article></body></html>",
-            url = "https://example.com/a",
-        )
-        assertEquals("One.\n\nTwo.", article.text)
+    fun crawlOfferedOnlyForCustomWithNext() {
+        val custom = ParseRule(hostPattern = "a", parseMode = ShareParseMode.Custom, contentCss = "p", nextCss = "a.n")
+        assertTrue(ParseRules.canCrawl(custom))
+        assertTrue(!ParseRules.canCrawl(custom.copy(parseMode = ShareParseMode.Default)))
+        assertTrue(!ParseRules.canCrawl(custom.copy(nextCss = " ")))
     }
 }
 

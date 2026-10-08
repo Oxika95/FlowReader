@@ -54,12 +54,14 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | EPUB/TXT ingest, covers | `data/Ingest.kt`, `EpubCover.kt`, `BookCatalog.kt` | `IngestTest` |
 | Library tabs, shelves, view mode | `ui/library/LibraryViewModel.kt`, `LibraryScreen.kt`, `data/Models.kt` (`LibraryTabId`) | `docs/library.md` |
 | Queue | `BookCatalog` (`listQue`, `reorderQue`, `markQueDone`), `ProgressDb` (`que_items`); list UI `QueTab` in `LibraryScreen.kt` (on `EditableRuleList`) | `docs/library.md` |
-| Queue stream (one document in reader + TTS) | `ui/reader/QueueBook.kt` (pure composite book, locator), `QueueStreams.kt` (build/open), `QueuePlayback.kt` (done marking, append), queue mode in `ReaderViewModel` | `QueueBookTest`, `docs/tts.md` |
+| Queue stream (one document in reader + TTS) | `ui/reader/QueueBook.kt` (pure composite book, locator, `QueueChange`, `remap`, `tocItems`), `QueueStreams.kt` (build/open, `QueueStreamRef`), `QueuePlayback.kt` (live owner: `que_items` Flow → in-place append or rebuild, done marking), `ReaderQueueMode.kt` (reader side) | `QueueBookTest`, `docs/tts.md` |
+| Queue Contents (live, hold-to-edit) | `ui/reader/QueueTocOverlay.kt` (on `EditableRuleList` `below`/`deleteNote`), wired in `ReaderScreen` | `docs/reader.md` |
 | A setting (new key) | `data/SettingsStore.kt` (prefs + setter), `ui/settings/SettingsState.kt`, the tab file | `docs/settings.md`, `docs/data.md` |
 | Audio settings UI | `ui/settings/AudioSettings.kt` (tab shell), `VoiceSettingsTab.kt`, `PlaybackSettingsTab.kt` (incl. underlay), `AudioSettingsControls.kt` (flyout header, labels, center slider) | `docs/settings.md` |
 | Room schema | `data/ProgressDb.kt` (add `MIGRATION_n_m`, bump version) | `docs/data.md` |
 | Share routing / parse rules | `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`), `ShareRouter.kt`; UI `ui/settings/SharingSettingsTab.kt` (panes), `ImportRouterRules.kt`, `ImportParseRules.kt`, `ImportRuleControls.kt` | `ShareRouterTest`, `docs/import-share.md` |
-| Web page crawl | `share/WebPageIngest.kt`, `HtmlParagraphs.kt` (HTML → paragraphs, also plugin chapters) | `HtmlParagraphsTest` |
+| Web page parse (Custom fields, Next-link crawl → EPUB) | `share/WebPageIngest.kt` (`ParseSelectors`, `CssList`), `WebCrawl.kt`, `EpubWriter.kt`, `HtmlParagraphs.kt` (HTML → paragraphs, also plugin chapters); crawl prompt `ui/library/WebCrawlCards.kt` + `LibraryViewModel.startWebImport` | `WebPageIngestTest`, `WebCrawlTest`, `HtmlParagraphsTest` |
+| Parser on-page picker | `ui/settings/PagePickerOverlay.kt` (WebView), `assets/picker/picker.js`, `share/SelectorBuilder.kt` (pure) | `SelectorBuilderTest`, `docs/import-share.md` |
 | Plugin runtime / `flow.*` host API | `plugin/runtime/*` | Cross-repo checklist |
 | Plugin models, caps, versions | `plugin/api/PluginModels.kt`, `PluginManifest.kt` | Cross-repo checklist |
 | Plugin tab UI, story card, downloads, position slider | `ui/plugin/PluginTabViewModel.kt` (large), `PluginTab.kt`, `StoryMediaCard.kt`, `StoryCacheCards.kt` | `docs/plugins.md` |

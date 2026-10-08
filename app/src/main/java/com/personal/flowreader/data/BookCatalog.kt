@@ -164,16 +164,35 @@ class BookCatalog(private val app: FlowApp) {
         libraryTabId: String = "",
     ): TextIngestResult {
         if (text.isBlank()) throw IllegalArgumentException("Nothing to share")
-
-        val bytes = text.toByteArray(Charsets.UTF_8)
-        val id = BookBytes.sha256(bytes)
-        val existing = app.db.progress().get(id)
-        val dest = destination(id, "txt", BookSource.Imported)
-        dest.parentFile?.mkdirs()
-        dest.writeBytes(bytes)
-
         val title = displayTitle?.trim()?.takeIf { it.isNotEmpty() }
             ?: SharedTextTitle.from(text, titleHint)
+        return addBytes(text.toByteArray(Charsets.UTF_8), "txt", title, inLibrary, enqueue, libraryTabId)
+    }
+
+    /** Ingest a generated EPUB (web crawl) the same way as [addText]. */
+    suspend fun addEpub(
+        bytes: ByteArray,
+        title: String,
+        inLibrary: Boolean,
+        enqueue: Boolean,
+        libraryTabId: String = "",
+    ): TextIngestResult = addBytes(bytes, "epub", title, inLibrary, enqueue, libraryTabId)
+
+    private suspend fun addBytes(
+        bytes: ByteArray,
+        ext: String,
+        title: String,
+        inLibrary: Boolean,
+        enqueue: Boolean,
+        libraryTabId: String,
+    ): TextIngestResult {
+        val id = BookBytes.sha256(bytes)
+        val existing = app.db.progress().get(id)
+        val dest = destination(id, ext, BookSource.Imported)
+        dest.parentFile?.mkdirs()
+        dest.writeBytes(bytes)
+        if (ext == "epub") EpubCover.ensureCached(dest)
+
         val now = System.currentTimeMillis()
         val shelf = libraryTabId.trim()
         val row = ProgressEntity(

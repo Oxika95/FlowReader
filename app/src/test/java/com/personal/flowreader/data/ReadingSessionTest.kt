@@ -70,6 +70,27 @@ class ReadingSessionTest {
     }
 
     @Test
+    fun updateSourceGrowsTheBookInPlace() = runBlocking {
+        var total = 3
+        val s = ReadingSession(
+            bookId = "q",
+            contentKey = 1,
+            initial = ReadingWindow.of("Queue", List(total) { "Ch $it" }, listOf(prepared(2)), origin = 2),
+            chapterCount = { total },
+            loader = { i, _, _ -> prepared(i) },
+        )
+        val before = s.window.value.table.indexAt(Locus(2, 1, 0))
+        assertFalse(s.loadNext(200, 50))
+        total = 5
+        s.updateSource(List(total) { "Ch $it" }, contentKey = 2)
+        assertEquals(2, s.contentKey)
+        assertEquals("Ch 4", s.window.value.chapterTitle(4))
+        assertTrue(s.loadNext(200, 50))
+        assertEquals(2..3, s.window.value.loaded)
+        assertEquals(before, s.window.value.table.indexAt(Locus(2, 1, 0)))
+    }
+
+    @Test
     fun resplitRestartsNumberingAtFirstLoadedChapter() = runBlocking {
         val s = session(4)
         s.loadAdjacent(3, 200, 50)

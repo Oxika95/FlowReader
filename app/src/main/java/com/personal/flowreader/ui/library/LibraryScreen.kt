@@ -313,6 +313,14 @@ fun LibraryScreen(
 
     activePlugin?.let { PluginTabOverlays(plugin = it, actions = vm.pluginActions) }
 
+    WebCrawlCards(
+        prompt = ui.crawlPrompt,
+        progress = ui.crawlProgress,
+        onAnswer = vm::answerCrawlPrompt,
+        onDismissPrompt = vm::dismissCrawlPrompt,
+        onStop = vm::stopCrawl,
+    )
+
     SettingsOverlay(
         visible = settingsOpen,
         appearance = appearance,

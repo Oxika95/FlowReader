@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -84,8 +85,14 @@ internal fun MatchFields(
     onMatchIsRegex: (Boolean) -> Unit,
     allowWildcard: Boolean,
     onAllowWildcard: (Boolean) -> Unit,
+    matches: Boolean? = null,
 ) {
     FlowLabel("URL match")
+    val border = when (matches) {
+        true -> FlowTokens.MatchGreen
+        false -> MaterialTheme.colorScheme.error
+        null -> null
+    }
     OutlinedTextField(
         value = matchText,
         onValueChange = onMatchText,
@@ -100,8 +107,20 @@ internal fun MatchFields(
             )
         },
         shape = FlowTokens.Shape.Field,
+        colors = if (border == null) {
+            OutlinedTextFieldDefaults.colors()
+        } else {
+            OutlinedTextFieldDefaults.colors(focusedBorderColor = border, unfocusedBorderColor = border)
+        },
         modifier = Modifier.fillMaxWidth(),
     )
+    if (matches == false) {
+        Text(
+            "Doesn't match the Test URL, so shared links like it won't use this rule.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
     if (!matchIsRegex) {
         FlowToggleRow(
             title = "Allow Wildcards",

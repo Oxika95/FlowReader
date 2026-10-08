@@ -1035,26 +1035,40 @@ fun ReaderScreen(
 
         ReaderBookCard(bookId = ui.currentBookId.ifBlank { vm.bookId }, openRequests = bookCardRequests)
 
-        TocOverlay(
-            visible = overlay == ReaderOverlay.Toc,
-            chapters = chapters,
-            levels = ui.tocLevels,
-            chapterIndex = chapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0)),
-            onChapter = { ci ->
-                overlay = ReaderOverlay.Hidden
-                suppressFollowScroll = true
-                scope.launch {
-                    vm.jumpToChapter(ci)
-                    // A chapter outside the window swaps the doc; let the sentence lookup recompose first.
-                    withFrameNanos { }
-                    val sentences = homeLookup.value.first
-                    if (sentences.isNotEmpty()) {
-                        scrollToHome(sentences.indexAt(vm.ui.value.locus))
-                    }
+        val onTocRow: (Int) -> Unit = { ci ->
+            overlay = ReaderOverlay.Hidden
+            suppressFollowScroll = true
+            scope.launch {
+                vm.jumpToChapter(ci)
+                // A chapter outside the window swaps the doc; let the sentence lookup recompose first.
+                withFrameNanos { }
+                val sentences = homeLookup.value.first
+                if (sentences.isNotEmpty()) {
+                    scrollToHome(sentences.indexAt(vm.ui.value.locus))
                 }
-            },
-            onDismiss = { overlay = ReaderOverlay.Hidden },
-        )
+            }
+        }
+        if (ui.queue) {
+            QueueTocOverlay(
+                visible = overlay == ReaderOverlay.Toc,
+                items = ui.queueItems,
+                currentRow = chapterIndex,
+                currentQueId = ui.currentQueId,
+                onRow = onTocRow,
+                onReorder = vm::reorderQueue,
+                onDelete = vm::removeQueue,
+                onDismiss = { overlay = ReaderOverlay.Hidden },
+            )
+        } else {
+            TocOverlay(
+                visible = overlay == ReaderOverlay.Toc,
+                chapters = chapters,
+                levels = ui.tocLevels,
+                chapterIndex = chapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0)),
+                onChapter = onTocRow,
+                onDismiss = { overlay = ReaderOverlay.Hidden },
+            )
+        }
     }
 }
 

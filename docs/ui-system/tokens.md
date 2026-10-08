@@ -19,6 +19,7 @@ tokens only; a missing value means a missing token (add it here and in code).
 | `Dock` | `EdgePad 16`, `Gap 16` | Dock spacing |
 | `Alpha` | `Disabled`, `Track`, `TrackOnDark`, `Divider`, `OnCoverMuted`, `CoverBand`, `CircleOnCover`, `CircleRingOnCover`, `TextShadow`, `SegmentBehind`, `SegmentEmpty` | Alphas |
 | Cover | `CoverAspect 2:3`, `CoverBandBlack`, `CoverMutedWhite`, `CoverBlur`, `CoverGradientHeight`, `ShelfGradientHeight`, `HighlightRadius`, `NeutralCacheGray`, `CoverEdge.{Row,Tile,Banner,Hero}` (decode px) | Cover art |
+| State | `MatchGreen` (positive outline; negative uses `colorScheme.error`) | Valid/invalid field outlines |
 
 ## `FlowType` (`FlowType.kt`)
 

@@ -98,6 +98,54 @@ class QueueBookTest {
         assertEquals((2 + 0.5f) / 3f, update.fraction!!, 1e-4f)
     }
 
+    private fun same(s: QueueSegment, done: Boolean = s.done) =
+        QueueSegment(s.queId, s.bookId, s.title, done, s.storedPath, s.book, s.local)
+
+    @Test
+    fun classifyAppendDoneReorderDeleteInsert() {
+        val (a, b, c) = queue.segments
+        assertEquals(QueueChange.Same, QueueChange.classify(queue, QueueBook(queue.segments.map { same(it) })))
+        assertEquals(QueueChange.DoneOnly, QueueChange.classify(queue, QueueBook(listOf(same(a, done = true), b, c))))
+        assertEquals(QueueChange.Appended, QueueChange.classify(queue, QueueBook(listOf(a, b, c, segment("d", 2)))))
+        assertEquals(QueueChange.Edited, QueueChange.classify(queue, QueueBook(listOf(b, a, c))))
+        assertEquals(QueueChange.Edited, QueueChange.classify(queue, QueueBook(listOf(a, c))))
+        assertEquals(QueueChange.Edited, QueueChange.classify(queue, QueueBook(listOf(a, segment("d", 1), b, c))))
+        assertEquals(QueueChange.Edited, QueueChange.classify(queue, QueueBook(listOf(a, segment("b", 2), c))))
+    }
+
+    @Test
+    fun appendKeepsExistingChapterIndices() {
+        val appended = QueueBook(queue.segments + segment("d", 2))
+        assertEquals((0 until 3).map(queue::baseOf), (0 until 3).map(appended::baseOf))
+        assertEquals(5, appended.baseOf(3))
+        assertEquals(7, appended.chapterCount)
+    }
+
+    @Test
+    fun remapFollowsMovedRow() {
+        val (a, b, c) = queue.segments
+        val moved = QueueBook(listOf(c, b, a))
+        assertEquals(Locus(3, 1, 2), moved.remap(Locus(3, 1, 2), queue))
+        assertEquals(Locus(4, 0, 5), moved.remap(Locus(0, 0, 5), queue))
+    }
+
+    @Test
+    fun remapDeletedRowGoesToNextThenPrevious() {
+        val (a, b, c) = queue.segments
+        assertEquals(Locus(1, 0, 0), QueueBook(listOf(a, c)).remap(Locus(2, 1, 3), queue))
+        assertEquals(Locus(1, 0, 0), QueueBook(listOf(a, b)).remap(Locus(4, 1, 0), queue))
+        assertEquals(null, QueueBook(emptyList()).remap(Locus(4, 1, 0), queue))
+    }
+
+    @Test
+    fun tocItemsGroupChaptersUnderTheirItem() {
+        val items = queue.tocItems
+        assertEquals(listOf("a", "b", "c"), items.map { it.queId })
+        assertEquals(listOf(0, 1, 5), items.map { it.row })
+        assertEquals(listOf(2, 3, 4), items[1].chapters.map { it.first })
+        assertEquals(emptyList<Pair<Int, String>>(), items[0].chapters)
+    }
+
     @Test
     fun contentKeyTracksOrderAndLocalRules() {
         val global = emptyList<FilterRule>()

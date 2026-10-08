@@ -108,6 +108,14 @@ Queue stream: one row per Queue item, with that item's chapters indented beneath
 than one. Each item's title heads its text in the body (always, regardless of "Chapter headings in
 body"); the header shows the current item's title, cover and "Queue · n of N".
 
+The Queue's Contents follows the Queue table live (shares, Library edits, Done marks) without
+leaving the reader, and has the Library Queue's edit mode: hold an item to reorder (drag handle),
+select and delete (items only while editing; chapters return on Done). Items appended at the end
+and Done changes apply in place, so playback isn't interrupted and TTS continues into new items.
+Reordering or removing items rebuilds the stream at the same text; if TTS is playing it restarts
+the current sentence once. Deleting the item being read asks first, then moves to the start of the
+next item (the previous one if it was last) and keeps playing.
+
 ## Text selection
 
 System ActionMode: Copy, Share, Web search, Filter. **Filter** opens a new **Local** filter with the
@@ -124,7 +132,7 @@ Layout (theme, font, spacing, screen awake), Audio (all Voice + Playback), Filte
 - [`ReaderChrome.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderChrome.kt)
 - [`ReaderHome.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderHome.kt), [`HomeMarker.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/HomeMarker.kt)
 - [`ReaderTouchPolicy.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderTouchPolicy.kt)
-- [`TocOverlay.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/TocOverlay.kt)
+- [`TocOverlay.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/TocOverlay.kt), Queue: [`QueueTocOverlay.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/QueueTocOverlay.kt)
 - [`ReaderTextToolbar.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderTextToolbar.kt)
 
 [Back to hub](README.md)
