@@ -59,7 +59,7 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | A setting (new key) | `data/SettingsStore.kt` (prefs + setter), `ui/settings/SettingsState.kt`, the tab file | `docs/settings.md`, `docs/data.md` |
 | Layout theme (hue, saturation, lightness) | `ui/settings/ThemeSettingsPane.kt`; color math `ui/theme/Theme.kt`; `AccentLightness.scale` in `data/Models.kt` | `docs/settings.md`, `AccentLightnessTest` |
 | Audio settings UI | `ui/settings/AudioSettings.kt` (tab shell), `VoiceSettingsTab.kt`, `PlaybackSettingsTab.kt` (incl. underlay), `AudioSettingsControls.kt` (flyout header, labels, center slider) | `docs/settings.md` |
-| Room schema | `data/ProgressDb.kt` (add `MIGRATION_n_m`, bump version) | `docs/data.md` |
+| Room schema | `data/ProgressDb.kt` (bump version; alpha: destructive, no migrations) | `docs/data.md` |
 | Share routing / parse rules | `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`), `ShareRouter.kt`; UI `ui/settings/SharingSettingsTab.kt` (panes), `ImportRouterRules.kt`, `ImportParseRules.kt`, `ImportRuleControls.kt` | `ShareRouterTest`, `docs/import-share.md` |
 | Web page parse (Custom fields, Next-link crawl → EPUB) | `share/WebPageIngest.kt` (`ParseSelectors`, `CssList`), `WebCrawl.kt`, `EpubWriter.kt`, `HtmlParagraphs.kt` (HTML → paragraphs, also plugin chapters); crawl prompt `ui/library/WebCrawlCards.kt` + `LibraryViewModel.startWebImport` | `WebPageIngestTest`, `WebCrawlTest`, `HtmlParagraphsTest` |
 | Parser on-page picker | `ui/settings/PagePickerOverlay.kt` (WebView), `assets/picker/picker.js`, `share/SelectorBuilder.kt` (pure) | `SelectorBuilderTest`, `docs/import-share.md` |
@@ -67,6 +67,7 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | Plugin models, caps, versions | `plugin/api/PluginModels.kt`, `PluginManifest.kt` | Cross-repo checklist |
 | Plugin tab UI, story card, downloads, position slider | `ui/plugin/PluginTabViewModel.kt` (large), `PluginTab.kt`, `StoryMediaCard.kt`, `StoryCacheCards.kt` | `docs/plugins.md` |
 | Plugin chapter cache policy (cache level ahead, cleanup, pins) | `plugin/store/PluginSessionStore.kt` (`fetchIndices`, `pruneIndices`, pure), `PluginBookStore.kt` (`maintainChapterCache`, `scheduleMaintain`) | `PluginSessionStoreTest`, `docs/plugins.md` |
+| New-chapter notifications (bell, background check, deep link) | `plugin/updates/` (`UpdateChecker`, `UpdateDiff` pure, `UpdateNotifier`, `UpdateScheduler`, `ChapterUpdateWorker`); bell in `MediaCardAdapters.kt` + `PluginTabViewModel.toggleNotify`; settings `ui/settings/PluginUpdatesSection.kt`; plugin side `checkUpdates` (capability `updates`, apiVersion 3) | `UpdateDiffTest`, `docs/plugins.md` |
 | Plugin repos / install | `plugin/repo/*`, `ui/settings/PluginsSettingsTab.kt` | `RepoIndexTest` |
 | Media card content | `ui/design/card/media/MediaCardAdapters.kt` (pure) | `MediaCardAdaptersTest` |
 | Any UI component / token | `ui/design/**`, `ui/theme/**` | `docs/ui-system/` (rule: `ui-system.mdc`) |
@@ -82,8 +83,8 @@ be split by moving code; they need helper-class extraction (separate, tested ref
 ## Cross-repo change checklist (plugin-visible changes)
 
 1. **Versions:** app `PLUGIN_HOST_API_VERSION` / `PLUGIN_MIN_API_VERSION` (`plugin/api/PluginManifest.kt`)
-   and plugins `HOST_API_VERSION` (`../flow-reader-plugins/scripts/build-index.mjs`) move together.
-   Never drop an accepted version.
+   and plugins `HOST_API_VERSION` / `MIN_API_VERSION` (`../flow-reader-plugins/scripts/build-index.mjs`)
+   move together. Alpha: only the current version is accepted, so a bump means republishing every plugin.
 2. **Host API:** any `flow.*` change in `plugin/runtime/*` is mirrored in
    `../flow-reader-plugins/test/host.mjs`.
 3. **Contract:** `docs/plugins/api.md`, `ui-contract.md`, `schema/*.json`, `examples/`. Icon tokens
@@ -92,7 +93,7 @@ be split by moving code; they need helper-class extraction (separate, tested ref
 5. **Plugin release:** bump `version` in `<Plugin>/plugin.json`, rebuild `index.json`, commit. Never
    change `id` or `bookIdPrefix`.
 6. **Order:** ship the app change first. Pushing plugins `main` publishes to users immediately via
-   Pages, so a plugin may only rely on what released apps support (or degrade gracefully).
+   Pages; apps on an older `apiVersion` stop being offered the bumped plugin until they update.
 7. Device test: `.\gradlew.bat :app:installDebug` bundles the sibling plugins checkout.
 
 ## Verify

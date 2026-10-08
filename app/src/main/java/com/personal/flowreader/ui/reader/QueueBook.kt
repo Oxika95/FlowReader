@@ -94,7 +94,6 @@ internal class QueueBook(val segments: List<QueueSegment>) {
                 bases[seg] + local.coerceAtLeast(0)
             }
         },
-        legacyLocus = { it },
         load = { i -> loadChapter(i) },
     )
 

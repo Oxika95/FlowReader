@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Oxika95/FlowReader/docs/plugins/schema/work-detail.schema.json",
-  "title": "loadWork() result (WorkDetail), apiVersion 2",
+  "title": "loadWork() result (WorkDetail), apiVersion 3",
   "type": "object",
   "required": ["id", "chapters"],
   "properties": {
@@ -12,9 +12,6 @@
     "cover": { "type": "string" },
     "synopsis": { "type": "string" },
     "tags": { "type": "array", "items": { "type": "string" } },
-    "status": { "type": "string", "description": "v1; shown as a badge when card.badges is empty" },
-    "rating": { "type": "string", "description": "v1; shown as a 'star' stat when card.stats is empty" },
-    "views": { "type": ["integer", "null"], "description": "v1; shown as an 'eye' stat when card.stats is empty" },
     "chapters": {
       "type": "array",
       "minItems": 1,
@@ -55,7 +52,7 @@
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
-          "not": { "enum": ["read", "download", "refresh", "delete", "share", "open", "remove"] }
+          "not": { "enum": ["read", "download", "refresh", "delete", "share", "open", "remove", "notify"] }
         },
         "label": { "type": "string", "minLength": 1 },
         "icon": { "type": "string" },

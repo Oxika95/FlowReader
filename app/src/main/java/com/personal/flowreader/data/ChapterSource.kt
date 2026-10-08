@@ -27,12 +27,6 @@ interface ChapterSource {
 
     fun load(index: Int): Chapter
 
-    /**
-     * Map a position saved before chapter sources existed (whole-book parse: EPUB chapters
-     * counted only when non-empty, TXT as one chapter) onto this source's indices.
-     */
-    fun legacyLocus(locus: Locus): Locus
-
     companion object {
         fun open(file: File, fallbackTitle: String = file.nameWithoutExtension): ChapterSource =
             if (file.extension.equals("txt", ignoreCase = true)) {

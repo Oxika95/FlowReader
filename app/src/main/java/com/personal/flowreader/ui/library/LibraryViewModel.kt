@@ -19,6 +19,7 @@ import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.PluginShareRequest
+import com.personal.flowreader.plugin.updates.UpdateNotifier
 import com.personal.flowreader.share.ParseRule
 import com.personal.flowreader.share.ParseRules
 import com.personal.flowreader.share.RouterLanding
@@ -272,6 +273,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 executeShareIntent(intent)
                 return true
             }
+            UpdateNotifier.ACTION_OPEN_STORY -> {
+                val pluginId = intent.getStringExtra(UpdateNotifier.EXTRA_PLUGIN_ID).orEmpty()
+                val bookId = intent.getStringExtra(UpdateNotifier.EXTRA_BOOK_ID).orEmpty()
+                if (pluginId.isNotBlank() && bookId.isNotBlank()) {
+                    viewModelScope.launch { openPluginTab(PluginShareRequest(pluginId, bookId = bookId)) }
+                }
+                return true
+            }
             Intent.ACTION_VIEW -> {
                 val uri = intent.data ?: return false
                 openExternalUri(uri)
@@ -342,11 +351,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                         )
                         startWebImport(WebImportRequest(url, parseRuleFor(intent), landing, autoPlay = true))
                     }
-                    ShareDispatch.KIND_PLUGIN, LEGACY_KIND_RR_PLUGIN -> {
+                    ShareDispatch.KIND_PLUGIN -> {
                         val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
                         val pluginId = intent.getStringExtra(ShareDispatch.EXTRA_PLUGIN_ID)
-                            ?.takeIf { it.isNotBlank() } ?: LEGACY_RR_ID
-                        openPluginShare(pluginId, url)
+                        if (!pluginId.isNullOrBlank()) openPluginShare(pluginId, url)
                     }
                 }
             } catch (t: Throwable) {
@@ -415,7 +423,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Enable and switch to the plugin tab; the tab consumes [FlowApp.pendingPluginShare]. */
-    private suspend fun openPluginShare(pluginId: String, url: String) {
+    private suspend fun openPluginShare(pluginId: String, url: String) =
+        openPluginTab(PluginShareRequest(pluginId, url))
+
+    private suspend fun openPluginTab(request: PluginShareRequest) {
+        val pluginId = request.pluginId
         val plugin = flow.pluginManager.get(pluginId)
         if (plugin == null) {
             _ui.value = _ui.value.copy(
@@ -424,7 +436,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             )
             return
         }
-        flow.pendingPluginShare.value = PluginShareRequest(pluginId, url)
+        flow.pendingPluginShare.value = request
         val enabled = withContext(Dispatchers.IO) {
             flow.settings.enabledPluginIdsOnce()
         }.toMutableSet().also { it.add(pluginId) }
@@ -947,11 +959,5 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun consumeError() {
         _ui.value = _ui.value.copy(error = null)
-    }
-
-    private companion object {
-        /** Intents queued by builds before JS plugins. */
-        const val LEGACY_KIND_RR_PLUGIN = "rr_plugin"
-        const val LEGACY_RR_ID = "royalroad"
     }
 }

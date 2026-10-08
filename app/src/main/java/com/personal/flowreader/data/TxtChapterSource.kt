@@ -44,20 +44,6 @@ class TxtChapterSource private constructor(
         return Chapter(chapterTitle(index), blocks)
     }
 
-    /** Old whole-file parse was one chapter: block k counts across segments. */
-    override fun legacyLocus(locus: Locus): Locus {
-        if (locus.chapterIndex != 0) return Locus()
-        var remaining = locus.blockIndex
-        for (i in segments.indices) {
-            val count = load(i).blocks.size
-            if (remaining < count || i == segments.lastIndex) {
-                return Locus(i, remaining.coerceIn(0, (count - 1).coerceAtLeast(0)), locus.charOffset)
-            }
-            remaining -= count
-        }
-        return Locus()
-    }
-
     companion object {
         const val SEGMENT_BYTES = 48 * 1024L
         private val HEADING = Regex(

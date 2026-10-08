@@ -96,7 +96,6 @@ class ProgressWriter(
                 charOffset = update.charOffset,
                 readingProgress = update.fraction?.coerceIn(0f, 1f) ?: row.readingProgress,
                 updatedAt = update.at,
-                locusVersion = ProgressEntity.LOCUS_CURRENT,
                 anchorText = update.anchorText ?: row.anchorText,
                 chapterHref = update.chapterHref ?: row.chapterHref,
             ),

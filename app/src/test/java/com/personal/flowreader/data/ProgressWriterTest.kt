@@ -68,13 +68,12 @@ class ProgressWriterTest {
     }
 
     @Test
-    fun anchorAndHrefStoredAndLegacyFlagCleared() = runBlocking {
-        dao.rows["b"] = row(chapter = 0, at = 1L).copy(locusVersion = 0, anchorText = "old", chapterHref = "a.xhtml")
+    fun anchorAndHrefStored() = runBlocking {
+        dao.rows["b"] = row(chapter = 0, at = 1L).copy(anchorText = "old", chapterHref = "a.xhtml")
         val w = writer()
         w.submit(update(2, at = 5L))
         w.drain()
         assertEquals("old", dao.rows.getValue("b").anchorText)
-        assertEquals(ProgressEntity.LOCUS_CURRENT, dao.rows.getValue("b").locusVersion)
         w.submit(update(3, at = 6L).copy(anchorText = "new", chapterHref = "b.xhtml"))
         w.drain()
         assertEquals("new", dao.rows.getValue("b").anchorText)

@@ -6,7 +6,8 @@ alwaysApply: false
 
 # Data and storage
 
-- Room schema change = new `MIGRATION_n_m` in `ProgressDb.kt` + version bump; never destructive.
+- Alpha: Room schema change = version bump in `ProgressDb.kt` only; `fallbackToDestructiveMigration`
+  wipes the tables (library + positions). No migrations or legacy readers for any stored format.
 - New setting = field in `ReaderPrefs`/`TtsPrefs` (or a `*Once` getter) + setter in `SettingsStore.kt`,
   wired through `ui/settings/SettingsState.kt`; document the key in `docs/data.md` / `docs/settings.md`.
 - Book ids are SHA-256 of file bytes; don't change id derivation (keys progress, filters, queue).

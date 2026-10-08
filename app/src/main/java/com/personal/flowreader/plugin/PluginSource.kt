@@ -10,6 +10,8 @@ import com.personal.flowreader.plugin.api.PluginJson
 import com.personal.flowreader.plugin.api.PluginManifest
 import com.personal.flowreader.plugin.api.PluginPage
 import com.personal.flowreader.plugin.api.PluginSession
+import com.personal.flowreader.plugin.api.PluginUpdateInfo
+import com.personal.flowreader.plugin.api.PluginUpdateQuery
 import com.personal.flowreader.plugin.api.PluginWorkDetail
 import com.personal.flowreader.plugin.runtime.JsPluginRuntime
 import org.json.JSONArray
@@ -80,14 +82,19 @@ class PluginSource(
         runtime.call("syncProgress", JSONArray().put(workId).put(PluginJson.chapterRef(chapter)))
     }
 
-    /** apiVersion 2: a plugin-declared media card action was tapped. */
+    /** A plugin-declared media card action was tapped. */
     suspend fun cardAction(workId: String, actionId: String, on: Boolean?): PluginCardActionResult {
-        if (manifest.apiVersion < 2) {
-            throw PluginException(PluginErrorCode.Unsupported, "${manifest.name} has no card actions")
-        }
         val args = JSONArray().put(workId).put(actionId)
         if (on != null) args.put(on)
         return PluginJson.cardActionResult(runtime.call("cardAction", args))
+    }
+
+    /** Latest chapter info for the works the plugin could check cheaply. */
+    suspend fun checkUpdates(works: List<PluginUpdateQuery>): List<PluginUpdateInfo> {
+        require(PluginCapability.Updates)
+        val arr = JSONArray()
+        works.forEach { arr.put(PluginJson.updateQuery(it)) }
+        return PluginJson.updates(runtime.call("checkUpdates", JSONArray().put(arr)))
     }
 
     suspend fun resolveUrl(url: String): String? {

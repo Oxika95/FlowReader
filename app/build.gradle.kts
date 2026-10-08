@@ -55,6 +55,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.9")
     implementation("androidx.datastore:datastore-preferences:1.1.2")
     implementation("androidx.media:media:1.7.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

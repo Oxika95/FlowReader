@@ -20,8 +20,6 @@ internal class ReaderBook(
     val meter: BookMeter,
     private val hrefs: (Int) -> String,
     private val hrefIndex: (String) -> Int,
-    /** Maps a position saved by the whole-book parser (locusVersion 0). */
-    val legacyLocus: (Locus) -> Locus,
     val load: suspend (Int) -> Chapter,
 ) {
     val chapterTitles: List<String> get() = titles
@@ -46,7 +44,6 @@ internal class ReaderBook(
             meter = BookMeter.of(source),
             hrefs = source::href,
             hrefIndex = source::indexOfHref,
-            legacyLocus = source::legacyLocus,
             load = { source.load(it) },
         )
 
@@ -60,7 +57,6 @@ internal class ReaderBook(
                 meter = BookMeter(LongArray(story.toc.size) { 1L }),
                 hrefs = { story.toc[it].url },
                 hrefIndex = { href -> story.toc.indexOfFirst { it.url == href } },
-                legacyLocus = { it },
                 load = { store.chapter(story, it) },
             )
         }

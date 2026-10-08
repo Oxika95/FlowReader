@@ -61,7 +61,4 @@ object PluginMembershipStore {
 
     fun listsContaining(dataDir: File, listIds: Collection<String>, workId: String): Set<String> =
         listIds.filter { workId in workIds(dataDir, it) }.toSet()
-
-    fun anyListed(dataDir: File, listIds: Collection<String>): Boolean =
-        listIds.any { file(dataDir, it).let { f -> f.exists() && f.length() > 0L } }
 }

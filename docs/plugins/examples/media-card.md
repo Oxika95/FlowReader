@@ -1,4 +1,4 @@
-# Example: a v2 media card
+# Example: a media card
 
 How a plugin fills the story media card, using Royal Road as the model
 ([`flow-reader-plugins/RoyalRoad`](https://github.com/Oxika95/flow-reader-plugins/tree/main/RoyalRoad)).
@@ -8,8 +8,8 @@ How a plugin fills the story media card, using Royal Road as the model
 ```json
 {
   "id": "royalroad",
-  "version": "1.1.0",
-  "apiVersion": 2,
+  "version": "1.2.0",
+  "apiVersion": 3,
   "lists": [
     { "id": "follow", "title": "Follow", "icon": "add" },
     { "id": "favorite", "title": "Favorite", "icon": "favorite" },
@@ -29,7 +29,6 @@ async loadWork(workId) {
   // ... parse title, author, chapters, status, rating, views ...
   return {
     id: workId, title, url: res.url, author, cover, synopsis, tags, chapters,
-    status, rating: ratingValue + ' / 5', views,          // v1 fields: keep for older hosts
     card: {
       stats: [
         { icon: 'star', value: ratingValue, label: 'Rating' },

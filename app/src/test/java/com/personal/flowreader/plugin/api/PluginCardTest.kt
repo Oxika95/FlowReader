@@ -119,11 +119,11 @@ class PluginCardTest {
     }
 
     @Test
-    fun detail_v1HasNoCard_v2CarriesCard() {
-        val v1 = PluginJson.detail(JSONObject("""{"id":"1","title":"T","rating":"4.5"}"""))
-        assertNull(v1.card)
-        val v2 = PluginJson.detail(JSONObject("""{"id":"1","title":"T","card":{"badges":["Ongoing"]}}"""))
-        assertEquals(listOf("Ongoing"), v2.card?.badges)
+    fun detail_withoutCardHasNone_withCardCarriesIt() {
+        val bare = PluginJson.detail(JSONObject("""{"id":"1","title":"T"}"""))
+        assertNull(bare.card)
+        val carded = PluginJson.detail(JSONObject("""{"id":"1","title":"T","card":{"badges":["Ongoing"]}}"""))
+        assertEquals(listOf("Ongoing"), carded.card?.badges)
     }
 
     @Test

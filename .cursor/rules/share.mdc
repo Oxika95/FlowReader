@@ -8,7 +8,6 @@ alwaysApply: false
 
 - Rule matching lives in `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`, `UrlDetector`) and is
   covered by `ShareRouterTest`; add a test case for every matching change.
-- Stored rule JSON has legacy migrations (`migrateFromLegacy`, `migrateLegacy`); never break decoding
-  of older saved rules.
+- Alpha: stored rule JSON has no legacy readers; unset router rules fall back to `RouterRules.seed()`.
 - Plugins may own domains (seeded plugin rules); keep `withPluginHosts` behavior intact.
 - Behavior reference: `docs/import-share.md`. History: `../flow-reader-chats/areas/import-share.md`.

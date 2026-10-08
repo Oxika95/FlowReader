@@ -103,7 +103,7 @@ class PluginBookStore(
     }
 
     private fun read(r: Ref): PluginReadSession? =
-        PluginSessionStore.read(r.root, r.workId, r.plugin.id, plugins.bookIdFor(r.plugin.id, r.workId))
+        PluginSessionStore.read(r.root, r.workId)
 
     fun isPluginBook(bookId: String): Boolean = plugins.isPluginBook(bookId)
 
@@ -142,6 +142,7 @@ class PluginBookStore(
             cacheLevel = policy.cacheLevel,
             cleanup = policy.cleanup,
             pinnedRanges = PluginSessionStore.clipPinnedRanges(pins, detail.chapters.size),
+            notify = existing?.notify,
         )
         PluginSessionStore.writeMeta(r.dir, session)
         PluginSessionStore.writeSplash(
@@ -149,9 +150,6 @@ class PluginBookStore(
             PluginSplashMeta(
                 synopsis = detail.synopsis,
                 tags = detail.tags,
-                views = detail.views,
-                rating = detail.rating,
-                status = detail.status,
                 cover = detail.cover,
                 card = detail.card,
             ),
@@ -235,6 +233,15 @@ class PluginBookStore(
         )
     }
 
+    fun setNotify(bookId: String, on: Boolean) {
+        val r = ref(bookId)
+        val existing = read(r) ?: return
+        PluginSessionStore.writeMeta(r.dir, existing.copy(notify = on, chapters = emptyList()))
+    }
+
+    /** Stored story session (ToC, policy, notify flag); null when never opened or followed. */
+    fun session(bookId: String): PluginReadSession? = runCatching { read(ref(bookId)) }.getOrNull()
+
     private fun updatePinnedRanges(bookId: String, ranges: List<IntRange>) {
         val r = ref(bookId)
         val existing = read(r) ?: return
@@ -304,7 +311,7 @@ class PluginBookStore(
     }
 
     /**
-     * Run a plugin-declared media card action (apiVersion 2) and persist the patched card.
+     * Run a plugin-declared media card action and persist the patched card.
      * Returns the result so the caller can show its toast or reload.
      */
     suspend fun runCardAction(bookId: String, actionId: String, on: Boolean?): PluginCardActionResult {

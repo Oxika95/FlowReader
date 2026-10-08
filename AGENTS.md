@@ -34,7 +34,7 @@ If the Kotlin compiler crashes with `NotImplementedError: Unknown file` after de
   `AlertDialog`, `Dialog`, `ModalBottomSheet`, M3 `Card`, `Scaffold`, or literal `dp`/alpha/`zIndex`.
   Details load automatically from `.cursor/rules/ui-system.mdc` when editing UI files.
 - Plugins: contract in [`docs/plugins/api.md`](docs/plugins/api.md); plugin-visible changes follow the
-  cross-repo checklist in `map.md` and keep older `apiVersion`s working (`plugin-api.mdc`).
+  cross-repo checklist in `map.md`. Alpha: only the current `apiVersion` is supported (`plugin-api.mdc`).
 - Match surrounding code; comments only for constraints the code can't show.
 - Pure logic (layouts, adapters, parsers) stays Android-free and gets JVM unit tests.
 - Keep files under ~500 lines; split by responsibility within the same package.

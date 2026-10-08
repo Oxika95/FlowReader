@@ -75,7 +75,7 @@ fun PluginTabContent(
     LaunchedEffect(pendingShare) {
         val share = pendingShare?.takeIf { it.pluginId == plugin.id } ?: return@LaunchedEffect
         app.pendingPluginShare.value = null
-        vm.openUrl(share.url)
+        if (share.bookId != null) vm.openStory(share.bookId) else vm.openUrl(share.url)
     }
     LaunchedEffect(ui.message) {
         val msg = ui.message ?: return@LaunchedEffect
@@ -259,6 +259,7 @@ fun PluginStoryOverlays(
         onRefreshToc = vm::refreshStoryToc,
         onDelete = vm::deleteStory,
         onToggleList = vm::toggleList,
+        onToggleNotify = vm::toggleNotify,
         onPluginAction = vm::runCardAction,
         hiddenActions = hiddenActions,
     )

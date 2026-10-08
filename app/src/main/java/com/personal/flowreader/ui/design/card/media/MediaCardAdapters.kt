@@ -56,9 +56,6 @@ data class PluginMediaInfo(
     val workUrl: String,
     val synopsis: String,
     val tags: List<String>,
-    val status: String,
-    val rating: String,
-    val views: Long?,
     val chapterCount: Int,
     val downloadedCount: Int,
     val cachedIndices: Set<Int>,
@@ -67,10 +64,12 @@ data class PluginMediaInfo(
     /** Chapters kept ahead of [locus]. */
     val cacheLevel: Int,
     val listedIn: Set<String>,
-    /** apiVersion 2 slots; null for v1 plugins (fields above are mapped instead). */
+    /** Plugin card slots; null when the plugin fills none. */
     val card: PluginCard?,
     /** Chapters more than [cacheLevel] behind [locus] are deleted. */
     val cleanup: Boolean = false,
+    /** New-chapter bell state; null hides the bell. */
+    val notify: Boolean? = null,
 )
 
 /**
@@ -87,19 +86,10 @@ object PluginMediaCardAdapter {
     ): MediaCardModel {
         val card = info.card?.capped()
         val stats = buildList {
-            if (card != null && card.stats.isNotEmpty()) {
-                card.stats.forEach { add(MediaStat(it.icon, it.value, it.label)) }
-            } else {
-                info.rating.takeIf { it.isNotBlank() }?.let { add(MediaStat("star", it, "Rating")) }
-                info.views?.let { add(MediaStat("eye", formatCount(it), "Views")) }
-            }
+            card?.stats?.forEach { add(MediaStat(it.icon, it.value, it.label)) }
             add(MediaStat("pages", info.chapterCount.toString(), "Chapters"))
         }
-        val badges = if (card != null && card.badges.isNotEmpty()) {
-            card.badges
-        } else {
-            listOfNotNull(info.status.takeIf { it.isNotBlank() })
-        }
+        val badges = card?.badges.orEmpty()
         val rail = buildList {
             manifest.lists.filter { it.membershipToggle }.forEach { list ->
                 add(
@@ -109,6 +99,18 @@ object PluginMediaCardAdapter {
                         kind = MediaActionKind.Toggle,
                         icon = list.icon,
                         on = list.id in info.listedIn,
+                        enabled = !busy,
+                    ),
+                )
+            }
+            info.notify?.let { on ->
+                add(
+                    MediaAction(
+                        MediaActionIds.NOTIFY,
+                        if (on) "New-chapter alerts on" else "New-chapter alerts off",
+                        MediaActionKind.Toggle,
+                        icon = "notifications",
+                        on = on,
                         enabled = !busy,
                     ),
                 )

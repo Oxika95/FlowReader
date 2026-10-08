@@ -29,7 +29,11 @@ class PluginInstaller(
         if (!isCompatible(plugin)) {
             throw PluginException(
                 PluginErrorCode.Unsupported,
-                "${plugin.name} needs a newer Flow Reader (plugin API ${plugin.apiVersion})",
+                if (plugin.apiVersion > PLUGIN_HOST_API_VERSION) {
+                    "${plugin.name} needs a newer Flow Reader (plugin API ${plugin.apiVersion})"
+                } else {
+                    "${plugin.name} uses plugin API ${plugin.apiVersion}, which is no longer supported"
+                },
             )
         }
         val manifestBytes = download(plugin.manifestUrl, MAX_MANIFEST_BYTES)

@@ -53,10 +53,10 @@ class MainActivity : ComponentActivity() {
         if (isIncomingIntent(intent)) {
             pendingIncoming.value = Intent(intent)
         }
-        (application as FlowApp).tts.setNotificationPermissionAsker { onDone ->
+        val asker: (onDone: () -> Unit) -> Unit = asker@{ onDone ->
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
                 onDone()
-                return@setNotificationPermissionAsker
+                return@asker
             }
             val granted = ContextCompat.checkSelfPermission(
                 this,
@@ -64,11 +64,13 @@ class MainActivity : ComponentActivity() {
             ) == PackageManager.PERMISSION_GRANTED
             if (granted) {
                 onDone()
-                return@setNotificationPermissionAsker
+                return@asker
             }
             pendingNotificationCallback = onDone
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        (application as FlowApp).tts.setNotificationPermissionAsker(asker)
+        (application as FlowApp).notificationPermissionAsker = asker
         enableEdgeToEdge()
         setContent {
             val openVm: OpenBookViewModel = viewModel()
@@ -109,6 +111,9 @@ class MainActivity : ComponentActivity() {
 
                     LaunchedEffect(incoming) {
                         val intent = incoming ?: return@LaunchedEffect
+                        if (intent.action == com.personal.flowreader.plugin.updates.UpdateNotifier.ACTION_OPEN_STORY) {
+                            nav.popBackStack("library", inclusive = false)
+                        }
                         if (libraryVm.handleIncomingIntent(intent)) {
                             pendingIncoming.value = null
                             setIntent(Intent(this@MainActivity, MainActivity::class.java))
@@ -182,6 +187,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         (application as FlowApp).tts.setNotificationPermissionAsker(null)
+        (application as FlowApp).notificationPermissionAsker = null
         super.onDestroy()
     }
 
@@ -196,7 +202,8 @@ class MainActivity : ComponentActivity() {
     private fun isIncomingIntent(intent: Intent?): Boolean =
         intent?.action == Intent.ACTION_SEND ||
             intent?.action == Intent.ACTION_VIEW ||
-            intent?.action == com.personal.flowreader.share.ShareDispatch.ACTION_EXECUTE
+            intent?.action == com.personal.flowreader.share.ShareDispatch.ACTION_EXECUTE ||
+            intent?.action == com.personal.flowreader.plugin.updates.UpdateNotifier.ACTION_OPEN_STORY
 }
 
 @androidx.compose.runtime.Composable

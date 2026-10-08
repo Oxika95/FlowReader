@@ -16,8 +16,8 @@ import com.personal.flowreader.ui.design.card.media.withoutHostActions
 import com.personal.flowreader.ui.theme.FlowTokens
 
 /**
- * Story media card shared by every plugin. Host actions (list toggles, Share, Download,
- * Refresh, Delete, Read) are always present; apiVersion 2 plugins add stats, badges, links and
+ * Story media card shared by every plugin. Host actions (list toggles, new-chapter bell, Share, Download,
+ * Refresh, Delete, Read) are always present; plugins add stats, badges, links and
  * up to 2 rail + 2 footer actions, routed to `cardAction`.
  */
 @Composable
@@ -32,6 +32,7 @@ internal fun StoryMediaCard(
     onRefreshToc: () -> Unit,
     onDelete: () -> Unit,
     onToggleList: (String) -> Unit,
+    onToggleNotify: () -> Unit,
     onPluginAction: (actionId: String, on: Boolean?) -> Unit,
     hiddenActions: Set<String> = emptySet(),
 ) {
@@ -51,9 +52,6 @@ internal fun StoryMediaCard(
                     workUrl = s.workUrl,
                     synopsis = s.synopsis,
                     tags = s.tags,
-                    status = s.status,
-                    rating = s.rating,
-                    views = s.views,
                     chapterCount = s.chapterCount,
                     downloadedCount = s.downloadedCount,
                     cachedIndices = s.cachedIndices,
@@ -62,6 +60,7 @@ internal fun StoryMediaCard(
                     listedIn = s.listedIn,
                     card = s.card,
                     cleanup = s.cleanup,
+                    notify = s.notify,
                 ),
                 busy = ui.busy,
                 downloadProgress = progress,
@@ -92,6 +91,7 @@ internal fun StoryMediaCard(
                     }
                     context.startActivity(Intent.createChooser(send, "Share story"))
                 }
+                MediaActionIds.NOTIFY -> onToggleNotify()
                 MediaActionIds.DOWNLOAD -> onDownload()
                 MediaActionIds.REFRESH -> onRefreshToc()
                 MediaActionIds.DELETE -> onDelete()

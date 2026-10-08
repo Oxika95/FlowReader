@@ -23,6 +23,7 @@ import com.personal.flowreader.plugin.store.PluginLibraryMeta
 import com.personal.flowreader.plugin.store.PluginMembershipStore
 import com.personal.flowreader.plugin.store.PluginReadSession
 import com.personal.flowreader.plugin.store.PluginSessionStore
+import com.personal.flowreader.plugin.updates.UpdateDiff
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -43,9 +44,6 @@ data class PluginStory(
     val author: String,
     val synopsis: String,
     val tags: List<String>,
-    val views: Long?,
-    val rating: String,
-    val status: String,
     val cover: String,
     val toc: List<PluginChapterRef>,
     val downloadedCount: Int,
@@ -60,8 +58,10 @@ data class PluginStory(
     val cleanup: Boolean = false,
     /** Plugin list ids this story is tagged with. */
     val listedIn: Set<String> = emptySet(),
-    /** apiVersion 2 media card slots; null for v1 plugins. */
+    /** Media card slots; null when the plugin fills none. */
     val card: PluginCard? = null,
+    /** New-chapter notifications for this story (bell on the media card). */
+    val notify: Boolean = false,
 ) {
     val chapterCount: Int get() = toc.size
 }
@@ -133,6 +133,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         manager.get(pluginId)?.manifest ?: throw IllegalStateException("Plugin $pluginId is not installed")
     private val dataDir: File get() = manager.dataDir(pluginId)
     private val listIds: List<String> get() = manifest.lists.map { it.id }
+    private val syncableListIds: Set<String> get() = manifest.lists.filter { it.syncable }.map { it.id }.toSet()
 
     private val _ui = MutableStateFlow(PluginTabUi(manifest = manifest))
     val ui: StateFlow<PluginTabUi> = _ui
@@ -149,10 +150,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     fun refreshLocal() {
         viewModelScope.launch {
             val rows = withContext(Dispatchers.IO) { flow.catalog.listPlugin(pluginId) }
-            val (ids, listRows) = withContext(Dispatchers.IO) {
-                migrateUnlisted(rows)
-                membership(_ui.value.section)
-            }
+            val (ids, listRows) = withContext(Dispatchers.IO) { membership(_ui.value.section) }
             val meta = withContext(Dispatchers.IO) { books.libraryMetas(rows.map { it.bookId }) }
             _ui.update { it.copy(books = rows, libraryMeta = meta, listBookIds = ids, listRows = listRows) }
         }
@@ -175,17 +173,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                 ui.copy(session = session, loginFields = prefill)
             }
         }
-    }
-
-    /** Catalog stories not on any list (older installs) land on the first list. */
-    private fun migrateUnlisted(rows: List<ProgressEntity>) {
-        val first = manifest.lists.firstOrNull() ?: return
-        if (rows.isEmpty() || PluginMembershipStore.anyListed(dataDir, listIds)) return
-        val works = rows.mapNotNull { row ->
-            val workId = manager.resolveBookId(row.bookId)?.second ?: return@mapNotNull null
-            PluginWork(id = workId, title = row.title, url = row.sourceUri)
-        }
-        PluginMembershipStore.write(dataDir, first.id, works)
     }
 
     private fun membership(section: PluginSection): Pair<Set<String>, Map<String, PluginWork>> {
@@ -361,6 +348,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             ?: throw PluginException(PluginErrorCode.Error, "Story is not cached")
         val progress = flow.db.progress().get(bookId)
         val dir = PluginSessionStore.dir(dataDir, session.workId)
+        val listedIn = PluginMembershipStore.listsContaining(dataDir, listIds, session.workId)
         return PluginStory(
             bookId = bookId,
             workId = session.workId,
@@ -369,9 +357,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             author = session.author,
             synopsis = splash?.synopsis.orEmpty(),
             tags = splash?.tags.orEmpty(),
-            views = splash?.views,
-            rating = splash?.rating.orEmpty(),
-            status = splash?.status.orEmpty(),
             cover = splash?.cover.orEmpty(),
             toc = session.toc,
             downloadedCount = PluginSessionStore.cachedChapterCount(dir, session.toc.size),
@@ -382,13 +367,30 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                 (progress.chapterIndex > 0 || progress.blockIndex > 0 || progress.charOffset > 0),
             cacheLevel = session.cacheLevel,
             cleanup = session.cleanup,
-            listedIn = PluginMembershipStore.listsContaining(dataDir, listIds, session.workId),
+            listedIn = listedIn,
             card = splash?.card,
+            notify = UpdateDiff.notifyOn(session.notify, listedIn, syncableListIds),
         )
     }
 
+    /** Bell on the media card: new-chapter notifications for the open story. */
+    fun toggleNotify() {
+        val story = _ui.value.story ?: return
+        val on = !story.notify
+        _ui.update { ui -> ui.copy(story = ui.story?.takeIf { it.bookId == story.bookId }?.copy(notify = on) ?: ui.story) }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { books.setNotify(story.bookId, on) } }
+            if (on) flow.requestNotificationPermission()
+            _ui.update {
+                it.copy(
+                    message = if (on) "New-chapter alerts on for ${story.title}" else "New-chapter alerts off for ${story.title}",
+                )
+            }
+        }
+    }
+
     /**
-     * A plugin-declared media card action (apiVersion 2) was tapped. Applies the returned card
+     * A plugin-declared media card action was tapped. Applies the returned card
      * patch, shows its toast, and re-fetches the story when the plugin asks to reload.
      */
     fun runCardAction(actionId: String, on: Boolean?) {

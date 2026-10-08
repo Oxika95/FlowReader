@@ -198,26 +198,11 @@ class ReaderViewModel(
             ReaderBook.local(ChapterSource.open(flow.catalog.materialize(row), row.title))
         }
 
-    /** Saved position in current chapter indices; pre-chapter-source rows are mapped once. */
-    private suspend fun savedLocus(row: ProgressEntity, book: ReaderBook): Locus {
-        val stored = Locus(row.chapterIndex, row.blockIndex, row.charOffset)
-        val locus = if (row.locusVersion < ProgressEntity.LOCUS_CURRENT) {
-            val mapped = withContext(Dispatchers.IO) { book.legacyLocus(stored) }
-            flow.db.progress().upsert(
-                row.copy(
-                    chapterIndex = mapped.chapterIndex,
-                    blockIndex = mapped.blockIndex,
-                    charOffset = mapped.charOffset,
-                    locusVersion = ProgressEntity.LOCUS_CURRENT,
-                    chapterHref = book.href(mapped.chapterIndex),
-                ),
-            )
-            mapped
-        } else {
-            val byHref = book.indexOfHref(row.chapterHref)
-            if (byHref >= 0) stored.copy(chapterIndex = byHref) else stored
-        }
-        return locus.copy(chapterIndex = locus.chapterIndex.coerceIn(0, book.chapterCount - 1))
+    /** Saved position in current chapter indices (the stored href wins over a drifted index). */
+    private fun savedLocus(row: ProgressEntity, book: ReaderBook): Locus {
+        val byHref = book.indexOfHref(row.chapterHref)
+        val chapter = if (byHref >= 0) byHref else row.chapterIndex
+        return Locus(chapter.coerceIn(0, book.chapterCount - 1), row.blockIndex, row.charOffset)
     }
 
     /**

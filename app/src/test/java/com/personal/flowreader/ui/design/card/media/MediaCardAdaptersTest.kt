@@ -17,7 +17,7 @@ class MediaCardAdaptersTest {
         id = "royalroad",
         name = "Royal Road",
         version = "1",
-        apiVersion = 2,
+        apiVersion = 3,
         lists = listOf(
             PluginList("follow", "Follow", icon = "add"),
             PluginList("favorite", "Favorite", icon = "favorite"),
@@ -31,9 +31,6 @@ class MediaCardAdaptersTest {
         workUrl = "https://example.com/story",
         synopsis = "Synopsis",
         tags = listOf("Fantasy"),
-        status = "ONGOING",
-        rating = "4.61",
-        views = 1_234_567,
         chapterCount = chapters,
         downloadedCount = 3,
         cachedIndices = setOf(0, 1, 2),
@@ -47,17 +44,16 @@ class MediaCardAdaptersTest {
         PluginMediaCardAdapter.model(manifest, info, busy = busy, downloadProgress = null, error = null)
 
     @Test
-    fun v1_mapsRatingViewsStatus() {
+    fun noCard_showsOnlyChapterCount() {
         val m = model(info())
-        assertEquals(listOf("star", "eye", "pages"), m.stats.map { it.icon })
-        assertEquals("4.61", m.stats[0].value)
+        assertEquals(listOf("pages"), m.stats.map { it.icon })
         assertEquals("10", m.stats.last().value)
-        assertEquals(listOf("ONGOING"), m.badges)
+        assertTrue(m.badges.isEmpty())
         assertTrue(m.links.isEmpty())
     }
 
     @Test
-    fun v2_cardSlotsReplaceV1Mapping_chaptersAlwaysAppended() {
+    fun cardSlots_chaptersAlwaysAppended() {
         val card = PluginCard(
             stats = listOf(PluginStat("followers", "12k", "Followers")),
             badges = listOf("Completed"),
@@ -86,6 +82,16 @@ class MediaCardAdaptersTest {
         assertEquals(MediaActionOwner.Plugin, m.rail[3].owner)
         assertEquals(MediaActionKind.Toggle, m.rail[3].kind)
         assertEquals(MediaActionKind.Icon, m.rail[4].kind)
+    }
+
+    @Test
+    fun rail_notifyBellAfterListToggles_onlyWhenGiven() {
+        val on = model(info().copy(notify = true))
+        assertEquals(listOf("list:follow", "list:favorite", "notify", "share"), on.rail.map { it.id })
+        assertTrue(on.rail[2].on)
+        assertEquals(MediaActionKind.Toggle, on.rail[2].kind)
+        assertFalse(model(info().copy(notify = false)).rail[2].on)
+        assertFalse(model(info()).rail.any { it.id == MediaActionIds.NOTIFY })
     }
 
     @Test

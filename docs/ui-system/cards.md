@@ -178,7 +178,7 @@ accessibility label). The plugin story card uses them for Partial download and t
 | Adapter | Source | Stats | Rail | Footer |
 | --- | --- | --- | --- | --- |
 | `FileMediaCardAdapter` | Files tab book | Read %, format, size | — | Share, Remove, Open |
-| `PluginMediaCardAdapter` | Plugin story | v2 `card.stats` or v1 rating/views, then chapters | List toggles, Share, plugin rail actions (≤2) | Download (hold: partial; "Cancel download" while running), Refresh, Delete, plugin footer actions (≤2), Read |
+| `PluginMediaCardAdapter` | Plugin story | `card.stats`, then chapters | List toggles, Share, plugin rail actions (≤2) | Download (hold: partial; "Cancel download" while running), Refresh, Delete, plugin footer actions (≤2), Read |
 
 New media source = new adapter + a caller that routes ids. Do not add parameters to
 `FlowMediaCard` for one source.

@@ -66,15 +66,6 @@ class PluginSecrets(context: Context, pluginId: String) {
         prefs?.edit()?.remove(KEY_COOKIES)?.apply()
     }
 
-    /** Raw write used by one-time migrations of legacy built-in secrets. */
-    internal fun importRaw(values: Map<String, String>, cookieBlob: String?) {
-        val p = prefs ?: return
-        val edit = p.edit()
-        values.forEach { (k, v) -> edit.putString(userKey(k), v) }
-        if (!cookieBlob.isNullOrBlank()) edit.putString(KEY_COOKIES, cookieBlob)
-        edit.apply()
-    }
-
     private fun requireAvailable() {
         if (prefs == null) throw IllegalStateException("Encrypted storage unavailable; sign-in is disabled.")
     }

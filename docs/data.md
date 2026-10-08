@@ -14,16 +14,18 @@ Notable keys beyond Settings UI:
 | `custom_library_tabs` | JSON shelves |
 | `notifications_asked` | Notification prompt flag |
 | `plugin_cache_level`, `plugin_cache_cleanup` | Cache level and cleanup new plugin stories start with |
+| `plugin_update_interval`, `plugin_update_wifi_only` | Background new-chapter check: hours between runs (0 = off, default 12), unmetered network only |
 
 Theme, TTS, filters JSON, share router/parse rules — see [settings.md](settings.md).
 
 ## Room (`flow.db`)
 
-[`ProgressDb.kt`](../app/src/main/java/com/personal/flowreader/data/ProgressDb.kt)
+[`ProgressDb.kt`](../app/src/main/java/com/personal/flowreader/data/ProgressDb.kt), schema version 9.
+Alpha: no migrations; a version bump drops every table (`fallbackToDestructiveMigration`).
 
 | Table | Contents |
 |-------|----------|
-| `progress` | Locus (`chapterIndex`, `blockIndex`, `charOffset`) plus `chapterHref` and `anchorText` to re-find it, `locusVersion`, `readingProgress`, `inLibrary`, `libraryTabId`, `sourceKind` (`Imported` / `Linked` / plugin) |
+| `progress` | Locus (`chapterIndex`, `blockIndex`, `charOffset`) plus `chapterHref` and `anchorText` to re-find it, `readingProgress`, `inLibrary`, `libraryTabId`, `sourceKind` (`Imported` / `Linked` / plugin) |
 | `book_filters` | Per-book Local filter JSON |
 | `que_items` | Queue rows (`done`, `sortOrder`) |
 
@@ -44,9 +46,6 @@ Locus meaning:
 
 - `chapterIndex` is the `ChapterSource` index: the EPUB spine entry (empty entries such as covers
   count), the TXT segment, or the plugin ToC index.
-- `locusVersion` 0 rows come from the old whole-book parse, which counted only non-empty EPUB
-  chapters and treated a TXT file as one chapter. They are mapped once on open
-  (`ChapterSource.legacyLocus`) and rewritten as version 1.
 - On open, `chapterHref` wins over `chapterIndex` when it resolves, then `anchorText` corrects the
   block and offset if the text moved (`LocusAnchor`).
 
@@ -73,7 +72,7 @@ sizes (`BookMeter`), so no full parse is needed.
 | Linked cache | Under cache when referencing in place |
 | `filesDir/plugins/installed/{id}/` | Installed plugin `plugin.json` + `index.js` |
 | `filesDir/plugins/data/{id}/` | Plugin story sessions, ToC, chapter cache, lists, settings, key-value store |
-| `…/data/{id}/{work}/meta.txt` | Story session: `cacheLevel` (chapters ahead), `cleanup`, `pinnedRanges` (Download all only). Older `prefetchAhead` / `keepBehind` map to `cacheLevel = max`; older partial pins are dropped |
+| `…/data/{id}/{work}/meta.txt` | Story session: `bookId`, `pluginId`, `workId`, `cacheLevel` (chapters ahead), `cleanup`, `pinnedRanges` (Download all only), `notify`. A file without `bookId` / `pluginId` is ignored |
 | `…/data/{id}/{work}/c/{i}.txt` | Cached chapter body (title, blank line, text) |
 | `shared_prefs/plugin_secret_{id}.xml` | Encrypted plugin secrets and cookies (excluded from backup) |
 

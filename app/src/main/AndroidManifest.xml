@@ -103,21 +103,6 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- Legacy Flow-Queue alias; disabled at runtime. Kept so upgrades can turn it off. -->
-        <activity-alias
-            android:name=".ShareQueAlias"
-            android:exported="true"
-            android:enabled="false"
-            android:icon="@mipmap/ic_launcher"
-            android:label="@string/share_que_label"
-            android:targetActivity=".share.ShareIngressActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity-alias>
-
         <service
             android:name=".tts.TtsPlaybackService"
             android:exported="false"

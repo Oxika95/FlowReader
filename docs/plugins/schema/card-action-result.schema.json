@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Oxika95/FlowReader/docs/plugins/schema/card-action-result.schema.json",
-  "title": "cardAction() result (CardActionResult), apiVersion 2",
+  "title": "cardAction() result (CardActionResult), apiVersion 3",
   "type": "object",
   "properties": {
     "card": {

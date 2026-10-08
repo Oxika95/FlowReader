@@ -1,4 +1,7 @@
 package com.personal.flowreader.plugin
 
-/** A shared URL routed to [pluginId]'s library tab (opens the add/resolve flow). */
-data class PluginShareRequest(val pluginId: String, val url: String)
+/**
+ * Work for [pluginId]'s library tab: a shared [url] (opens the add/resolve flow) or a stored
+ * story [bookId] (opens its media card, e.g. from a new-chapter notification).
+ */
+data class PluginShareRequest(val pluginId: String, val url: String = "", val bookId: String? = null)

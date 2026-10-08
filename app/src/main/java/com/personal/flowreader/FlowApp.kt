@@ -7,20 +7,13 @@ import com.personal.flowreader.data.BookCatalog
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.data.ProgressWriter
-import com.personal.flowreader.data.MIGRATION_1_2
-import com.personal.flowreader.data.MIGRATION_2_3
-import com.personal.flowreader.data.MIGRATION_3_4
-import com.personal.flowreader.data.MIGRATION_4_5
-import com.personal.flowreader.data.MIGRATION_5_6
-import com.personal.flowreader.data.MIGRATION_6_7
-import com.personal.flowreader.data.MIGRATION_7_8
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.plugin.PluginManager
-import com.personal.flowreader.plugin.PluginMigrations
 import com.personal.flowreader.plugin.PluginShareRequest
 import com.personal.flowreader.plugin.repo.PluginInstaller
 import com.personal.flowreader.plugin.repo.RepoManager
 import com.personal.flowreader.plugin.store.PluginBookStore
+import com.personal.flowreader.plugin.updates.UpdateScheduler
 import com.personal.flowreader.share.RouterRules
 import com.personal.flowreader.tts.TtsController
 import com.personal.flowreader.ui.reader.QueuePlayback
@@ -67,22 +60,13 @@ class FlowApp : Application() {
     override fun onCreate() {
         super.onCreate()
         db = Room.databaseBuilder(this, AppDatabase::class.java, "flow.db")
-            .addMigrations(
-                MIGRATION_1_2,
-                MIGRATION_2_3,
-                MIGRATION_3_4,
-                MIGRATION_4_5,
-                MIGRATION_5_6,
-                MIGRATION_6_7,
-                MIGRATION_7_8,
-            )
+            .fallbackToDestructiveMigration()
             .build()
         settings = SettingsStore(this)
         tts = TtsController(this, settings)
         booksDir = File(filesDir, "books").apply { mkdirs() }
         catalog = BookCatalog(this)
         pluginManager = PluginManager(this)
-        PluginMigrations.run(this, pluginManager.root)
         pluginManager.initialize()
         pluginBooks = PluginBookStore(pluginManager, appScope) { settings.pluginCacheDefaultsOnce() }
         pluginRepos = RepoManager(settings)
@@ -95,10 +79,9 @@ class FlowApp : Application() {
         persistSpokenPosition()
         queue = QueuePlayback(this).also { it.start() }
         appScope.launch {
-            sweepStaleCache()
-            // One share target: disable legacy Flow-Queue alias if still enabled.
-            com.personal.flowreader.share.ShareQueAliasController.setEnabled(this@FlowApp, false)
+            UpdateScheduler.apply(this@FlowApp, settings.pluginUpdatePrefsOnce())
         }
+        appScope.launch { sweepStaleCache() }
         appScope.launch {
             pluginManager.installed.collect { list ->
                 val current = settings.shareRouterRulesOnce()
@@ -112,6 +95,15 @@ class FlowApp : Application() {
 
     /** Consumed by the plugin's library tab when the share router opens a URL it owns. */
     val pendingPluginShare = MutableStateFlow<PluginShareRequest?>(null)
+
+    /** Activity-registered asker for POST_NOTIFICATIONS (API 33+); must be called on the main thread. */
+    @Volatile
+    var notificationPermissionAsker: ((onDone: () -> Unit) -> Unit)? = null
+
+    /** Ask for notification permission after the user turned on new-chapter alerts. */
+    fun requestNotificationPermission() {
+        notificationPermissionAsker?.invoke {}
+    }
 
     /** Playback keeps going with the reader closed; every spoken sentence is the new position. */
     private fun persistSpokenPosition() {

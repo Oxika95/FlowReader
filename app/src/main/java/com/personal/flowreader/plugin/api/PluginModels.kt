@@ -12,13 +12,13 @@ data class PluginWork(
     val cover: String = "",
     /** Secondary line: latest chapter, status, etc. */
     val subtitle: String = "",
-    /** apiVersion 2: short pills on the display card (e.g. "Ongoing"). */
+    /** Short pills on the display card (e.g. "Ongoing"). */
     val badges: List<String> = emptyList(),
-    /** apiVersion 2: compact stats on the display card. */
+    /** Compact stats on the display card. */
     val stats: List<PluginStat> = emptyList(),
 )
 
-// --- apiVersion 2: declarative media card slots ------------------------------------------------
+// --- Declarative media card slots --------------------------------------------------------------
 
 /** One stat on a media or display card: icon token + value (e.g. `star` / `4.61`). */
 data class PluginStat(
@@ -56,7 +56,7 @@ data class PluginCardAction(
 )
 
 /**
- * `WorkDetail.card` (apiVersion 2). Plugins fill slots; the host owns layout, theme and the
+ * `WorkDetail.card`. Plugins fill slots; the host owns layout, theme and the
  * core actions (list toggles, Share, Download, Refresh, Delete, Read). See docs/plugins/ui-contract.md.
  */
 data class PluginCard(
@@ -114,7 +114,7 @@ object PluginCardLimits {
     const val MAX_FOOTER_ACTIONS = 2
 
     /** Ids the host uses for its own actions; plugin actions may not reuse them. */
-    val RESERVED_IDS = setOf("read", "download", "refresh", "delete", "share", "open", "remove")
+    val RESERVED_IDS = setOf("read", "download", "refresh", "delete", "share", "open", "remove", "notify")
     private val ID_PATTERN = Regex("^[a-z0-9][a-z0-9_-]{0,31}$")
 
     fun isValidActionId(id: String): Boolean =
@@ -136,11 +136,8 @@ data class PluginWorkDetail(
     val cover: String = "",
     val synopsis: String = "",
     val tags: List<String> = emptyList(),
-    val status: String = "",
-    val rating: String = "",
-    val views: Long? = null,
     val chapters: List<PluginChapterRef> = emptyList(),
-    /** apiVersion 2 declarative card slots; null for v1 plugins. */
+    /** Declarative media card slots; null when the plugin fills none. */
     val card: PluginCard? = null,
 ) {
     fun toWork(subtitle: String = ""): PluginWork =
@@ -163,6 +160,26 @@ data class PluginSession(
     val loggedIn: Boolean = false,
     val account: String = "",
 )
+
+/** `checkUpdates` input: what the host already has for one monitored work. */
+data class PluginUpdateQuery(
+    val id: String,
+    val url: String,
+    val chapters: Int,
+    val lastChapterUrl: String,
+)
+
+/** `checkUpdates` result for one work the plugin could check. */
+data class PluginUpdateInfo(
+    val id: String,
+    val chapters: Int? = null,
+    val latestUrl: String = "",
+) {
+    /** True when the site has chapters the host has not stored yet. */
+    fun isNewer(than: PluginUpdateQuery): Boolean =
+        (chapters != null && chapters > than.chapters) ||
+            (latestUrl.isNotEmpty() && latestUrl != than.lastChapterUrl)
+}
 
 enum class PluginErrorCode {
     AuthRequired,
@@ -311,9 +328,6 @@ object PluginJson {
             cover = o.optString("cover"),
             synopsis = o.optString("synopsis"),
             tags = o.optJSONArray("tags").strings(),
-            status = o.optString("status"),
-            rating = o.optString("rating"),
-            views = if (o.has("views") && !o.isNull("views")) o.optLong("views") else null,
             chapters = o.optJSONArray("chapters").objects().mapNotNull { c ->
                 val url = c.optString("url").trim()
                 if (url.isEmpty()) return@mapNotNull null
@@ -339,4 +353,17 @@ object PluginJson {
 
     fun chapterRef(ref: PluginChapterRef): JSONObject =
         JSONObject().put("title", ref.title).put("url", ref.url).put("id", ref.id)
+
+    fun updateQuery(q: PluginUpdateQuery): JSONObject = JSONObject()
+        .put("id", q.id)
+        .put("url", q.url)
+        .put("chapters", q.chapters)
+        .put("lastChapterUrl", q.lastChapterUrl)
+
+    fun updates(value: Any?): List<PluginUpdateInfo> = (value as? JSONArray).objects().mapNotNull { o ->
+        val id = o.optString("id").trim()
+        if (id.isEmpty()) return@mapNotNull null
+        val chapters = if (o.has("chapters") && !o.isNull("chapters")) o.optInt("chapters", -1).takeIf { it >= 0 } else null
+        PluginUpdateInfo(id = id, chapters = chapters, latestUrl = o.optString("latestUrl").trim())
+    }
 }

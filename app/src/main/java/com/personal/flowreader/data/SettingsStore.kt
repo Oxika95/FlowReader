@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
-import kotlin.math.log10
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -164,20 +163,6 @@ data class TtsPrefs(
         fun coerceMinSignal(level: Float): Float =
             TONAL_UNDERLAY_STEPS[tonalUnderlayIndex(level)]
 
-        /**
-         * Maps legacy 0…10 underlay prefs (gain = value/10) onto the dB ladder.
-         * Values already on the new ladder pass through [coerceMinSignal].
-         */
-        fun migrateMinSignal(stored: Float): Float {
-            if (stored == 0f) return DEFAULT_MIN_SIGNAL
-            // New format: negative dB steps.
-            if (stored < 0f) return coerceMinSignal(stored)
-            // Legacy 0…10 linear loudness → dB FS via gain = stored/10.
-            val gain = (stored / 10f).coerceIn(0.0001f, 1f)
-            val db = 20f * log10(gain)
-            return coerceMinSignal(db)
-        }
-
         fun coerceSentenceGapMs(ms: Int): Int {
             val clamped = ms.coerceIn(MIN_SENTENCE_GAP_MS, MAX_SENTENCE_GAP_MS)
             val stepped = ((clamped.toFloat() / SENTENCE_GAP_STEP_MS).roundToInt()
@@ -214,6 +199,18 @@ data class PluginCacheDefaults(
 ) {
     companion object {
         const val DEFAULT_LEVEL = 1
+    }
+}
+
+/** Background new-chapter check for plugin stories with the bell on. */
+data class PluginUpdatePrefs(
+    /** Hours between checks; 0 = off. */
+    val intervalHours: Int = DEFAULT_INTERVAL_HOURS,
+    val wifiOnly: Boolean = false,
+) {
+    companion object {
+        const val DEFAULT_INTERVAL_HOURS = 12
+        val INTERVAL_CHOICES = listOf(0, 3, 6, 12, 24)
     }
 }
 
@@ -422,26 +419,10 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_SHARE_ASK_MODE] = mode.name }
     }
 
-    /**
-     * Router rules (content kind → match/parse → destination).
-     * Migrates legacy handoffs + route defaults once.
-     */
+    /** Router rules (content kind → match/parse → destination); [RouterRules.seed] when unset. */
     suspend fun shareRouterRulesOnce(): List<RouterRule> {
-        val p = store.data.first()
-        val raw = p[KEY_SHARE_ROUTER_RULES]
-        if (!raw.isNullOrBlank()) {
-            val decoded = RouterRules.decode(raw)
-            if (decoded.isNotEmpty()) return decoded
-        }
-        val migrated = RouterRules.migrateFromLegacy(
-            handoffJson = p[KEY_SHARE_PLUGIN_HANDOFFS],
-            bookDest = p[KEY_SHARE_ROUTE_BOOK],
-            textDest = p[KEY_SHARE_ROUTE_TEXT],
-            urlDest = p[KEY_SHARE_ROUTE_URL],
-            legacyDomainJson = p[KEY_SHARE_DOMAIN_RULES],
-        )
-        store.edit { it[KEY_SHARE_ROUTER_RULES] = RouterRules.encode(migrated) }
-        return migrated
+        val decoded = RouterRules.decode(store.data.first()[KEY_SHARE_ROUTER_RULES])
+        return decoded.ifEmpty { RouterRules.seed() }
     }
 
     suspend fun setShareRouterRules(rules: List<RouterRule>) {
@@ -483,21 +464,25 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_PLUGIN_CACHE_CLEANUP] = on }
     }
 
-    /** Parse rules, always ending with the protected Default rule ([ParseRules.withDefault]). */
-    suspend fun shareParseRulesOnce(): List<ParseRule> {
+    suspend fun pluginUpdatePrefsOnce(): PluginUpdatePrefs {
         val p = store.data.first()
-        val raw = p[KEY_SHARE_PARSE_RULES]
-        if (!raw.isNullOrBlank()) {
-            return ParseRules.withDefault(ParseRules.decode(raw))
-        }
-        val legacy = p[KEY_SHARE_DOMAIN_RULES]
-        if (!legacy.isNullOrBlank()) {
-            val (_, parses) = ParseRules.migrateLegacy(legacy)
-            store.edit { it[KEY_SHARE_PARSE_RULES] = ParseRules.encode(parses) }
-            return ParseRules.withDefault(parses)
-        }
-        return ParseRules.withDefault(emptyList())
+        return PluginUpdatePrefs(
+            intervalHours = (p[KEY_PLUGIN_UPDATE_INTERVAL] ?: PluginUpdatePrefs.DEFAULT_INTERVAL_HOURS).coerceAtLeast(0),
+            wifiOnly = p[KEY_PLUGIN_UPDATE_WIFI_ONLY] ?: false,
+        )
     }
+
+    suspend fun setPluginUpdateInterval(hours: Int) {
+        store.edit { it[KEY_PLUGIN_UPDATE_INTERVAL] = hours.coerceAtLeast(0) }
+    }
+
+    suspend fun setPluginUpdateWifiOnly(on: Boolean) {
+        store.edit { it[KEY_PLUGIN_UPDATE_WIFI_ONLY] = on }
+    }
+
+    /** Parse rules, always ending with the protected Default rule ([ParseRules.withDefault]). */
+    suspend fun shareParseRulesOnce(): List<ParseRule> =
+        ParseRules.withDefault(ParseRules.decode(store.data.first()[KEY_SHARE_PARSE_RULES]))
 
     suspend fun setShareParseRules(rules: List<ParseRule>) {
         store.edit { it[KEY_SHARE_PARSE_RULES] = ParseRules.encode(ParseRules.withDefault(rules)) }
@@ -505,7 +490,6 @@ class SettingsStore(context: Context) {
 
     companion object {
         private val KEY_THEME = stringPreferencesKey("theme")
-        private val KEY_ACCENT = stringPreferencesKey("accent") // legacy enum name
         private val KEY_ACCENT_HUE = floatPreferencesKey("accent_hue")
         private val KEY_ACCENT_SATURATION = floatPreferencesKey("accent_saturation")
         private val KEY_ACCENT_LIGHTNESS = floatPreferencesKey("accent_lightness")
@@ -530,8 +514,6 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_AUTO_PLAY_ON_SHARE = booleanPreferencesKey("tts_auto_play_on_share")
         private val KEY_TTS_SHARE_INTERRUPTS = booleanPreferencesKey("tts_share_interrupts")
         private val KEY_TTS_AUTO_SCROLL = booleanPreferencesKey("tts_auto_scroll")
-        private val KEY_TTS_KEEP_ALIVE = booleanPreferencesKey("tts_keep_alive")
-        private val KEY_TTS_MIN_SIGNAL = floatPreferencesKey("tts_min_signal")
         private val KEY_TTS_TONAL_UNDERLAY = floatPreferencesKey("tts_tonal_underlay")
         private val KEY_TTS_UNDERLAY_BT_ADDRESS = stringPreferencesKey("tts_underlay_bt_address")
         private val KEY_TTS_UNDERLAY_BT_NAME = stringPreferencesKey("tts_underlay_bt_name")
@@ -547,17 +529,14 @@ class SettingsStore(context: Context) {
         private val KEY_CUSTOM_TABS = stringPreferencesKey("custom_library_tabs")
         private val KEY_NOTIFICATIONS_ASKED = booleanPreferencesKey("notifications_asked")
         private val KEY_SHARE_ASK_MODE = stringPreferencesKey("share_ask_mode")
-        private val KEY_SHARE_ROUTE_BOOK = stringPreferencesKey("share_route_book") // legacy
-        private val KEY_SHARE_ROUTE_TEXT = stringPreferencesKey("share_route_text") // legacy
-        private val KEY_SHARE_ROUTE_URL = stringPreferencesKey("share_route_url") // legacy
-        private val KEY_SHARE_DOMAIN_RULES = stringPreferencesKey("share_domain_rules") // legacy
-        private val KEY_SHARE_PLUGIN_HANDOFFS = stringPreferencesKey("share_plugin_handoffs") // legacy
         private val KEY_SHARE_ROUTER_RULES = stringPreferencesKey("share_router_rules")
         private val KEY_SHARE_PARSE_RULES = stringPreferencesKey("share_parse_rules")
         private val KEY_SEEDED_PLUGIN_SHARE_RULES = stringPreferencesKey("seeded_plugin_share_rules")
         private val KEY_PLUGIN_REPOS = stringPreferencesKey("plugin_repos")
         private val KEY_PLUGIN_CACHE_LEVEL = intPreferencesKey("plugin_cache_level")
         private val KEY_PLUGIN_CACHE_CLEANUP = booleanPreferencesKey("plugin_cache_cleanup")
+        private val KEY_PLUGIN_UPDATE_INTERVAL = intPreferencesKey("plugin_update_interval")
+        private val KEY_PLUGIN_UPDATE_WIFI_ONLY = booleanPreferencesKey("plugin_update_wifi_only")
 
         private fun decodeIdSet(raw: String?): Set<String> =
             raw?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
@@ -565,7 +544,7 @@ class SettingsStore(context: Context) {
         private fun Preferences.toReaderPrefs() = ReaderPrefs(
             theme = runCatching { ThemeMode.valueOf(this[KEY_THEME] ?: ThemeMode.Oled.name) }
                 .getOrDefault(ThemeMode.Oled),
-            accentHue = resolveAccentHue(),
+            accentHue = (this[KEY_ACCENT_HUE] ?: AccentHue.DEFAULT).coerceIn(AccentHue.MIN, AccentHue.MAX),
             accentSaturation = AccentSaturation.coerce(
                 this[KEY_ACCENT_SATURATION] ?: AccentSaturation.DEFAULT,
             ),
@@ -589,20 +568,6 @@ class SettingsStore(context: Context) {
             showHomeMarker = this[KEY_SHOW_HOME_MARKER] ?: false,
         )
 
-        private fun Preferences.resolveAccentHue(): Float {
-            this[KEY_ACCENT_HUE]?.let { return it.coerceIn(AccentHue.MIN, AccentHue.MAX) }
-            // Migrate legacy named accents → hues.
-            return when (this[KEY_ACCENT]) {
-                "Purple" -> 288f
-                "Blue" -> 218f
-                "Teal" -> 174f
-                "Green" -> 142f
-                "Amber" -> 38f
-                "Rose" -> 348f
-                else -> AccentHue.DEFAULT
-            }
-        }
-
         private fun Preferences.toTtsPrefs() = TtsPrefs(
             engineKey = this[KEY_TTS_ENGINE] ?: TtsEngines.EDGE,
             voiceId = this[KEY_TTS_VOICE] ?: TtsPrefs.DEFAULT_EDGE_VOICE,
@@ -615,13 +580,7 @@ class SettingsStore(context: Context) {
             autoPlayOnShare = this[KEY_TTS_AUTO_PLAY_ON_SHARE] ?: false,
             shareInterruptsPlayback = this[KEY_TTS_SHARE_INTERRUPTS] ?: false,
             autoScrollWithTts = this[KEY_TTS_AUTO_SCROLL] ?: true,
-            minSignal = TtsPrefs.migrateMinSignal(
-                this[KEY_TTS_TONAL_UNDERLAY] ?: when {
-                    this[KEY_TTS_MIN_SIGNAL] != null -> this[KEY_TTS_MIN_SIGNAL]!! / 10f
-                    this[KEY_TTS_KEEP_ALIVE] == true -> 1f
-                    else -> TtsPrefs.DEFAULT_MIN_SIGNAL
-                },
-            ),
+            minSignal = TtsPrefs.coerceMinSignal(this[KEY_TTS_TONAL_UNDERLAY] ?: TtsPrefs.DEFAULT_MIN_SIGNAL),
             underlayBtAddress = this[KEY_TTS_UNDERLAY_BT_ADDRESS].orEmpty(),
             underlayBtName = this[KEY_TTS_UNDERLAY_BT_NAME].orEmpty(),
             sentenceGapMs = TtsPrefs.coerceSentenceGapMs(

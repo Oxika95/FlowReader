@@ -9,8 +9,6 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "progress")
@@ -33,18 +31,11 @@ data class ProgressEntity(
      * Ignored when [inLibrary] is false (Que-only).
      */
     val libraryTabId: String = "",
-    /** Meaning of the locus indices; rows below [LOCUS_CURRENT] are mapped on next open. */
-    val locusVersion: Int = LOCUS_CURRENT,
     /** Text at the locus, to re-find it if indices drift (see `LocusAnchor`). */
     val anchorText: String = "",
     /** Stable key of the locus chapter (EPUB entry path), checked before [chapterIndex]. */
     val chapterHref: String = "",
-) {
-    companion object {
-        /** 0: whole-book parse (EPUB non-empty chapters, TXT one chapter). 1: `ChapterSource` indices. */
-        const val LOCUS_CURRENT = 1
-    }
-}
+)
 
 @Entity(tableName = "book_filters")
 data class BookFiltersEntity(
@@ -158,73 +149,9 @@ interface QueDao {
     suspend fun nextUndone(afterOrder: Int): QueItemEntity?
 }
 
-val MIGRATION_1_2 = object : Migration(1, 2) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL(
-            "CREATE TABLE IF NOT EXISTS book_filters (" +
-                "bookId TEXT NOT NULL PRIMARY KEY, " +
-                "rulesJson TEXT NOT NULL" +
-                ")",
-        )
-    }
-}
-
-val MIGRATION_2_3 = object : Migration(2, 3) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE progress ADD COLUMN sourceUri TEXT NOT NULL DEFAULT ''")
-        db.execSQL(
-            "ALTER TABLE progress ADD COLUMN sourceKind TEXT NOT NULL DEFAULT '${BookSource.Imported.name}'",
-        )
-    }
-}
-
-val MIGRATION_3_4 = object : Migration(3, 4) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE progress ADD COLUMN inLibrary INTEGER NOT NULL DEFAULT 1")
-        db.execSQL(
-            "CREATE TABLE IF NOT EXISTS que_items (" +
-                "id TEXT NOT NULL PRIMARY KEY, " +
-                "bookId TEXT NOT NULL, " +
-                "sortOrder INTEGER NOT NULL, " +
-                "addedAt INTEGER NOT NULL, " +
-                "done INTEGER NOT NULL DEFAULT 0" +
-                ")",
-        )
-    }
-}
-
-val MIGRATION_4_5 = object : Migration(4, 5) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE progress ADD COLUMN readingProgress REAL NOT NULL DEFAULT 0")
-    }
-}
-
-val MIGRATION_5_6 = object : Migration(5, 6) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("CREATE INDEX IF NOT EXISTS index_que_items_bookId ON que_items(bookId)")
-        db.execSQL(
-            "CREATE INDEX IF NOT EXISTS index_que_items_sort_done ON que_items(sortOrder, done)",
-        )
-    }
-}
-
-val MIGRATION_6_7 = object : Migration(6, 7) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE progress ADD COLUMN libraryTabId TEXT NOT NULL DEFAULT ''")
-    }
-}
-
-val MIGRATION_7_8 = object : Migration(7, 8) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE progress ADD COLUMN locusVersion INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE progress ADD COLUMN anchorText TEXT NOT NULL DEFAULT ''")
-        db.execSQL("ALTER TABLE progress ADD COLUMN chapterHref TEXT NOT NULL DEFAULT ''")
-    }
-}
-
 @Database(
     entities = [ProgressEntity::class, BookFiltersEntity::class, QueItemEntity::class],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

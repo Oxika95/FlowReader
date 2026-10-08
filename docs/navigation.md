@@ -17,7 +17,6 @@ Entry: [`MainActivity.kt`](../app/src/main/java/com/personal/flowreader/MainActi
 |----------|------|
 | [`ShareIngressActivity`](../app/src/main/java/com/personal/flowreader/share/ShareIngressActivity.kt) | Translucent share target; runs Import → Router before MainActivity |
 | Share alias “Flow Reader” | `SEND` `text/plain` → ShareIngress |
-| Legacy “Flow-Queue” alias | Disabled at runtime |
 
 ## Flow
 

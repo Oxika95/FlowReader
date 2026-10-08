@@ -134,6 +134,10 @@ internal fun PluginsSettingsTab() {
 
         PluginCacheDefaultsSection(app)
 
+        SectionTitle("New chapters")
+        PluginUpdatesSection(app)
+        HorizontalDivider()
+
         SectionTitle("Available")
         val available = catalog.filter { entry -> installed.none { it.id == entry.id } }
         if (available.isEmpty()) Hint(if (repos.any { it.index != null }) "Everything in your repositories is installed." else "Refresh repositories to see plugins.")

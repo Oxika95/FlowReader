@@ -25,7 +25,6 @@ class QueueBookTest {
             meter = BookMeter(LongArray(chapters) { 1L }),
             hrefs = { "$prefix$it" },
             hrefIndex = { it.removePrefix(prefix).toIntOrNull() ?: -1 },
-            legacyLocus = { it },
             load = { i ->
                 Chapter(
                     titles[i],

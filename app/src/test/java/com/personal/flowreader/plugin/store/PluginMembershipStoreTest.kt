@@ -3,8 +3,6 @@ package com.personal.flowreader.plugin.store
 import com.personal.flowreader.plugin.api.PluginWork
 import java.io.File
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PluginMembershipStoreTest {
@@ -23,10 +21,8 @@ class PluginMembershipStoreTest {
                 cover = "https://cdn.example/cover.jpg",
                 subtitle = "109 Chapters",
             )
-            assertFalse(PluginMembershipStore.anyListed(root, listOf("follow")))
             PluginMembershipStore.write(root, "follow", listOf(mol))
             assertEquals(listOf(mol), PluginMembershipStore.read(root, "follow"))
-            assertTrue(PluginMembershipStore.anyListed(root, listOf("follow")))
 
             PluginMembershipStore.upsert(root, "follow", mol.copy(subtitle = "110 Chapters"))
             PluginMembershipStore.upsert(root, "favorite", PluginWork(id = "99", title = "Other\twith tab"))

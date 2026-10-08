@@ -82,6 +82,7 @@ object MediaActionIds {
     const val DELETE = "delete"
     const val REMOVE = "remove"
     const val SHARE = "share"
+    const val NOTIFY = "notify"
     const val LIST_PREFIX = "list:"
 
     fun list(listId: String): String = LIST_PREFIX + listId
@@ -93,11 +94,4 @@ fun MediaCardModel.withoutHostActions(ids: Set<String>): MediaCardModel {
     if (ids.isEmpty()) return this
     fun MediaAction.hidden() = owner == MediaActionOwner.Host && id in ids
     return copy(rail = rail.filterNot { it.hidden() }, footer = footer.filterNot { it.hidden() })
-}
-
-/** Compact number formatting for stats ("1.2K", "3.4M"). */
-fun formatCount(value: Long): String = when {
-    value >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", value / 1_000_000.0)
-    value >= 1_000 -> String.format(java.util.Locale.US, "%.1fK", value / 1_000.0)
-    else -> value.toString()
 }

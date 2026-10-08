@@ -65,16 +65,6 @@ class ShareUrlMatchTest {
     }
 
     @Test
-    fun migratesLegacyRrPluginAction() {
-        val legacy =
-            """[{"id":"1","hostPattern":"royalroad.com","enabled":true,"matchSubdomains":true,"action":"RoyalRoadPlugin","order":0}]"""
-        val (plugins, parses) = ParseRules.migrateLegacy(legacy)
-        assertTrue(parses.isEmpty())
-        assertEquals(RouterLanding.PLUGIN, plugins.first().destination.id)
-        assertEquals("royalroad", plugins.first().pluginId)
-    }
-
-    @Test
     fun effectiveSelectorsOnlyForCustom() {
         val custom = ParseRule(
             hostPattern = "x.com",
@@ -220,7 +210,7 @@ class PluginShareSeedTest {
         id = "royalroad",
         name = "Royal Road",
         version = "1.0.0",
-        apiVersion = 1,
+        apiVersion = 3,
         shareHosts = listOf("royalroad.com", "www.royalroadl.com"),
     )
 
@@ -267,7 +257,7 @@ class ShareRouterTest {
                 id = "royalroad",
                 name = "Royal Road",
                 version = "1.0.0",
-                apiVersion = 1,
+                apiVersion = 3,
                 shareHosts = listOf("royalroad.com"),
             ),
         ),

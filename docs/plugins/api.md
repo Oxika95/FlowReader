@@ -1,9 +1,9 @@
-# Plugin API (apiVersion 2)
+# Plugin API (apiVersion 3)
 
 Flow Reader source plugins are sandboxed JavaScript, loaded from user-added repositories
 (LNReader-style). A plugin only fetches and parses a site; the app owns every screen,
 the chapter cache, the reader, and sharing. See [ui-contract.md](ui-contract.md) for what the
-app renders, and [examples/media-card.md](examples/media-card.md) for a v2 media card walkthrough.
+app renders, and [examples/media-card.md](examples/media-card.md) for a media card walkthrough.
 
 JSON Schemas: [`schema/plugin.schema.json`](schema/plugin.schema.json),
 [`schema/work-detail.schema.json`](schema/work-detail.schema.json),
@@ -13,16 +13,16 @@ JSON Schemas: [`schema/plugin.schema.json`](schema/plugin.schema.json),
 
 | `apiVersion` | Adds | Host support |
 | --- | --- | --- |
-| 1 | Manifest, `search`/`list`/`loadWork`/`loadChapter`, auth, membership, progress sync, URL resolve | Accepted; v1 fields are mapped onto the media card |
-| 2 | `WorkDetail.card` (stats, badges, links, actions), `Work.badges`/`Work.stats`, `cardAction()` | Current (`PLUGIN_HOST_API_VERSION = 2`) |
+| 1 | Manifest, `search`/`list`/`loadWork`/`loadChapter`, auth, membership, progress sync, URL resolve | Refused |
+| 2 | `WorkDetail.card` (stats, badges, links, actions), `Work.badges`/`Work.stats`, `cardAction()` | Refused |
+| 3 | `updates` capability + `checkUpdates()` for the background new-chapter check; `notify` reserved | Current (`PLUGIN_HOST_API_VERSION = 3`) |
 
-- The host accepts `PLUGIN_MIN_API_VERSION (1) ≤ apiVersion ≤ PLUGIN_HOST_API_VERSION (2)` and
-  refuses newer plugins ("needs a newer Flow Reader"). Repositories list each plugin's
-  `apiVersion`; incompatible entries are not offered.
-- v2 is additive: a v2 plugin should keep filling the v1 fields (`status`, `rating`, `views`) so
-  older hosts still show them. When `card` is present the host prefers it.
-- Moving a published plugin to v2: bump `apiVersion` **and** `version`. Hosts that only know v1
-  keep the last v1 release.
+- While Flow Reader is in alpha the host accepts only the current contract:
+  `PLUGIN_MIN_API_VERSION = PLUGIN_HOST_API_VERSION = 3`. Older plugins are refused ("uses plugin
+  API N, which is no longer supported"), newer ones too ("needs a newer Flow Reader").
+  Repositories list each plugin's `apiVersion`; incompatible entries are not offered.
+- A contract change bumps both constants together; republish every plugin with the new
+  `apiVersion` **and** a bumped `version`.
 
 ## Package
 
@@ -40,15 +40,15 @@ A plugin is two files, installed to `filesDir/plugins/installed/{id}/`:
   "id": "royalroad",
   "name": "Royal Road",
   "description": "Your followed and saved serials",
-  "version": "1.1.0",
-  "apiVersion": 2,
+  "version": "1.2.0",
+  "apiVersion": 3,
   "site": "https://www.royalroad.com",
   "iconUrl": "https://www.royalroad.com/favicon.ico",
   "lang": "en",
   "bookIdPrefix": "rr",
   "allowedHosts": ["royalroad.com", "royalroadl.com"],
   "minRequestIntervalMs": 700,
-  "capabilities": ["search", "lists", "auth", "membership", "progressSync", "resolveUrl"],
+  "capabilities": ["search", "lists", "auth", "membership", "progressSync", "resolveUrl", "updates"],
   "lists": [
     { "id": "follow", "title": "Follow", "icon": "add", "membershipToggle": true, "syncable": true }
   ],
@@ -70,11 +70,11 @@ A plugin is two files, installed to `filesDir/plugins/installed/{id}/`:
 | --- | --- |
 | `id` | `[a-z0-9][a-z0-9_-]{1,39}`. Never change it after release: it keys book ids, data, and secrets. |
 | `version` | Dotted numbers. The installer offers an update when the repo version is higher. |
-| `apiVersion` | `1` or `2` (see [Versions](#versions)). Defaults to `1`. |
+| `apiVersion` | Must be `3` (see [Versions](#versions)). A missing value reads as `1` and is refused. |
 | `bookIdPrefix` | Book ids are `{bookIdPrefix}:{workId}`. Defaults to `id`. |
 | `allowedHosts` | `flow.fetch` rejects any other host. A listed host also allows its subdomains. |
 | `minRequestIntervalMs` | The host spaces this plugin's requests at least this far apart (0 to 10000). |
-| `capabilities` | Any of `search`, `lists`, `auth`, `membership`, `progressSync`, `resolveUrl`. |
+| `capabilities` | Any of `search`, `lists`, `auth`, `membership`, `progressSync`, `resolveUrl`, `updates`. |
 | `lists[]` | `id`, `title`, `icon` ([icon tokens](ui-contract.md#icon-tokens)), `membershipToggle`, `syncable`. |
 | `auth.fields[]` | `key`, `label`, `secret`, `type` (`text`/`email`/`password`). |
 | `settings[]` | `key`, `type` (`toggle`/`int`/`choice`/`text`), `label`, `description`, `default`, `options[]` (`choice`), `min`/`max` (`int`). |
@@ -97,7 +97,8 @@ module.exports = {
   async setMembership(workId, listId, on) {},// -> boolean       (capability: membership)
   async syncProgress(workId, chapter) {},    //                  (capability: progressSync)
   async resolveUrl(url) {},                  // -> workId | null (capability: resolveUrl)
-  async cardAction(workId, actionId, on) {}, // -> CardActionResult (apiVersion 2; needed if card.actions is used)
+  async cardAction(workId, actionId, on) {}, // -> CardActionResult (needed if card.actions is used)
+  async checkUpdates(works) {},              // -> UpdateInfo[]  (capability: updates)
 };
 ```
 
@@ -109,22 +110,20 @@ local list changed (for example signed out, or removal is not supported remotely
 ```ts
 type Work = {
   id: string; title: string; url?: string; author?: string; cover?: string; subtitle?: string;
-  badges?: string[];                 // v2: pills on the search-result display card (max 4)
-  stats?: Stat[];                    // v2: stats on the search-result display card (max 6)
+  badges?: string[];                 // pills on the search-result display card (max 4)
+  stats?: Stat[];                    // stats on the search-result display card (max 6)
 };
 type Page = { items: Work[]; hasMore?: boolean };
 type ChapterRef = { title: string; url: string; id?: string };
 type WorkDetail = {
   id: string; title: string; url?: string; author?: string; cover?: string;
   synopsis?: string; tags?: string[];
-  status?: string; rating?: string; views?: number;   // v1 stats (keep for older hosts)
   chapters: ChapterRef[];            // full table of contents, reading order
-  card?: Card;                       // v2 media card slots
+  card?: Card;                       // media card slots
 };
 type Chapter = { title: string; html?: string; text?: string };   // html preferred
 type Session = { loggedIn: boolean; account?: string };
 
-// --- apiVersion 2 ---
 type Stat = { icon: string; value: string; label?: string };       // icon: icon token
 type Link = { label?: string; url: string };                       // http(s) only
 type CardAction = {
@@ -139,6 +138,8 @@ type CardAction = {
 type Card = { stats?: Stat[]; badges?: string[]; links?: Link[]; actions?: CardAction[] };
 type CardPatch = Card;               // slots present replace; absent slots are kept
 type CardActionResult = { card?: CardPatch; toast?: string; reload?: boolean };
+type UpdateQuery = { id: string; url: string; chapters: number; lastChapterUrl: string };
+type UpdateInfo = { id: string; chapters?: number; latestUrl?: string };
 ```
 
 The `work` argument to `loadChapter` is `{ id, url }` of the owning work.
@@ -154,10 +155,10 @@ The `work` argument to `loadChapter` is `{ id, url }` of the owning work.
 | `actions` (`footer`) | 2 | Between Delete and Read |
 
 Reserved action ids (dropped if used): `read`, `download`, `refresh`, `delete`, `share`, `open`,
-`remove`, and anything starting with `list:`. Duplicate ids keep the first.
+`remove`, `notify`, and anything starting with `list:`. Duplicate ids keep the first.
 
-An empty card (all slots empty after filtering) counts as no card: the host falls back to the v1
-fields.
+An empty card (all slots empty after filtering) counts as no card: the media card shows only the
+host's chapter count stat.
 
 ### `cardAction(workId, actionId, on)`
 
@@ -169,7 +170,19 @@ Called when the user taps a plugin action on the media card.
   re-run `loadWork` and replace the card with fresh data.
 - Throw `flow.error(...)` to fail; `AUTH_REQUIRED` opens sign-in. The host shows other errors on
   the card.
-- Calling `cardAction` on a v1 plugin is a host error (`UNSUPPORTED`); the host never does this.
+
+### `checkUpdates(works)`
+
+Called by the background new-chapter check (WorkManager, every few hours) with every work the user
+monitors (bell on the media card). `works[]` is what the host already stored: `chapters` is the
+ToC length, `lastChapterUrl` the last ToC entry's URL.
+
+- Return one `UpdateInfo` per work you could check **cheaply** (a list page covering many works, a
+  feed). Give `chapters` (site chapter count) and/or `latestUrl` (newest chapter URL).
+- The host treats a work as changed when `chapters` is larger or `latestUrl` differs from
+  `lastChapterUrl`, then calls `loadWork` for that work only. Omitted works are skipped this run.
+- Never prompt: do not throw `AUTH_REQUIRED`; skip what needs sign-in. Errors fail the whole run.
+- Without the `updates` capability the host calls `loadWork` per monitored work instead.
 
 ## Host API (`flow` global)
 
@@ -211,14 +224,14 @@ A repository is a static `index.json` (GitHub Pages works):
 ```json
 {
   "name": "Flow Reader Official",
-  "apiVersion": 2,
+  "apiVersion": 3,
   "plugins": [
     {
       "id": "royalroad",
       "name": "Royal Road",
       "description": "Your followed and saved serials",
-      "version": "1.1.0",
-      "apiVersion": 2,
+      "version": "1.2.0",
+      "apiVersion": 3,
       "lang": "en",
       "iconUrl": "https://www.royalroad.com/favicon.ico",
       "manifestUrl": "RoyalRoad/plugin.json",
@@ -234,12 +247,3 @@ URLs may be relative to `index.json`. `sha256` is the hex SHA-256 of `index.js` 
 `manifestSha256` of `plugin.json`; the installer refuses files that do not match. Each entry's
 `apiVersion` decides compatibility; the top-level `apiVersion` is informational. The
 [flow-reader-plugins](https://github.com/Oxika95/flow-reader-plugins) repo builds this file in CI.
-
-## Migrating a v1 plugin to v2
-
-1. `plugin.json`: `"apiVersion": 2`, bump `version`.
-2. `loadWork`: keep `status` / `rating` / `views`; add `card` with the stats you want shown
-   (the host always appends a chapter count stat), badges, and links.
-3. Optional: add `card.actions` and implement `cardAction`.
-4. Optional: add `badges` / `stats` to `Work` rows from `search` / `list`.
-5. Test against the Node host (`flow-reader-plugins/test/host.mjs`), then `npm run build`.

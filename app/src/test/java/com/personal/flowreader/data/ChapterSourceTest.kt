@@ -36,17 +36,6 @@ class ChapterSourceTest {
     }
 
     @Test
-    fun txtLegacyBlockSpreadsAcrossSegments() {
-        val para = "x".repeat(3000)
-        val file = tempFile(".txt").apply { writeText(List(40) { "$para$it" }.joinToString("\n\n")) }
-        val source = TxtChapterSource.open(file, "T")
-        assertTrue(source.chapterCount > 1)
-        val firstCount = source.load(0).blocks.size
-        assertEquals(Locus(1, 1, 5), source.legacyLocus(Locus(0, firstCount + 1, 5)))
-        assertEquals(Locus(), source.legacyLocus(Locus(2, 0, 0)))
-    }
-
-    @Test
     fun epubChaptersLoadIndividually() {
         val file = epub(
             nav = true,
@@ -70,20 +59,6 @@ class ChapterSourceTest {
     fun epubNcxTitlesWithoutNav() {
         val file = epub(nav = false, "one.xhtml" to "<html><body><p>Alpha.</p></body></html>")
         assertEquals("From NCX", ChapterSource.open(file).chapterTitle(0))
-    }
-
-    @Test
-    fun epubLegacyLocusSkipsEmptyChapters() {
-        val file = epub(
-            nav = false,
-            "cover.xhtml" to "<html><body></body></html>",
-            "one.xhtml" to "<html><body><p>Alpha.</p></body></html>",
-            "blank.xhtml" to "<html><body> </body></html>",
-            "two.xhtml" to "<html><body><p>Beta.</p></body></html>",
-        )
-        val source = ChapterSource.open(file)
-        assertEquals(Locus(1, 0, 3), source.legacyLocus(Locus(0, 0, 3)))
-        assertEquals(Locus(3, 0, 0), source.legacyLocus(Locus(1, 0, 0)))
     }
 
     @Test

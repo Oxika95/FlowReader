@@ -26,6 +26,8 @@ data class PluginReadSession(
     val cleanup: Boolean = false,
     /** Inclusive chapter-index ranges (Download all) that cleanup never deletes. */
     val pinnedRanges: List<IntRange> = emptyList(),
+    /** New-chapter notifications; null = default (on while the story is on a syncable list). */
+    val notify: Boolean? = null,
 ) {
     fun nextIndex(): Int? {
         val next = loadedThrough + 1
@@ -51,11 +53,8 @@ data class PluginCachePolicy(
 data class PluginSplashMeta(
     val synopsis: String = "",
     val tags: List<String> = emptyList(),
-    val views: Long? = null,
-    val rating: String = "",
-    val status: String = "",
     val cover: String = "",
-    /** apiVersion 2 card slots (`card.json`); null for v1 plugins. */
+    /** Card slots (`card.json`); null when the plugin fills none. */
     val card: PluginCard? = null,
 )
 
@@ -94,6 +93,7 @@ object PluginSessionStore {
                 appendLine("cacheLevel=${session.cacheLevel.coerceAtLeast(0)}")
                 appendLine("cleanup=${session.cleanup}")
                 appendLine("pinnedRanges=${encodeRanges(session.pinnedRanges)}")
+                session.notify?.let { appendLine("notify=$it") }
             },
         )
         File(dir, "toc.txt").writeText(
@@ -108,16 +108,13 @@ object PluginSessionStore {
                 appendLine("v2")
                 appendLine("synopsis=${escape(splash.synopsis)}")
                 appendLine("tags=${escape(splash.tags.joinToString("|"))}")
-                appendLine("views=${splash.views?.toString().orEmpty()}")
-                appendLine("rating=${escape(splash.rating)}")
-                appendLine("status=${escape(splash.status)}")
                 appendLine("cover=${escape(splash.cover)}")
             },
         )
         writeCard(dir, splash.card)
     }
 
-    /** Persist (or clear) the apiVersion 2 card slots next to the splash. */
+    /** Persist (or clear) the card slots next to the splash. */
     fun writeCard(dir: File, card: PluginCard?) {
         val file = File(dir, "card.json")
         if (card == null || card.isEmpty) {
@@ -141,56 +138,42 @@ object PluginSessionStore {
         return PluginSplashMeta(
             synopsis = fields["synopsis"].orEmpty(),
             tags = fields["tags"].orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() },
-            views = fields["views"]?.toLongOrNull(),
-            // v1 (built-in Royal Road) keys: ratingLabel / coverUrl.
-            rating = fields["rating"] ?: fields["ratingLabel"].orEmpty(),
-            status = fields["status"].orEmpty(),
-            cover = fields["cover"] ?: fields["coverUrl"].orEmpty(),
+            cover = fields["cover"].orEmpty(),
             card = readCard(dir),
         )
     }
 
-    /**
-     * Reads meta + ToC. v1 files from the built-in Royal Road plugin use `fictionId` /
-     * `fictionUrl`; [fallbackPluginId] and [fallbackBookId] fill fields v1 did not store.
-     */
-    fun read(root: File, workId: String, fallbackPluginId: String, fallbackBookId: String): PluginReadSession? {
+    /** Reads meta + ToC; null when either file is missing or meta lacks its ids. */
+    fun read(root: File, workId: String): PluginReadSession? {
         val dir = dir(root, workId)
         val meta = File(dir, "meta.txt")
         val tocFile = File(dir, "toc.txt")
         if (!meta.exists() || !tocFile.exists()) return null
         val fields = readFields(meta)
+        val bookId = fields["bookId"] ?: return null
+        val pluginId = fields["pluginId"] ?: return null
         val toc = tocFile.readLines().mapNotNull { line ->
             val i = line.indexOf('\t')
             if (i < 0) return@mapNotNull null
             PluginChapterRef(title = unescape(line.substring(0, i)), url = unescape(line.substring(i + 1)))
         }
         if (toc.isEmpty()) return null
-        val level = fields["cacheLevel"]?.toIntOrNull()
-        val pins = decodeRanges(fields["pinnedRanges"].orEmpty())
         return PluginReadSession(
-            bookId = fields["bookId"] ?: fallbackBookId,
-            pluginId = fields["pluginId"] ?: fallbackPluginId,
-            workId = fields["workId"] ?: fields["fictionId"] ?: workId,
-            workUrl = fields["workUrl"] ?: fields["fictionUrl"].orEmpty(),
+            bookId = bookId,
+            pluginId = pluginId,
+            workId = fields["workId"] ?: workId,
+            workUrl = fields["workUrl"].orEmpty(),
             title = fields["title"] ?: workId,
             author = fields["author"].orEmpty(),
             toc = toc,
             startIndex = fields["startIndex"]?.toIntOrNull() ?: 0,
             loadedThrough = fields["loadedThrough"]?.toIntOrNull() ?: -1,
             chapters = emptyList(),
-            cacheLevel = level ?: legacyCacheLevel(fields),
+            cacheLevel = fields["cacheLevel"]?.toIntOrNull() ?: PluginCachePolicy.DEFAULT_LEVEL,
             cleanup = fields["cleanup"]?.toBooleanStrictOrNull() ?: false,
-            // Before cacheLevel, partial downloads pinned ranges too; only a full-ToC pin is Download all.
-            pinnedRanges = if (level != null || pins == listOf(0..toc.lastIndex)) pins else emptyList(),
+            pinnedRanges = decodeRanges(fields["pinnedRanges"].orEmpty()),
+            notify = fields["notify"]?.toBooleanStrictOrNull(),
         )
-    }
-
-    private fun legacyCacheLevel(fields: Map<String, String>): Int {
-        val ahead = fields["prefetchAhead"]?.toIntOrNull()
-        val behind = fields["keepBehind"]?.toIntOrNull()
-        if (ahead == null && behind == null) return PluginCachePolicy.DEFAULT_LEVEL
-        return maxOf(ahead ?: 0, behind ?: 0)
     }
 
     fun writeChapter(dir: File, index: Int, title: String, text: String) {

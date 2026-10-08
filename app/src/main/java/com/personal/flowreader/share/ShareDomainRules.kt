@@ -342,87 +342,6 @@ object RouterRules {
             emptyList()
         }
     }
-
-    /** Build router rules from legacy plugin handoffs + route default keys. */
-    fun migrateFromLegacy(
-        handoffJson: String?,
-        bookDest: String?,
-        textDest: String?,
-        urlDest: String?,
-        legacyDomainJson: String?,
-    ): List<RouterRule> {
-        val out = ArrayList<RouterRule>()
-        var order = 0
-        out += RouterRule(
-            id = "seed-book-files",
-            kind = RouterContentKind.BookFile,
-            destination = RouterLanding.parse(bookDest, RouterLanding.Files).let {
-                if (it.id == RouterLanding.PLUGIN) RouterLanding.Files else it
-            },
-            order = order++,
-        )
-        out += RouterRule(
-            id = "seed-raw-text",
-            kind = RouterContentKind.RawText,
-            destination = RouterLanding.parse(textDest, RouterLanding.Queue).let {
-                if (it.id == RouterLanding.PLUGIN) RouterLanding.Queue else it
-            },
-            order = order++,
-        )
-
-        val fromHandoffs = decodeLegacyHandoffs(handoffJson)
-        if (fromHandoffs.isNotEmpty()) {
-            fromHandoffs.forEach { h ->
-                out += h.copy(order = order++)
-            }
-        } else if (!legacyDomainJson.isNullOrBlank()) {
-            val (pluginRules, _) = ParseRules.migrateLegacy(legacyDomainJson)
-            pluginRules.forEach { h ->
-                out += h.copy(order = order++)
-            }
-        }
-
-        val urlLanding = when (urlDest) {
-            RouterLanding.FILES -> RouterLanding.Files
-            "parse_queue", RouterLanding.QUEUE, null, "" -> RouterLanding.Queue
-            else -> RouterLanding.Queue
-        }
-        val parseDefault = urlDest == null ||
-            urlDest == "parse_queue" ||
-            urlLanding.id == RouterLanding.FILES
-        out += RouterRule(
-            id = URL_ANY_ID,
-            kind = RouterContentKind.Url,
-            hostPattern = "*",
-            parseUrl = parseDefault || urlLanding.id == RouterLanding.FILES,
-            destination = urlLanding,
-            order = order,
-        )
-        return out
-    }
-
-    private fun decodeLegacyHandoffs(json: String?): List<RouterRule> {
-        if (json.isNullOrBlank()) return emptyList()
-        return try {
-            ShareJson.splitObjects(json.trim()).mapIndexed { index, obj ->
-                RouterRule(
-                    id = ShareJson.readString(obj, "id").ifBlank { UUID.randomUUID().toString() },
-                    kind = RouterContentKind.Url,
-                    enabled = ShareJson.readBool(obj, "enabled", true),
-                    hostPattern = ShareJson.readString(obj, "hostPattern").ifBlank { "*" },
-                    pathPattern = ShareJson.readString(obj, "pathPattern").ifBlank { null },
-                    pathIsRegex = ShareJson.readBool(obj, "pathIsRegex", false),
-                    matchSubdomains = ShareJson.readBool(obj, "matchSubdomains", true),
-                    parseUrl = false,
-                    destination = RouterLanding.Plugin,
-                    pluginId = ShareJson.readString(obj, "pluginId").ifBlank { "royalroad" },
-                    order = ShareJson.readInt(obj, "order", index),
-                )
-            }
-        } catch (_: Throwable) {
-            emptyList()
-        }
-    }
 }
 
 object ParseRules {
@@ -505,14 +424,8 @@ object ParseRules {
         if (json.isNullOrBlank()) return emptyList()
         return try {
             ShareJson.splitObjects(json.trim()).mapIndexed { index, obj ->
-                val content = ShareJson.readString(obj, "contentCss")
-                    .ifBlank { ShareJson.readString(obj, "cssSelector") }
-                    .ifBlank { null }
-                val parseRaw = ShareJson.readString(obj, "parseMode")
-                val parseMode = runCatching { ShareParseMode.valueOf(parseRaw) }
-                    .getOrElse {
-                        if (content.isNullOrBlank()) ShareParseMode.Default else ShareParseMode.Custom
-                    }
+                val parseMode = runCatching { ShareParseMode.valueOf(ShareJson.readString(obj, "parseMode")) }
+                    .getOrDefault(ShareParseMode.Default)
                 ParseRule(
                     id = ShareJson.readString(obj, "id").ifBlank { UUID.randomUUID().toString() },
                     hostPattern = ShareJson.readString(obj, "hostPattern"),
@@ -521,7 +434,7 @@ object ParseRules {
                     enabled = ShareJson.readBool(obj, "enabled", true),
                     matchSubdomains = ShareJson.readBool(obj, "matchSubdomains", true),
                     parseMode = parseMode,
-                    contentCss = content,
+                    contentCss = ShareJson.readString(obj, "contentCss").ifBlank { null },
                     titleCss = ShareJson.readString(obj, "titleCss").ifBlank { null },
                     coverCss = ShareJson.readString(obj, "coverCss").ifBlank { null },
                     removeCss = ShareJson.readString(obj, "removeCss").ifBlank { null },
@@ -536,71 +449,6 @@ object ParseRules {
             }.sortedBy { it.order }
         } catch (_: Throwable) {
             emptyList()
-        }
-    }
-
-    /**
-     * Split a legacy unified domain-rules JSON into plugin URL rules + parse rules.
-     */
-    fun migrateLegacy(json: String?): Pair<List<RouterRule>, List<ParseRule>> {
-        if (json.isNullOrBlank()) return emptyList<RouterRule>() to emptyList()
-        return try {
-            val plugins = ArrayList<RouterRule>()
-            val parses = ArrayList<ParseRule>()
-            ShareJson.splitObjects(json.trim()).forEachIndexed { index, obj ->
-                val content = ShareJson.readString(obj, "contentCss")
-                    .ifBlank { ShareJson.readString(obj, "cssSelector") }
-                    .ifBlank { null }
-                val legacy = ShareJson.readString(obj, "action")
-                val destRaw = ShareJson.readString(obj, "destination")
-                val id = ShareJson.readString(obj, "id").ifBlank { UUID.randomUUID().toString() }
-                val host = ShareJson.readString(obj, "hostPattern")
-                val path = ShareJson.readString(obj, "pathPattern").ifBlank { null }
-                val pathIsRegex = ShareJson.readBool(obj, "pathIsRegex", false)
-                val enabled = ShareJson.readBool(obj, "enabled", true)
-                val matchSub = ShareJson.readBool(obj, "matchSubdomains", true)
-                val order = ShareJson.readInt(obj, "order", index)
-
-                val asPlugin = destRaw == "Plugin" || legacy == "RoyalRoadPlugin"
-                if (asPlugin) {
-                    plugins += RouterRule(
-                        id = id,
-                        kind = RouterContentKind.Url,
-                        enabled = enabled,
-                        hostPattern = host.ifBlank { "*" },
-                        pathPattern = path,
-                        pathIsRegex = pathIsRegex,
-                        matchSubdomains = matchSub,
-                        parseUrl = false,
-                        destination = RouterLanding.Plugin,
-                        pluginId = ShareJson.readString(obj, "pluginId").ifBlank { "royalroad" },
-                        order = order,
-                    )
-                } else if (legacy != "Ask") {
-                    val parseRaw = ShareJson.readString(obj, "parseMode")
-                    val parseMode = runCatching { ShareParseMode.valueOf(parseRaw) }
-                        .getOrElse {
-                            if (content.isNullOrBlank()) ShareParseMode.Default else ShareParseMode.Custom
-                        }
-                    parses += ParseRule(
-                        id = id,
-                        hostPattern = host,
-                        pathPattern = path,
-                        pathIsRegex = pathIsRegex,
-                        enabled = enabled,
-                        matchSubdomains = matchSub,
-                        parseMode = parseMode,
-                        contentCss = content,
-                        titleCss = ShareJson.readString(obj, "titleCss").ifBlank { null },
-                        removeCss = ShareJson.readString(obj, "removeCss").ifBlank { null },
-                        testUrl = ShareJson.readString(obj, "testUrl").ifBlank { null },
-                        order = order,
-                    )
-                }
-            }
-            plugins.sortedBy { it.order } to parses.sortedBy { it.order }
-        } catch (_: Throwable) {
-            emptyList<RouterRule>() to emptyList()
         }
     }
 }

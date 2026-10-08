@@ -42,16 +42,6 @@ class EpubChapterSource private constructor(
         return Chapter(navTitles[index] ?: heading ?: chapterTitle(index), blocks)
     }
 
-    /** Old whole-book parse dropped chapters without text: chapter k = k-th non-empty entry. */
-    override fun legacyLocus(locus: Locus): Locus {
-        var seen = -1
-        for (i in paths.indices) {
-            if (load(i).blocks.isNotEmpty()) seen++
-            if (seen == locus.chapterIndex) return locus.copy(chapterIndex = i)
-        }
-        return Locus()
-    }
-
     companion object {
         fun open(file: File): EpubChapterSource = ZipFile(file).use { zip ->
             val opfPath = EpubIngest.findOpf(zip)

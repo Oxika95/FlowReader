@@ -21,7 +21,7 @@ Each enabled plugin adds one library tab (next to Files and Queue).
 
 | Component | Built on | When | Content | Actions |
 | --- | --- | --- | --- | --- |
-| `WorkCard` | `FlowDisplayCard` (Row) | Search results, add sheet | Cover, title, `author · subtitle`, v2 `badges`/`stats` | Tap opens the media card |
+| `WorkCard` | `FlowDisplayCard` (Row) | Search results, add sheet | Cover, title, `author · subtitle`, `badges`/`stats` | Tap opens the media card |
 | Library card | `FlowDisplayCard` | Local stories on a list | Same card as Files | Tap reads at saved progress; long-press opens the media card |
 | `StoryMediaCard` | `FlowMediaCard` + `PluginMediaCardAdapter` | Opening any story | See [Media card](#media-card) | See [Media card](#media-card) |
 | `DownloadSheet` | `FlowFullscreenCard` | Download on the media card | Download all; partial download with cache settings | Download all, Begin partial download, Download range |
@@ -35,24 +35,25 @@ All sheets stack over the media card (Back closes the top one).
 
 ## Media card
 
-The story media card is the shared `FlowMediaCard`. The host fills every slot; a v2 plugin
+The story media card is the shared `FlowMediaCard`. The host fills every slot; a plugin
 supplies some slots through `WorkDetail.card`.
 
 ```
 cover band ─ title ............................. host (WorkDetail.title)
              subtitle .......................... host (author)
-             badges ............................ v2 card.badges   | v1 status
-             stats ............................. v2 card.stats    | v1 rating (star), views (eye)
+             badges ............................ card.badges
+             stats ............................. card.stats
                                                  + host chapter count (pages), always last
              tags, synopsis .................... host (WorkDetail.tags / synopsis)
              chapter cache strip ............... host
 rail ─────── list toggles (membershipToggle) ... host, manifest order
+             New-chapter bell .................. host (toggle; see plugins.md)
              Share ............................. host
-             plugin rail actions (≤2) .......... v2 card.actions placement "rail"
+             plugin rail actions (≤2) .......... card.actions placement "rail"
 body ─────── status line ....................... host ("Cached 12 / 40 chapters · cache level 5")
-             links (≤3) ........................ v2 card.links
+             links (≤3) ........................ card.links
 footer ───── Download, Refresh, Delete ......... host
-             plugin footer actions (≤2) ........ v2 card.actions placement "footer"
+             plugin footer actions (≤2) ........ card.actions placement "footer"
              Read (primary) .................... host
              error ............................. host
 ```
@@ -60,7 +61,7 @@ footer ───── Download, Refresh, Delete ......... host
 ## Rules
 
 1. There are no plugin-defined card types, layouts, colors or fonts. Plugins fill slots.
-2. Host actions (list toggles, Share, Download, Refresh, Delete, Read) are always present, in a
+2. Host actions (list toggles, bell, Share, Download, Refresh, Delete, Read) are always present, in a
    fixed order. A plugin cannot remove, reorder or shadow them (reserved ids are dropped).
 3. Plugin actions are capped (2 rail, 2 footer) and routed to `cardAction`. Rail actions render
    as circular icon buttons (`toggle` → filled accent while `on`); footer actions as outlined
@@ -98,5 +99,6 @@ Unknown tokens fall back to `bookmark`.
 | `like` | | Likes |
 | `link` | | Links |
 | `share` | | Share |
+| `notifications` | `bell` | Alerts (host new-chapter bell) |
 
 Source of truth: `FlowIcons.tokens` in `ui/design/FlowIcons.kt`. Tokens are only ever added.

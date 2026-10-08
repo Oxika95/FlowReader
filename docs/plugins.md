@@ -21,8 +21,8 @@ Then show the tab from Library → **+** → **Plugins**.
 
 Sub-tabs are the plugin's lists (for Royal Road: Follow, Favorite, Read Later), then Search and
 Account (or plugin Settings) when supported. Tap a story to read; long-press opens the story media
-card (cover, badges, stats, tags, synopsis, cache strip, list toggles, Share, links,
-Download / Refresh / Delete, **Read**). apiVersion 2 plugins add their own stats, badges, links
+card (cover, badges, stats, tags, synopsis, cache strip, list toggles, new-chapter bell, Share, links,
+Download / Refresh / Delete, **Read**). Plugins add their own stats, badges, links
 and up to two rail and two footer actions ([example](plugins/examples/media-card.md)).
 
 - **Stream (default):** full ToC on add; chapter bodies on demand. Reading or listening downloads
@@ -41,6 +41,24 @@ and up to two rail and two footer actions ([example](plugins/examples/media-card
   Download all pins the whole ToC, so those chapters are never cleaned up; a cancelled or failed
   Download all drops the pin again. With cleanup off, chapters stay until Delete
 - New stories take cache level and cleanup from **Settings → Import → Plugins → New stories**
+
+## New-chapter notifications
+
+Sites can't push to the app, so a background job (WorkManager) checks for new chapters every
+**Settings → Import → Plugins → New chapters** interval (Off / 3h / 6h / 12h / Daily, default 12h;
+optional Wi-Fi only; **Check now** runs once).
+
+- **Which stories:** the **bell** on the story media card. Unset, it is on while the story is on a
+  syncable list (Royal Road: Follow); tapping it stores an explicit on/off (`notify=` in `meta.txt`).
+- **How:** plugins with the `updates` capability (apiVersion 3) answer `checkUpdates` cheaply (Royal
+  Road: the signed-in Follows page, else each story's public RSS feed); only stories that changed
+  get a `loadWork`. Other plugins get one `loadWork` per monitored story (max 100 per run). Followed
+  stories never opened are fetched once (max 10 per run) as a baseline, without notifying.
+- **Then:** the new ToC is stored; chapters new by URL (not re-titled or reordered ones) produce one
+  notification per story, grouped, counting up until opened. Stories with a saved position
+  download the cache level ahead of it. Tapping a notification opens the story's media card.
+- Code: [`plugin/updates/`](../app/src/main/java/com/personal/flowreader/plugin/updates/)
+  (`UpdateChecker`, `UpdateDiff` (pure), `UpdateNotifier`, `UpdateScheduler`, `ChapterUpdateWorker`).
 
 ## Import routing
 

@@ -1,5 +1,5 @@
 ---
-description: Flow Reader plugin API contract (apiVersion 2) and compatibility rules
+description: Flow Reader plugin API contract (apiVersion 3) and compatibility rules
 globs: app/src/main/java/com/personal/flowreader/plugin/**/*.kt,app/src/main/java/com/personal/flowreader/ui/plugin/**/*.kt,app/src/main/java/com/personal/flowreader/ui/design/card/media/**/*.kt,app/src/main/java/com/personal/flowreader/ui/design/FlowIcons.kt,docs/plugins/**
 alwaysApply: false
 ---
@@ -11,18 +11,19 @@ example `docs/plugins/examples/media-card.md`.
 
 ## Versions
 
-- `PLUGIN_HOST_API_VERSION = 2`, `PLUGIN_MIN_API_VERSION = 1` (`plugin/api/PluginManifest.kt`).
-- Never break an accepted version. v1 `WorkDetail` fields (`status`, `rating`, `views`) must keep
-  mapping onto the media card (`PluginMediaCardAdapter`).
-- A breaking contract change needs a new `apiVersion`, a host bump, and the build script cap in
-  `flow-reader-plugins/scripts/build-index.mjs`.
+- `PLUGIN_HOST_API_VERSION = PLUGIN_MIN_API_VERSION = 3` (`plugin/api/PluginManifest.kt`). Alpha:
+  only the current contract is accepted; no compatibility shims for older plugins.
+- Optional `updates` capability: `checkUpdates(works)` → `PluginUpdateInfo[]`, used by the
+  background new-chapter check (`plugin/updates/`); without it the host calls `loadWork`.
+- A breaking contract change bumps both constants, `HOST_API_VERSION` / `MIN_API_VERSION` in
+  `flow-reader-plugins/scripts/build-index.mjs`, and every plugin's `apiVersion` + `version`.
 
-## v2 media card
+## Media card
 
 - Plugins fill slots only: `card.stats` (≤6), `badges` (≤4), `links` (≤3, http(s)),
   `actions` (≤2 rail, ≤2 footer). Caps enforced in `PluginCard.capped()`.
 - Host actions are fixed and ordered: list toggles, Share (rail); Download, Refresh, Delete, Read
-  (footer). Reserved ids: `read download refresh delete share open remove` and `list:*`.
+  (footer). Reserved ids: `read download refresh delete share open remove notify` and `list:*`.
 - Plugin actions → `PluginSource.cardAction(workId, actionId, on?)` → `PluginCardActionResult`
   (`card` patch persisted by `PluginBookStore.runCardAction`, `toast`, `reload`).
 - Icon tokens (`FlowIcons.tokens`) are append-only API.

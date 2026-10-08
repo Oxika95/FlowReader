@@ -212,7 +212,6 @@ class BookCatalog(private val app: FlowApp) {
             } else {
                 existing?.libraryTabId.orEmpty()
             },
-            locusVersion = existing?.locusVersion ?: ProgressEntity.LOCUS_CURRENT,
             anchorText = existing?.anchorText.orEmpty(),
             chapterHref = existing?.chapterHref.orEmpty(),
         )
@@ -425,7 +424,6 @@ class BookCatalog(private val app: FlowApp) {
                 inLibrary = true,
                 readingProgress = existing?.readingProgress ?: 0f,
                 libraryTabId = shelf.ifEmpty { existing?.libraryTabId.orEmpty() },
-                locusVersion = existing?.locusVersion ?: ProgressEntity.LOCUS_CURRENT,
                 anchorText = existing?.anchorText.orEmpty(),
                 chapterHref = existing?.chapterHref.orEmpty(),
             )

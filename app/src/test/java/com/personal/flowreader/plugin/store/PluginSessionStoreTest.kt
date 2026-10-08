@@ -18,13 +18,10 @@ class PluginSessionStoreTest {
                 PluginSplashMeta(
                     synopsis = "Hello",
                     tags = listOf("Fantasy"),
-                    views = 10,
-                    rating = "4 / 5",
-                    status = "Ongoing",
                     cover = "https://cdn.example/cover.jpg",
                 ),
             )
-            val loaded = PluginSessionStore.read(root, "1", "demo", "d:1")!!
+            val loaded = PluginSessionStore.read(root, "1")!!
             assertEquals("demo", loaded.pluginId)
             assertEquals(2, loaded.toc.size)
             assertEquals("Ch 1", loaded.toc[0].title)
@@ -36,44 +33,7 @@ class PluginSessionStoreTest {
             val splash = PluginSessionStore.readSplash(dir)!!
             assertEquals("Hello", splash.synopsis)
             assertEquals(listOf("Fantasy"), splash.tags)
-            assertEquals(10L, splash.views)
-            assertEquals("4 / 5", splash.rating)
-        }
-    }
-
-    @Test
-    fun readsLegacyBuiltInRoyalRoadFiles() {
-        withRoot { root ->
-            val dir = PluginSessionStore.dir(root, "21220").apply { mkdirs() }
-            File(dir, "meta.txt").writeText(
-                """
-                v1
-                bookId=rr:21220
-                fictionId=21220
-                fictionUrl=https://www.royalroad.com/fiction/21220/mol
-                title=Mother of Learning
-                author=nobody103
-                startIndex=3
-                loadedThrough=4
-                prefetchAhead=2
-                keepBehind=1
-                pinnedRanges=0-1
-                """.trimIndent(),
-            )
-            File(dir, "toc.txt").writeText("One\thttps://x/1\nTwo\thttps://x/2")
-            File(dir, "splash.txt").writeText("v1\nratingLabel=4.5 / 5\ncoverUrl=https://cdn/c.jpg\n")
-            val loaded = PluginSessionStore.read(root, "21220", "royalroad", "rr:21220")!!
-            assertEquals("rr:21220", loaded.bookId)
-            assertEquals("royalroad", loaded.pluginId)
-            assertEquals("21220", loaded.workId)
-            assertEquals("https://www.royalroad.com/fiction/21220/mol", loaded.workUrl)
-            assertEquals(3, loaded.startIndex)
-            assertEquals(2, loaded.cacheLevel)
-            assertFalse(loaded.cleanup)
-            assertEquals(listOf(0..1), loaded.pinnedRanges)
-            val splash = PluginSessionStore.readSplash(dir)!!
-            assertEquals("4.5 / 5", splash.rating)
-            assertEquals("https://cdn/c.jpg", splash.cover)
+            assertEquals("https://cdn.example/cover.jpg", splash.cover)
         }
     }
 
@@ -86,7 +46,7 @@ class PluginSessionStoreTest {
             PluginSessionStore.writeChapter(dir, 0, "Ch 1", "body text")
             PluginSessionStore.writeMeta(dir, session("9", tocSize = 2).copy(loadedThrough = 0))
             assertEquals("body text", PluginSessionStore.readChapterText(dir, 0)!!.second)
-            assertEquals(2, PluginSessionStore.read(root, "9", "demo", "d:9")!!.toc.size)
+            assertEquals(2, PluginSessionStore.read(root, "9")!!.toc.size)
             assertEquals(1, PluginSessionStore.cachedChapterCount(dir, 2))
         }
     }
@@ -99,7 +59,7 @@ class PluginSessionStoreTest {
                 dir,
                 session("3", tocSize = 10).copy(cacheLevel = 4, cleanup = true, pinnedRanges = listOf(0..2, 8..9)),
             )
-            val loaded = PluginSessionStore.read(root, "3", "demo", "d:3")!!
+            val loaded = PluginSessionStore.read(root, "3")!!
             assertEquals(4, loaded.cacheLevel)
             assertTrue(loaded.cleanup)
             assertEquals(listOf(0..2, 8..9), loaded.pinnedRanges)
@@ -107,14 +67,15 @@ class PluginSessionStoreTest {
     }
 
     @Test
-    fun legacyPartialPinsAreDropped() {
+    fun notifyFlagRoundTripsAndDefaultsToUnset() {
         withRoot { root ->
-            val dir = PluginSessionStore.dir(root, "7").apply { mkdirs() }
-            File(dir, "meta.txt").writeText("v2\nprefetchAhead=10\nkeepBehind=10\npinnedRanges=99-108\n")
-            File(dir, "toc.txt").writeText((1..200).joinToString("\n") { "C$it\thttps://x/$it" })
-            val loaded = PluginSessionStore.read(root, "7", "demo", "d:7")!!
-            assertEquals(10, loaded.cacheLevel)
-            assertTrue(loaded.pinnedRanges.isEmpty())
+            val dir = PluginSessionStore.dir(root, "4")
+            PluginSessionStore.writeMeta(dir, session("4", tocSize = 2))
+            assertEquals(null, PluginSessionStore.read(root, "4")!!.notify)
+            PluginSessionStore.writeMeta(dir, session("4", tocSize = 2).copy(notify = false))
+            assertEquals(false, PluginSessionStore.read(root, "4")!!.notify)
+            PluginSessionStore.writeMeta(dir, session("4", tocSize = 2).copy(notify = true))
+            assertEquals(true, PluginSessionStore.read(root, "4")!!.notify)
         }
     }
 

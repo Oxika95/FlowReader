@@ -4,13 +4,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Host contract version. Plugins declaring a higher `apiVersion` are refused; every version
- * from [PLUGIN_MIN_API_VERSION] up is accepted (v1 details are mapped onto the v2 media card).
+ * Host contract version. Alpha builds support only the current contract: plugins declaring any
+ * other `apiVersion` are refused (the official repo is updated in lockstep with the app).
  */
-const val PLUGIN_HOST_API_VERSION = 2
+const val PLUGIN_HOST_API_VERSION = 3
 
 /** Oldest plugin contract this host still runs. */
-const val PLUGIN_MIN_API_VERSION = 1
+const val PLUGIN_MIN_API_VERSION = 3
 
 enum class PluginCapability(val key: String) {
     Search("search"),
@@ -19,6 +19,8 @@ enum class PluginCapability(val key: String) {
     Membership("membership"),
     ProgressSync("progressSync"),
     ResolveUrl("resolveUrl"),
+    /** Cheap `checkUpdates` for the background new-chapter check. */
+    Updates("updates"),
     ;
 
     companion object {
