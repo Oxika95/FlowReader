@@ -93,7 +93,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            FlowTheme(openUi.theme, openUi.accentHue, openUi.uiScale, openUi.accentSaturation) {
+            FlowTheme(
+                openUi.theme,
+                openUi.accentHue,
+                openUi.uiScale,
+                openUi.accentSaturation,
+                openUi.accentLightness,
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,

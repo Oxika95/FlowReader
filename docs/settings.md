@@ -118,7 +118,7 @@ Sub-tabs: **Theme | UI | Font**.
 
 | Area | Controls | Keys |
 |------|----------|------|
-| Theme | Light / Dark / OLED; Accent hue; Saturation (0–200% of the theme's accent saturation, default 100%) | `theme`, `accent_hue`, `accent_saturation` |
+| Theme | Light / Dark / OLED; Accent hue; Saturation (0–200% of the theme's accent saturation, default is the theme saturation); Lightness (black at the left, the theme's accent in the middle, white at the right) | `theme`, `accent_hue`, `accent_saturation`, `accent_lightness` |
 | UI | UI scale; Orientation; Chapter headings; Keep screen awake; Home position (15–85%, default 50%); Show home marker | `ui_scale`, `orientation`, `show_chapter_headings`, `keep_screen_awake`, `home_position`, `show_home_marker` |
 | Font | Sans/Serif/Mono; size; spacing; Justify | `font_family`, `font_scale`, `line_spacing`, `justify_text` |
 

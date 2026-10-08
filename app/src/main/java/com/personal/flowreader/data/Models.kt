@@ -140,6 +140,24 @@ object AccentSaturation {
     fun coerce(value: Float): Float = value.coerceIn(MIN, MAX)
 }
 
+/**
+ * Accent lightness control. 0 = black, 1 = the theme's own lightness, 2 = white.
+ */
+object AccentLightness {
+    const val DEFAULT = 1f
+    const val MIN = 0f
+    const val MAX = 2f
+
+    fun coerce(value: Float): Float = value.coerceIn(MIN, MAX)
+
+    /** Maps [factor] through [light]: 0 = black, 1 = [light], 2 = white. */
+    fun scale(light: Float, factor: Float): Float {
+        val f = coerce(factor)
+        val scaled = if (f <= 1f) light * f else light + (f - 1f) * (1f - light)
+        return scaled.coerceIn(0f, 1f)
+    }
+}
+
 /** App-wide chrome / layout scale applied via LocalDensity. */
 object UiScale {
     const val DEFAULT = 1.10f

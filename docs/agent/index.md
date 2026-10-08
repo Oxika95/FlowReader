@@ -8,7 +8,7 @@ Hand-written guide: [map.md](map.md).
 ## (root)
 
 - `FlowApp.kt` (144) - class FlowApp:36
-- `MainActivity.kt` (209) - class MainActivity:40
+- `MainActivity.kt` (215) - class MainActivity:40
 
 ## data
 
@@ -20,15 +20,15 @@ Hand-written guide: [map.md](map.md).
 - `Ingest.kt` (132) - obj EpubIngest:12, obj TxtIngest:108
 - `KoehnSentenceBreak.kt` (104) - obj KoehnSentenceBreak:9
 - `LocusAnchor.kt` (40) - obj LocusAnchor:8
-- `Models.kt` (288) - enum BlockKind:3, data Block:9, data Chapter:15, data BookDoc:20, data ReaderItem:70, data Locus:83, data Sentence:102, enum ThemeMode:110, obj AccentHue:128, obj AccentSaturation:135, obj UiScale:144, obj HomePosition:158, enum ReaderFont:167, enum ReaderOrientation:181, obj TtsEngines:196, data TtsEngineOption:207, data TtsVoiceOption:212, enum BookSource:219, enum LibraryViewMode:231, sealed LibraryTabId:237, data CustomLibraryTab:278, data TextIngestResult:285
+- `Models.kt` (306) - enum BlockKind:3, data Block:9, data Chapter:15, data BookDoc:20, data ReaderItem:70, data Locus:83, data Sentence:102, enum ThemeMode:110, obj AccentHue:128, obj AccentSaturation:135, obj AccentLightness:146, obj UiScale:162, obj HomePosition:176, enum ReaderFont:185, enum ReaderOrientation:199, obj TtsEngines:214, data TtsEngineOption:225, data TtsVoiceOption:230, enum BookSource:237, enum LibraryViewMode:249, sealed LibraryTabId:255, data CustomLibraryTab:296, data TextIngestResult:303
 - `ProgressDb.kt` (234) - data ProgressEntity:17, data BookFiltersEntity:50, data QueItemEntity:62, data QueEntry:71, iface ProgressDao:77, iface BookFiltersDao:111, iface QueDao:123, MIGRATION_1_2:161, MIGRATION_2_3:172, MIGRATION_3_4:181, MIGRATION_4_5:196, MIGRATION_5_6:202, MIGRATION_6_7:211, MIGRATION_7_8:217, class AppDatabase:230
 - `ProgressWriter.kt` (107) - data ProgressUpdate:14, iface ProgressLocator:26, class ProgressWriter:35
 - `ReadingSession.kt` (171) - data PreparedChapter:9, class ReadingWindow:35, class ReadingSession:102
 - `SentenceLengthNormalizer.kt` (131) - obj SentenceLengthNormalizer:10
 - `SentenceSplitter.kt` (110) - obj SentenceSplitter:9
 - `SentenceTable.kt` (107) - class SentenceTable:9
-- `SettingsStore.kt` (667) **large** - data ReaderPrefs:28, data TtsPrefs:51, data PluginCacheDefaults:210, class SettingsStore:219
-  - members: readerOnce:222, ttsOnce:223, setTheme:225, setAccentHue:229, setAccentSaturation:235, setUiScale:239, setFontScale:243, setFontFamily:247, setLineSpacing:251, setJustifyText:255, setOrientation:259, setShowChapterHeadingsInBody:263, setKeepScreenAwake:267, setDebugEnabled:271, setHomePosition:275, setShowHomeMarker:279, setEngine:283, setVoice:287, setSpeed:291, setPitch:295, setPrefetchCount:299, setDoubleTapPlay:305, setAutoPlayOnShare:309, setShareInterruptsPlayback:313, setMobileDataFallback:317, setAutoScrollWithTts:321, setMinSignal:325, setUnderlayBtDevice:329, setSentenceGapMs:336, setHighlightSyncMs:340, setClipTargetChars:344, setClipFlexChars:348, globalFiltersOnce:352, setGlobalFilters:355, groupFiltersOnce:359, setGroupFilters:362, libraryViewModeOnce:366, setLibraryViewMode:373, libraryTabIdOnce:377, setLibraryTabId:380, enabledPluginIdsOnce:384, setEnabledPluginIds:387, customLibraryTabsOnce:391, setCustomLibraryTabs:396, notificationsAskedOnce:400, setNotificationsAskedOnce:403, shareOnce:407, setShareAskMode:416, shareRouterRulesOnce:424, setShareRouterRules:442, seededPluginShareRuleIdsOnce:447, setSeededPluginShareRuleIds:450, pluginReposOnce:455, setPluginRepos:460, pluginCacheDefaultsOnce:465, setPluginCacheLevel:473, setPluginCacheCleanup:477, shareParseRulesOnce:482, setShareParseRules:497
+- `SettingsStore.kt` (676) **large** - data ReaderPrefs:28, data TtsPrefs:52, data PluginCacheDefaults:211, class SettingsStore:220
+  - members: readerOnce:223, ttsOnce:224, setTheme:226, setAccentHue:230, setAccentSaturation:236, setAccentLightness:240, setUiScale:244, setFontScale:248, setFontFamily:252, setLineSpacing:256, setJustifyText:260, setOrientation:264, setShowChapterHeadingsInBody:268, setKeepScreenAwake:272, setDebugEnabled:276, setHomePosition:280, setShowHomeMarker:284, setEngine:288, setVoice:292, setSpeed:296, setPitch:300, setPrefetchCount:304, setDoubleTapPlay:310, setAutoPlayOnShare:314, setShareInterruptsPlayback:318, setMobileDataFallback:322, setAutoScrollWithTts:326, setMinSignal:330, setUnderlayBtDevice:334, setSentenceGapMs:341, setHighlightSyncMs:345, setClipTargetChars:349, setClipFlexChars:353, globalFiltersOnce:357, setGlobalFilters:360, groupFiltersOnce:364, setGroupFilters:367, libraryViewModeOnce:371, setLibraryViewMode:378, libraryTabIdOnce:382, setLibraryTabId:385, enabledPluginIdsOnce:389, setEnabledPluginIds:392, customLibraryTabsOnce:396, setCustomLibraryTabs:401, notificationsAskedOnce:405, setNotificationsAskedOnce:408, shareOnce:412, setShareAskMode:421, shareRouterRulesOnce:429, setShareRouterRules:447, seededPluginShareRuleIdsOnce:452, setSeededPluginShareRuleIds:455, pluginReposOnce:460, setPluginRepos:465, pluginCacheDefaultsOnce:470, setPluginCacheLevel:478, setPluginCacheCleanup:482, shareParseRulesOnce:487, setShareParseRules:502
 - `TextFilters.kt` (392) - enum FilterMatchType:7, enum FilterScope:21, data FilterRule:35, data FilterApplyResult:48, data FilteredBookDoc:53, obj TextFilters:59
 - `TxtChapterSource.kt` (106) - class TxtChapterSource:11
 
@@ -169,7 +169,7 @@ Hand-written guide: [map.md](map.md).
 
 ## ui/open
 
-- `OpenBookViewModel.kt` (139) - data OpenUi:18, class OpenBookViewModel:35
+- `OpenBookViewModel.kt` (148) - data OpenUi:19, class OpenBookViewModel:37
 
 ## ui/plugin
 
@@ -212,7 +212,7 @@ Hand-written guide: [map.md](map.md).
 ## ui/settings
 
 - `AboutSettingsTab.kt` (174) - AboutSettingsTab:52
-- `AppearanceSettings.kt` (555) **large** - AppearanceSettings:187, ThemeSettingsPane:213, GradientSlider:289, UiScaleSettingsPane:328, LayoutSettingsTab:367, HomePositionSettings:462, FontSettingsTab:495
+- `AppearanceSettings.kt` (448) **large** - AppearanceSettings:187, UiScaleSettingsPane:217, LayoutSettingsTab:256, HomePositionSettings:355, FontSettingsTab:388
 - `AudioSettings.kt` (112) - AudioSettingsTab:24
 - `AudioSettingsControls.kt` (284) - SettingsFlyoutHeader:48, formatSentenceGapLabel:74, formatHighlightSyncLabel:80, formatMinSignalLabel:86, CenterOriginSlider:98
 - `EditableRuleList.kt` (311) - data RuleListText:52, EditableRuleList:71
@@ -227,9 +227,10 @@ Hand-written guide: [map.md](map.md).
 - `PlaybackSettingsTab.kt` (446) **large** - PlaybackSettingsTab:50, underlaySubtitle:392, underlayBtDeviceFieldValue:412, underlayBtDeviceSupportingText:419, underlayLevelSliderIndex:435
   - members: loadBondedAndOpen:102, openBtPicker:118
 - `PluginsSettingsTab.kt` (284) - PluginsSettingsTab:64
-- `SettingsOverlay.kt` (224) - SettingsOverlay:29
-- `SettingsState.kt` (142) - data AppearanceSettingsState:15, data AppearanceSettingsCallbacks:32, AppearanceSettingsState:50, AppearanceSettingsCallbacks:67, data TtsSettingsState:85, data TtsSettingsCallbacks:108, data FilterSettingsState:128, data FilterSettingsCallbacks:135
+- `SettingsOverlay.kt` (226) - SettingsOverlay:29
+- `SettingsState.kt` (146) - data AppearanceSettingsState:15, data AppearanceSettingsCallbacks:33, AppearanceSettingsState:52, AppearanceSettingsCallbacks:70, data TtsSettingsState:89, data TtsSettingsCallbacks:112, data FilterSettingsState:132, data FilterSettingsCallbacks:139
 - `SharingSettingsTab.kt` (251) - data SharePluginOption:37, sealed ImportRuleEditRequest:42, class DomainRuleEditorState:58, DomainRuleEditorHost:63, SharingSettingsTab:90
+- `ThemeSettingsPane.kt` (187) - ThemeSettingsPane:35
 - `VoiceSettingsTab.kt` (388) - VoiceSettingsTab:50
 
 ## ui/theme
@@ -238,10 +239,11 @@ Hand-written guide: [map.md](map.md).
 - `FlowMotion.kt` (50) - obj FlowMotion:17
 - `FlowTokens.kt` (173) - obj FlowTokens:14
 - `FlowType.kt` (85) - obj FlowType:13
-- `Theme.kt` (157) - accentPrimary:73, accentMuted:83, accentContainer:93, schemeFor:110, FlowTheme:142
+- `Theme.kt` (182) - accentPrimary:74, accentMuted:89, accentContainer:104, schemeFor:130, FlowTheme:163
 
 ## Tests (`app/src/test/java/com/personal/flowreader/`)
 
+- `data/AccentLightnessTest.kt`
 - `data/BookBytesTest.kt`
 - `data/ChapterSourceTest.kt`
 - `data/IngestTest.kt`
@@ -281,4 +283,4 @@ Hand-written guide: [map.md](map.md).
 - `ui/reader/ReaderTouchPolicyTest.kt`
 - `ui/settings/PickerFieldsTest.kt`
 
-Totals: 146 main files, 30296 lines.
+Totals: 147 main files, 30449 lines.

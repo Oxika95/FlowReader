@@ -29,6 +29,7 @@ data class ReaderPrefs(
     val theme: ThemeMode = ThemeMode.Oled,
     val accentHue: Float = AccentHue.DEFAULT,
     val accentSaturation: Float = AccentSaturation.DEFAULT,
+    val accentLightness: Float = AccentLightness.DEFAULT,
     val uiScale: Float = UiScale.DEFAULT,
     val fontScale: Float = 1f,
     val fontFamily: ReaderFont = ReaderFont.Sans,
@@ -234,6 +235,10 @@ class SettingsStore(context: Context) {
 
     suspend fun setAccentSaturation(value: Float) {
         store.edit { it[KEY_ACCENT_SATURATION] = AccentSaturation.coerce(value) }
+    }
+
+    suspend fun setAccentLightness(value: Float) {
+        store.edit { it[KEY_ACCENT_LIGHTNESS] = AccentLightness.coerce(value) }
     }
 
     suspend fun setUiScale(scale: Float) {
@@ -503,6 +508,7 @@ class SettingsStore(context: Context) {
         private val KEY_ACCENT = stringPreferencesKey("accent") // legacy enum name
         private val KEY_ACCENT_HUE = floatPreferencesKey("accent_hue")
         private val KEY_ACCENT_SATURATION = floatPreferencesKey("accent_saturation")
+        private val KEY_ACCENT_LIGHTNESS = floatPreferencesKey("accent_lightness")
         private val KEY_UI_SCALE = floatPreferencesKey("ui_scale")
         private val KEY_FONT_SCALE = floatPreferencesKey("font_scale")
         private val KEY_FONT_FAMILY = stringPreferencesKey("font_family")
@@ -562,6 +568,9 @@ class SettingsStore(context: Context) {
             accentHue = resolveAccentHue(),
             accentSaturation = AccentSaturation.coerce(
                 this[KEY_ACCENT_SATURATION] ?: AccentSaturation.DEFAULT,
+            ),
+            accentLightness = AccentLightness.coerce(
+                this[KEY_ACCENT_LIGHTNESS] ?: AccentLightness.DEFAULT,
             ),
             uiScale = UiScale.coerce(this[KEY_UI_SCALE] ?: UiScale.DEFAULT),
             fontScale = this[KEY_FONT_SCALE] ?: 1f,

@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import com.personal.flowreader.data.AccentHue
+import com.personal.flowreader.data.AccentLightness
 import com.personal.flowreader.data.AccentSaturation
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.data.UiScale
@@ -70,27 +71,42 @@ private fun scaleSat(sat: Float, saturation: Float): Float =
     (sat * AccentSaturation.coerce(saturation)).coerceIn(0f, 1f)
 
 /** Full-saturation accent — current playhead, controls, chroma thumb. */
-fun accentPrimary(hue: Float, mode: ThemeMode, saturation: Float = AccentSaturation.DEFAULT): Color {
+fun accentPrimary(
+    hue: Float,
+    mode: ThemeMode,
+    saturation: Float = AccentSaturation.DEFAULT,
+    lightness: Float = AccentLightness.DEFAULT,
+): Color {
     val (sat, light) = when (mode) {
         ThemeMode.Light -> 0.46f to 0.40f
         ThemeMode.Dark -> 0.58f to 0.64f
         ThemeMode.Oled -> 0.50f to 0.58f
     }
-    return Color.hsl(normalizeHue(hue), scaleSat(sat, saturation), light)
+    return Color.hsl(normalizeHue(hue), scaleSat(sat, saturation), AccentLightness.scale(light, lightness))
 }
 
 /** Soft accent — same hue, one step less saturated. Cache-ahead dots, containers. */
-fun accentMuted(hue: Float, mode: ThemeMode, saturation: Float = AccentSaturation.DEFAULT): Color {
+fun accentMuted(
+    hue: Float,
+    mode: ThemeMode,
+    saturation: Float = AccentSaturation.DEFAULT,
+    lightness: Float = AccentLightness.DEFAULT,
+): Color {
     val (sat, light) = when (mode) {
         ThemeMode.Light -> 0.28f to 0.48f
         ThemeMode.Dark -> 0.34f to 0.56f
         ThemeMode.Oled -> 0.30f to 0.50f
     }
-    return Color.hsl(normalizeHue(hue), scaleSat(sat, saturation), light)
+    return Color.hsl(normalizeHue(hue), scaleSat(sat, saturation), AccentLightness.scale(light, lightness))
 }
 
 /** Soft-accent fill at container lightness (same sat as [accentMuted]). */
-fun accentContainer(hue: Float, mode: ThemeMode, saturation: Float = AccentSaturation.DEFAULT): Color {
+fun accentContainer(
+    hue: Float,
+    mode: ThemeMode,
+    saturation: Float = AccentSaturation.DEFAULT,
+    lightness: Float = AccentLightness.DEFAULT,
+): Color {
     val sat = when (mode) {
         ThemeMode.Light -> 0.28f
         ThemeMode.Dark -> 0.34f
@@ -101,7 +117,11 @@ fun accentContainer(hue: Float, mode: ThemeMode, saturation: Float = AccentSatur
         ThemeMode.Dark -> 0.24f
         ThemeMode.Oled -> 0.16f
     }
-    return Color.hsl(normalizeHue(hue), scaleSat(sat, saturation), light)
+    return Color.hsl(
+        normalizeHue(hue),
+        scaleSat(sat, saturation),
+        AccentLightness.scale(light, lightness),
+    )
 }
 
 private fun onFor(bg: Color): Color =
@@ -111,15 +131,16 @@ fun schemeFor(
     mode: ThemeMode,
     accentHue: Float = AccentHue.DEFAULT,
     accentSaturation: Float = AccentSaturation.DEFAULT,
+    accentLightness: Float = AccentLightness.DEFAULT,
 ): ColorScheme {
     val base = when (mode) {
         ThemeMode.Light -> LightBase
         ThemeMode.Dark -> DarkBase
         ThemeMode.Oled -> OledBase
     }
-    val primary = accentPrimary(accentHue, mode, accentSaturation)
-    val muted = accentMuted(accentHue, mode, accentSaturation)
-    val container = accentContainer(accentHue, mode, accentSaturation)
+    val primary = accentPrimary(accentHue, mode, accentSaturation, accentLightness)
+    val muted = accentMuted(accentHue, mode, accentSaturation, accentLightness)
+    val container = accentContainer(accentHue, mode, accentSaturation, accentLightness)
     return base.copy(
         primary = primary,
         onPrimary = onFor(primary),
@@ -144,6 +165,7 @@ fun FlowTheme(
     accentHue: Float = AccentHue.DEFAULT,
     uiScale: Float = UiScale.DEFAULT,
     accentSaturation: Float = AccentSaturation.DEFAULT,
+    accentLightness: Float = AccentLightness.DEFAULT,
     content: @Composable () -> Unit,
 ) {
     val base = LocalDensity.current
@@ -152,6 +174,9 @@ fun FlowTheme(
         Density(base.density * scale, base.fontScale)
     }
     CompositionLocalProvider(LocalDensity provides scaled) {
-        MaterialTheme(colorScheme = schemeFor(mode, accentHue, accentSaturation), content = content)
+        MaterialTheme(
+            colorScheme = schemeFor(mode, accentHue, accentSaturation, accentLightness),
+            content = content,
+        )
     }
 }
