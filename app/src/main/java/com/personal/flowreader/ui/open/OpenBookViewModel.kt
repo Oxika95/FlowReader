@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.AccentHue
+import com.personal.flowreader.data.AccentSaturation
 import com.personal.flowreader.data.HomePosition
 import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ReaderOrientation
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 data class OpenUi(
     val theme: ThemeMode = ThemeMode.Oled,
     val accentHue: Float = AccentHue.DEFAULT,
+    val accentSaturation: Float = AccentSaturation.DEFAULT,
     val uiScale: Float = UiScale.DEFAULT,
     val fontScale: Float = 1f,
     val fontFamily: ReaderFont = ReaderFont.Sans,
@@ -41,6 +43,7 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
             _ui.value = _ui.value.copy(
                 theme = prefs.theme,
                 accentHue = prefs.accentHue,
+                accentSaturation = prefs.accentSaturation,
                 uiScale = prefs.uiScale,
                 fontScale = prefs.fontScale,
                 fontFamily = prefs.fontFamily,
@@ -65,6 +68,12 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
         val value = hue.coerceIn(AccentHue.MIN, AccentHue.MAX)
         _ui.value = _ui.value.copy(accentHue = value)
         viewModelScope.launch { flow.settings.setAccentHue(value) }
+    }
+
+    fun setAccentSaturation(saturation: Float) {
+        val value = AccentSaturation.coerce(saturation)
+        _ui.value = _ui.value.copy(accentSaturation = value)
+        viewModelScope.launch { flow.settings.setAccentSaturation(value) }
     }
 
     fun setUiScale(scale: Float) {

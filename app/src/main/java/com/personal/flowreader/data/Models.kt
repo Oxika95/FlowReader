@@ -131,6 +131,15 @@ object AccentHue {
     const val MAX = 360f
 }
 
+/** Multiplier on the per-[ThemeMode] accent saturations; 1 = stock, 0 = grey. */
+object AccentSaturation {
+    const val DEFAULT = 1f
+    const val MIN = 0f
+    const val MAX = 2f
+
+    fun coerce(value: Float): Float = value.coerceIn(MIN, MAX)
+}
+
 /** App-wide chrome / layout scale applied via LocalDensity. */
 object UiScale {
     const val DEFAULT = 1.10f

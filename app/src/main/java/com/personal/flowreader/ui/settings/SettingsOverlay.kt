@@ -111,6 +111,7 @@ internal fun SettingsOverlay(
             else -> LayoutSettingsTab(
                 themeMode = appearance.themeMode,
                 accentHue = appearance.accentHue,
+                accentSaturation = appearance.accentSaturation,
                 uiScale = appearance.uiScale,
                 fontScale = appearance.fontScale,
                 fontFamily = appearance.fontFamily,
@@ -123,6 +124,7 @@ internal fun SettingsOverlay(
                 showHomeMarker = appearance.showHomeMarker,
                 onTheme = appearanceCallbacks.onTheme,
                 onAccentHue = appearanceCallbacks.onAccentHue,
+                onAccentSaturation = appearanceCallbacks.onAccentSaturation,
                 onUiScale = appearanceCallbacks.onUiScale,
                 onFontScale = appearanceCallbacks.onFontScale,
                 onFontFamily = appearanceCallbacks.onFontFamily,

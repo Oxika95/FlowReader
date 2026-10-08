@@ -15,6 +15,7 @@ import com.personal.flowreader.ui.open.OpenUi
 data class AppearanceSettingsState(
     val themeMode: ThemeMode,
     val accentHue: Float,
+    val accentSaturation: Float,
     val uiScale: Float,
     val fontScale: Float,
     val fontFamily: ReaderFont,
@@ -31,6 +32,7 @@ data class AppearanceSettingsState(
 data class AppearanceSettingsCallbacks(
     val onTheme: (ThemeMode) -> Unit,
     val onAccentHue: (Float) -> Unit,
+    val onAccentSaturation: (Float) -> Unit,
     val onUiScale: (Float) -> Unit,
     val onFontScale: (Float) -> Unit,
     val onFontFamily: (ReaderFont) -> Unit,
@@ -48,6 +50,7 @@ data class AppearanceSettingsCallbacks(
 fun AppearanceSettingsState(openUi: OpenUi) = AppearanceSettingsState(
     themeMode = openUi.theme,
     accentHue = openUi.accentHue,
+    accentSaturation = openUi.accentSaturation,
     uiScale = openUi.uiScale,
     fontScale = openUi.fontScale,
     fontFamily = openUi.fontFamily,
@@ -64,6 +67,7 @@ fun AppearanceSettingsState(openUi: OpenUi) = AppearanceSettingsState(
 fun AppearanceSettingsCallbacks(openVm: OpenBookViewModel) = AppearanceSettingsCallbacks(
     onTheme = openVm::setTheme,
     onAccentHue = openVm::setAccentHue,
+    onAccentSaturation = openVm::setAccentSaturation,
     onUiScale = openVm::setUiScale,
     onFontScale = openVm::setFontScale,
     onFontFamily = openVm::setFontFamily,

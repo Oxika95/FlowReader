@@ -28,6 +28,7 @@ private val Context.settingsDataStore: DataStore<Preferences> by preferencesData
 data class ReaderPrefs(
     val theme: ThemeMode = ThemeMode.Oled,
     val accentHue: Float = AccentHue.DEFAULT,
+    val accentSaturation: Float = AccentSaturation.DEFAULT,
     val uiScale: Float = UiScale.DEFAULT,
     val fontScale: Float = 1f,
     val fontFamily: ReaderFont = ReaderFont.Sans,
@@ -225,6 +226,10 @@ class SettingsStore(context: Context) {
         store.edit {
             it[KEY_ACCENT_HUE] = hue.coerceIn(AccentHue.MIN, AccentHue.MAX)
         }
+    }
+
+    suspend fun setAccentSaturation(value: Float) {
+        store.edit { it[KEY_ACCENT_SATURATION] = AccentSaturation.coerce(value) }
     }
 
     suspend fun setUiScale(scale: Float) {
@@ -485,6 +490,7 @@ class SettingsStore(context: Context) {
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_ACCENT = stringPreferencesKey("accent") // legacy enum name
         private val KEY_ACCENT_HUE = floatPreferencesKey("accent_hue")
+        private val KEY_ACCENT_SATURATION = floatPreferencesKey("accent_saturation")
         private val KEY_UI_SCALE = floatPreferencesKey("ui_scale")
         private val KEY_FONT_SCALE = floatPreferencesKey("font_scale")
         private val KEY_FONT_FAMILY = stringPreferencesKey("font_family")
@@ -540,6 +546,9 @@ class SettingsStore(context: Context) {
             theme = runCatching { ThemeMode.valueOf(this[KEY_THEME] ?: ThemeMode.Oled.name) }
                 .getOrDefault(ThemeMode.Oled),
             accentHue = resolveAccentHue(),
+            accentSaturation = AccentSaturation.coerce(
+                this[KEY_ACCENT_SATURATION] ?: AccentSaturation.DEFAULT,
+            ),
             uiScale = UiScale.coerce(this[KEY_UI_SCALE] ?: UiScale.DEFAULT),
             fontScale = this[KEY_FONT_SCALE] ?: 1f,
             fontFamily = runCatching {

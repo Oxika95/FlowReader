@@ -148,6 +148,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.os.Build
 import com.personal.flowreader.data.AccentHue
+import com.personal.flowreader.data.AccentSaturation
 import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterMatchType
 import com.personal.flowreader.data.FilterRule
@@ -186,16 +187,20 @@ import kotlin.math.roundToInt
 internal fun AppearanceSettings(
     themeMode: ThemeMode,
     accentHue: Float,
+    accentSaturation: Float,
     uiScale: Float,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
+    onAccentSaturation: (Float) -> Unit,
     onUiScale: (Float) -> Unit,
 ) {
     ThemeSettingsPane(
         themeMode = themeMode,
         accentHue = accentHue,
+        accentSaturation = accentSaturation,
         onTheme = onTheme,
         onAccentHue = onAccentHue,
+        onAccentSaturation = onAccentSaturation,
     )
     Spacer(Modifier.height(FlowTokens.Space.M))
     UiScaleSettingsPane(
@@ -208,12 +213,17 @@ internal fun AppearanceSettings(
 internal fun ThemeSettingsPane(
     themeMode: ThemeMode,
     accentHue: Float,
+    accentSaturation: Float,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
+    onAccentSaturation: (Float) -> Unit,
 ) {
     var accentDragging by remember { mutableStateOf(false) }
     var localAccent by remember { mutableFloatStateOf(accentHue) }
     val shownAccent = if (accentDragging) localAccent else accentHue
+    var satDragging by remember { mutableStateOf(false) }
+    var localSat by remember { mutableFloatStateOf(accentSaturation) }
+    val shownSat = if (satDragging) localSat else accentSaturation
 
     FlowLabel("Theme")
     FlowChipRow {
@@ -228,11 +238,62 @@ internal fun ThemeSettingsPane(
 
     Spacer(Modifier.height(FlowTokens.Space.M))
     FlowLabel("Accent color")
-    val chromaColors = remember(themeMode) {
+    val chromaColors = remember(themeMode, shownSat) {
         List(13) { i ->
-            accentPrimary(i * 30f, themeMode)
+            accentPrimary(i * 30f, themeMode, shownSat)
         }
     }
+    GradientSlider(
+        value = shownAccent,
+        onValueChange = {
+            accentDragging = true
+            localAccent = it
+            onAccentHue(it)
+        },
+        onValueChangeFinished = {
+            accentDragging = false
+            onAccentHue(localAccent)
+        },
+        valueRange = AccentHue.MIN..AccentHue.MAX,
+        track = chromaColors,
+        thumb = accentPrimary(shownAccent, themeMode, shownSat),
+    )
+
+    Spacer(Modifier.height(FlowTokens.Space.S))
+    FlowLabel("Saturation: ${(shownSat * 100f).roundToInt()}%")
+    val satColors = remember(themeMode, shownAccent) {
+        List(5) { i ->
+            val t = i / 4f
+            accentPrimary(shownAccent, themeMode, AccentSaturation.MIN + t * (AccentSaturation.MAX - AccentSaturation.MIN))
+        }
+    }
+    GradientSlider(
+        value = shownSat,
+        onValueChange = {
+            satDragging = true
+            localSat = it
+            onAccentSaturation(it)
+        },
+        onValueChangeFinished = {
+            satDragging = false
+            onAccentSaturation(localSat)
+        },
+        valueRange = AccentSaturation.MIN..AccentSaturation.MAX,
+        track = satColors,
+        thumb = accentPrimary(shownAccent, themeMode, shownSat),
+    )
+}
+
+/** Slider drawn over a horizontal color gradient (accent hue, saturation). */
+@Composable
+private fun GradientSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    track: List<Color>,
+    thumb: Color,
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -244,23 +305,16 @@ internal fun ThemeSettingsPane(
                 .height(FlowTokens.Comp.AccentTrack)
                 .align(Alignment.Center)
                 .clip(CircleShape)
-                .background(Brush.horizontalGradient(chromaColors)),
+                .background(Brush.horizontalGradient(track)),
         )
         Slider(
-            value = shownAccent,
-            onValueChange = {
-                accentDragging = true
-                localAccent = it
-                onAccentHue(it)
-            },
-            onValueChangeFinished = {
-                accentDragging = false
-                onAccentHue(localAccent)
-            },
-            valueRange = AccentHue.MIN..AccentHue.MAX,
+            value = value,
+            onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
+            valueRange = valueRange,
             modifier = Modifier.fillMaxWidth(),
             colors = SliderDefaults.colors(
-                thumbColor = accentPrimary(shownAccent, themeMode),
+                thumbColor = thumb,
                 activeTrackColor = Color.Transparent,
                 inactiveTrackColor = Color.Transparent,
                 activeTickColor = Color.Transparent,
@@ -313,6 +367,7 @@ internal fun UiScaleSettingsPane(
 internal fun LayoutSettingsTab(
     themeMode: ThemeMode,
     accentHue: Float,
+    accentSaturation: Float,
     uiScale: Float,
     fontScale: Float,
     fontFamily: ReaderFont,
@@ -325,6 +380,7 @@ internal fun LayoutSettingsTab(
     showHomeMarker: Boolean,
     onTheme: (ThemeMode) -> Unit,
     onAccentHue: (Float) -> Unit,
+    onAccentSaturation: (Float) -> Unit,
     onUiScale: (Float) -> Unit,
     onFontScale: (Float) -> Unit,
     onFontFamily: (ReaderFont) -> Unit,
@@ -346,8 +402,10 @@ internal fun LayoutSettingsTab(
         0 -> ThemeSettingsPane(
             themeMode = themeMode,
             accentHue = accentHue,
+            accentSaturation = accentSaturation,
             onTheme = onTheme,
             onAccentHue = onAccentHue,
+            onAccentSaturation = onAccentSaturation,
         )
         1 -> {
             UiScaleSettingsPane(
