@@ -70,6 +70,7 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | Plugin repos / install | `plugin/repo/*`, `ui/settings/PluginsSettingsTab.kt` | `RepoIndexTest` |
 | Media card content | `ui/design/card/media/MediaCardAdapters.kt` (pure) | `MediaCardAdaptersTest` |
 | Any UI component / token | `ui/design/**`, `ui/theme/**` | `docs/ui-system/` (rule: `ui-system.mdc`) |
+| App icon, themed icon, splash, notification icon | Re-trace from `brand/concept/` (`brand/trace`: `npm run trace`, `npm run compare`) or edit `brand/flow-reader-mark.svg`, run `node brand/build.mjs` (writes `res/drawable/ic_launcher_*`, `ic_stat_flow`, `values/brand_colors.xml`); wiring `res/mipmap-anydpi/ic_launcher.xml`, `res/values-v31/themes.xml` | `docs/brand.md` |
 | Release | `app/build.gradle.kts` (`versionCode`, `versionName`) | `../flow-reader-chats/areas/release.md` |
 
 ## Large files (read by offset, never whole)

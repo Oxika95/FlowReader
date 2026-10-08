@@ -87,7 +87,7 @@ class TtsPlaybackService : Service() {
         )
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_flow)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(contentIntent)

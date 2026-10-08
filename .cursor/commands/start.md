@@ -1,7 +1,7 @@
 # Start a task
 
 Usage: /start AREA TASK. Areas: tts-audio, reader, library-queue, plugins, import-share, ui-system,
-settings, release.
+settings, brand, release.
 
 1. Read `docs/agent/map.md`, then `../flow-reader-chats/areas/AREA.md` (if present). Read the most
    recent `../flow-reader-chats/handoffs/*-AREA-*.md` only if the task continues earlier work.

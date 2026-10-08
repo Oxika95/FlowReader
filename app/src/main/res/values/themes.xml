@@ -2,6 +2,9 @@
 <resources>
     <style name="Theme.FlowReader" parent="android:Theme.Material.Light.NoActionBar" />
 
+    <!-- Launcher activity; values-v31 adds the brand splash. -->
+    <style name="Theme.FlowReader.Main" parent="Theme.FlowReader" />
+
     <style name="Theme.FlowReader.Translucent" parent="Theme.FlowReader">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>

@@ -28,15 +28,16 @@
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/full_backup_content"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.FlowReader">
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
+            android:theme="@style/Theme.FlowReader.Main"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
@@ -92,7 +93,7 @@
         <activity-alias
             android:name=".ShareLibraryAlias"
             android:exported="true"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
             android:label="@string/share_library_label"
             android:targetActivity=".share.ShareIngressActivity">
             <intent-filter>
@@ -107,7 +108,7 @@
             android:name=".ShareQueAlias"
             android:exported="true"
             android:enabled="false"
-            android:icon="@drawable/ic_launcher"
+            android:icon="@mipmap/ic_launcher"
             android:label="@string/share_que_label"
             android:targetActivity=".share.ShareIngressActivity">
             <intent-filter>

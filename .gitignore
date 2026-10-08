@@ -16,5 +16,9 @@ local.properties
 # Gutenberg EPUBs for wiki screenshots only — do not commit
 docs/_sample_books/
 
+# Brand tracing tool: deps and mask/overlay previews
+brand/trace/node_modules/
+brand/trace/out/
+
 # Kotlin/IDE incremental cache
 .kotlin/

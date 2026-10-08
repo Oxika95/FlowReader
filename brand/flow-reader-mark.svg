@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1080" height="1080">
+  <title>Flow Reader mark</title>
+  <!--
+    Master source for every Flow Reader icon, traced from brand/concept/flow-reader-concept.jpg by
+    brand/trace/trace.mjs (re-running it overwrites this file; hand edits are fine otherwise).
+    108-unit grid = Android adaptive icon canvas: the launcher shows the centre 72 units; keep foreground
+    art inside the 66-unit circle around (54,54).
+    Colours: override the fr-* CSS custom properties (inline SVG / CSS); var() fallbacks are the brand defaults.
+    data-mono: body = silhouette that holes cut through, solid = extra silhouette shape, hole = cut-out,
+    skip = colour-only detail. data-stat="skip" drops a shape from the 24dp status-bar icon.
+    Regenerate Android resources: node brand/build.mjs
+  -->
+  <defs>
+    <radialGradient id="g-bg" gradientUnits="userSpaceOnUse" cx="54" cy="54" r="76">
+      <stop offset="0" style="stop-color: var(--fr-bg-center, #111320)" />
+      <stop offset="1" style="stop-color: var(--fr-bg-edge, #121623)" />
+    </radialGradient>
+    <linearGradient id="g-sheet" gradientUnits="userSpaceOnUse" x1="0" y1="26.24" x2="0" y2="81.76">
+      <stop offset="0" style="stop-color: var(--fr-sheet-start, #3EC7CA)" />
+      <stop offset="1" style="stop-color: var(--fr-sheet-end, #3F36B5)" />
+    </linearGradient>
+    <linearGradient id="g-back" gradientUnits="userSpaceOnUse" x1="0" y1="31.58" x2="0" y2="76.36">
+      <stop offset="0" style="stop-color: var(--fr-back-start, #3A63AF)" />
+      <stop offset="1" style="stop-color: var(--fr-back-end, #375DAA)" />
+    </linearGradient>
+    <linearGradient id="g-rim" gradientUnits="userSpaceOnUse" x1="0" y1="26.24" x2="0" y2="81.76">
+      <stop offset="0" style="stop-color: var(--fr-rim-start, #6FE4E0)" />
+      <stop offset="1" style="stop-color: var(--fr-rim-end, #5560CC)" />
+    </linearGradient>
+    <linearGradient id="g-ink" gradientUnits="userSpaceOnUse" x1="0" y1="33.2" x2="0" y2="74.3">
+      <stop offset="0" style="stop-color: var(--fr-ink-start, #5DDCDF)" />
+      <stop offset="1" style="stop-color: var(--fr-ink-end, #527FDB)" />
+    </linearGradient>
+  </defs>
+
+  <g id="background">
+    <path d="M0,0H108V108H0Z" fill="url(#g-bg)" />
+  </g>
+
+  <g id="foreground">
+    <path id="sheet" data-mono="body" fill="url(#g-sheet)"
+      stroke="url(#g-rim)" stroke-width="0.99" stroke-linejoin="round"
+      d="M40.94,26.9C34.56,27.64 31.69,35.84 34.36,45.77C34.86,47.63 36.11,50.98 37.51,54.25C41.38,63.23 42.63,66.8 43.15,70.41C43.66,73.99 43.97,73.81 37.53,73.81C31.29,73.81 31.46,73.71 32.37,76.57C33.07,78.8 34.29,80.19 36.14,80.88C37.26,81.3 66.38,81.28 67.84,80.86C73.58,79.2 76.09,72.63 74.22,64.13C73.47,60.74 72.31,57.56 69.41,50.93C65.81,42.72 64.77,39.38 64.77,36.02C64.77,34.13 64.57,34.19 70.53,34.19C76.34,34.19 76.15,34.24 75.98,32.75C75.7,30.35 74.37,28.24 72.61,27.37L71.49,26.82L56.74,26.8C48.62,26.79 41.52,26.83 40.94,26.9Z" />
+    <path id="roll-top" data-mono="skip" data-stat="skip" fill="url(#g-back)"
+      stroke="url(#g-rim)" stroke-width="0.99" stroke-linejoin="round"
+      d="M68.83,28.13C68,28.5 66.36,30.1 66.1,30.79C66.02,30.98 65.81,31.51 65.62,31.99C64.62,34.45 65,34.69 69.89,34.69C74.82,34.69 75.33,34.49 75.18,32.58C74.93,29.26 71.55,26.89 68.83,28.13Z" />
+    <path id="roll-bottom" data-mono="skip" data-stat="skip" fill="url(#g-back)"
+      stroke="url(#g-rim)" stroke-width="0.99" stroke-linejoin="round"
+      d="M32.62,73.56C31.39,74.87 34.06,79.72 36.43,80.49C39.94,81.62 44.67,76.27 42.47,73.65C41.85,72.92 33.3,72.84 32.62,73.56Z" />
+    <path id="lines" data-mono="hole" data-stat="skip" fill="url(#g-ink)"
+      d="M44.23,32.86H59.46A1,1 0 0 1 59.46,34.86H44.23A1,1 0 0 1 44.23,32.86Z M38.76,36.59H59.46A1,1 0 0 1 59.46,38.59H38.76A1,1 0 0 1 38.76,36.59Z M38.76,40.24H48.86A1,1 0 0 1 48.86,42.24H38.76A1,1 0 0 1 38.76,40.24Z M59.31,65.26H69.24A1,1 0 0 1 69.24,67.26H59.31A1,1 0 0 1 59.31,65.26Z M48.54,68.99H69.41A1,1 0 0 1 69.41,70.99H48.54A1,1 0 0 1 48.54,68.99Z M48.7,72.64H63.44A1,1 0 0 1 63.44,74.64H48.7A1,1 0 0 1 48.7,72.64Z" />
+    <path id="play" data-mono="hole" fill="url(#g-ink)"
+      d="M49.52,50.48L49.52,58.18Q49.52,61.21 52.15,59.71L58.99,55.83Q61.62,54.33 58.99,52.83L52.15,48.95Q49.52,47.45 49.52,50.48Z" />
+  </g>
+</svg>

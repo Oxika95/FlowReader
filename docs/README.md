@@ -39,6 +39,10 @@ Contract: [Plugin API](plugins/api.md) · [UI contract](plugins/ui-contract.md) 
 
 Card types, docks, tabs, layers, tokens, and recipes — the rules for building any screen.
 
+### [Brand](brand.md)
+
+App icon, themed icon, splash, notification icon, and the master SVG they are generated from.
+
 ### [TTS](tts.md)
 
 Engines, playback, highlight, and queue auto-advance.

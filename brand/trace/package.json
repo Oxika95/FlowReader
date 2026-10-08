@@ -1,0 +1,16 @@
+{
+  "name": "flow-reader-brand-trace",
+  "private": true,
+  "type": "module",
+  "description": "Traces brand/concept into brand/flow-reader-mark.svg and scores the result.",
+  "scripts": {
+    "trace": "node trace.mjs",
+    "compare": "node compare.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "jimp": "^0.22.12",
+    "potrace": "^2.1.8",
+    "svgpath": "^2.6.0"
+  }
+}
