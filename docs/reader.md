@@ -104,6 +104,10 @@ window opens a new window there. The progress bar is whole-book progress by chap
 Modal “Contents”; tap a chapter to seek and settle its first sentence at home. EPUB rows come from
 the nav document (or NCX); spine entries without a ToC label are not listed.
 
+Queue stream: one row per Queue item, with that item's chapters indented beneath when it has more
+than one. Each item's title heads its text in the body (always, regardless of "Chapter headings in
+body"); the header shows the current item's title, cover and "Queue · n of N".
+
 ## Text selection
 
 System ActionMode: Copy, Share, Web search, Filter. **Filter** opens a new **Local** filter with the

@@ -127,11 +127,9 @@ internal data class BlockSentence(
 @Composable
 fun ReaderScreen(
     vm: ReaderViewModel,
-    queId: String? = null,
     appearance: AppearanceSettingsState,
     appearanceCallbacks: AppearanceSettingsCallbacks,
     onBack: () -> Unit,
-    onAdvanceQue: (bookId: String, queId: String) -> Unit = { _, _ -> },
 ) {
     val themeMode = appearance.themeMode
     val accentHue = appearance.accentHue
@@ -199,8 +197,9 @@ fun ReaderScreen(
         selectionActive = false
         selectionEpoch++
     }
-    val items = remember(doc, showChapterHeadingsInBody) {
-        doc?.readingItems(includeChapterTitles = showChapterHeadingsInBody).orEmpty()
+    // Queue: each item's title heads its document in the stream.
+    val items = remember(doc, showChapterHeadingsInBody, ui.queue) {
+        doc?.readingItems(includeChapterTitles = showChapterHeadingsInBody || ui.queue).orEmpty()
     }
     val allSentences = ui.sentences
     /** (chapter, block) → flat item index; the reader looks this up on every frame. */
@@ -227,12 +226,6 @@ fun ReaderScreen(
         vm.persistNow()
         restoreSystemBars()
         onBack()
-    }
-
-    val activeQueId = queId ?: vm.queId
-    LaunchedEffect(activeQueId, vm.bookId) {
-        if (activeQueId.isNullOrBlank()) return@LaunchedEffect
-        vm.queueAdvanced.collect { if (it.fromQueId == activeQueId) onAdvanceQue(it.bookId, it.queId) }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -264,7 +257,8 @@ fun ReaderScreen(
     }
 
     val chapterIndex = ui.tocIndex
-    val chapterName = ui.tocTitles.getOrNull(chapterIndex)
+    val chapterName = ui.headerChapter
+        ?: ui.tocTitles.getOrNull(chapterIndex)
         ?.ifBlank { null }
         ?: doc?.chapters?.getOrNull(ui.locus.chapterIndex)?.title?.ifBlank { null }
         ?: "Chapter ${chapterIndex + 1}"
@@ -1035,11 +1029,12 @@ fun ReaderScreen(
             )
         }
 
-        ReaderBookCard(bookId = vm.bookId, openRequests = bookCardRequests)
+        ReaderBookCard(bookId = ui.currentBookId.ifBlank { vm.bookId }, openRequests = bookCardRequests)
 
         TocOverlay(
             visible = overlay == ReaderOverlay.Toc,
             chapters = chapters,
+            levels = ui.tocLevels,
             chapterIndex = chapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0)),
             onChapter = { ci ->
                 overlay = ReaderOverlay.Hidden

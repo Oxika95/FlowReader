@@ -1,87 +1,98 @@
 package com.personal.flowreader.ui.reader
 
 import com.personal.flowreader.FlowApp
-import com.personal.flowreader.data.ChapterSource
 import com.personal.flowreader.data.Locus
-import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.tts.SynthDebugLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Playback moved from Queue row [fromQueId] to [queId] (book [bookId]). */
-internal data class QueueAdvance(val fromQueId: String, val bookId: String, val queId: String)
-
 /**
- * Plays the Queue through: when TTS finishes a Queue document, marks it done and starts the next
- * undone item from its beginning, with or without the reader open. An open reader follows via
- * [advanced] and reuses the session started here.
+ * Bookkeeping for the Queue stream TTS is reading ([QueueBook], session id [QueueBook.ID]), with
+ * or without the reader open: an item is marked done when playback moves on into the next one;
+ * at the end of the stream, rows added since it was built continue in a new stream.
  */
 internal class QueuePlayback(private val flow: FlowApp) {
-    /** Book id to Queue row id of the document TTS is reading; null when not from the Queue. */
+    /** Stream of the session TTS is attached to (stale once TTS reads a regular book). */
     @Volatile
-    private var current: Pair<String, String>? = null
+    var stream: QueueBook? = null
+        private set
 
-    private val _advanced = MutableSharedFlow<QueueAdvance>(extraBufferCapacity = 1)
-    val advanced: SharedFlow<QueueAdvance> = _advanced
+    @Volatile
+    private var spokenSegment = -1
+
+    private val _streamChanged = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Playback moved to a rebuilt stream; an open Queue reader reloads onto it. */
+    val streamChanged: SharedFlow<Unit> = _streamChanged
 
     fun start() {
         flow.appScope.launch {
-            flow.tts.bookFinished.collect { advance() }
+            flow.tts.bookFinished.collect { onFinished() }
+        }
+        flow.appScope.launch {
+            flow.tts.state
+                .map { s -> s.sentence?.chapterIndex?.takeIf { s.bookId == QueueBook.ID } }
+                .distinctUntilChanged()
+                .collect { chapter -> if (chapter != null) onSpokenChapter(chapter) }
         }
     }
 
-    /** The reader opened [bookId], as Queue row [queId] or (null) outside the Queue. */
-    fun track(bookId: String, queId: String?) {
-        current = queId?.let { bookId to it }
+    /** [queue]'s session was just attached to TTS (new, or reused while it keeps playing). */
+    fun attach(queue: QueueBook) {
+        stream = queue
+        spokenSegment = flow.tts.state.value.sentence?.chapterIndex?.let(queue::segmentIndexOf) ?: -1
     }
 
-    private suspend fun advance() {
-        val (bookId, queId) = current ?: return
-        if (flow.tts.state.value.bookId != bookId) return
-        val next = withContext(Dispatchers.IO) {
-            val row = flow.catalog.getQue(queId) ?: return@withContext null
-            flow.catalog.markQueDone(queId)
-            flow.catalog.nextUndoneQue(row.sortOrder)
-        }
-        if (next == null) {
-            current = null
-            return
-        }
-        val nextBookId = next.progress.bookId
+    private suspend fun onSpokenChapter(chapter: Int) {
+        val queue = stream ?: return
+        val seg = queue.segmentIndexOf(chapter)
+        val previous = spokenSegment
+        spokenSegment = seg
+        if (previous >= 0 && seg == previous + 1) markDone(queue.segments[previous].queId)
+    }
+
+    private suspend fun onFinished() {
+        if (flow.tts.state.value.bookId != QueueBook.ID) return
+        val old = stream ?: return
+        val last = old.segments.lastOrNull() ?: return
+        markDone(last.queId)
         try {
-            play(nextBookId)
+            val fresh = QueueStreams.build(flow)
+            val known = old.segments.mapTo(HashSet()) { it.queId }
+            val after = fresh.indexOfQue(last.queId)
+            if (after < 0) return
+            val next = (after + 1 until fresh.segments.size)
+                .firstOrNull { fresh.segments[it].queId !in known && !fresh.segments[it].done }
+                ?: return
+            play(fresh, fresh.baseOf(next))
+            _streamChanged.tryEmit(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            current = null
-            SynthDebugLog.appendError("Queue: ${t.message ?: "could not open next item"}")
-            return
+            SynthDebugLog.appendError("Queue: ${t.message ?: "could not continue"}")
         }
-        current = nextBookId to next.item.id
-        _advanced.tryEmit(QueueAdvance(queId, nextBookId, next.item.id))
     }
 
-    /** Open [bookId] the way the reader does (same filters, so the reader can reuse it) and play. */
-    private suspend fun play(bookId: String) {
-        val row = flow.db.progress().get(bookId) ?: throw IllegalStateException("item not found")
-        val book = withContext(Dispatchers.IO) {
-            ReaderBook.local(ChapterSource.open(flow.catalog.materialize(row), row.title))
-        }
+    private suspend fun play(queue: QueueBook, chapter: Int) {
         val global = flow.settings.globalFiltersOnce()
         val groups = flow.settings.groupFiltersOnce()
-        val local = TextFilters.decodeRules(flow.db.bookFilters().get(bookId)?.rulesJson)
-        val rules = TextFilters.merge(global, groups, local)
-        val clip = flow.tts.state.value
-        val session = ReaderSessions.open(bookId, book, 0, rules, clip.clipTargetChars, clip.clipFlexChars)
-        flow.progress.setLocator(bookId, ReaderSessions.locator(bookId, book, session))
+        val session = QueueStreams.open(flow, queue, chapter, global, groups)
+        flow.progress.setLocator(QueueBook.ID, queue.locator(session))
         withContext(Dispatchers.Main) {
-            flow.tts.setSpeechFilters(global, groups, local)
-            flow.tts.attach(session, ReaderSessions.readable(session.window.value, Locus()))
+            flow.tts.setSpeechFilters(global, groups, queue.segmentAt(chapter)?.local.orEmpty())
+            flow.tts.attach(session, ReaderSessions.readable(session.window.value, Locus(chapter, 0, 0)))
+            attach(queue)
             if (session.window.value.table.isNotEmpty()) flow.tts.play()
         }
+    }
+
+    private suspend fun markDone(queId: String) {
+        withContext(Dispatchers.IO) { flow.catalog.markQueDone(queId) }
     }
 }

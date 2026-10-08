@@ -24,11 +24,15 @@ import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.FlowType
 import kotlinx.coroutines.flow.first
 
-/** Table of contents: a fullscreen card with the current chapter centered. */
+/**
+ * Table of contents: a fullscreen card with the current chapter centered. [levels] indents rows
+ * (Queue: level 1 = a chapter inside a Queue item).
+ */
 @Composable
 internal fun TocOverlay(
     visible: Boolean,
     chapters: List<String>,
+    levels: List<Int> = emptyList(),
     chapterIndex: Int,
     onChapter: (Int) -> Unit,
     onDismiss: () -> Unit,
@@ -65,18 +69,28 @@ internal fun TocOverlay(
         ) {
             itemsIndexed(chapters, key = { index, _ -> index }) { index, name ->
                 val current = index == safeIndex
+                val nested = levels.getOrElse(index) { 0 } > 0
                 Text(
                     name,
-                    style = FlowType.body,
+                    style = if (nested) FlowType.label else FlowType.body,
                     fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+                    color = when {
+                        current -> MaterialTheme.colorScheme.primary
+                        nested -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.onBackground
+                    },
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .fillMaxWidth()
                         .semantics { selected = current }
                         .clickable { onChapter(index) }
-                        .padding(horizontal = FlowTokens.Space.L, vertical = FlowTokens.Space.L),
+                        .padding(
+                            start = if (nested) FlowTokens.Space.XXL else FlowTokens.Space.L,
+                            end = FlowTokens.Space.L,
+                            top = if (nested) FlowTokens.Space.M else FlowTokens.Space.L,
+                            bottom = if (nested) FlowTokens.Space.M else FlowTokens.Space.L,
+                        ),
                 )
                 if (index < chapters.lastIndex) {
                     HorizontalDivider(

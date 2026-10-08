@@ -8,20 +8,20 @@ Hand-written guide: [map.md](map.md).
 ## (root)
 
 - `FlowApp.kt` (140) - class FlowApp:36
-- `MainActivity.kt` (223) - class MainActivity:40
+- `MainActivity.kt` (209) - class MainActivity:40
 
 ## data
 
-- `BookCatalog.kt` (506) **large** - obj BookBytes:14, obj FileAccessAdvice:47, obj SharedTextTitle:61, class BookCatalog:92
-  - members: looksLikeTxt:15, sha256:21, sha256:32, sha256:34, extension:40, forSdk:48, from:65, list:95, listPlugin:98, listQue:101, getQue:112, nextUndoneQue:114, markQueDone:120, removeQue:129, addText:150, upsertPluginBook:217, upsertPluginCatalogEntry:252, removeFromLibrary:291, removePluginMembership:314, pluginCoverFile:322, pluginBookFile:329, writePluginCover:334, enqueueExisting:348, add:363, listTab:412, clearLibraryTab:415, materialize:419, destination:451, ingestTitle:460, persistReadAccess:470, isDocumentNewer:481, documentLastModified:486, queryDisplayName:497
-- `ChapterSource.kt` (64) - iface ChapterSource:10, class BookMeter:47
+- `BookCatalog.kt` (514) **large** - obj BookBytes:15, obj FileAccessAdvice:48, obj SharedTextTitle:62, class BookCatalog:93
+  - members: looksLikeTxt:16, sha256:22, sha256:33, sha256:35, extension:41, forSdk:49, from:66, list:96, listPlugin:99, listQue:102, getQue:113, nextUndoneQue:115, markQueDone:121, reorderQue:127, removeQue:137, addText:158, upsertPluginBook:225, upsertPluginCatalogEntry:260, removeFromLibrary:299, removePluginMembership:322, pluginCoverFile:330, pluginBookFile:337, writePluginCover:342, enqueueExisting:356, add:371, listTab:420, clearLibraryTab:423, materialize:427, destination:459, ingestTitle:468, persistReadAccess:478, isDocumentNewer:489, documentLastModified:494, queryDisplayName:505
+- `ChapterSource.kt` (67) - iface ChapterSource:10, class BookMeter:47
 - `EpubChapterSource.kt` (130) - class EpubChapterSource:10
 - `EpubCover.kt` (171) - obj EpubCover:11
 - `Ingest.kt` (132) - obj EpubIngest:12, obj TxtIngest:108
 - `KoehnSentenceBreak.kt` (104) - obj KoehnSentenceBreak:9
 - `LocusAnchor.kt` (40) - obj LocusAnchor:8
 - `Models.kt` (288) - enum BlockKind:3, data Block:9, data Chapter:15, data BookDoc:20, data ReaderItem:70, data Locus:83, data Sentence:102, enum ThemeMode:110, obj AccentHue:128, obj AccentSaturation:135, obj UiScale:144, obj HomePosition:158, enum ReaderFont:167, enum ReaderOrientation:181, obj TtsEngines:196, data TtsEngineOption:207, data TtsVoiceOption:212, enum BookSource:219, enum LibraryViewMode:231, sealed LibraryTabId:237, data CustomLibraryTab:278, data TextIngestResult:285
-- `ProgressDb.kt` (227) - data ProgressEntity:16, data BookFiltersEntity:49, data QueItemEntity:61, data QueEntry:70, iface ProgressDao:76, iface BookFiltersDao:110, iface QueDao:122, MIGRATION_1_2:154, MIGRATION_2_3:165, MIGRATION_3_4:174, MIGRATION_4_5:189, MIGRATION_5_6:195, MIGRATION_6_7:204, MIGRATION_7_8:210, class AppDatabase:223
+- `ProgressDb.kt` (230) - data ProgressEntity:16, data BookFiltersEntity:49, data QueItemEntity:61, data QueEntry:70, iface ProgressDao:76, iface BookFiltersDao:110, iface QueDao:122, MIGRATION_1_2:157, MIGRATION_2_3:168, MIGRATION_3_4:177, MIGRATION_4_5:192, MIGRATION_5_6:198, MIGRATION_6_7:207, MIGRATION_7_8:213, class AppDatabase:226
 - `ProgressWriter.kt` (107) - data ProgressUpdate:14, iface ProgressLocator:26, class ProgressWriter:35
 - `ReadingSession.kt` (155) - data PreparedChapter:9, class ReadingWindow:35, class ReadingSession:99
 - `SentenceLengthNormalizer.kt` (131) - obj SentenceLengthNormalizer:10
@@ -157,10 +157,10 @@ Hand-written guide: [map.md](map.md).
 
 - `FilesBookSplash.kt` (85) - FilesBookSplash:23
 - `LibraryBookCards.kt` (100) - LibraryBooksPane:33, librarySourceLabel:87, libraryLastRead:92, libraryBookSubtitle:99
-- `LibraryScreen.kt` (605) **large** - class PersistableOpenDocument:96, LibraryScreen:113, LibraryTopBar:398, AddTabOverlay:450, AddBookOverlay:519, QueTab:548, QueLineItem:576
-  - members: createIntent:97
-- `LibraryViewModel.kt` (852) **large** - data LibraryUi:38, class LibraryViewModel:54
-  - members: refresh:135, booksForTab:151, setTab:157, addCustomTab:166, removeCustomTab:188, setPluginEnabled:220, setViewMode:239, handleIncomingIntent:248, executeShareIntent:281, routeImportText:370, openPluginShare:456, refreshAfterIngest:481, tabForLanding:494, tabForShelf:501, shelfForAdd:504, openExternalUri:508, consumePendingOpen:556, ingestPluginText:560, ingestSharedText:598, queueFromClipboard:635, removeQue:644, removeFromLibrary:653, addFilter:675, updateFilter:691, setFilterEnabled:707, deleteFilters:727, reorderFilters:737, previewApply:747, persistGlobal:774, persistGroups:780, nextOrder:786, add:789, consumeMessage:839, consumeError:843
+- `LibraryScreen.kt` (608) **large** - class PersistableOpenDocument:98, LibraryScreen:115, LibraryTopBar:401, AddTabOverlay:453, AddBookOverlay:522, QueTab:551
+  - members: createIntent:99
+- `LibraryViewModel.kt` (863) **large** - data LibraryUi:38, class LibraryViewModel:54
+  - members: refresh:135, booksForTab:151, setTab:157, addCustomTab:166, removeCustomTab:188, setPluginEnabled:220, setViewMode:239, handleIncomingIntent:248, executeShareIntent:281, routeImportText:370, openPluginShare:456, refreshAfterIngest:481, tabForLanding:494, tabForShelf:501, shelfForAdd:504, openExternalUri:508, consumePendingOpen:556, ingestPluginText:560, ingestSharedText:598, queueFromClipboard:635, removeQue:644, reorderQue:654, removeFromLibrary:664, addFilter:686, updateFilter:702, setFilterEnabled:718, deleteFilters:738, reorderFilters:748, previewApply:758, persistGlobal:785, persistGroups:791, nextOrder:797, add:800, consumeMessage:850, consumeError:854
 - `NowPlayingCard.kt` (65) - NowPlayingCard:26
 
 ## ui/open
@@ -182,7 +182,9 @@ Hand-written guide: [map.md](map.md).
 ## ui/reader
 
 - `HomeMarker.kt` (122) - HomeMarker:48
-- `QueuePlayback.kt` (87) - data QueueAdvance:16, class QueuePlayback:23
+- `QueueBook.kt` (173) - class QueueSegment:14, class QueueBook:29
+- `QueuePlayback.kt` (98) - class QueuePlayback:20
+- `QueueStreams.kt` (67) - obj QueueStreams:15
 - `ReaderBook.kt` (68) - class ReaderBook:14
 - `ReaderBookCard.kt` (53) - ReaderBookCard:31
 - `ReaderChrome.kt` (285) - TitleBannerCard:69, MediaControlCard:174, ScrollLockControls:231
@@ -190,15 +192,16 @@ Hand-written guide: [map.md](map.md).
 - `ReaderLayout.kt` (14) - ReaderContentStartPadding:11, ReaderListEndPadding:14
 - `ReaderProgressPolicy.kt` (16) - obj ReaderProgressPolicy:4
 - `ReaderRail.kt` (352) - LocusRail:112
-- `ReaderScreen.kt` (1137) **large** - RailGutterWidth:106, data BlockSentence:121, ReaderScreen:128, PlaybackPinCard:1064, rememberImmersiveSystemBars:1109
-  - members: clearTextSelection:197, trackedSentenceIndex:315, scrollToHome:324, jumpToSavedPosition:357, playResumingSavedPosition:366, toggleChrome:444, enableScrollLock:453, disableScrollLock:463, navigateBack:468, resumeFollow:480, dispatch:489, onReaderGesture:500
-- `ReaderSessions.kt` (111) - obj ReaderSessions:19
+- `ReaderScreen.kt` (1132) **large** - RailGutterWidth:106, data BlockSentence:121, ReaderScreen:128, PlaybackPinCard:1059, rememberImmersiveSystemBars:1104
+  - members: clearTextSelection:195, trackedSentenceIndex:309, scrollToHome:318, jumpToSavedPosition:351, playResumingSavedPosition:360, toggleChrome:438, enableScrollLock:447, disableScrollLock:457, navigateBack:462, resumeFollow:474, dispatch:483, onReaderGesture:494
+- `ReaderSessions.kt` (116) - obj ReaderSessions:19
 - `ReaderTextLayout.kt` (149) - drawTtsHighlightRange:21, sentenceAtPosition:138
 - `ReaderTextToolbar.kt` (149) - class ReaderTextToolbar:20
 - `ReaderTouchGestures.kt` (88) - ReaderSelectionContainer:18, detectSelectionCancelGestures:32, detectRightEdgeBackSwipe:50
 - `ReaderTouchPolicy.kt` (80) - enum ReaderOverlay:7, enum ReaderTouchTarget:14, enum ReaderGestureKind:22, sealed ReaderTouchAction:28, resolveTouch:41
-- `ReaderViewModel.kt` (393) - data ReaderUi:32, class ReaderViewModel:56, enum FilterPreviewMode:381
-- `TocOverlay.kt` (90) - TocOverlay:29
+- `ReaderViewModel.kt` (504) **large** - data ReaderUi:32, class ReaderViewModel:64, enum FilterPreviewMode:492
+  - members: load:102, loadQueue:146, spokenQueueLocus:190, applySegment:201, openBook:215, savedLocus:224, show:249, collectWindow:300, onViewport:315, releaseFocus:330, loadLocalFilters:337, reapply:342, editFilters:360, addFilter:371, updateFilter:374, setFilterEnabled:377, deleteFilters:380, reorderFilters:383, previewApply:386, currentBlockSample:414, persistLocal:420, nextOrder:432, jumpToChapter:436, jumpTo:450, onLocus:455, persistNow:474, persist:478, onCleared:485
+- `TocOverlay.kt` (104) - TocOverlay:32
 
 ## ui/settings
 
@@ -206,7 +209,7 @@ Hand-written guide: [map.md](map.md).
 - `AppearanceSettings.kt` (555) **large** - AppearanceSettings:187, ThemeSettingsPane:213, GradientSlider:289, UiScaleSettingsPane:328, LayoutSettingsTab:367, HomePositionSettings:462, FontSettingsTab:495
 - `AudioSettings.kt` (104) - AudioSettingsTab:24
 - `AudioSettingsControls.kt` (284) - SettingsFlyoutHeader:48, formatSentenceGapLabel:74, formatHighlightSyncLabel:80, formatMinSignalLabel:86, CenterOriginSlider:98
-- `EditableRuleList.kt` (300) - data RuleListText:52, EditableRuleList:69
+- `EditableRuleList.kt` (303) - data RuleListText:52, EditableRuleList:70
 - `FilterEditorSession.kt` (11) - data FilterEditorSession:7
 - `FilterRuleList.kt` (63) - FilterRuleList:15
 - `FiltersSettings.kt` (400) - FiltersSettingsTab:189, FilterRuleEditorOverlay:227
@@ -261,8 +264,9 @@ Hand-written guide: [map.md](map.md).
 - `tts/WordHighlightTest.kt`
 - `ui/design/card/media/MediaCardAdaptersTest.kt`
 - `ui/design/tabs/FlowTabLayoutTest.kt`
+- `ui/reader/QueueBookTest.kt`
 - `ui/reader/ReaderHomeTest.kt`
 - `ui/reader/ReaderProgressPolicyTest.kt`
 - `ui/reader/ReaderTouchPolicyTest.kt`
 
-Totals: 137 main files, 28014 lines.
+Totals: 139 main files, 28407 lines.

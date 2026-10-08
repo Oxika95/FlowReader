@@ -40,11 +40,18 @@ Priority goals: stability → latency → footprint.
   Each spoken chapter change also downloads the story's cache level of chapters ahead (see
   [plugins.md](plugins.md)).
 
-## Queue auto-advance
+## Queue stream
 
-Finishing a queue item marks it done and plays the next unfinished item from its start, with or
-without the reader open (`QueuePlayback`, app-level). An open reader on the finished item follows to
-the next one and reuses its session, so audio isn't restarted.
+The Queue is read as one document: every row in Queue order (done ones too) joined into one
+composite book (`QueueBook`, session id `queue`, built by `QueueStreams`). Scrolling and TTS run
+from one item into the next with no break, with the reader open or closed. When playback moves on
+from item N to item N+1, `QueuePlayback` marks N done; the end of the stream marks the last item
+done, then continues into rows added since the stream was built (an open reader reloads onto it).
+Positions are still stored per item (the locator maps the stream position back to the item's own
+chapter, block and progress fraction), so the Queue tab keeps its progress bars.
+
+Known limits: TTS-only Local filters come from the item the stream was opened on; the first open
+of an item in the stream synthesizes fresh clips (cache key is the stream, not the book).
 
 ## Unspeakable sentences
 

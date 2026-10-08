@@ -53,7 +53,8 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | Unspeakable / rejected sentences (skip, log) | `tts/SpeechText.kt` (pure), `TtsController.loop`, `EdgeContentException` in `EdgeTtsClient.kt` | `SpeechTextTest`, `docs/tts.md` |
 | EPUB/TXT ingest, covers | `data/Ingest.kt`, `EpubCover.kt`, `BookCatalog.kt` | `IngestTest` |
 | Library tabs, shelves, view mode | `ui/library/LibraryViewModel.kt`, `LibraryScreen.kt`, `data/Models.kt` (`LibraryTabId`) | `docs/library.md` |
-| Queue | `BookCatalog` (`listQue`, `nextUndoneQue`, `markQueDone`), `ProgressDb` (`que_items`); auto-advance `ui/reader/QueuePlayback.kt` | `docs/tts.md` |
+| Queue | `BookCatalog` (`listQue`, `reorderQue`, `markQueDone`), `ProgressDb` (`que_items`); list UI `QueTab` in `LibraryScreen.kt` (on `EditableRuleList`) | `docs/library.md` |
+| Queue stream (one document in reader + TTS) | `ui/reader/QueueBook.kt` (pure composite book, locator), `QueueStreams.kt` (build/open), `QueuePlayback.kt` (done marking, append), queue mode in `ReaderViewModel` | `QueueBookTest`, `docs/tts.md` |
 | A setting (new key) | `data/SettingsStore.kt` (prefs + setter), `ui/settings/SettingsState.kt`, the tab file | `docs/settings.md`, `docs/data.md` |
 | Audio settings UI | `ui/settings/AudioSettings.kt` (tab shell), `VoiceSettingsTab.kt`, `PlaybackSettingsTab.kt` (incl. underlay), `AudioSettingsControls.kt` (flyout header, labels, center slider) | `docs/settings.md` |
 | Room schema | `data/ProgressDb.kt` (add `MIGRATION_n_m`, bump version) | `docs/data.md` |

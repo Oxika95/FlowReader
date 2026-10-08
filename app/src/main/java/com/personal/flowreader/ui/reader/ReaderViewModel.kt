@@ -51,6 +51,14 @@ data class ReaderUi(
     val tocIndex: Int = 0,
     /** Whole-book progress 0–1 at [locus]. */
     val fraction: Float = 0f,
+    /** Indent level per ToC row (Queue: 0 = item, 1 = chapter inside it); empty = all 0. */
+    val tocLevels: List<Int> = emptyList(),
+    /** Reading the Queue as one document. */
+    val queue: Boolean = false,
+    /** Book under the locus (Queue: the current item); its card, cover and Local filters. */
+    val currentBookId: String = "",
+    /** Header line under the title, replacing the chapter name (Queue position). */
+    val headerChapter: String? = null,
 )
 
 class ReaderViewModel(
@@ -62,12 +70,16 @@ class ReaderViewModel(
     val queId: String? = savedStateHandle["queId"]
     val tts = flow.tts
 
-    /** Queue playback moved on; a reader showing the finished row follows. */
-    internal val queueAdvanced: SharedFlow<QueueAdvance> = flow.queue.advanced
+    /** Opened from the Queue (or the now-playing card while the Queue plays): one stream of all rows. */
+    private val queueMode = queId != null || bookId == QueueBook.ID
 
-    private val _ui = MutableStateFlow(ReaderUi())
+    /** Session, locator and TTS id: the book, or [QueueBook.ID] for the Queue stream. */
+    private val sessionId = if (queueMode) QueueBook.ID else bookId
+
+    private val _ui = MutableStateFlow(ReaderUi(queue = queueMode, currentBookId = bookId))
     val ui: StateFlow<ReaderUi> = _ui
 
+    private var queueBook: QueueBook? = null
     private var book: ReaderBook? = null
     private var session: ReadingSession? = null
     private var windowJob: Job? = null
@@ -82,9 +94,16 @@ class ReaderViewModel(
 
     init {
         viewModelScope.launch { load() }
+        if (queueMode) {
+            viewModelScope.launch { flow.queue.streamChanged.collect { loadQueue(followSpoken = true) } }
+        }
     }
 
     private suspend fun load() {
+        if (queueMode) {
+            loadQueue(followSpoken = false)
+            return
+        }
         try {
             val row = flow.db.progress().get(bookId)
                 ?: throw IllegalArgumentException("Book not found")
@@ -113,11 +132,83 @@ class ReaderViewModel(
                 spoken != null -> show(Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start), rules, reuse)
                 else -> show(savedLocus(row, opened), rules, reuse, anchor = row.anchorText)
             }
-            flow.queue.track(bookId, queId)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
             _ui.value = ReaderUi(error = t.message ?: "Failed to open", loading = false)
+        }
+    }
+
+    /**
+     * Open the Queue stream at the tapped row's saved position. When that row is the one TTS is
+     * reading (or no row was given, or [followSpoken]), start at the spoken sentence instead.
+     */
+    private suspend fun loadQueue(followSpoken: Boolean) {
+        try {
+            val queue = QueueStreams.build(flow)
+            if (queue.segments.isEmpty()) throw IllegalStateException("Queue is empty")
+            val global = flow.settings.globalFiltersOnce()
+            val groups = flow.settings.groupFiltersOnce()
+            val spoken = spokenQueueLocus(queue)
+            val tapped = queId?.takeUnless { followSpoken }?.let(queue::indexOfQue)?.takeIf { it >= 0 }
+            val useSpoken = spoken != null && (tapped == null || tapped == queue.segmentIndexOf(spoken.chapterIndex))
+            val startSeg = when {
+                useSpoken -> queue.segmentIndexOf(spoken!!.chapterIndex)
+                tapped != null -> tapped
+                else -> 0
+            }
+            queueBook = queue
+            book = queue.reader
+            val segment = queue.segments[startSeg]
+            _ui.update {
+                it.copy(
+                    filtersGlobal = global,
+                    filtersGroups = groups,
+                    filtersLocal = segment.local,
+                    tocTitles = queue.reader.toc.map { (_, label) -> label },
+                    tocLevels = queue.tocLevels,
+                )
+            }
+            applySegment(queue, startSeg)
+            val reuse = tts.attachedSession()
+                ?.takeIf { it.bookId == QueueBook.ID && it.contentKey == queue.contentKey(global, groups) }
+            if (useSpoken) {
+                show(spoken!!, emptyList(), reuse)
+            } else {
+                val row = flow.db.progress().get(segment.bookId) ?: throw IllegalArgumentException("Book not found")
+                val local = savedLocus(row, segment.book)
+                show(queue.toGlobal(startSeg, local), emptyList(), reuse, anchor = row.anchorText)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            _ui.value = ReaderUi(error = t.message ?: "Failed to open", loading = false, queue = true)
+        }
+    }
+
+    /** The sentence TTS is reading in the Queue stream, mapped into [queue] (rows may have moved). */
+    private fun spokenQueueLocus(queue: QueueBook): Locus? {
+        val state = tts.state.value
+        if (state.bookId != QueueBook.ID) return null
+        val playing = flow.queue.stream ?: return null
+        val sentence = state.sentence ?: return null
+        val (seg, local) = playing.toLocal(Locus(sentence.chapterIndex, sentence.blockIndex, sentence.start))
+        val index = queue.indexOfQue(playing.segments[seg].queId)
+        return if (index < 0) null else queue.toGlobal(index, local)
+    }
+
+    /** Header, cover, card and Local filters follow the Queue item at the locus. */
+    private fun applySegment(queue: QueueBook, segment: Int) {
+        val s = queue.segments.getOrNull(segment) ?: return
+        _ui.update {
+            it.copy(
+                title = s.title,
+                storedPath = s.storedPath,
+                currentBookId = s.bookId,
+                filtersLocal = s.local,
+                headerChapter = "Queue · ${segment + 1} of ${queue.segments.size}"
+                    .takeIf { s.book.toc.size <= 1 },
+            )
         }
     }
 
@@ -163,9 +254,14 @@ class ReaderViewModel(
         invalidateCache: Boolean = false,
     ) = showLock.withLock {
         val b = book ?: return@withLock
+        val queue = queueBook
         val clip = tts.state.value
         val s = reuse?.takeIf { it.window.value.chapters.containsKey(start.chapterIndex) }
-            ?: ReaderSessions.open(bookId, b, start.chapterIndex, rules, clip.clipTargetChars, clip.clipFlexChars)
+            ?: if (queue != null) {
+                _ui.value.let { QueueStreams.open(flow, queue, start.chapterIndex, it.filtersGlobal, it.filtersGroups) }
+            } else {
+                ReaderSessions.open(bookId, b, start.chapterIndex, rules, clip.clipTargetChars, clip.clipFlexChars)
+            }
         val window = s.window.value
         val anchored = window.chapters[start.chapterIndex]
             ?.let { LocusAnchor.resolve(it.chapter, start, anchor) }
@@ -175,9 +271,11 @@ class ReaderViewModel(
         session?.takeIf { it !== s }?.let { releaseFocus(it) }
         session = s
         viewport = null
-        flow.progress.setLocator(bookId, ReaderSessions.locator(bookId, b, s))
+        queue?.let { applySegment(it, it.segmentIndexOf(locus.chapterIndex)) }
+        flow.progress.setLocator(sessionId, queue?.locator(s) ?: ReaderSessions.locator(bookId, b, s))
         _ui.value.let { tts.setSpeechFilters(it.filtersGlobal, it.filtersGroups, it.filtersLocal) }
         tts.attach(s, locus)
+        queue?.let { flow.queue.attach(it) }
         s.setFocus(ReadingSession.FOCUS_READER, locus.chapterIndex)
         s.setFocus(ReadingSession.FOCUS_READER_END, locus.chapterIndex)
         _ui.update {
@@ -237,7 +335,7 @@ class ReaderViewModel(
     }
 
     private suspend fun loadLocalFilters(): List<FilterRule> {
-        val json = flow.db.bookFilters().get(bookId)?.rulesJson
+        val json = flow.db.bookFilters().get(_ui.value.currentBookId)?.rulesJson
         return TextFilters.decodeRules(json)
     }
 
@@ -247,6 +345,14 @@ class ReaderViewModel(
         local: List<FilterRule> = _ui.value.filtersLocal,
     ) {
         _ui.update { it.copy(filtersGlobal = global, filtersGroups = groups, filtersLocal = local) }
+        queueBook?.let { queue ->
+            val seg = queue.segmentIndexOf(_ui.value.locus.chapterIndex)
+            if (seg >= 0) {
+                val next = queue.withLocal(seg, local)
+                queueBook = next
+                book = next.reader
+            }
+        }
         if (book == null) return
         show(_ui.value.locus, TextFilters.merge(global, groups, local), reuse = null, invalidateCache = true)
     }
@@ -312,6 +418,7 @@ class ReaderViewModel(
     }
 
     private suspend fun persistLocal(rules: List<FilterRule>) {
+        val bookId = _ui.value.currentBookId
         if (bookId.isBlank()) return
         if (rules.isEmpty()) {
             flow.db.bookFilters().delete(bookId)
@@ -349,6 +456,10 @@ class ReaderViewModel(
         positionMoved = true
         val b = book
         val window = session?.window?.value
+        queueBook?.let { queue ->
+            val seg = queue.segmentIndexOf(locus.chapterIndex)
+            if (queue.segments.getOrNull(seg)?.bookId != _ui.value.currentBookId) applySegment(queue, seg)
+        }
         _ui.update {
             it.copy(
                 locus = locus,
@@ -366,8 +477,8 @@ class ReaderViewModel(
 
     private fun persist(locus: Locus, flush: Boolean = false) {
         val ui = _ui.value
-        if (!ReaderProgressPolicy.mayPersist(bookId, ui.doc != null, ui.loading, ui.error, positionMoved)) return
-        flow.progress.submit(flow.progress.locate(bookId, locus, System.currentTimeMillis()), flush = flush)
+        if (!ReaderProgressPolicy.mayPersist(sessionId, ui.doc != null, ui.loading, ui.error, positionMoved)) return
+        flow.progress.submit(flow.progress.locate(sessionId, locus, System.currentTimeMillis()), flush = flush)
     }
 
     /** Playback keeps running after the reader closes; the Library now-playing card controls it. */

@@ -151,9 +151,7 @@ class MainActivity : ComponentActivity() {
                                 ReaderRoute(
                                     openUi = openUi,
                                     openVm = openVm,
-                                    queId = null,
                                     onBack = { nav.popBackStack() },
-                                    onAdvanceQue = { _, _ -> },
                                 )
                             }
                             composable(
@@ -162,19 +160,11 @@ class MainActivity : ComponentActivity() {
                                     navArgument("bookId") { type = NavType.StringType },
                                     navArgument("queId") { type = NavType.StringType },
                                 ),
-                            ) { entry ->
-                                val queId = entry.arguments?.getString("queId")
+                            ) {
                                 ReaderRoute(
                                     openUi = openUi,
                                     openVm = openVm,
-                                    queId = queId,
                                     onBack = { nav.popBackStack() },
-                                    onAdvanceQue = { nextBookId, nextQueId ->
-                                        nav.navigate("reader/$nextBookId/que/$nextQueId") {
-                                            popUpTo("library") { inclusive = false }
-                                            launchSingleTop = true
-                                        }
-                                    },
                                 )
                             }
                         }
@@ -207,17 +197,13 @@ class MainActivity : ComponentActivity() {
 private fun ReaderRoute(
     openUi: com.personal.flowreader.ui.open.OpenUi,
     openVm: OpenBookViewModel,
-    queId: String?,
     onBack: () -> Unit,
-    onAdvanceQue: (String, String) -> Unit,
 ) {
     val readerVm: ReaderViewModel = viewModel()
     ReaderScreen(
         vm = readerVm,
-        queId = queId,
         appearance = AppearanceSettingsState(openUi),
         appearanceCallbacks = AppearanceSettingsCallbacks(openVm),
         onBack = onBack,
-        onAdvanceQue = onAdvanceQue,
     )
 }

@@ -60,5 +60,8 @@ class BookMeter(private val weights: LongArray) {
 
     companion object {
         fun of(source: ChapterSource) = BookMeter(LongArray(source.chapterCount) { source.weight(it) })
+
+        /** One meter over [meters]' chapters in order (a Queue read as one document). */
+        fun concat(meters: List<BookMeter>) = BookMeter(meters.flatMap { it.weights.asList() }.toLongArray())
     }
 }
