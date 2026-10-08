@@ -56,6 +56,8 @@ data class TtsPrefs(
     val prefetchCount: Int = DEFAULT_PREFETCH,
     /** When true, double-tapping reader text seeks and starts TTS. */
     val doubleTapPlay: Boolean = true,
+    /** When true, Edge TTS may send over mobile data while Wi-Fi is weak or failing. */
+    val mobileDataFallback: Boolean = true,
     /** When true, the list keeps the spoken block centered until the user scrolls away. */
     val autoScrollWithTts: Boolean = true,
     /**
@@ -286,6 +288,10 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_TTS_DOUBLE_TAP_PLAY] = enabled }
     }
 
+    suspend fun setMobileDataFallback(enabled: Boolean) {
+        store.edit { it[KEY_TTS_MOBILE_DATA_FALLBACK] = enabled }
+    }
+
     suspend fun setAutoScrollWithTts(enabled: Boolean) {
         store.edit { it[KEY_TTS_AUTO_SCROLL] = enabled }
     }
@@ -470,6 +476,7 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_PITCH = floatPreferencesKey("tts_pitch")
         private val KEY_TTS_PREFETCH = intPreferencesKey("tts_prefetch")
         private val KEY_TTS_DOUBLE_TAP_PLAY = booleanPreferencesKey("tts_double_tap_play")
+        private val KEY_TTS_MOBILE_DATA_FALLBACK = booleanPreferencesKey("tts_mobile_data_fallback")
         private val KEY_TTS_AUTO_SCROLL = booleanPreferencesKey("tts_auto_scroll")
         private val KEY_TTS_KEEP_ALIVE = booleanPreferencesKey("tts_keep_alive")
         private val KEY_TTS_MIN_SIGNAL = floatPreferencesKey("tts_min_signal")
@@ -544,6 +551,7 @@ class SettingsStore(context: Context) {
             prefetchCount = (this[KEY_TTS_PREFETCH] ?: TtsPrefs.DEFAULT_PREFETCH)
                 .coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH),
             doubleTapPlay = this[KEY_TTS_DOUBLE_TAP_PLAY] ?: true,
+            mobileDataFallback = this[KEY_TTS_MOBILE_DATA_FALLBACK] ?: true,
             autoScrollWithTts = this[KEY_TTS_AUTO_SCROLL] ?: true,
             minSignal = TtsPrefs.migrateMinSignal(
                 this[KEY_TTS_TONAL_UNDERLAY] ?: when {

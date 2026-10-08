@@ -27,8 +27,8 @@ Hand-written guide: [map.md](map.md).
 - `SentenceLengthNormalizer.kt` (131) - obj SentenceLengthNormalizer:10
 - `SentenceSplitter.kt` (110) - obj SentenceSplitter:9
 - `SentenceTable.kt` (107) - class SentenceTable:9
-- `SettingsStore.kt` (606) **large** - data ReaderPrefs:28, data TtsPrefs:50, class SettingsStore:203
-  - members: readerOnce:206, ttsOnce:207, setTheme:209, setAccentHue:213, setUiScale:219, setFontScale:223, setFontFamily:227, setLineSpacing:231, setJustifyText:235, setOrientation:239, setShowChapterHeadingsInBody:243, setKeepScreenAwake:247, setDebugEnabled:251, setHomePosition:255, setShowHomeMarker:259, setEngine:263, setVoice:267, setSpeed:271, setPitch:275, setPrefetchCount:279, setDoubleTapPlay:285, setAutoScrollWithTts:289, setMinSignal:293, setUnderlayBtDevice:297, setSentenceGapMs:304, setHighlightSyncMs:308, setClipTargetChars:312, setClipFlexChars:316, globalFiltersOnce:320, setGlobalFilters:323, groupFiltersOnce:327, setGroupFilters:330, libraryViewModeOnce:334, setLibraryViewMode:341, libraryTabIdOnce:345, setLibraryTabId:348, enabledPluginIdsOnce:352, setEnabledPluginIds:355, customLibraryTabsOnce:359, setCustomLibraryTabs:364, notificationsAskedOnce:368, setNotificationsAskedOnce:371, shareOnce:375, setShareAskMode:384, shareRouterRulesOnce:392, setShareRouterRules:410, seededPluginShareRuleIdsOnce:415, setSeededPluginShareRuleIds:418, pluginReposOnce:423, setPluginRepos:428, shareParseRulesOnce:433, setShareParseRules:448
+- `SettingsStore.kt` (614) **large** - data ReaderPrefs:28, data TtsPrefs:50, class SettingsStore:205
+  - members: readerOnce:208, ttsOnce:209, setTheme:211, setAccentHue:215, setUiScale:221, setFontScale:225, setFontFamily:229, setLineSpacing:233, setJustifyText:237, setOrientation:241, setShowChapterHeadingsInBody:245, setKeepScreenAwake:249, setDebugEnabled:253, setHomePosition:257, setShowHomeMarker:261, setEngine:265, setVoice:269, setSpeed:273, setPitch:277, setPrefetchCount:281, setDoubleTapPlay:287, setMobileDataFallback:291, setAutoScrollWithTts:295, setMinSignal:299, setUnderlayBtDevice:303, setSentenceGapMs:310, setHighlightSyncMs:314, setClipTargetChars:318, setClipFlexChars:322, globalFiltersOnce:326, setGlobalFilters:329, groupFiltersOnce:333, setGroupFilters:336, libraryViewModeOnce:340, setLibraryViewMode:347, libraryTabIdOnce:351, setLibraryTabId:354, enabledPluginIdsOnce:358, setEnabledPluginIds:361, customLibraryTabsOnce:365, setCustomLibraryTabs:370, notificationsAskedOnce:374, setNotificationsAskedOnce:377, shareOnce:381, setShareAskMode:390, shareRouterRulesOnce:398, setShareRouterRules:416, seededPluginShareRuleIdsOnce:421, setSeededPluginShareRuleIds:424, pluginReposOnce:429, setPluginRepos:434, shareParseRulesOnce:439, setShareParseRules:454
 - `TextFilters.kt` (392) - enum FilterMatchType:7, enum FilterScope:21, data FilterRule:35, data FilterApplyResult:48, data FilteredBookDoc:53, obj TextFilters:59
 - `TxtChapterSource.kt` (106) - class TxtChapterSource:11
 
@@ -87,13 +87,18 @@ Hand-written guide: [map.md](map.md).
 - `AudioKeepAlive.kt` (92) - class AudioKeepAlive:19
 - `Crossfade.kt` (67) - obj Crossfade:13
 - `EdgeHandshake.kt` (31) - obj EdgeHandshake:9
-- `EdgeTtsClient.kt` (290) - data EdgeWordBoundary:23, data EdgeAudio:29, class EdgeContentException:35, class EdgeTtsClient:37
+- `EdgeNetwork.kt` (92) - class EdgeNetwork:11
+- `EdgeTtsClient.kt` (413) **large** - data EdgeWordBoundary:27, data EdgeAudio:33, class EdgeContentException:39, class EdgeNetworkException:42, class RaceLane:45, class EdgeTtsClient:47
+  - members: defaultLanes:51, synthesize:60, RaceEvent:96, RaceState:102, raceSynthesize:138, synthesizeOnce:235
+- `NetworkLanePolicy.kt` (219) - enum NetLane:4, enum NetTransport:6, enum NetMode:8, data LaneAttempt:10, data RaceReport:13, data NetSnapshot:30, class NetworkLanePolicy:60
+- `NetworkMonitor.kt` (201) - class NetworkMonitor:24
+- `RaceSchedule.kt` (43) - obj RaceSchedule:8
 - `SpeechText.kt` (29) - obj SpeechText:3
-- `SynthDebugLog.kt` (78) - obj SynthDebugLog:14
+- `SynthDebugLog.kt` (79) - obj SynthDebugLog:14
 - `TtsAudioEngine.kt` (548) **large** - class TtsAudioEngine:27
   - members: playbackHeadFrames:43, writtenFrames:48, sampleRateHz:50, peekPendingMediaSeedSec:52, hasPendingRemainder:56, underrunCount:59, cancel:64, release:70, clearDecodeCache:91, prefetchDecode:96, play:110, playClipCrossfading:150, writeSilence:286, resolveAndDecodeNext:317, decodeCached:337, decodeFile:349, appendPcm16:439, writeSamples:453, ensureTrack:481, releaseTrackOnly:524, PcmClip:539
-- `TtsController.kt` (2125) **large** - data TtsUiState:60, class TtsController:110
-  - members: WordSegment:130, setNotificationPermissionAsker:218, sessionToken:222, mediaTitle:224, mediaSubtitle:226, mediaCover:234, attachedSession:281, setSpeechFilters:288, speechFilterKeyOf:316, attach:324, cacheKeyFor:406, pullMore:413, pullMoreAsync:436, focusChapter:445, invalidateEdgeCache:459, speakPreview:464, previewWithEdge:485, playPreviewFile:499, cancelPreview:532, releasePreviewPlayer:542, play:561, pause:566, stop:571, skipNext:575, skipPrev:585, setSpeed:595, setPitch:606, setPrefetchCount:616, setDoubleTapPlay:625, setAutoScrollWithTts:631, setMinSignal:643, setUnderlayBtDevice:650, underlayBondedDevices:669, refreshUnderlayBtConnection:671, setSentenceGapMs:675, setHighlightSyncMs:683, setClipTargetChars:690, setClipFlexChars:700, resplitAttachedForClipBand:711, setDebugEnabled:743, reportMediaError:754, reportSkippedSentence:765, dumpSynthLog:776, forceRegenerateSentence:806, setEngine:832, setVoice:859, userScrolledAway:869, followAgain:876, jumpTo:881, moveToCurrentSentence:893, advancePlayheadLocked:901, release:917, startPlayback:938, pausePlayback:977, refreshCatalog:1004, voicesFor:1029, systemVoices:1040, ensureSession:1062, setSessionState:1090, updateSessionMetadata:1106, loadCoverArt:1121, restartLoop:1128, publishSentence:1147, publishHeardSentence:1162, awaitHeardCatchUp:1174, markGenerating:1186, unmarkGenerating:1192, markReady:1198, publishGenerating:1207, publishReady:1213, publishUnmarkGenerating:1217, clearAudioStatus:1221, loop:1230, speak:1299, speechText:1307, startEdgeJob:1313, cancelStaleEdgeJobs:1332, scheduleAheadPrefetch:1344, pumpPrefetch:1350, launchPrefetchJob:1374, ensurePrefetchJob:1392, cancelEdgeJobs:1398, prefetch:1403, speakEdge:1422, peekReadyCacheFile:1515, slackMs:1521, ensureSentenceCached:1532, synthesizeToCache:1557, interruptClipPlayback:1607, stopSessionAudio:1614, syncKeepAlive:1621, pushWordSegment:1636, ensurePcmWordTracking:1645, stopPcmWordTracking:1687, updateWordHighlight:1693, clearWordHighlight:1713, ensureWordBoundariesLoaded:1718, wordsCacheFile:1742, writeWordBoundaries:1745, readWordBoundaries:1762, appendJsonString:1785, speakSystem:1805, ensureSystemForPackage:1866, ensureNotificationPermission:1906, requestAudioFocus:1923, abandonAudioFocus:1949, registerNoisyReceiver:1961, unregisterNoisyReceiver:1973, edgeVoiceId:1979, cacheFile:1984, voiceCacheKey:1986, sanitizeBookKey:1991, cachedSentenceIndex:1994, writeAtomically:2001, scanReadySentenceIndices:2015, cacheWindow:2023, effectivePrefetchCount:2035, inCacheWindow:2040, pruneCacheToWindow:2046, deleteCacheOutsideWindow:2064, dropForeignBookCache:2075, clearEdgeCache:2085, ratePercent:2098, pitchPercent:2100
+- `TtsController.kt` (2178) **large** - data TtsUiState:60, class TtsController:112
+  - members: WordSegment:135, setNotificationPermissionAsker:223, sessionToken:227, mediaTitle:229, mediaSubtitle:231, mediaCover:239, attachedSession:289, setSpeechFilters:296, speechFilterKeyOf:324, attach:332, cacheKeyFor:414, pullMore:421, pullMoreAsync:444, focusChapter:453, invalidateEdgeCache:467, speakPreview:472, previewWithEdge:493, playPreviewFile:500, cancelPreview:533, releasePreviewPlayer:543, play:562, pause:567, stop:572, skipNext:576, skipPrev:586, setSpeed:596, setPitch:607, setPrefetchCount:617, setDoubleTapPlay:626, setMobileDataFallback:632, setAutoScrollWithTts:641, setMinSignal:653, setUnderlayBtDevice:660, underlayBondedDevices:679, refreshUnderlayBtConnection:681, setSentenceGapMs:685, setHighlightSyncMs:693, setClipTargetChars:700, setClipFlexChars:710, resplitAttachedForClipBand:721, setDebugEnabled:753, reportMediaError:764, reportSkippedSentence:775, dumpSynthLog:786, forceRegenerateSentence:816, setEngine:842, setVoice:869, userScrolledAway:879, followAgain:886, jumpTo:891, moveToCurrentSentence:903, advancePlayheadLocked:911, release:927, startPlayback:949, pausePlayback:988, refreshCatalog:1015, voicesFor:1040, systemVoices:1051, ensureSession:1073, setSessionState:1101, updateSessionMetadata:1117, loadCoverArt:1132, restartLoop:1139, publishSentence:1158, publishHeardSentence:1173, awaitHeardCatchUp:1185, markGenerating:1197, unmarkGenerating:1203, markReady:1209, publishGenerating:1218, publishReady:1224, publishUnmarkGenerating:1228, clearAudioStatus:1232, loop:1241, awaitNetworkRetry:1319, speak:1337, speechText:1345, startEdgeJob:1351, cancelStaleEdgeJobs:1370, scheduleAheadPrefetch:1382, pumpPrefetch:1388, launchPrefetchJob:1412, ensurePrefetchJob:1430, cancelEdgeJobs:1436, prefetch:1441, speakEdge:1460, peekReadyCacheFile:1553, slackMs:1559, ensureSentenceCached:1570, synthesizeEdge:1592, synthesizeToCache:1610, interruptClipPlayback:1655, stopSessionAudio:1662, syncKeepAlive:1670, pushWordSegment:1685, ensurePcmWordTracking:1694, stopPcmWordTracking:1736, updateWordHighlight:1742, clearWordHighlight:1762, ensureWordBoundariesLoaded:1767, wordsCacheFile:1791, writeWordBoundaries:1794, readWordBoundaries:1811, appendJsonString:1834, speakSystem:1854, ensureSystemForPackage:1915, ensureNotificationPermission:1955, requestAudioFocus:1972, abandonAudioFocus:1998, registerNoisyReceiver:2010, unregisterNoisyReceiver:2022, edgeVoiceId:2028, cacheFile:2033, voiceCacheKey:2035, sanitizeBookKey:2040, cachedSentenceIndex:2043, writeAtomically:2050, scanReadySentenceIndices:2064, cacheWindow:2072, effectivePrefetchCount:2084, inCacheWindow:2089, pruneCacheToWindow:2095, deleteCacheOutsideWindow:2113, dropForeignBookCache:2124, clearEdgeCache:2134, ratePercent:2147, pitchPercent:2149
 - `TtsPlaybackService.kt` (190) - class TtsPlaybackService:26
 - `UnderlayBluetoothMonitor.kt` (305) - data PairedBtDevice:25, class UnderlayBluetoothMonitor:39
 - `WordHighlight.kt` (139) - obj WordHighlight:13
@@ -150,7 +155,7 @@ Hand-written guide: [map.md](map.md).
 
 - `FilesBookSplash.kt` (85) - FilesBookSplash:23
 - `LibraryBookCards.kt` (100) - LibraryBooksPane:33, librarySourceLabel:87, libraryLastRead:92, libraryBookSubtitle:99
-- `LibraryScreen.kt` (603) **large** - class PersistableOpenDocument:96, LibraryScreen:113, LibraryTopBar:396, AddTabOverlay:448, AddBookOverlay:517, QueTab:546, QueLineItem:574
+- `LibraryScreen.kt` (605) **large** - class PersistableOpenDocument:96, LibraryScreen:113, LibraryTopBar:398, AddTabOverlay:450, AddBookOverlay:519, QueTab:548, QueLineItem:576
   - members: createIntent:97
 - `LibraryViewModel.kt` (852) **large** - data LibraryUi:38, class LibraryViewModel:54
   - members: refresh:135, booksForTab:151, setTab:157, addCustomTab:166, removeCustomTab:188, setPluginEnabled:220, setViewMode:239, handleIncomingIntent:248, executeShareIntent:281, routeImportText:370, openPluginShare:456, refreshAfterIngest:481, tabForLanding:494, tabForShelf:501, shelfForAdd:504, openExternalUri:508, consumePendingOpen:556, ingestPluginText:560, ingestSharedText:598, queueFromClipboard:635, removeQue:644, removeFromLibrary:653, addFilter:675, updateFilter:691, setFilterEnabled:707, deleteFilters:727, reorderFilters:737, previewApply:747, persistGlobal:774, persistGroups:780, nextOrder:786, add:789, consumeMessage:839, consumeError:843
@@ -183,7 +188,7 @@ Hand-written guide: [map.md](map.md).
 - `ReaderLayout.kt` (14) - ReaderContentStartPadding:11, ReaderListEndPadding:14
 - `ReaderProgressPolicy.kt` (16) - obj ReaderProgressPolicy:4
 - `ReaderRail.kt` (352) - LocusRail:112
-- `ReaderScreen.kt` (1135) **large** - RailGutterWidth:106, data BlockSentence:121, ReaderScreen:128, PlaybackPinCard:1062, rememberImmersiveSystemBars:1107
+- `ReaderScreen.kt` (1137) **large** - RailGutterWidth:106, data BlockSentence:121, ReaderScreen:128, PlaybackPinCard:1064, rememberImmersiveSystemBars:1109
   - members: clearTextSelection:197, trackedSentenceIndex:315, scrollToHome:324, jumpToSavedPosition:357, playResumingSavedPosition:366, toggleChrome:444, enableScrollLock:453, disableScrollLock:463, navigateBack:468, resumeFollow:480, dispatch:489, onReaderGesture:500
 - `ReaderSessions.kt` (111) - obj ReaderSessions:19
 - `ReaderTextLayout.kt` (149) - drawTtsHighlightRange:21, sentenceAtPosition:138
@@ -197,7 +202,7 @@ Hand-written guide: [map.md](map.md).
 
 - `AboutSettingsTab.kt` (174) - AboutSettingsTab:52
 - `AppearanceSettings.kt` (497) **large** - AppearanceSettings:186, ThemeSettingsPane:208, UiScaleSettingsPane:274, LayoutSettingsTab:313, HomePositionSettings:404, FontSettingsTab:437
-- `AudioSettings.kt` (100) - AudioSettingsTab:24
+- `AudioSettings.kt` (104) - AudioSettingsTab:24
 - `AudioSettingsControls.kt` (284) - SettingsFlyoutHeader:48, formatSentenceGapLabel:74, formatHighlightSyncLabel:80, formatMinSignalLabel:86, CenterOriginSlider:98
 - `EditableRuleList.kt` (300) - data RuleListText:52, EditableRuleList:69
 - `FilterEditorSession.kt` (11) - data FilterEditorSession:7
@@ -206,11 +211,11 @@ Hand-written guide: [map.md](map.md).
 - `ImportParseRules.kt` (294) - ParseRuleList:40, ParseRuleEditorOverlay:95
 - `ImportRouterRules.kt` (289) - RouterRuleList:65, RouterRuleEditorOverlay:126
 - `ImportRuleControls.kt` (119) - DragHandle:21, MatchFields:80
-- `PlaybackSettingsTab.kt` (415) **large** - PlaybackSettingsTab:49, underlaySubtitle:361, underlayBtDeviceFieldValue:381, underlayBtDeviceSupportingText:388, underlayLevelSliderIndex:404
-  - members: loadBondedAndOpen:95, openBtPicker:111
+- `PlaybackSettingsTab.kt` (424) **large** - PlaybackSettingsTab:49, underlaySubtitle:370, underlayBtDeviceFieldValue:390, underlayBtDeviceSupportingText:397, underlayLevelSliderIndex:413
+  - members: loadBondedAndOpen:97, openBtPicker:113
 - `PluginsSettingsTab.kt` (246) - PluginsSettingsTab:64
-- `SettingsOverlay.kt` (216) - SettingsOverlay:29
-- `SettingsState.kt` (132) - data AppearanceSettingsState:15, data AppearanceSettingsCallbacks:31, AppearanceSettingsState:48, AppearanceSettingsCallbacks:64, data TtsSettingsState:81, data TtsSettingsCallbacks:101, data FilterSettingsState:118, data FilterSettingsCallbacks:125
+- `SettingsOverlay.kt` (218) - SettingsOverlay:29
+- `SettingsState.kt` (134) - data AppearanceSettingsState:15, data AppearanceSettingsCallbacks:31, AppearanceSettingsState:48, AppearanceSettingsCallbacks:64, data TtsSettingsState:81, data TtsSettingsCallbacks:102, data FilterSettingsState:120, data FilterSettingsCallbacks:127
 - `SharingSettingsTab.kt` (251) - data SharePluginOption:37, sealed ImportRuleEditRequest:42, class DomainRuleEditorState:58, DomainRuleEditorHost:63, SharingSettingsTab:90
 - `VoiceSettingsTab.kt` (342) - VoiceSettingsTab:49
 
@@ -247,6 +252,8 @@ Hand-written guide: [map.md](map.md).
 - `tts/EdgeHandshakeTest.kt`
 - `tts/EdgeSynthLengthBench.kt`
 - `tts/EdgeTtsClientTest.kt`
+- `tts/NetworkLanePolicyTest.kt`
+- `tts/RaceScheduleTest.kt`
 - `tts/SpeechTextTest.kt`
 - `tts/WordHighlightTest.kt`
 - `ui/design/card/media/MediaCardAdaptersTest.kt`
@@ -255,4 +262,4 @@ Hand-written guide: [map.md](map.md).
 - `ui/reader/ReaderProgressPolicyTest.kt`
 - `ui/reader/ReaderTouchPolicyTest.kt`
 
-Totals: 131 main files, 26694 lines.
+Totals: 135 main files, 27455 lines.

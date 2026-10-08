@@ -47,9 +47,44 @@ the next one and reuses its session, so audio isn't restarted.
 - Edge rejecting a sentence (`EdgeContentException`: nothing to synthesize, too long, no audio
   returned) skips it and keeps playing: debug turns on, the log records
   `ERROR skipped i=…: <reason> text="…" spoken="…"`, and the log panel opens.
-- Network/other failures still stop playback (logged as `ERROR`).
+- Network failures pause on the current sentence instead of stopping (see below). Other failures
+  still stop playback (logged as `ERROR`).
 - A failed lookahead clip isn't retried by prefetch; the playhead retries or skips it when it gets
   there. Characters XML forbids (control chars, lone surrogates) are stripped before Edge SSML.
+
+## Edge requests and networks
+
+- **Staggered race** (`EdgeTtsClient`, `RaceSchedule`): one WebSocket per clip at t = 0. Backups
+  start at +d and +2d only while no attempt has received audio; an attempt that errors starts the
+  next one at once. First success wins, the rest are cancelled; 6 s wall (`RACE_TIMEOUT_MS`).
+- **Backup delay d** (`NetworkLanePolicy.hedgeDelayMs`): 90th percentile of the last 20 winners'
+  first-audio latency, clamped 1–3 s; 2 s until 5 samples exist. Phones measured 1.0–2.7 s to first
+  audio (desktop ~0.4 s), so a fixed 1 s sent a backup on every clip. A healthy link costs about one
+  request per clip.
+- **Stall**: the race failed, or a delayed backup had to win. A slow first attempt that still wins
+  is not a stall.
+- **Lanes** (`EdgeNetwork` = `NetworkMonitor` + `NetworkLanePolicy`): each attempt is sent on the
+  default network, Wi-Fi, or cellular (OkHttp client bound to that `Network`). Modes:
+
+| Mode | When | Attempts (start → network) |
+|------|------|----------------------------|
+| Normal | Signal fine, no recent stalls | 0, d, 2d → default |
+| Overlap | Wi-Fi RSSI below −75 dBm (until above −68), or weak cellular (level ≤ 1) with Wi-Fi up | 0 Wi-Fi + 0 cellular, d cellular |
+| Cell first | 2 stalls in a row on Wi-Fi, or Wi-Fi without internet | 0 cellular, d Wi-Fi, 2d cellular; every 4th race overlaps to probe Wi-Fi; 3 Wi-Fi wins → back |
+| Offline | No usable network | No sends; playback waits |
+
+- Cellular is requested (`requestNetwork`) once Wi-Fi drops below −70 dBm, stalls, or loses
+  internet, and released 30 s after Wi-Fi recovers, or on pause/stop.
+- Setting **Use mobile data when Wi-Fi is weak** (Playback tab, default On). Off: only Normal and
+  Offline; cellular is never requested.
+- **Network failure at the playhead** (`EdgeNetworkException`): logged as `ERROR network …`,
+  playback waits without a time limit until a network is usable, backs off 1/2/4/8 s, clears failed
+  lookahead, and retries the same sentence. Session and media card stay up; debug is not forced on.
+- Synth log (5,000-line ring, ~20+ min): `edge race[pre i=N] start … plan=default@0,…` (source
+  `pre` = lookahead, `play` = playhead, `next` = crossfade next clip, `regen`, `preview`),
+  `edge race[pre i=N #k] start lane=… t=…`, `first-audio ms=…`, `win … firstAudioMs=… totalMs=…`,
+  and `net poll|race mode=… rssi=… cellLevel=…` when the mode, cellular level, or RSSI (±3 dBm)
+  changes. RSSI thresholds are starting values; tune from walk-test logs.
 
 ## Debug
 

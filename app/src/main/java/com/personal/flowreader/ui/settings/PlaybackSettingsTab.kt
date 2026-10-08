@@ -48,6 +48,7 @@ import kotlin.math.roundToInt
 @Composable
 internal fun PlaybackSettingsTab(
     doubleTapPlay: Boolean = false,
+    mobileDataFallback: Boolean = true,
     autoScrollWithTts: Boolean = false,
     minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
     underlayBtAddress: String = "",
@@ -56,6 +57,7 @@ internal fun PlaybackSettingsTab(
     sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
     onDoubleTapPlay: (Boolean) -> Unit = {},
+    onMobileDataFallback: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
     onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
     onUnderlayBtDevice: (String, String) -> Unit = { _, _ -> },
@@ -131,6 +133,13 @@ internal fun PlaybackSettingsTab(
         subtitle = "Unavailable on body text while selection is on — use play controls",
         checked = doubleTapPlay,
         onCheckedChange = onDoubleTapPlay,
+    )
+    Spacer(Modifier.height(FlowTokens.Space.S))
+    FlowToggleRow(
+        title = "Use mobile data when Wi-Fi is weak",
+        subtitle = "Edge voices also use mobile data while Wi-Fi is weak or failing",
+        checked = mobileDataFallback,
+        onCheckedChange = onMobileDataFallback,
     )
 
     Spacer(Modifier.height(FlowTokens.Space.L))

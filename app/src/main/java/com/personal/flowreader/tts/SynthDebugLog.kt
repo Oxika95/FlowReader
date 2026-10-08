@@ -12,7 +12,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * (except [appendError], which force-enables logging first).
  */
 object SynthDebugLog {
-    private const val MAX_LINES = 800
+    /** About 20+ minutes of Edge playback, enough for a walk test. */
+    private const val MAX_LINES = 5_000
     private val enabled = AtomicBoolean(false)
     private val lines = ArrayDeque<String>(MAX_LINES)
     private val lock = Any()

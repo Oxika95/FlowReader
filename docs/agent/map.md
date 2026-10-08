@@ -45,6 +45,7 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | TTS playback, queueing, prefetch, cache | `tts/TtsController.kt` (large) | `docs/tts.md` |
 | PCM output, crossfade, gaps | `tts/TtsAudioEngine.kt`, `Crossfade.kt` | `CrossfadeTest` |
 | Edge voices / synth | `tts/EdgeTtsClient.kt`, `EdgeHandshake.kt` | `EdgeTtsClientTest` |
+| Edge race stagger / network fallback (Wi-Fi ↔ cellular lanes, offline wait) | `tts/RaceSchedule.kt`, `NetworkLanePolicy.kt` (pure), `NetworkMonitor.kt`, `EdgeNetwork.kt`, `TtsController.awaitNetworkRetry` | `RaceScheduleTest`, `NetworkLanePolicyTest`, `docs/tts.md` |
 | Word highlight timing | `tts/WordHighlight.kt` | `WordHighlightTest` |
 | Media session / background | `tts/TtsPlaybackService.kt`, `AudioKeepAlive.kt`, `UnderlayBluetoothMonitor.kt` | |
 | Sentence splitting | `data/SentenceSplitter.kt`, `KoehnSentenceBreak.kt`, `SentenceLengthNormalizer.kt` | `SentenceSplitterTest` |

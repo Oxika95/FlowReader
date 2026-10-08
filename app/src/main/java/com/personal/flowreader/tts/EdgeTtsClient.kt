@@ -1,14 +1,18 @@
 package com.personal.flowreader.tts
 
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.async
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -34,13 +38,24 @@ data class EdgeAudio(
 /** Edge refused this text (empty, too long, or no audio for it); retrying won't help. */
 class EdgeContentException(message: String) : IllegalArgumentException(message)
 
+/** Every race attempt failed or hung on the network; retry once a network is usable. */
+class EdgeNetworkException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+/** One race attempt: sent [startMs] after the race begins, over [http] (bound to [lane]). */
+class RaceLane(val startMs: Long, val lane: NetLane, val http: OkHttpClient)
+
 class EdgeTtsClient(
-    private val http: OkHttpClient = defaultHttp(),
+    val http: OkHttpClient = defaultHttp(),
 ) {
+    /** Staggered attempts on the default network. */
+    fun defaultLanes(): List<RaceLane> =
+        RaceSchedule.staggered(RACE_ATTEMPTS, HEDGE_DELAY_MS).map { RaceLane(it, NetLane.DEFAULT, http) }
+
     /**
-     * Synthesize [text] by racing [RACE_ATTEMPTS] parallel WebSockets. The first
-     * successful [EdgeAudio] wins; siblings are cancelled. A hard [RACE_TIMEOUT_MS]
-     * wall aborts the whole race if every attempt hangs.
+     * Synthesize [text] with a staggered race over [lanes] (see [RaceSchedule]). The first
+     * successful [EdgeAudio] wins; siblings are cancelled. A hard [RACE_TIMEOUT_MS] wall aborts
+     * the whole race. [onReport] receives the outcome (also on failure). [tag] labels this race's
+     * log lines (concurrent races interleave).
      */
     suspend fun synthesize(
         text: String,
@@ -48,6 +63,9 @@ class EdgeTtsClient(
         lang: String = "en-US",
         ratePercent: Int = 0,
         pitchPercent: Int = 0,
+        lanes: List<RaceLane> = defaultLanes(),
+        onReport: (RaceReport) -> Unit = {},
+        tag: String = "",
     ): EdgeAudio {
         val trimmed = SpeechText.xmlSafe(text).trim()
         if (trimmed.isEmpty()) {
@@ -58,73 +76,170 @@ class EdgeTtsClient(
                 "Utterance too long (${trimmed.length} chars; max $MAX_UTTERANCE_CHARS).",
             )
         }
+        require(lanes.isNotEmpty()) { "No race lanes." }
+        val race = RaceState(lanes, tag)
         SynthDebugLog.append(
-            "edge race start n=$RACE_ATTEMPTS chars=${trimmed.length} voice=$voice",
+            "${race.label()} start n=${lanes.size} chars=${trimmed.length} voice=$voice " +
+                "plan=${lanes.joinToString(",") { "${it.lane.label()}@${it.startMs}" }}",
         )
-        return withTimeout(RACE_TIMEOUT_MS) {
-            raceSynthesize(trimmed, voice, lang, ratePercent, pitchPercent)
+        return try {
+            withTimeout(RACE_TIMEOUT_MS) {
+                raceSynthesize(race, trimmed, voice, lang, ratePercent, pitchPercent, onReport)
+            }
+        } catch (e: TimeoutCancellationException) {
+            SynthDebugLog.append("${race.label()} timeout ms=$RACE_TIMEOUT_MS started=${race.started}")
+            onReport(race.report(winner = -1))
+            throw EdgeNetworkException("Edge did not answer within $RACE_TIMEOUT_MS ms.", e)
+        }
+    }
+
+    private sealed interface RaceEvent {
+        class FirstAudio(val idx: Int, val atMs: Long) : RaceEvent
+        class Done(val idx: Int, val result: Result<EdgeAudio>) : RaceEvent
+    }
+
+    /** Mutated only by the race loop coroutine. */
+    private class RaceState(val lanes: List<RaceLane>, private val tag: String) {
+        private val t0 = System.nanoTime()
+
+        /** `edge race[tag]` for the race, `edge race[tag #i]` for attempt i. */
+        fun label(idx: Int? = null): String {
+            val parts = listOfNotNull(tag.ifEmpty { null }, idx?.let { "#$it" })
+            return if (parts.isEmpty()) "edge race" else "edge race[${parts.joinToString(" ")}]"
+        }
+        val startMs = lanes.map { it.startMs }
+        var started = 0
+        var inFlight = 0
+        val audioAt = LongArray(lanes.size) { -1L }
+        val finished = BooleanArray(lanes.size)
+        val failed = ArrayList<NetLane>()
+        val errors = ArrayList<Throwable>()
+
+        fun elapsedMs(): Long = (System.nanoTime() - t0) / 1_000_000L
+
+        fun audioInFlight(): Boolean = (0 until started).any { !finished[it] && audioAt[it] >= 0L }
+
+        fun report(winner: Int, contentError: Boolean = false): RaceReport {
+            val first = audioAt.getOrNull(winner)?.takeIf { it >= 0L }
+            val start = lanes.getOrNull(winner)?.startMs
+            return RaceReport(
+                winner = lanes.getOrNull(winner)?.lane,
+                firstAudioMs = first,
+                winnerStartMs = start,
+                winnerLatencyMs = if (first != null && start != null) (first - start).coerceAtLeast(0L) else null,
+                totalMs = elapsedMs(),
+                started = started,
+                failed = failed.toList(),
+                contentError = contentError,
+            )
         }
     }
 
     private suspend fun raceSynthesize(
+        race: RaceState,
         text: String,
         voice: String,
         lang: String,
         ratePercent: Int,
         pitchPercent: Int,
+        onReport: (RaceReport) -> Unit,
     ): EdgeAudio = coroutineScope {
-        val deferreds = List(RACE_ATTEMPTS) { idx ->
-            async {
-                val outcome = try {
-                    Result.success(synthesizeOnce(text, voice, lang, ratePercent, pitchPercent))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (t: Throwable) {
-                    SynthDebugLog.append(
-                        "edge race[$idx] fail: ${t.message ?: t.javaClass.simpleName}",
-                    )
-                    Result.failure(t)
+        val events = Channel<RaceEvent>(Channel.UNLIMITED)
+        val jobs = ArrayList<Job>(race.lanes.size)
+
+        fun startDue() {
+            val due = RaceSchedule.due(
+                startMs = race.startMs,
+                elapsedMs = race.elapsedMs(),
+                started = race.started,
+                inFlight = race.inFlight,
+                audioInFlight = race.audioInFlight(),
+            )
+            for (idx in due) {
+                val lane = race.lanes[idx]
+                race.started++
+                race.inFlight++
+                SynthDebugLog.append("${race.label(idx)} start lane=${lane.lane.label()} t=${race.elapsedMs()}")
+                jobs += launch {
+                    val result = try {
+                        Result.success(
+                            synthesizeOnce(lane.http, text, voice, lang, ratePercent, pitchPercent) {
+                                events.trySend(RaceEvent.FirstAudio(idx, race.elapsedMs()))
+                            },
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (t: Throwable) {
+                        Result.failure(t)
+                    }
+                    events.trySend(RaceEvent.Done(idx, result))
                 }
-                idx to outcome
             }
         }
-        val pending = deferreds.toMutableSet()
-        val errors = ArrayList<Throwable>(RACE_ATTEMPTS)
-        while (pending.isNotEmpty()) {
-            val (idx, outcome) = select {
-                for (d in pending.toList()) {
-                    d.onAwait { value ->
-                        pending.remove(d)
-                        value
+
+        fun cancelAll() = jobs.forEach { it.cancel() }
+
+        startDue()
+        while (race.inFlight > 0 || race.started < race.lanes.size) {
+            val next = RaceSchedule.nextStartMs(race.startMs, race.started)
+            val elapsed = race.elapsedMs()
+            val event = if (next != null && next > elapsed) {
+                withTimeoutOrNull(next - elapsed) { events.receive() }
+            } else {
+                events.receive()
+            }
+            when (event) {
+                is RaceEvent.FirstAudio -> {
+                    race.audioAt[event.idx] = event.atMs
+                    SynthDebugLog.append("${race.label(event.idx)} first-audio ms=${event.atMs}")
+                }
+                is RaceEvent.Done -> {
+                    race.inFlight--
+                    race.finished[event.idx] = true
+                    val lane = race.lanes[event.idx].lane
+                    val audio = event.result.getOrNull()
+                    if (audio != null) {
+                        SynthDebugLog.append(
+                            "${race.label(event.idx)} win lane=${lane.label()} bytes=${audio.mp3.size} " +
+                                "firstAudioMs=${race.audioAt[event.idx]} totalMs=${race.elapsedMs()} " +
+                                "started=${race.started}",
+                        )
+                        cancelAll()
+                        onReport(race.report(winner = event.idx))
+                        return@coroutineScope audio
+                    }
+                    val t = event.result.exceptionOrNull() ?: IllegalStateException("Edge attempt failed.")
+                    race.failed += lane
+                    race.errors += t
+                    SynthDebugLog.append(
+                        "${race.label(event.idx)} fail lane=${lane.label()} t=${race.elapsedMs()}: " +
+                            (t.message ?: t.javaClass.simpleName),
+                    )
+                    if (t is EdgeContentException) {
+                        cancelAll()
+                        onReport(race.report(winner = -1, contentError = true))
+                        throw t
                     }
                 }
+                null -> Unit
             }
-            outcome.fold(
-                onSuccess = { audio ->
-                    SynthDebugLog.append(
-                        "edge race win[$idx] bytes=${audio.mp3.size} cancelOthers=${pending.size}",
-                    )
-                    pending.forEach { it.cancel() }
-                    deferreds.forEach { if (it.isActive) it.cancel() }
-                    return@coroutineScope audio
-                },
-                onFailure = { t ->
-                    errors += t
-                },
-            )
+            startDue()
         }
-        SynthDebugLog.append("edge race all failed n=${errors.size}")
-        throw errors.firstOrNull { it is EdgeContentException }
-            ?: errors.lastOrNull()
-            ?: IllegalStateException("All Edge race attempts failed.")
+        SynthDebugLog.append("${race.label()} all failed n=${race.errors.size} totalMs=${race.elapsedMs()}")
+        onReport(race.report(winner = -1))
+        race.errors.firstOrNull { it !is IOException }?.let { throw it }
+        val last = race.errors.lastOrNull()
+        throw EdgeNetworkException(last?.message ?: "All Edge race attempts failed.", last)
     }
 
     private suspend fun synthesizeOnce(
+        http: OkHttpClient,
         text: String,
         voice: String,
         lang: String,
         ratePercent: Int,
         pitchPercent: Int,
+        onFirstAudio: () -> Unit,
     ): EdgeAudio = suspendCancellableCoroutine { cont ->
         val id = UUID.randomUUID().toString().replace("-", "")
         val url = EdgeHandshake.url(id, System.currentTimeMillis() / 1000)
@@ -210,6 +325,7 @@ class EdgeTtsClient(
                             }
                             return
                         }
+                        if (audio.size() == 0) onFirstAudio()
                         audio.write(arr, start, arr.size - start)
                     }
                 }
@@ -225,10 +341,17 @@ class EdgeTtsClient(
     companion object {
         const val MAX_UTTERANCE_CHARS = 4_000
         const val MAX_AUDIO_BYTES = 8 * 1024 * 1024
-        /** Parallel WebSockets per utterance; first success wins. */
-        private const val RACE_ATTEMPTS = 3
+        /** WebSockets per utterance at most; first success wins. */
+        const val RACE_ATTEMPTS = 3
+        /**
+         * Backup attempt n starts n × this after the race begins, only if no audio has arrived.
+         * Used without lane history; [NetworkLanePolicy] adapts it to measured latency.
+         */
+        const val HEDGE_DELAY_MS = 2_000L
         /** Wall clock for the whole race (all attempts hang → fail). */
-        private const val RACE_TIMEOUT_MS = 6_000L
+        const val RACE_TIMEOUT_MS = 6_000L
+
+        private fun NetLane.label(): String = name.lowercase()
 
         fun parseAudioMetadataBody(body: String): List<EdgeWordBoundary> {
             if (body.isBlank()) return emptyList()

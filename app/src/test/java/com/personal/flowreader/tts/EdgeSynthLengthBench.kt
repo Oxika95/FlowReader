@@ -41,9 +41,9 @@ class EdgeSynthLengthBench {
         log("")
         log("=== Edge synth length bench (voice=$voice, runs=$runsPerLength) ===")
         log(
-            "%6s %6s %8s %8s %8s %8s %8s %8s".format(
+            "%6s %6s %8s %8s %8s %8s %8s %8s %8s %8s".format(
                 "chars", "words", "ms_med", "ms_avg", "ms_min", "ms_max",
-                "aud_ms", "syn/aud",
+                "aud_ms", "syn/aud", "first_md", "first_mx",
             ),
         )
 
@@ -54,15 +54,17 @@ class EdgeSynthLengthBench {
             val samples = ArrayList<Sample>()
             repeat(runsPerLength) { attempt ->
                 val t0 = System.nanoTime()
+                var report: RaceReport? = null
                 val audio = try {
-                    client.synthesize(text = text, voice = voice)
+                    client.synthesize(text = text, voice = voice, onReport = { report = it })
                 } catch (t: Throwable) {
                     log("FAIL chars=$chars attempt=$attempt: ${t.message}")
                     return@repeat
                 }
                 val synthMs = (System.nanoTime() - t0) / 1_000_000.0
                 val audMs = audioDurationMs(audio)
-                samples += Sample(synthMs, audMs, audio.mp3.size)
+                val firstMs = report?.firstAudioMs?.toDouble() ?: Double.NaN
+                samples += Sample(synthMs, audMs, audio.mp3.size, firstMs)
                 Thread.sleep(200)
             }
             if (samples.isEmpty()) continue
@@ -71,6 +73,7 @@ class EdgeSynthLengthBench {
             val avg = samples.map { it.synthMs }.average()
             val audMed = percentile(samples.map { it.audMs }.sorted(), 0.5)
             val ratio = if (audMed > 0) med / audMed else Double.NaN
+            val firstSorted = samples.map { it.firstMs }.filter { it.isFinite() }.sorted()
             val row = Row(
                 chars = text.length,
                 words = words,
@@ -83,9 +86,10 @@ class EdgeSynthLengthBench {
             )
             rows += row
             log(
-                "%6d %6d %8.0f %8.0f %8.0f %8.0f %8.0f %8.2f".format(
+                "%6d %6d %8.0f %8.0f %8.0f %8.0f %8.0f %8.2f %8.0f %8.0f".format(
                     row.chars, row.words, row.medMs, row.avgMs, row.minMs, row.maxMs,
                     row.audMs, row.ratio,
+                    percentile(firstSorted, 0.5), firstSorted.lastOrNull() ?: Double.NaN,
                 ),
             )
         }
@@ -125,7 +129,7 @@ class EdgeSynthLengthBench {
         log("Wrote ${outFile.absolutePath}")
     }
 
-    private data class Sample(val synthMs: Double, val audMs: Double, val bytes: Int)
+    private data class Sample(val synthMs: Double, val audMs: Double, val bytes: Int, val firstMs: Double)
     private data class Row(
         val chars: Int,
         val words: Int,

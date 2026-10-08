@@ -32,6 +32,7 @@ internal fun AudioSettingsTab(
     clipTargetChars: Int = TtsPrefs.DEFAULT_CLIP_TARGET_CHARS,
     clipFlexChars: Int = TtsPrefs.DEFAULT_CLIP_FLEX_CHARS,
     doubleTapPlay: Boolean = false,
+    mobileDataFallback: Boolean = true,
     autoScrollWithTts: Boolean = false,
     minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
     underlayBtAddress: String = "",
@@ -47,6 +48,7 @@ internal fun AudioSettingsTab(
     onClipTargetChars: (Int) -> Unit = {},
     onClipFlexChars: (Int) -> Unit = {},
     onDoubleTapPlay: (Boolean) -> Unit = {},
+    onMobileDataFallback: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
     onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
     onUnderlayBtDevice: (String, String) -> Unit = { _, _ -> },
@@ -81,6 +83,7 @@ internal fun AudioSettingsTab(
         )
         else -> PlaybackSettingsTab(
             doubleTapPlay = doubleTapPlay,
+            mobileDataFallback = mobileDataFallback,
             autoScrollWithTts = autoScrollWithTts,
             minSignal = minSignal,
             underlayBtAddress = underlayBtAddress,
@@ -89,6 +92,7 @@ internal fun AudioSettingsTab(
             sentenceGapMs = sentenceGapMs,
             highlightSyncMs = highlightSyncMs,
             onDoubleTapPlay = onDoubleTapPlay,
+            onMobileDataFallback = onMobileDataFallback,
             onAutoScrollWithTts = onAutoScrollWithTts,
             onMinSignal = onMinSignal,
             onUnderlayBtDevice = onUnderlayBtDevice,

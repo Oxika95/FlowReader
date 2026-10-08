@@ -74,6 +74,8 @@ data class TtsUiState(
     val pitch: Float = 1.0f,
     val prefetchCount: Int = TtsPrefs.DEFAULT_PREFETCH,
     val doubleTapPlay: Boolean = true,
+    /** Edge may send over mobile data while Wi-Fi is weak or failing. */
+    val mobileDataFallback: Boolean = true,
     val autoScrollWithTts: Boolean = true,
     val minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
     /** Paired BT MAC for underlay standby; empty = always on when armed. */
@@ -113,6 +115,9 @@ class TtsController(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val edge = EdgeTtsClient()
+    private val edgeNet = EdgeNetwork(context, edge.http)
+    /** Consecutive playhead network failures; drives the retry backoff. */
+    private var networkFailures = 0
     private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
     private val keepAlive = AudioKeepAlive()
     private val underlayBt = UnderlayBluetoothMonitor(context)
@@ -246,6 +251,8 @@ class TtsController(
             SynthDebugLog.setEnabled(reader.debugEnabled)
             underlayBt.setTargetAddress(prefs.underlayBtAddress)
             underlayBt.start()
+            edgeNet.start()
+            withContext(Dispatchers.IO) { edgeNet.setMobileDataAllowed(prefs.mobileDataFallback) }
             _state.update {
                 it.copy(
                     engineKey = prefs.engineKey,
@@ -254,6 +261,7 @@ class TtsController(
                     pitch = prefs.pitch,
                     prefetchCount = prefs.prefetchCount,
                     doubleTapPlay = prefs.doubleTapPlay,
+                    mobileDataFallback = prefs.mobileDataFallback,
                     autoScrollWithTts = prefs.autoScrollWithTts,
                     minSignal = prefs.minSignal,
                     underlayBtAddress = prefs.underlayBtAddress,
@@ -483,14 +491,7 @@ class TtsController(
     }
 
     private suspend fun previewWithEdge(text: String) {
-        val audio = withContext(Dispatchers.IO) {
-            edge.synthesize(
-                text = text,
-                voice = edgeVoiceId(),
-                ratePercent = ratePercent(),
-                pitchPercent = pitchPercent(),
-            )
-        }
+        val audio = withContext(Dispatchers.IO) { synthesizeEdge(text, tag = "preview") }
         val file = File(cacheDir, "filter_preview.mp3")
         withContext(Dispatchers.IO) { writeAtomically(file, audio.mp3) }
         playPreviewFile(file)
@@ -626,6 +627,15 @@ class TtsController(
         if (enabled == _state.value.doubleTapPlay) return
         _state.update { it.copy(doubleTapPlay = enabled) }
         scope.launch { settings.setDoubleTapPlay(enabled) }
+    }
+
+    fun setMobileDataFallback(enabled: Boolean) {
+        if (enabled == _state.value.mobileDataFallback) return
+        _state.update { it.copy(mobileDataFallback = enabled) }
+        scope.launch {
+            withContext(Dispatchers.IO) { edgeNet.setMobileDataAllowed(enabled) }
+            settings.setMobileDataFallback(enabled)
+        }
     }
 
     fun setAutoScrollWithTts(enabled: Boolean) {
@@ -821,7 +831,7 @@ class TtsController(
             }
             startEdgeJob(i) {
                 try {
-                    synthesizeToCache(i, force = true)
+                    synthesizeToCache(i, force = true, source = "regen")
                 } finally {
                     scope.launch(Dispatchers.Main.immediate) { pumpPrefetch() }
                 }
@@ -920,6 +930,7 @@ class TtsController(
         playJob = null
         stopSessionAudio()
         underlayBt.stop()
+        edgeNet.stop()
         systemTts?.stop()
         systemTts?.shutdown()
         systemTts = null
@@ -1247,10 +1258,15 @@ class TtsController(
                 } else {
                     SynthDebugLog.append("skip i=$index nothing to say text=\"${s.text}\"")
                 }
+                networkFailures = 0
             } catch (e: CancellationException) {
                 throw e
             } catch (e: EdgeContentException) {
                 reportSkippedSentence(index, s.text, e.message ?: "Edge rejected text")
+            } catch (e: EdgeNetworkException) {
+                awaitNetworkRetry(e)
+                if (generation != playGeneration) return
+                continue
             } catch (t: Throwable) {
                 stopSessionAudio()
                 _state.update { it.copy(playing = false, sessionActive = false) }
@@ -1294,6 +1310,28 @@ class TtsController(
             }
             index++
         }
+    }
+
+    /**
+     * Playhead clip failed on the network: wait (no limit) until a network can carry Edge traffic,
+     * back off, and let lookahead retry clips that failed meanwhile. Session and media card stay up.
+     */
+    private suspend fun awaitNetworkRetry(e: EdgeNetworkException) {
+        networkFailures++
+        val backoffMs = (NETWORK_RETRY_BASE_MS shl (networkFailures - 1).coerceAtMost(3))
+            .coerceAtMost(NETWORK_RETRY_MAX_MS)
+        SynthDebugLog.appendError(
+            "network i=$index failures=$networkFailures backoffMs=$backoffMs: ${e.message}",
+        )
+        withContext(Dispatchers.IO) {
+            if (edgeNet.isOffline()) {
+                SynthDebugLog.append("net waiting for network i=$index")
+                edgeNet.awaitUsable()
+                SynthDebugLog.append("net usable again i=$index")
+            }
+        }
+        delay(backoffMs)
+        prefetchFailed.clear()
     }
 
     private suspend fun speak(s: Sentence, generation: Int) {
@@ -1405,7 +1443,7 @@ class TtsController(
         // Drop work that fell behind the playhead while waiting for a slot.
         if (i < index || !inCacheWindow(i)) return
         try {
-            synthesizeToCache(i, force = false)
+            synthesizeToCache(i, force = false, source = "pre")
             val f = cacheFile(i)
             if (f.exists() && f.length() > 0L) {
                 audioEngine.prefetchDecode(f)
@@ -1455,7 +1493,7 @@ class TtsController(
                     "ensureNextDeferred start i=${i + 1} slack=${slackMs()}",
                 )
                 try {
-                    ensureSentenceCached(i + 1, generation)
+                    ensureSentenceCached(i + 1, generation, source = "next")
                 } catch (e: CancellationException) {
                     throw e
                 } catch (t: Throwable) {
@@ -1529,7 +1567,7 @@ class TtsController(
      * Wait for an on-disk Edge MP3 for sentence [i], joining any in-flight prefetch
      * instead of starting a duplicate synthesize when possible.
      */
-    private suspend fun ensureSentenceCached(i: Int, generation: Int): Boolean {
+    private suspend fun ensureSentenceCached(i: Int, generation: Int, source: String = "play"): Boolean {
         if (generation != playGeneration) return false
         val f = cacheFile(i)
         if (f.exists() && f.length() > 0L) {
@@ -1547,14 +1585,29 @@ class TtsController(
                 return true
             }
         }
-        return synthesizeToCache(i, force = false)
+        return synthesizeToCache(i, force = false, source = source)
+    }
+
+    /** Edge race over the lanes [edgeNet] picks for the current network; the outcome feeds back into it. */
+    private suspend fun synthesizeEdge(text: String, tag: String): EdgeAudio {
+        val lanes = withContext(Dispatchers.IO) { edgeNet.lanes() }
+        return edge.synthesize(
+            text = text,
+            voice = edgeVoiceId(),
+            ratePercent = ratePercent(),
+            pitchPercent = pitchPercent(),
+            lanes = lanes,
+            onReport = edgeNet::report,
+            tag = tag,
+        )
     }
 
     /**
      * Ensure sentence [i] has an Edge MP3 on disk. When [force] is true, always re-synthesize.
+     * [source] labels the synth log (`pre`, `play`, `next`, `regen`).
      * @return true if a usable file is ready afterward.
      */
-    private suspend fun synthesizeToCache(i: Int, force: Boolean): Boolean {
+    private suspend fun synthesizeToCache(i: Int, force: Boolean, source: String): Boolean {
         if (_state.value.engineKey != TtsEngines.EDGE) return false
         val s = sentences.getOrNull(i) ?: return false
         val f = cacheFile(i)
@@ -1577,12 +1630,7 @@ class TtsController(
         }
         publishGenerating(i)
         return try {
-            val audio = edge.synthesize(
-                text = text,
-                voice = edgeVoiceId(),
-                ratePercent = ratePercent(),
-                pitchPercent = pitchPercent(),
-            )
+            val audio = synthesizeEdge(text, tag = "$source i=$i")
             writeAtomically(f, audio.mp3)
             writeWordBoundaries(wordsFile, audio.boundaries)
             wordBoundariesBySentence[i] = audio.boundaries
@@ -1613,6 +1661,7 @@ class TtsController(
 
     private fun stopSessionAudio() {
         audioEngine.release()
+        edgeNet.releaseCellular()
         keepAlive.stop()
         stopPcmWordTracking()
         clearWordHighlight()
@@ -2105,6 +2154,10 @@ class TtsController(
 
         /** Chapters without text skipped in a row before playback treats it as the book's end. */
         private const val MAX_EMPTY_PULL = 8
+
+        /** Playhead network retry backoff: 1 s, 2 s, 4 s, then 8 s per attempt. */
+        private const val NETWORK_RETRY_BASE_MS = 1_000L
+        private const val NETWORK_RETRY_MAX_MS = 8_000L
 
         /** `b<bookKey>_s<sentenceIndex>_<voiceKey>.mp3` */
         private val SENTENCE_CACHE_NAME = Regex("""^b([A-Za-z0-9.-]*)_s(\d+)_.*\.mp3$""")
