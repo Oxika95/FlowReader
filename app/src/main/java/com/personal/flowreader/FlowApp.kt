@@ -80,12 +80,12 @@ class FlowApp : Application() {
         pluginManager = PluginManager(this)
         PluginMigrations.run(this, pluginManager.root)
         pluginManager.initialize()
-        pluginBooks = PluginBookStore(pluginManager)
+        pluginBooks = PluginBookStore(pluginManager, appScope) { settings.pluginCacheDefaultsOnce() }
         pluginRepos = RepoManager(settings)
         pluginInstaller = PluginInstaller(pluginManager, pluginRepos)
         progress = ProgressWriter(db.progress(), appScope) { update ->
             if (pluginBooks.isPluginBook(update.bookId)) {
-                pluginBooks.maintainChapterCache(update.bookId, update.chapterIndex)
+                pluginBooks.scheduleMaintain(update.bookId, update.chapterIndex)
             }
         }
         persistSpokenPosition()

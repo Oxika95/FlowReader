@@ -23,6 +23,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -57,7 +65,9 @@ private const val FooterRowMax = 3
  * the footer (secondary/destructive rows, then the primary button).
  *
  * [onAction] receives every rail and footer tap; the caller routes by [MediaAction.id] /
- * [MediaAction.owner]. Links open in the browser unless [onLink] is given.
+ * [MediaAction.owner]. [onLongAction] receives long presses on footer actions marked
+ * [MediaAction.longPress]; [onSegmentsLongPress] a long press on the segment strip. Links open
+ * in the browser unless [onLink] is given.
  */
 @Composable
 fun FlowMediaCard(
@@ -67,6 +77,8 @@ fun FlowMediaCard(
     onDismiss: () -> Unit,
     onAction: (MediaAction) -> Unit,
     onLink: ((MediaLink) -> Unit)? = null,
+    onLongAction: ((MediaAction) -> Unit)? = null,
+    onSegmentsLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     FlowFullscreenCard(
@@ -76,7 +88,7 @@ fun FlowMediaCard(
         bodySpacing = Arrangement.Top,
     ) {
         val m = model ?: return@FlowFullscreenCard
-        MediaCoverBand(m, art, onAction)
+        MediaCoverBand(m, art, onAction, onSegmentsLongPress)
         Column(
             Modifier
                 .fillMaxWidth()
@@ -103,7 +115,7 @@ fun FlowMediaCard(
                     }
                 }
             }
-            MediaFooter(m.footer, onAction)
+            MediaFooter(m.footer, onAction, onLongAction)
             if (m.error.isNotBlank()) {
                 Text(
                     m.error,
@@ -117,7 +129,12 @@ fun FlowMediaCard(
 }
 
 @Composable
-private fun MediaCoverBand(m: MediaCardModel, art: ImageBitmap?, onAction: (MediaAction) -> Unit) {
+private fun MediaCoverBand(
+    m: MediaCardModel,
+    art: ImageBitmap?,
+    onAction: (MediaAction) -> Unit,
+    onSegmentsLongPress: (() -> Unit)?,
+) {
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
@@ -151,7 +168,7 @@ private fun MediaCoverBand(m: MediaCardModel, art: ImageBitmap?, onAction: (Medi
                         bottom = FlowTokens.Space.M,
                     ),
             ) {
-                MediaBandText(m, coverMaxHeight)
+                MediaBandText(m, coverMaxHeight, onSegmentsLongPress)
             }
         }
         if (m.rail.isNotEmpty()) {
@@ -177,7 +194,7 @@ private fun MediaCoverBand(m: MediaCardModel, art: ImageBitmap?, onAction: (Medi
 }
 
 @Composable
-private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp) {
+private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp, onSegmentsLongPress: (() -> Unit)?) {
     val muted = FlowTokens.CoverMutedWhite
     Text(
         m.title,
@@ -232,13 +249,41 @@ private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp) {
         )
     }
     m.segments?.takeIf { it.count > 0 }?.let { seg ->
-        MediaSegmentStrip(
-            seg,
+        val holdable = if (onSegmentsLongPress != null) {
+            val haptic = LocalHapticFeedback.current
+            val longPress by rememberUpdatedState(onSegmentsLongPress)
+            Modifier
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            longPress()
+                        },
+                    )
+                }
+                .semantics {
+                    onLongClick(label = m.segmentsLongPressLabel.ifBlank { null }) {
+                        longPress()
+                        true
+                    }
+                }
+        } else {
+            Modifier
+        }
+        // Vertical padding inside the gesture area widens the touch target of the thin strip.
+        Box(
             Modifier
                 .fillMaxWidth()
-                .padding(top = FlowTokens.Space.S)
-                .height(FlowTokens.Comp.SegmentStrip),
-        )
+                .then(holdable)
+                .padding(vertical = FlowTokens.Space.S),
+        ) {
+            MediaSegmentStrip(
+                seg,
+                Modifier
+                    .fillMaxWidth()
+                    .height(FlowTokens.Comp.SegmentStrip),
+            )
+        }
     }
 }
 
@@ -255,7 +300,11 @@ private fun MediaLinks(links: List<MediaLink>, onLink: (MediaLink) -> Unit) {
 }
 
 @Composable
-private fun MediaFooter(actions: List<MediaAction>, onAction: (MediaAction) -> Unit) {
+private fun MediaFooter(
+    actions: List<MediaAction>,
+    onAction: (MediaAction) -> Unit,
+    onLongAction: ((MediaAction) -> Unit)?,
+) {
     val secondary = actions.filter { it.kind != MediaActionKind.Primary }
     val primary = actions.firstOrNull { it.kind == MediaActionKind.Primary }
     if (secondary.isEmpty() && primary == null) return
@@ -277,6 +326,7 @@ private fun MediaFooter(actions: List<MediaAction>, onAction: (MediaAction) -> U
                             onClick = { onAction(a) },
                             enabled = a.enabled,
                             destructive = a.kind == MediaActionKind.Destructive,
+                            onLongClick = onLongAction?.takeIf { a.longPress }?.let { handler -> { handler(a) } },
                         )
                     }
                 }

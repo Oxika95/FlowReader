@@ -17,6 +17,19 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalViewConfiguration
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -129,17 +142,40 @@ fun FlowFab(
     }
 }
 
-/** Card-footer secondary button (outlined, 40dp), sharing a row with siblings. */
+/**
+ * Card-footer secondary button (outlined, 40dp), sharing a row with siblings. With
+ * [onLongClick], holding past the long-press timeout runs it instead of [onClick].
+ */
 @Composable
 fun RowScope.FlowSecondaryButton(
     label: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
     destructive: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    var longFired by remember { mutableStateOf(false) }
+    if (onLongClick != null) {
+        val timeout = LocalViewConfiguration.current.longPressTimeoutMillis
+        val haptic = LocalHapticFeedback.current
+        val longClick by rememberUpdatedState(onLongClick)
+        LaunchedEffect(interaction, timeout) {
+            interaction.interactions.collectLatest { i ->
+                if (i is PressInteraction.Press) {
+                    longFired = false
+                    delay(timeout)
+                    longFired = true
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    longClick()
+                }
+            }
+        }
+    }
     OutlinedButton(
-        onClick = onClick,
+        onClick = { if (longFired) longFired = false else onClick() },
         enabled = enabled,
+        interactionSource = interaction,
         modifier = Modifier
             .weight(1f)
             .height(FlowTokens.Comp.ButtonSecondary),

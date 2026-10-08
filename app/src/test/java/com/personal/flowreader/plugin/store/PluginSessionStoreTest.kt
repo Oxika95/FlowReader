@@ -29,8 +29,8 @@ class PluginSessionStoreTest {
             assertEquals(2, loaded.toc.size)
             assertEquals("Ch 1", loaded.toc[0].title)
             assertEquals(-1, loaded.loadedThrough)
-            assertEquals(PluginCachePolicy.DEFAULT_AHEAD, loaded.prefetchAhead)
-            assertEquals(PluginCachePolicy.DEFAULT_BEHIND, loaded.keepBehind)
+            assertEquals(PluginCachePolicy.DEFAULT_LEVEL, loaded.cacheLevel)
+            assertFalse(loaded.cleanup)
             assertTrue(loaded.pinnedRanges.isEmpty())
             assertFalse(File(dir, "c/0.txt").exists())
             val splash = PluginSessionStore.readSplash(dir)!!
@@ -68,6 +68,8 @@ class PluginSessionStoreTest {
             assertEquals("21220", loaded.workId)
             assertEquals("https://www.royalroad.com/fiction/21220/mol", loaded.workUrl)
             assertEquals(3, loaded.startIndex)
+            assertEquals(2, loaded.cacheLevel)
+            assertFalse(loaded.cleanup)
             assertEquals(listOf(0..1), loaded.pinnedRanges)
             val splash = PluginSessionStore.readSplash(dir)!!
             assertEquals("4.5 / 5", splash.rating)
@@ -95,36 +97,75 @@ class PluginSessionStoreTest {
             val dir = PluginSessionStore.dir(root, "3")
             PluginSessionStore.writeMeta(
                 dir,
-                session("3", tocSize = 10).copy(prefetchAhead = 4, keepBehind = 2, pinnedRanges = listOf(0..2, 8..9)),
+                session("3", tocSize = 10).copy(cacheLevel = 4, cleanup = true, pinnedRanges = listOf(0..2, 8..9)),
             )
             val loaded = PluginSessionStore.read(root, "3", "demo", "d:3")!!
-            assertEquals(4, loaded.prefetchAhead)
-            assertEquals(2, loaded.keepBehind)
+            assertEquals(4, loaded.cacheLevel)
+            assertTrue(loaded.cleanup)
             assertEquals(listOf(0..2, 8..9), loaded.pinnedRanges)
         }
     }
 
     @Test
-    fun desiredSetUnionsWindowAndPins() {
-        val desired = PluginSessionStore.desiredChapterIndices(
-            locus = 3,
-            tocSize = 10,
-            policy = PluginCachePolicy(prefetchAhead = 1, keepBehind = 1, pinnedRanges = listOf(8..9)),
-        )
-        assertEquals(setOf(2, 3, 4, 8, 9), desired)
+    fun legacyPartialPinsAreDropped() {
+        withRoot { root ->
+            val dir = PluginSessionStore.dir(root, "7").apply { mkdirs() }
+            File(dir, "meta.txt").writeText("v2\nprefetchAhead=10\nkeepBehind=10\npinnedRanges=99-108\n")
+            File(dir, "toc.txt").writeText((1..200).joinToString("\n") { "C$it\thttps://x/$it" })
+            val loaded = PluginSessionStore.read(root, "7", "demo", "d:7")!!
+            assertEquals(10, loaded.cacheLevel)
+            assertTrue(loaded.pinnedRanges.isEmpty())
+        }
     }
 
     @Test
-    fun pruneKeepsPinsAndWindowDeletesRest() {
+    fun fetchIsAheadOnlyFromLocus() {
+        val fetch = PluginSessionStore.fetchIndices(
+            locus = 99,
+            tocSize = 500,
+            policy = PluginCachePolicy(cacheLevel = 10),
+        )
+        assertEquals((99..109).toSet(), fetch)
+    }
+
+    @Test
+    fun fetchAddsPinsAndClipsToToc() {
+        val fetch = PluginSessionStore.fetchIndices(
+            locus = 8,
+            tocSize = 10,
+            policy = PluginCachePolicy(cacheLevel = 5, pinnedRanges = listOf(0..1)),
+        )
+        assertEquals(setOf(8, 9, 0, 1), fetch)
+    }
+
+    @Test
+    fun pruneDoesNothingWithCleanupOff() {
+        val prune = PluginSessionStore.pruneIndices((0..20).toList(), locus = 15, tocSize = 21, PluginCachePolicy(cacheLevel = 2))
+        assertTrue(prune.isEmpty())
+    }
+
+    @Test
+    fun pruneDeletesOlderThanLevelExceptPins() {
+        val policy = PluginCachePolicy(cacheLevel = 10, cleanup = true, pinnedRanges = listOf(0..2))
+        val prune = PluginSessionStore.pruneIndices((0..120).toList(), locus = 115, tocSize = 200, policy)
+        assertEquals((3..104).toSet(), prune)
+    }
+
+    @Test
+    fun pruneAlwaysDropsChaptersPastToc() {
+        val prune = PluginSessionStore.pruneIndices(listOf(1, 5, 6), locus = 1, tocSize = 5, PluginCachePolicy())
+        assertEquals(setOf(5, 6), prune)
+    }
+
+    @Test
+    fun deleteChaptersRemovesFiles() {
         withRoot { root ->
             val dir = PluginSessionStore.dir(root, "5")
-            val s = session("5", tocSize = 6).copy(pinnedRanges = listOf(5..5))
-            PluginSessionStore.writeMeta(dir, s)
+            PluginSessionStore.writeMeta(dir, session("5", tocSize = 6))
             for (i in 0..5) PluginSessionStore.writeChapter(dir, i, "C$i", "body $i")
-            val desired = PluginSessionStore.desiredChapterIndices(locus = 2, tocSize = 6, policy = s.cachePolicy)
-            assertEquals(setOf(1, 2, 3, 5), desired)
-            PluginSessionStore.pruneChaptersOutside(dir, 6, desired)
+            assertEquals(2, PluginSessionStore.deleteChapters(dir, listOf(0, 4)))
             assertEquals(setOf(1, 2, 3, 5), PluginSessionStore.cachedChapterIndices(dir, 6))
+            assertEquals(setOf(1, 2, 3, 5), PluginSessionStore.chapterFileIndices(dir))
         }
     }
 

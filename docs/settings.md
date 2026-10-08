@@ -90,8 +90,10 @@ Hold a rule for edit mode (drag reorder, multi-select, Delete) like Filters. The
 
 ### Plugins
 
-Installed plugins (Update, Settings, Uninstall), available plugins from repositories (Install), and the
-repository list (Add repository, Refresh, Remove). See [plugins.md](plugins.md).
+Installed plugins (Update, Settings, Uninstall), **New stories** defaults (Cache level: chapters
+downloaded ahead of the reading position, default 1; Clean up old chapters, default off; each story
+can change its own from the hold-Download card), available plugins from repositories (Install), and
+the repository list (Add repository, Refresh, Remove). See [plugins.md](plugins.md).
 
 ## Layout
 

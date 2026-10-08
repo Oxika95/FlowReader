@@ -13,6 +13,7 @@ Notable keys beyond Settings UI:
 | `enabled_plugins` | Comma-separated plugin ids |
 | `custom_library_tabs` | JSON shelves |
 | `notifications_asked` | Notification prompt flag |
+| `plugin_cache_level`, `plugin_cache_cleanup` | Cache level and cleanup new plugin stories start with |
 
 Theme, TTS, filters JSON, share router/parse rules — see [settings.md](settings.md).
 
@@ -34,7 +35,10 @@ app-scoped (outlives the reader), and per book a write older than the last store
 Sources: reader jumps (`ReaderViewModel.persist`, only after load and only once the position moved),
 and every spoken TTS sentence (`FlowApp.persistSpokenPosition`, also with the reader closed). The
 reader registers a `ProgressLocator` per book that adds whole-book `readingProgress`, `chapterHref`
-and a 64-character `anchorText` to each write.
+and a 64-character `anchorText` to each write. The plugin story card's position slider also writes
+here (chapter start, blank anchor). For plugin books each write calls
+`PluginBookStore.scheduleMaintain`, which on a chapter change syncs the site and downloads / cleans
+up in its own job (newer chapter cancels it), never inside the writer.
 
 Locus meaning:
 
@@ -69,6 +73,8 @@ sizes (`BookMeter`), so no full parse is needed.
 | Linked cache | Under cache when referencing in place |
 | `filesDir/plugins/installed/{id}/` | Installed plugin `plugin.json` + `index.js` |
 | `filesDir/plugins/data/{id}/` | Plugin story sessions, ToC, chapter cache, lists, settings, key-value store |
+| `…/data/{id}/{work}/meta.txt` | Story session: `cacheLevel` (chapters ahead), `cleanup`, `pinnedRanges` (Download all only). Older `prefetchAhead` / `keepBehind` map to `cacheLevel = max`; older partial pins are dropped |
+| `…/data/{id}/{work}/c/{i}.txt` | Cached chapter body (title, blank line, text) |
 | `shared_prefs/plugin_secret_{id}.xml` | Encrypted plugin secrets and cookies (excluded from backup) |
 
 Book ids are SHA-256 of file bytes ([`BookCatalog.kt`](../app/src/main/java/com/personal/flowreader/data/BookCatalog.kt)).

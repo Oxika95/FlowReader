@@ -62,11 +62,15 @@ data class PluginMediaInfo(
     val chapterCount: Int,
     val downloadedCount: Int,
     val cachedIndices: Set<Int>,
+    /** Saved reading position (absolute ToC index). */
     val locus: Int,
+    /** Chapters kept ahead of [locus]. */
     val cacheLevel: Int,
     val listedIn: Set<String>,
     /** apiVersion 2 slots; null for v1 plugins (fields above are mapped instead). */
     val card: PluginCard?,
+    /** Chapters more than [cacheLevel] behind [locus] are deleted. */
+    val cleanup: Boolean = false,
 )
 
 /**
@@ -133,10 +137,26 @@ object PluginMediaCardAdapter {
             }
         }
         val canRead = !busy && info.chapterCount > 0
+        val downloading = downloadProgress != null
         val footer = buildList {
-            add(MediaAction(MediaActionIds.DOWNLOAD, "Download", MediaActionKind.Secondary, enabled = canRead))
-            add(MediaAction(MediaActionIds.REFRESH, "Refresh", MediaActionKind.Secondary, enabled = !busy))
-            add(MediaAction(MediaActionIds.DELETE, "Delete", MediaActionKind.Destructive, enabled = !busy))
+            add(
+                MediaAction(
+                    MediaActionIds.DOWNLOAD,
+                    if (downloading) "Cancel download" else "Download",
+                    MediaActionKind.Secondary,
+                    enabled = canRead || downloading,
+                    longPress = !downloading,
+                ),
+            )
+            add(MediaAction(MediaActionIds.REFRESH, "Refresh", MediaActionKind.Secondary, enabled = !busy && !downloading))
+            add(
+                MediaAction(
+                    MediaActionIds.DELETE,
+                    "Delete",
+                    MediaActionKind.Destructive,
+                    enabled = !busy && !downloading,
+                ),
+            )
             card?.actions?.filter { it.placement == PluginActionPlacement.Footer }?.forEach { a ->
                 add(
                     MediaAction(
@@ -155,7 +175,8 @@ object PluginMediaCardAdapter {
         val status = if (downloadProgress != null) {
             "Downloading ${downloadProgress.first} / ${downloadProgress.second}"
         } else {
-            "Cached ${info.downloadedCount} / ${info.chapterCount} chapters · cache level ${info.cacheLevel}"
+            "Cached ${info.downloadedCount} / ${info.chapterCount} chapters · next ${info.cacheLevel} · " +
+                "cleanup ${if (info.cleanup) "on" else "off"}"
         }
         return MediaCardModel(
             title = info.title,
@@ -165,6 +186,7 @@ object PluginMediaCardAdapter {
             tags = info.tags,
             synopsis = info.synopsis,
             segments = MediaSegments(info.chapterCount, info.locus, info.cachedIndices),
+            segmentsLongPressLabel = "Change reading position",
             status = status,
             error = error.orEmpty(),
             links = card?.links?.map { MediaLink(it.label, it.url) }.orEmpty(),

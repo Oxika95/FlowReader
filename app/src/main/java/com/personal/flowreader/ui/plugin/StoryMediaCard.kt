@@ -27,6 +27,8 @@ internal fun StoryMediaCard(
     onDismiss: () -> Unit,
     onRead: () -> Unit,
     onDownload: () -> Unit,
+    onDownloadOptions: () -> Unit,
+    onPosition: () -> Unit,
     onRefreshToc: () -> Unit,
     onDelete: () -> Unit,
     onToggleList: (String) -> Unit,
@@ -37,8 +39,10 @@ internal fun StoryMediaCard(
     val context = LocalContext.current
     val book = story?.let { s -> ui.books.find { it.bookId == s.bookId } }
     val cover by rememberBookCover(book, maxEdge = FlowTokens.CoverEdge.Hero)
-    val model = remember(story, ui.busy, ui.downloadProgress, ui.partialStartIndex, ui.error, ui.showDownload, hiddenActions) {
+    val overlayOpen = ui.showPartial || ui.showPosition
+    val model = remember(story, ui.busy, ui.downloadProgress, ui.downloadBookId, ui.error, overlayOpen, hiddenActions) {
         story?.let { s ->
+            val progress = ui.downloadProgress?.takeIf { ui.downloadBookId == s.bookId }
             PluginMediaCardAdapter.model(
                 manifest = ui.manifest,
                 info = PluginMediaInfo(
@@ -53,14 +57,15 @@ internal fun StoryMediaCard(
                     chapterCount = s.chapterCount,
                     downloadedCount = s.downloadedCount,
                     cachedIndices = s.cachedIndices,
-                    locus = ui.partialStartIndex,
-                    cacheLevel = maxOf(s.keepBehind, s.prefetchAhead),
+                    locus = s.chapterIndex,
+                    cacheLevel = s.cacheLevel,
                     listedIn = s.listedIn,
                     card = s.card,
+                    cleanup = s.cleanup,
                 ),
                 busy = ui.busy,
-                downloadProgress = ui.downloadProgress,
-                error = ui.error?.takeIf { !ui.showDownload },
+                downloadProgress = progress,
+                error = ui.error?.takeIf { !overlayOpen },
             ).withoutHostActions(hiddenActions)
         }
     }
@@ -69,6 +74,8 @@ internal fun StoryMediaCard(
         model = model,
         art = cover,
         onDismiss = onDismiss,
+        onLongAction = { action -> if (action.id == MediaActionIds.DOWNLOAD) onDownloadOptions() },
+        onSegmentsLongPress = onPosition,
         onAction = { action ->
             val s = story ?: return@FlowMediaCard
             if (action.owner == MediaActionOwner.Plugin) {

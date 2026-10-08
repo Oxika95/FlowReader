@@ -163,16 +163,21 @@ FlowMediaCard(
 | `rail: List<MediaAction>` | Circular buttons, top-end of the cover (`Toggle` / `Icon`) |
 | `footer: List<MediaAction>` | `Secondary` / `Destructive` buttons, then exactly one `Primary` |
 
-`MediaAction(id, label, kind, icon, on, enabled, owner)`. `owner = Plugin` actions are routed to
-the plugin (`cardAction`); `Host` actions are handled by the caller. Reserved host ids:
+`MediaAction(id, label, kind, icon, on, enabled, owner, longPress)`. `owner = Plugin` actions are
+routed to the plugin (`cardAction`); `Host` actions are handled by the caller. Reserved host ids:
 `MediaActionIds.READ/OPEN/DOWNLOAD/REFRESH/DELETE/REMOVE/SHARE` and `list:{listId}`.
+
+Long presses (optional, generic hooks on `FlowMediaCard`): footer actions with `longPress = true`
+also go to `onLongAction` (via `FlowSecondaryButton(onLongClick)`, which keeps the outlined button
+look); a hold on the segment strip goes to `onSegmentsLongPress` (`segmentsLongPressLabel` is its
+accessibility label). The plugin story card uses them for Partial download and the position slider.
 
 ### Adapters (`MediaCardAdapters.kt`, pure Kotlin, unit-tested)
 
 | Adapter | Source | Stats | Rail | Footer |
 | --- | --- | --- | --- | --- |
 | `FileMediaCardAdapter` | Files tab book | Read %, format, size | — | Share, Remove, Open |
-| `PluginMediaCardAdapter` | Plugin story | v2 `card.stats` or v1 rating/views, then chapters | List toggles, Share, plugin rail actions (≤2) | Download, Refresh, Delete, plugin footer actions (≤2), Read |
+| `PluginMediaCardAdapter` | Plugin story | v2 `card.stats` or v1 rating/views, then chapters | List toggles, Share, plugin rail actions (≤2) | Download (hold: partial; "Cancel download" while running), Refresh, Delete, plugin footer actions (≤2), Read |
 
 New media source = new adapter + a caller that routes ids. Do not add parameters to
 `FlowMediaCard` for one source.

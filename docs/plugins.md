@@ -25,10 +25,22 @@ card (cover, badges, stats, tags, synopsis, cache strip, list toggles, Share, li
 Download / Refresh / Delete, **Read**). apiVersion 2 plugins add their own stats, badges, links
 and up to two rail and two footer actions ([example](plugins/examples/media-card.md)).
 
-- **Stream (default):** full ToC on add; chapter bodies on demand; small cache around the current position
+- **Stream (default):** full ToC on add; chapter bodies on demand. Reading or listening downloads
+  the current chapter and the **cache level** (N) chapters after it whenever the chapter changes,
+  and syncs that chapter to the site as read (fetching or preloading alone doesn't sync)
 - Each chapter opens with its title as a heading (like an EPUB chapter), shown and spoken; a body
   that already starts with the title isn't repeated
-- **Download:** All or Partial (start chapter, cache level)
+- **Saved position** (the progress row) is the one anchor: the cache bar's locus, the partial
+  download start, and the stream window all use it. **Hold the cache bar** to open a chapter slider
+  (with − / + for exact steps); **Save** asks before replacing an existing position, writes the
+  start of that chapter, then downloads ahead from it
+- **Download:** tap = "Download all N chapters?" confirm; while running the button reads **Cancel
+  download**. **Hold Download** for Partial download: the saved position, the cache level field,
+  **Clean up old chapters**, and **Download next N** (the saved chapter through N after it)
+- **Cleanup** (per story, off by default): deletes chapters more than N behind the saved position.
+  Download all pins the whole ToC, so those chapters are never cleaned up; a cancelled or failed
+  Download all drops the pin again. With cleanup off, chapters stay until Delete
+- New stories take cache level and cleanup from **Settings → Import → Plugins → New stories**
 
 ## Import routing
 

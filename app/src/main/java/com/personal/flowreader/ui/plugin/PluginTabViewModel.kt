@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.PluginSource
 import com.personal.flowreader.plugin.api.PluginCapability
@@ -23,7 +24,10 @@ import com.personal.flowreader.plugin.store.PluginMembershipStore
 import com.personal.flowreader.plugin.store.PluginReadSession
 import com.personal.flowreader.plugin.store.PluginSessionStore
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -48,9 +52,12 @@ data class PluginStory(
     /** Absolute ToC indices with bodies on disk. */
     val cachedIndices: Set<Int>,
     val readingProgress: Float,
+    /** Saved reading position (absolute ToC index); the cache bar locus and download start. */
     val chapterIndex: Int,
-    val prefetchAhead: Int = PluginCachePolicy.DEFAULT_AHEAD,
-    val keepBehind: Int = PluginCachePolicy.DEFAULT_BEHIND,
+    /** A position past the start of chapter 1 is saved. */
+    val hasSavedPosition: Boolean = false,
+    val cacheLevel: Int = PluginCachePolicy.DEFAULT_LEVEL,
+    val cleanup: Boolean = false,
     /** Plugin list ids this story is tagged with. */
     val listedIn: Set<String> = emptySet(),
     /** apiVersion 2 media card slots; null for v1 plugins. */
@@ -58,8 +65,6 @@ data class PluginStory(
 ) {
     val chapterCount: Int get() = toc.size
 }
-
-enum class PluginDownloadPane { Menu, Partial }
 
 enum class SyncMode { Merge, Overwrite }
 
@@ -85,15 +90,18 @@ data class PluginTabUi(
     val searchPage: Int = 0,
     val searchHasMore: Boolean = false,
     val story: PluginStory? = null,
-    val showDownload: Boolean = false,
-    val downloadPane: PluginDownloadPane = PluginDownloadPane.Menu,
-    /** 1-based chapter number text; may be blank while editing. */
-    val partialStartDraft: String = "1",
-    val partialStartIndex: Int = 0,
-    val partialCountDraft: String = "",
-    /** Chapters held both ahead of and behind the reading position. */
-    val cacheLevelDraft: String = PluginCachePolicy.DEFAULT_AHEAD.toString(),
+    /** "Download all N chapters?" confirm is showing. */
+    val confirmDownloadAll: Boolean = false,
+    /** Partial download card (long-press Download) is showing. */
+    val showPartial: Boolean = false,
+    /** Position slider (long-press the cache bar) is showing. */
+    val showPosition: Boolean = false,
+    /** Chapters kept ahead of the reading position; may be blank while editing. */
+    val cacheLevelDraft: String = PluginCachePolicy.DEFAULT_LEVEL.toString(),
+    /** Non-null while a download runs. */
     val downloadProgress: Pair<Int, Int>? = null,
+    /** Story the running download belongs to. */
+    val downloadBookId: String? = null,
     val session: PluginSession = PluginSession(),
     val loginFields: Map<String, String> = emptyMap(),
     val showLogin: Boolean = false,
@@ -130,6 +138,8 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     val ui: StateFlow<PluginTabUi> = _ui
 
     private fun source(): PluginSource = manager.source(pluginId)
+
+    private var downloadJob: Job? = null
 
     init {
         refreshLocal()
@@ -331,29 +341,19 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         }
     }
 
-    private suspend fun showStory(splash: PluginStory, closeAdd: Boolean) {
-        val pinStart = withContext(Dispatchers.IO) {
-            books.readSplashBundle(splash.bookId)?.first?.pinnedRanges?.minOfOrNull { it.first }
-        }
-        val start = when {
-            splash.chapterIndex > 0 -> splash.chapterIndex
-            pinStart != null -> pinStart
-            else -> 0
-        }.coerceIn(0, (splash.chapterCount - 1).coerceAtLeast(0))
+    private fun showStory(splash: PluginStory, closeAdd: Boolean) {
         _ui.update {
             it.copy(
                 busy = false,
                 showAdd = if (closeAdd) false else it.showAdd,
                 story = splash,
-                partialStartDraft = (start + 1).toString(),
-                partialStartIndex = start,
-                cacheLevelDraft = maxOf(splash.prefetchAhead, splash.keepBehind).toString(),
+                cacheLevelDraft = splash.cacheLevel.toString(),
             )
         }
     }
 
     fun closeStory() = _ui.update {
-        it.copy(story = null, downloadProgress = null, showDownload = false, downloadPane = PluginDownloadPane.Menu)
+        it.copy(story = null, confirmDownloadAll = false, showPartial = false, showPosition = false)
     }
 
     private suspend fun loadStory(bookId: String): PluginStory {
@@ -378,8 +378,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             cachedIndices = PluginSessionStore.cachedChapterIndices(dir, session.toc.size),
             readingProgress = progress?.readingProgress ?: 0f,
             chapterIndex = (progress?.chapterIndex ?: 0).coerceIn(0, session.toc.lastIndex.coerceAtLeast(0)),
-            prefetchAhead = session.prefetchAhead,
-            keepBehind = session.keepBehind,
+            hasSavedPosition = progress != null &&
+                (progress.chapterIndex > 0 || progress.blockIndex > 0 || progress.charOffset > 0),
+            cacheLevel = session.cacheLevel,
+            cleanup = session.cleanup,
             listedIn = PluginMembershipStore.listsContaining(dataDir, listIds, session.workId),
             card = splash?.card,
         )
@@ -632,157 +634,179 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
 
     // --- Downloads --------------------------------------------------------------------------
 
-    fun openDownloadOptions() {
+    /** Tap Download: confirm Download all, or cancel the running download. */
+    fun onDownloadTap() {
         val story = _ui.value.story ?: return
+        if (downloadJob?.isActive == true) {
+            if (_ui.value.downloadBookId == story.bookId) {
+                downloadJob?.cancel()
+            } else {
+                _ui.update { it.copy(message = "Another story is still downloading") }
+            }
+            return
+        }
+        _ui.update { it.copy(confirmDownloadAll = true, error = null) }
+    }
+
+    fun dismissDownloadAll() = _ui.update { it.copy(confirmDownloadAll = false) }
+
+    fun downloadAllChapters() {
+        val story = _ui.value.story ?: return
+        _ui.update { it.copy(confirmDownloadAll = false) }
+        runDownload(story, "Download failed") { onProgress ->
+            val count = books.downloadAllChapters(story.bookId, story.chapterIndex, onProgress)
+            "Downloaded $count / ${story.chapterCount} chapters"
+        }
+    }
+
+    /** Long-press Download: the partial download card. */
+    fun openPartial() {
+        val story = _ui.value.story ?: return
+        _ui.update { it.copy(showPartial = true, cacheLevelDraft = story.cacheLevel.toString(), error = null) }
+    }
+
+    /** A blank cache level field goes back to the saved level. */
+    fun closePartial() = _ui.update {
+        it.copy(showPartial = false, cacheLevelDraft = it.story?.cacheLevel?.toString() ?: it.cacheLevelDraft)
+    }
+
+    fun setCacheLevelDraft(value: String) {
+        val digits = value.filter { c -> c.isDigit() }.take(4)
+        _ui.update { it.copy(cacheLevelDraft = digits) }
+        val story = _ui.value.story ?: return
+        val level = digits.toIntOrNull() ?: return
+        saveCachePolicy(story, level, story.cleanup)
+    }
+
+    fun setCleanup(on: Boolean) {
+        val story = _ui.value.story ?: return
+        saveCachePolicy(story, story.cacheLevel, on)
+    }
+
+    private fun saveCachePolicy(story: PluginStory, level: Int, cleanup: Boolean) {
+        _ui.update { ui -> ui.copy(story = ui.story?.copy(cacheLevel = level, cleanup = cleanup)) }
+        viewModelScope.launch {
+            try {
+                val refreshed = withContext(Dispatchers.IO) {
+                    books.setCachePolicy(story.bookId, level, cleanup)
+                    if (cleanup) books.pruneChapterCache(story.bookId, story.chapterIndex)
+                    loadStory(story.bookId)
+                }
+                refreshLocal()
+                _ui.update { ui -> if (ui.story?.bookId == story.bookId) ui.copy(story = refreshed) else ui }
+            } catch (t: Throwable) {
+                fail(t, "Could not update cache settings")
+            }
+        }
+    }
+
+    /** Download the saved position and the cache level of chapters after it. */
+    fun downloadAhead() {
+        val story = _ui.value.story ?: return
+        if (downloadJob?.isActive == true) {
+            _ui.update { it.copy(message = "A download is already running") }
+            return
+        }
+        runDownload(story, "Partial download failed") { onProgress ->
+            val count = books.downloadAhead(story.bookId, story.chapterIndex, onProgress)
+            "Cached $count / ${story.chapterCount} chapters"
+        }
+    }
+
+    private fun runDownload(
+        story: PluginStory,
+        failure: String,
+        block: suspend (onProgress: (Int, Int) -> Unit) -> String,
+    ) {
+        downloadJob?.cancel()
+        downloadJob = viewModelScope.launch {
+            _ui.update { it.copy(error = null, downloadProgress = 0 to 1, downloadBookId = story.bookId) }
+            try {
+                val message = withContext(Dispatchers.IO) {
+                    block { done, total -> _ui.update { it.copy(downloadProgress = done to total) } }
+                }
+                finishDownload(story, message)
+            } catch (e: CancellationException) {
+                withContext(NonCancellable) { finishDownload(story, "Download cancelled") }
+                throw e
+            } catch (t: Throwable) {
+                fail(t, failure)
+                runCatching { finishDownload(story, null) }
+            }
+        }
+    }
+
+    private suspend fun finishDownload(story: PluginStory, message: String?) {
+        val refreshed = withContext(Dispatchers.IO) { runCatching { loadStory(story.bookId) }.getOrNull() }
+        refreshLocal()
         _ui.update {
             it.copy(
-                showDownload = true,
-                downloadPane = PluginDownloadPane.Menu,
-                partialCountDraft = "",
-                cacheLevelDraft = maxOf(story.prefetchAhead, story.keepBehind).toString(),
-                error = null,
+                downloadProgress = null,
+                downloadBookId = null,
+                showPartial = if (message != null) false else it.showPartial,
+                story = if (it.story?.bookId == story.bookId) refreshed ?: it.story else it.story,
+                message = message ?: it.message,
             )
         }
     }
 
-    fun closeDownloadOptions() {
-        resolvePartialStartDraft()
-        _ui.update { it.copy(showDownload = false, downloadPane = PluginDownloadPane.Menu, downloadProgress = null) }
-    }
+    // --- Position ---------------------------------------------------------------------------
 
-    fun setDownloadPane(pane: PluginDownloadPane) {
-        if (pane == PluginDownloadPane.Partial) resolvePartialStartDraft()
-        _ui.update { it.copy(downloadPane = pane, error = null) }
-    }
+    /** Long-press the cache bar: the position slider. */
+    fun openPosition() = _ui.update { it.copy(showPosition = it.story != null, error = null) }
 
-    fun setPartialStartDraft(value: String) {
-        val digits = value.filter { it.isDigit() }.take(5)
-        val story = _ui.value.story
-        val index = digits.toIntOrNull()?.let { n ->
-            if (story == null || story.chapterCount <= 0) 0 else (n - 1).coerceIn(0, story.chapterCount - 1)
-        }
-        _ui.update { it.copy(partialStartDraft = digits, partialStartIndex = index ?: it.partialStartIndex) }
-    }
+    fun closePosition() = _ui.update { it.copy(showPosition = false) }
 
-    /** Empty / invalid start draft becomes chapter 1. */
-    fun resolvePartialStartDraft() {
+    /**
+     * Save chapter [chapterIndex] as the reading position (start of the chapter). Goes through
+     * [com.personal.flowreader.data.ProgressWriter], whose hook syncs the site and downloads ahead.
+     */
+    fun savePosition(chapterIndex: Int) {
         val story = _ui.value.story ?: return
-        val last = (story.chapterCount - 1).coerceAtLeast(0)
-        val parsed = _ui.value.partialStartDraft.toIntOrNull()
-        val index = if (parsed == null || parsed < 1) 0 else (parsed - 1).coerceIn(0, last)
-        _ui.update { it.copy(partialStartDraft = (index + 1).toString(), partialStartIndex = index) }
-    }
-
-    fun setPartialCountDraft(value: String) =
-        _ui.update { it.copy(partialCountDraft = value.filter { c -> c.isDigit() }.take(5)) }
-
-    fun setCacheLevelDraft(value: String) {
-        _ui.update { it.copy(cacheLevelDraft = value.filter { c -> c.isDigit() }.take(4)) }
-        val story = _ui.value.story ?: return
-        val level = _ui.value.cacheLevelDraft.toIntOrNull() ?: return
+        val index = chapterIndex.coerceIn(0, (story.chapterCount - 1).coerceAtLeast(0))
         viewModelScope.launch {
+            _ui.update { it.copy(busy = true, error = null) }
             try {
                 val refreshed = withContext(Dispatchers.IO) {
-                    books.updateCacheWindow(story.bookId, level, level)
-                    books.maintainChapterCache(story.bookId, story.chapterIndex)
-                    loadStory(story.bookId)
-                }
-                refreshLocal()
-                _ui.update { it.copy(story = refreshed) }
-            } catch (t: Throwable) {
-                fail(t, "Could not update cache level")
-            }
-        }
-    }
-
-    fun downloadAllChapters() {
-        val story = _ui.value.story ?: return
-        viewModelScope.launch {
-            _ui.update { it.copy(busy = true, error = null, downloadProgress = 0 to story.chapterCount) }
-            try {
-                val count = withContext(Dispatchers.IO) {
-                    books.downloadAllChapters(story.bookId, story.chapterIndex) { done, total ->
-                        _ui.update { it.copy(downloadProgress = done to total) }
-                    }
-                }
-                val refreshed = withContext(Dispatchers.IO) { loadStory(story.bookId) }
-                refreshLocal()
-                _ui.update {
-                    it.copy(
-                        busy = false,
-                        story = refreshed,
-                        downloadProgress = null,
-                        showDownload = false,
-                        downloadPane = PluginDownloadPane.Menu,
-                        message = "Downloaded $count / ${refreshed.chapterCount} chapters",
-                    )
-                }
-            } catch (t: Throwable) {
-                fail(t, "Download failed")
-            }
-        }
-    }
-
-    fun downloadPartialChapters(countCapOverride: Int? = null) {
-        resolvePartialStartDraft()
-        val story = _ui.value.story ?: return
-        val cap = countCapOverride ?: _ui.value.partialCountDraft.toIntOrNull()?.takeIf { it > 0 }
-        val startIndex = _ui.value.partialStartIndex.coerceIn(0, (story.chapterCount - 1).coerceAtLeast(0))
-        viewModelScope.launch {
-            // Move locus to the download start first so the strip and cache window follow it.
-            _ui.update {
-                it.copy(
-                    busy = true,
-                    error = null,
-                    downloadProgress = 0 to 1,
-                    story = story.copy(chapterIndex = startIndex),
-                    partialStartIndex = startIndex,
-                    partialStartDraft = (startIndex + 1).toString(),
-                )
-            }
-            try {
-                val count = withContext(Dispatchers.IO) {
-                    flow.db.progress().get(story.bookId)?.let { row ->
-                        flow.db.progress().upsert(
-                            row.copy(
-                                chapterIndex = startIndex,
-                                blockIndex = 0,
-                                charOffset = 0,
-                                updatedAt = System.currentTimeMillis(),
+                    if (flow.db.progress().get(story.bookId) == null) {
+                        upsertWork(
+                            PluginWork(
+                                id = story.workId,
+                                title = story.title,
+                                url = story.workUrl,
+                                author = story.author,
+                                cover = story.cover,
                             ),
                         )
                     }
-                    books.downloadPartialChapters(story.bookId, startIndex, cap) { done, total ->
-                        _ui.update { it.copy(downloadProgress = done to total) }
-                    }
+                    flow.progress.submit(
+                        ProgressUpdate(
+                            bookId = story.bookId,
+                            chapterIndex = index,
+                            blockIndex = 0,
+                            charOffset = 0,
+                            fraction = if (story.chapterCount > 0) index.toFloat() / story.chapterCount else 0f,
+                            at = System.currentTimeMillis(),
+                            anchorText = "",
+                            chapterHref = story.toc.getOrNull(index)?.url.orEmpty(),
+                        ),
+                    )
+                    flow.progress.drain()
+                    loadStory(story.bookId)
                 }
-                val refreshed = withContext(Dispatchers.IO) { loadStory(story.bookId) }
                 refreshLocal()
                 _ui.update {
                     it.copy(
                         busy = false,
+                        showPosition = false,
                         story = refreshed,
-                        downloadProgress = null,
-                        showDownload = false,
-                        downloadPane = PluginDownloadPane.Menu,
-                        message = "Cached $count / ${refreshed.chapterCount} chapters",
+                        message = "Position saved: chapter ${index + 1}",
                     )
                 }
             } catch (t: Throwable) {
-                fail(t, "Partial download failed")
+                fail(t, "Could not save position")
             }
         }
-    }
-
-    /** Cache settings: pin/download from the start chapter for "cache level" chapters. */
-    fun beginPartialDownloadFromSettings() {
-        resolvePartialStartDraft()
-        val level = _ui.value.cacheLevelDraft.toIntOrNull()?.takeIf { it > 0 }
-        if (level == null) {
-            _ui.update { it.copy(error = "Set Cache level to how many chapters to download.") }
-            return
-        }
-        downloadPartialChapters(countCapOverride = level)
     }
 
     // --- Account ----------------------------------------------------------------------------

@@ -202,6 +202,15 @@ data class TtsPrefs(
     }
 }
 
+data class PluginCacheDefaults(
+    val cacheLevel: Int = DEFAULT_LEVEL,
+    val cleanup: Boolean = false,
+) {
+    companion object {
+        const val DEFAULT_LEVEL = 1
+    }
+}
+
 class SettingsStore(context: Context) {
     private val store = context.applicationContext.settingsDataStore
 
@@ -435,6 +444,23 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_PLUGIN_REPOS] = urls.joinToString("\n") }
     }
 
+    /** Cache level and cleanup that new plugin stories start with. */
+    suspend fun pluginCacheDefaultsOnce(): PluginCacheDefaults {
+        val p = store.data.first()
+        return PluginCacheDefaults(
+            cacheLevel = (p[KEY_PLUGIN_CACHE_LEVEL] ?: PluginCacheDefaults.DEFAULT_LEVEL).coerceAtLeast(0),
+            cleanup = p[KEY_PLUGIN_CACHE_CLEANUP] ?: false,
+        )
+    }
+
+    suspend fun setPluginCacheLevel(level: Int) {
+        store.edit { it[KEY_PLUGIN_CACHE_LEVEL] = level.coerceAtLeast(0) }
+    }
+
+    suspend fun setPluginCacheCleanup(on: Boolean) {
+        store.edit { it[KEY_PLUGIN_CACHE_CLEANUP] = on }
+    }
+
     /** Parse rules, always ending with the protected Default rule ([ParseRules.withDefault]). */
     suspend fun shareParseRulesOnce(): List<ParseRule> {
         val p = store.data.first()
@@ -504,6 +530,8 @@ class SettingsStore(context: Context) {
         private val KEY_SHARE_PARSE_RULES = stringPreferencesKey("share_parse_rules")
         private val KEY_SEEDED_PLUGIN_SHARE_RULES = stringPreferencesKey("seeded_plugin_share_rules")
         private val KEY_PLUGIN_REPOS = stringPreferencesKey("plugin_repos")
+        private val KEY_PLUGIN_CACHE_LEVEL = intPreferencesKey("plugin_cache_level")
+        private val KEY_PLUGIN_CACHE_CLEANUP = booleanPreferencesKey("plugin_cache_cleanup")
 
         private fun decodeIdSet(raw: String?): Set<String> =
             raw?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()

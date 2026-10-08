@@ -119,9 +119,22 @@ class MediaCardAdaptersTest {
     @Test
     fun status_reflectsDownloadProgress() {
         val idle = model(info())
-        assertEquals("Cached 3 / 10 chapters · cache level 5", idle.status)
-        val downloading = PluginMediaCardAdapter.model(manifest, info(), busy = true, downloadProgress = 4 to 10, error = null)
+        assertEquals("Cached 3 / 10 chapters · next 5 · cleanup off", idle.status)
+        val downloading = PluginMediaCardAdapter.model(manifest, info(), busy = false, downloadProgress = 4 to 10, error = null)
         assertEquals("Downloading 4 / 10", downloading.status)
+    }
+
+    @Test
+    fun download_longPressWhenIdle_cancelWhileDownloading() {
+        val idle = model(info()).footer.first { it.id == MediaActionIds.DOWNLOAD }
+        assertEquals("Download", idle.label)
+        assertTrue(idle.longPress)
+        val running = PluginMediaCardAdapter.model(manifest, info(), busy = false, downloadProgress = 1 to 10, error = null)
+        val cancel = running.footer.first { it.id == MediaActionIds.DOWNLOAD }
+        assertEquals("Cancel download", cancel.label)
+        assertTrue(cancel.enabled)
+        assertFalse(cancel.longPress)
+        assertFalse(running.footer.first { it.id == MediaActionIds.DELETE }.enabled)
     }
 
     @Test

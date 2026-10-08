@@ -18,6 +18,8 @@ data class MediaCardModel(
     val progress: Float? = null,
     /** Per-segment strip (chapters cached / locus); null hides it. */
     val segments: MediaSegments? = null,
+    /** Accessibility label for a long press on [segments]; blank when it has none. */
+    val segmentsLongPressLabel: String = "",
     /** Host-owned status line under the band ("Cached 12 / 40 chapters"). */
     val status: String = "",
     val error: String = "",
@@ -67,6 +69,8 @@ data class MediaAction(
     val on: Boolean = false,
     val enabled: Boolean = true,
     val owner: MediaActionOwner = MediaActionOwner.Host,
+    /** Footer button also answers a long press (`onLongAction`). */
+    val longPress: Boolean = false,
 )
 
 /** Host action ids shared by adapters and handlers. */

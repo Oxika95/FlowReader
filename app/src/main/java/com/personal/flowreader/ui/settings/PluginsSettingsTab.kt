@@ -132,6 +132,8 @@ internal fun PluginsSettingsTab() {
             HorizontalDivider()
         }
 
+        PluginCacheDefaultsSection(app)
+
         SectionTitle("Available")
         val available = catalog.filter { entry -> installed.none { it.id == entry.id } }
         if (available.isEmpty()) Hint(if (repos.any { it.index != null }) "Everything in your repositories is installed." else "Refresh repositories to see plugins.")
@@ -208,6 +210,42 @@ internal fun PluginsSettingsTab() {
             onDismiss = { confirmUninstall = null },
         )
     }
+}
+
+/** Cache level and cleanup new plugin stories start with; each story can change its own. */
+@Composable
+private fun PluginCacheDefaultsSection(app: FlowApp) {
+    val scope = rememberCoroutineScope()
+    var levelDraft by remember { mutableStateOf<String?>(null) }
+    var cleanup by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val defaults = app.settings.pluginCacheDefaultsOnce()
+        levelDraft = defaults.cacheLevel.toString()
+        cleanup = defaults.cleanup
+    }
+    val draft = levelDraft ?: return
+    SectionTitle("New stories")
+    FlowTextField(
+        value = draft,
+        onValueChange = { raw ->
+            val digits = raw.filter { it.isDigit() }.take(4)
+            levelDraft = digits
+            digits.toIntOrNull()?.let { scope.launch { app.settings.setPluginCacheLevel(it) } }
+        },
+        label = "Cache level",
+        supportingText = "Chapters downloaded ahead of your reading position.",
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+    )
+    FlowToggleRow(
+        title = "Clean up old chapters",
+        subtitle = "Delete chapters more than the cache level behind your position.",
+        checked = cleanup,
+        onCheckedChange = { on ->
+            cleanup = on
+            scope.launch { app.settings.setPluginCacheCleanup(on) }
+        },
+    )
+    HorizontalDivider()
 }
 
 @Composable

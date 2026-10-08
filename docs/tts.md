@@ -32,6 +32,8 @@ Priority goals: stability → latency → footprint.
   crossing a chapter boundary doesn't wait on a load. Empty chapters are skipped; a load error
   ends playback and is logged (`pullMore failed`).
 - Plugin chapters fetched by the reader window, TTS and cache upkeep share one fetch per chapter.
+  Each spoken chapter change also downloads the story's cache level of chapters ahead (see
+  [plugins.md](plugins.md)).
 
 ## Queue auto-advance
 

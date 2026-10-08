@@ -237,7 +237,10 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
     )
 }
 
-/** Story media card and its download sheet; shared by the plugin tab and the reader title card. */
+/**
+ * Story media card with its download and position cards; shared by the plugin tab and the reader
+ * title card.
+ */
 @Composable
 fun PluginStoryOverlays(
     vm: PluginTabViewModel,
@@ -250,24 +253,34 @@ fun PluginStoryOverlays(
         ui = ui,
         onDismiss = vm::closeStory,
         onRead = onRead,
-        onDownload = vm::openDownloadOptions,
+        onDownload = vm::onDownloadTap,
+        onDownloadOptions = vm::openPartial,
+        onPosition = vm::openPosition,
         onRefreshToc = vm::refreshStoryToc,
         onDelete = vm::deleteStory,
         onToggleList = vm::toggleList,
         onPluginAction = vm::runCardAction,
         hiddenActions = hiddenActions,
     )
-    DownloadSheet(
-        visible = ui.showDownload && ui.story != null,
+    DownloadAllCard(
+        visible = ui.confirmDownloadAll,
+        story = ui.story,
+        onConfirm = vm::downloadAllChapters,
+        onDismiss = vm::dismissDownloadAll,
+    )
+    PartialDownloadCard(
+        visible = ui.showPartial,
         ui = ui,
-        onDismiss = vm::closeDownloadOptions,
-        onPane = vm::setDownloadPane,
-        onDownloadAll = vm::downloadAllChapters,
-        onPartialStartDraft = vm::setPartialStartDraft,
-        onResolvePartialStart = vm::resolvePartialStartDraft,
-        onPartialCount = vm::setPartialCountDraft,
-        onDownloadPartial = { vm.downloadPartialChapters() },
+        onDismiss = vm::closePartial,
         onCacheLevel = vm::setCacheLevelDraft,
-        onBeginPartial = vm::beginPartialDownloadFromSettings,
+        onCleanup = vm::setCleanup,
+        onDownload = vm::downloadAhead,
+    )
+    PositionSliderCard(
+        visible = ui.showPosition,
+        story = ui.story,
+        busy = ui.busy,
+        onDismiss = vm::closePosition,
+        onSave = vm::savePosition,
     )
 }

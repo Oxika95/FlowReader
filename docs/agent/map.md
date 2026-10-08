@@ -61,7 +61,8 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | Web page crawl | `share/WebPageIngest.kt`, `HtmlParagraphs.kt` (HTML → paragraphs, also plugin chapters) | `HtmlParagraphsTest` |
 | Plugin runtime / `flow.*` host API | `plugin/runtime/*` | Cross-repo checklist |
 | Plugin models, caps, versions | `plugin/api/PluginModels.kt`, `PluginManifest.kt` | Cross-repo checklist |
-| Plugin tab UI, story card, downloads | `ui/plugin/PluginTabViewModel.kt` (large), `PluginTab.kt`, `StoryMediaCard.kt`, `DownloadSheet.kt` | `docs/plugins.md` |
+| Plugin tab UI, story card, downloads, position slider | `ui/plugin/PluginTabViewModel.kt` (large), `PluginTab.kt`, `StoryMediaCard.kt`, `StoryCacheCards.kt` | `docs/plugins.md` |
+| Plugin chapter cache policy (cache level ahead, cleanup, pins) | `plugin/store/PluginSessionStore.kt` (`fetchIndices`, `pruneIndices`, pure), `PluginBookStore.kt` (`maintainChapterCache`, `scheduleMaintain`) | `PluginSessionStoreTest`, `docs/plugins.md` |
 | Plugin repos / install | `plugin/repo/*`, `ui/settings/PluginsSettingsTab.kt` | `RepoIndexTest` |
 | Media card content | `ui/design/card/media/MediaCardAdapters.kt` (pure) | `MediaCardAdaptersTest` |
 | Any UI component / token | `ui/design/**`, `ui/theme/**` | `docs/ui-system/` (rule: `ui-system.mdc`) |

@@ -27,8 +27,8 @@ Hand-written guide: [map.md](map.md).
 - `SentenceLengthNormalizer.kt` (131) - obj SentenceLengthNormalizer:10
 - `SentenceSplitter.kt` (110) - obj SentenceSplitter:9
 - `SentenceTable.kt` (107) - class SentenceTable:9
-- `SettingsStore.kt` (614) **large** - data ReaderPrefs:28, data TtsPrefs:50, class SettingsStore:205
-  - members: readerOnce:208, ttsOnce:209, setTheme:211, setAccentHue:215, setUiScale:221, setFontScale:225, setFontFamily:229, setLineSpacing:233, setJustifyText:237, setOrientation:241, setShowChapterHeadingsInBody:245, setKeepScreenAwake:249, setDebugEnabled:253, setHomePosition:257, setShowHomeMarker:261, setEngine:265, setVoice:269, setSpeed:273, setPitch:277, setPrefetchCount:281, setDoubleTapPlay:287, setMobileDataFallback:291, setAutoScrollWithTts:295, setMinSignal:299, setUnderlayBtDevice:303, setSentenceGapMs:310, setHighlightSyncMs:314, setClipTargetChars:318, setClipFlexChars:322, globalFiltersOnce:326, setGlobalFilters:329, groupFiltersOnce:333, setGroupFilters:336, libraryViewModeOnce:340, setLibraryViewMode:347, libraryTabIdOnce:351, setLibraryTabId:354, enabledPluginIdsOnce:358, setEnabledPluginIds:361, customLibraryTabsOnce:365, setCustomLibraryTabs:370, notificationsAskedOnce:374, setNotificationsAskedOnce:377, shareOnce:381, setShareAskMode:390, shareRouterRulesOnce:398, setShareRouterRules:416, seededPluginShareRuleIdsOnce:421, setSeededPluginShareRuleIds:424, pluginReposOnce:429, setPluginRepos:434, shareParseRulesOnce:439, setShareParseRules:454
+- `SettingsStore.kt` (642) **large** - data ReaderPrefs:28, data TtsPrefs:50, data PluginCacheDefaults:205, class SettingsStore:214
+  - members: readerOnce:217, ttsOnce:218, setTheme:220, setAccentHue:224, setUiScale:230, setFontScale:234, setFontFamily:238, setLineSpacing:242, setJustifyText:246, setOrientation:250, setShowChapterHeadingsInBody:254, setKeepScreenAwake:258, setDebugEnabled:262, setHomePosition:266, setShowHomeMarker:270, setEngine:274, setVoice:278, setSpeed:282, setPitch:286, setPrefetchCount:290, setDoubleTapPlay:296, setMobileDataFallback:300, setAutoScrollWithTts:304, setMinSignal:308, setUnderlayBtDevice:312, setSentenceGapMs:319, setHighlightSyncMs:323, setClipTargetChars:327, setClipFlexChars:331, globalFiltersOnce:335, setGlobalFilters:338, groupFiltersOnce:342, setGroupFilters:345, libraryViewModeOnce:349, setLibraryViewMode:356, libraryTabIdOnce:360, setLibraryTabId:363, enabledPluginIdsOnce:367, setEnabledPluginIds:370, customLibraryTabsOnce:374, setCustomLibraryTabs:379, notificationsAskedOnce:383, setNotificationsAskedOnce:386, shareOnce:390, setShareAskMode:399, shareRouterRulesOnce:407, setShareRouterRules:425, seededPluginShareRuleIdsOnce:430, setSeededPluginShareRuleIds:433, pluginReposOnce:438, setPluginRepos:443, pluginCacheDefaultsOnce:448, setPluginCacheLevel:456, setPluginCacheCleanup:460, shareParseRulesOnce:465, setShareParseRules:480
 - `TextFilters.kt` (392) - enum FilterMatchType:7, enum FilterScope:21, data FilterRule:35, data FilterApplyResult:48, data FilteredBookDoc:53, obj TextFilters:59
 - `TxtChapterSource.kt` (106) - class TxtChapterSource:11
 
@@ -64,10 +64,10 @@ Hand-written guide: [map.md](map.md).
 
 ## plugin/store
 
-- `PluginBookStore.kt` (408) **large** - class PluginBookStore:30
-  - members: Ref:36, ref:40, source:46, fetchLock:50, chapterText:56, read:74, isPluginBook:77, pluginIdFor:79, fetchAndStoreWork:82, ensureSessionToc:91, reconcileChapterCache:133, libraryMeta:141, libraryMetas:151, readSplashBundle:154, cachedChapterIndices:160, downloadAllChapters:167, downloadPartialChapters:183, updateCacheWindow:201, updatePinnedRanges:214, maintainChapterCache:227, ensureSessionForDownload:253, runCardAction:264, refreshToc:275, deleteLocalSession:280, startReading:286, openStory:293, chapter:299, seekToChapter:307, syncProgress:319, loadThrough:324, downloadCover:339
+- `PluginBookStore.kt` (454) **large** - class PluginBookStore:36
+  - members: Ref:46, ref:50, source:56, fetchLock:60, chapterText:66, scheduleMaintain:85, read:105, isPluginBook:108, pluginIdFor:110, fetchAndStoreWork:113, ensureSessionToc:122, reconcileChapterCache:164, libraryMeta:172, libraryMetas:182, readSplashBundle:185, cachedChapterIndices:191, downloadAllChapters:201, downloadAhead:219, setCachePolicy:229, updatePinnedRanges:238, maintainChapterCache:254, pruneChapterCache:283, prune:289, ensureSessionForDownload:299, runCardAction:310, refreshToc:321, deleteLocalSession:326, startReading:332, openStory:339, chapter:345, seekToChapter:353, syncProgress:365, loadThrough:370, downloadCover:385
 - `PluginMembershipStore.kt` (67) - obj PluginMembershipStore:10
-- `PluginSessionStore.kt` (325) - data PluginReadSession:12, data PluginCachePolicy:38, data PluginSplashMeta:50, data PluginLibraryMeta:61, obj PluginSessionStore:68
+- `PluginSessionStore.kt` (345) - data PluginReadSession:12, data PluginCachePolicy:40, data PluginSplashMeta:51, data PluginLibraryMeta:62, obj PluginSessionStore:69
 
 ## share
 
@@ -123,15 +123,15 @@ Hand-written guide: [map.md](map.md).
 
 ## ui/design/card/media
 
-- `FlowMediaCard.kt` (287) - FlowMediaCard:63
-- `MediaCardAdapters.kt` (175) - data FileMediaInfo:8, obj FileMediaCardAdapter:22, data PluginMediaInfo:53, obj PluginMediaCardAdapter:76
-- `MediaCardModel.kt` (99) - data MediaCardModel:8, data MediaStat:33, data MediaLink:35, data MediaSegments:41, enum MediaActionKind:43, enum MediaActionOwner:55, data MediaAction:62, obj MediaActionIds:73, withoutHostActions:88, formatCount:95
+- `FlowMediaCard.kt` (337) - FlowMediaCard:73
+- `MediaCardAdapters.kt` (197) - data FileMediaInfo:8, obj FileMediaCardAdapter:22, data PluginMediaInfo:53, obj PluginMediaCardAdapter:80
+- `MediaCardModel.kt` (103) - data MediaCardModel:8, data MediaStat:35, data MediaLink:37, data MediaSegments:43, enum MediaActionKind:45, enum MediaActionOwner:57, data MediaAction:64, obj MediaActionIds:77, withoutHostActions:92, formatCount:99
 - `MediaSegmentStrip.kt` (55) - MediaSegmentStrip:16
 
 ## ui/design/controls
 
 - `FlowBadge.kt` (82) - FlowBadge:26, FlowStat:45, FlowMetaRow:66
-- `FlowButtons.kt` (175) - FlowIconButton:34, enum FlowCircleStyle:54, FlowCircleButton:66, FlowFab:117, FlowSecondaryButton:134, FlowPrimaryButton:159
+- `FlowButtons.kt` (211) - FlowIconButton:47, enum FlowCircleStyle:67, FlowCircleButton:79, FlowFab:130, FlowSecondaryButton:150, FlowPrimaryButton:195
 - `FlowSettingsRows.kt` (338) - FlowSection:54, FlowLabel:65, FlowHint:76, FlowToggleRow:87, FlowSliderRow:123, FlowTextField:171, FlowDropdownRow:213, FlowChipRow:259, FlowChip:269, FlowChoiceChips:280, FlowCollapsibleBox:297, FlowCollapsible:308
 
 ## ui/design/layer
@@ -169,12 +169,12 @@ Hand-written guide: [map.md](map.md).
 
 - `AccountSheets.kt` (131) - LoginSheet:29, AccountSheet:73, SyncChoiceSheet:113
 - `AddFromSource.kt` (112) - PluginSearchPane:46, AddFromSourceSheet:79
-- `DownloadSheet.kt` (259) - DownloadSheet:47, OutlinedFieldWithInfo:229
 - `PluginSettingsSheet.kt` (123) - PluginSettingsSheet:34, PluginSettingsForm:51
-- `PluginTab.kt` (273) - rememberPluginTabViewModel:50, PluginTabContent:60, PluginTabFab:145, PluginTabOverlays:200, PluginStoryOverlays:242
-- `PluginTabViewModel.kt` (839) **large** - data PluginStory:34, enum PluginDownloadPane:62, enum SyncMode:64, iface PluginSection:67, data PluginTabUi:72, class PluginTabViewModel:120
-  - members: Library:68, Search:69, source:132, refreshLocal:139, refreshSession:151, migrateUnlisted:171, membership:181, setSection:188, setQuery:193, setUrlDraft:195, setLoginField:197, setShowLogin:200, setShowAdd:204, setShowAccount:208, setShowSettings:210, askSync:214, consumeError:216, consumeMessage:218, fail:220, search:239, openUrl:267, openWork:285, openWorkInternal:296, openStory:317, showStory:334, closeStory:355, loadStory:359, runCardAction:392, upsertWork:413, toggleList:437, syncList:479, readBook:532, readStory:553, startAndSnapshot:574, refreshStoryToc:596, deleteStory:615, openDownloadOptions:635, closeDownloadOptions:648, setDownloadPane:653, setPartialStartDraft:658, resolvePartialStartDraft:668, setPartialCountDraft:676, setCacheLevelDraft:679, downloadAllChapters:698, downloadPartialChapters:726, beginPartialDownloadFromSettings:778, login:790, logout:820
-- `StoryMediaCard.kt` (95) - StoryMediaCard:24
+- `PluginTab.kt` (286) - rememberPluginTabViewModel:50, PluginTabContent:60, PluginTabFab:145, PluginTabOverlays:200, PluginStoryOverlays:245
+- `PluginTabViewModel.kt` (863) **large** - data PluginStory:38, enum SyncMode:69, iface PluginSection:72, data PluginTabUi:77, class PluginTabViewModel:128
+  - members: Library:73, Search:74, source:140, refreshLocal:149, refreshSession:161, migrateUnlisted:181, membership:191, setSection:198, setQuery:203, setUrlDraft:205, setLoginField:207, setShowLogin:210, setShowAdd:214, setShowAccount:218, setShowSettings:220, askSync:224, consumeError:226, consumeMessage:228, fail:230, search:249, openUrl:277, openWork:295, openWorkInternal:306, openStory:327, showStory:344, closeStory:355, loadStory:359, runCardAction:394, upsertWork:415, toggleList:439, syncList:481, readBook:534, readStory:555, startAndSnapshot:576, refreshStoryToc:598, deleteStory:617, onDownloadTap:638, dismissDownloadAll:651, downloadAllChapters:653, openPartial:663, closePartial:669, setCacheLevelDraft:673, setCleanup:681, saveCachePolicy:686, downloadAhead:704, runDownload:716, finishDownload:739, openPosition:756, closePosition:758, savePosition:764, login:814, logout:844
+- `StoryCacheCards.kt` (224) - DownloadAllCard:39, PartialDownloadCard:61, PositionSliderCard:115, OutlinedFieldWithInfo:194
+- `StoryMediaCard.kt` (102) - StoryMediaCard:24
 - `WorkCard.kt` (33) - WorkCard:15
 
 ## ui/reader
@@ -213,7 +213,7 @@ Hand-written guide: [map.md](map.md).
 - `ImportRuleControls.kt` (119) - DragHandle:21, MatchFields:80
 - `PlaybackSettingsTab.kt` (424) **large** - PlaybackSettingsTab:49, underlaySubtitle:370, underlayBtDeviceFieldValue:390, underlayBtDeviceSupportingText:397, underlayLevelSliderIndex:413
   - members: loadBondedAndOpen:97, openBtPicker:113
-- `PluginsSettingsTab.kt` (246) - PluginsSettingsTab:64
+- `PluginsSettingsTab.kt` (284) - PluginsSettingsTab:64
 - `SettingsOverlay.kt` (218) - SettingsOverlay:29
 - `SettingsState.kt` (134) - data AppearanceSettingsState:15, data AppearanceSettingsCallbacks:31, AppearanceSettingsState:48, AppearanceSettingsCallbacks:64, data TtsSettingsState:81, data TtsSettingsCallbacks:102, data FilterSettingsState:120, data FilterSettingsCallbacks:127
 - `SharingSettingsTab.kt` (251) - data SharePluginOption:37, sealed ImportRuleEditRequest:42, class DomainRuleEditorState:58, DomainRuleEditorHost:63, SharingSettingsTab:90
@@ -262,4 +262,4 @@ Hand-written guide: [map.md](map.md).
 - `ui/reader/ReaderProgressPolicyTest.kt`
 - `ui/reader/ReaderTouchPolicyTest.kt`
 
-Totals: 135 main files, 27455 lines.
+Totals: 135 main files, 27708 lines.
