@@ -61,13 +61,14 @@ class WebCrawl(
             return first.pageTitle.takeIf { it.isNotBlank() && it != "Web page" } ?: first.title
         }
 
-        fun toEpub(pages: List<WebArticle>, sourceUrl: String): ByteArray =
+        fun toEpub(pages: List<WebArticle>, sourceUrl: String, cover: EpubWriter.Cover? = null): ByteArray =
             EpubWriter.write(
                 title = bookTitle(pages),
                 chapters = pages.mapIndexed { i, p ->
                     EpubWriter.Chapter(p.title.ifBlank { "Chapter ${i + 1}" }, p.paragraphs)
                 },
                 sourceUrl = sourceUrl,
+                cover = cover,
             )
     }
 }

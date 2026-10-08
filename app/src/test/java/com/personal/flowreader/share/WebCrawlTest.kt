@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
+import java.util.zip.ZipFile
 
 class WebCrawlTest {
     private val selectors = ParseSelectors.of(title = "h1", body = ".text", next = "a.next")
@@ -87,5 +88,27 @@ class WebCrawlTest {
         assertEquals(listOf(0 to "Chapter 1", 1 to "Chapter 2"), book.tocEntries())
         val text = book.load(1).blocks.joinToString(" ") { it.text }
         assertTrue(text, "Body 2." in text)
+    }
+
+    @Test
+    fun epubCarriesCoverImage() = runBlocking {
+        val pages = crawl(mapOf(base + "1" to page(1, null))).run(base + "1").pages
+        val png = byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 1, 2, 3)
+        val type = EpubWriter.imageType(png)
+        assertEquals(EpubWriter.ImageType.Png, type)
+        val bytes = WebCrawl.toEpub(pages, base + "1", EpubWriter.Cover(png, type!!))
+        val file = File.createTempFile("cover", ".epub").apply { writeBytes(bytes); deleteOnExit() }
+        ZipFile(file).use { zip ->
+            val opf = zip.getInputStream(zip.getEntry("OEBPS/content.opf")).use { it.readBytes().decodeToString() }
+            assertTrue(opf, "properties=\"cover-image\"" in opf && "<meta name=\"cover\" content=\"cover-image\"/>" in opf)
+            assertArrayEquals(png, zip.getInputStream(zip.getEntry("OEBPS/cover.png")).use { it.readBytes() })
+        }
+        assertEquals(1, EpubChapterSource.open(file).chapterCount)
+    }
+
+    @Test
+    fun imageTypeRejectsNonImages() {
+        assertEquals(null, EpubWriter.imageType("<html>".toByteArray()))
+        assertEquals(EpubWriter.ImageType.Jpeg, EpubWriter.imageType(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0)))
     }
 }

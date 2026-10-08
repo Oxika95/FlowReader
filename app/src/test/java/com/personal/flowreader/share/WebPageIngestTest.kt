@@ -144,4 +144,39 @@ class WebPageIngestTest {
         )
         assertEquals(listOf("div:not(.a", ".b"), CssList.split("div:not(.a, .b"))
     }
+
+    private val coverPage = """
+        <html><head><meta property="og:image" content="/img/og.png"></head><body>
+        <div class="cover"><img src="/img/placeholder.gif" data-src="cover.jpg"></div>
+        <div class="banner" style="background-image: url('/img/bg.webp')"></div>
+        <img class="srcset" srcset="/img/a.jpg 1x, /img/b.jpg 2x">
+        <div class="text"><p>Body.</p></div>
+        </body></html>
+    """.trimIndent()
+
+    private fun cover(css: String) =
+        WebPageIngest.extractArticle(coverPage, url, ParseSelectors.of(body = ".text", cover = css)).coverUrl
+
+    @Test
+    fun coverReadsLazySourceInsideContainer() {
+        assertEquals("https://example.com/novel/cover.jpg", cover("div.cover"))
+    }
+
+    @Test
+    fun coverReadsMetaContent() {
+        assertEquals("https://example.com/img/og.png", cover("meta[property=og:image]"))
+    }
+
+    @Test
+    fun coverReadsBackgroundAndSrcset() {
+        assertEquals("https://example.com/img/bg.webp", cover(".banner"))
+        assertEquals("https://example.com/img/a.jpg", cover("img.srcset"))
+    }
+
+    @Test
+    fun coverMissingIsReportedNotFound() {
+        val a = WebPageIngest.extractArticle(coverPage, url, ParseSelectors.of(body = ".text", cover = ".nope"))
+        assertNull(a.coverUrl)
+        assertTrue(a.diagnostics!!.summary(), "Cover not found" in a.diagnostics!!.summary())
+    }
 }

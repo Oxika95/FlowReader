@@ -17,6 +17,7 @@ data class WebArticle(
     val pageTitle: String = title,
     val prevUrl: String? = null,
     val nextUrl: String? = null,
+    val coverUrl: String? = null,
     val diagnostics: ParseDiagnostics? = null,
 )
 
@@ -24,6 +25,7 @@ data class WebArticle(
 data class ParseSelectors(
     val title: String? = null,
     val body: String? = null,
+    val cover: String? = null,
     val prev: String? = null,
     val next: String? = null,
     val remove: String? = null,
@@ -32,12 +34,14 @@ data class ParseSelectors(
         fun of(
             title: String? = null,
             body: String? = null,
+            cover: String? = null,
             prev: String? = null,
             next: String? = null,
             remove: String? = null,
         ) = ParseSelectors(
             title = title.clean(),
             body = body.clean(),
+            cover = cover.clean(),
             prev = prev.clean(),
             next = next.clean(),
             remove = remove.clean(),
@@ -52,6 +56,8 @@ data class ParseDiagnostics(
     val custom: Boolean,
     val bodyMatches: Int = 0,
     val titleMatches: Int = 0,
+    val coverSet: Boolean = false,
+    val coverUrl: String? = null,
     val prevUrl: String? = null,
     val nextUrl: String? = null,
     val prevSet: Boolean = false,
@@ -64,6 +70,7 @@ data class ParseDiagnostics(
         val parts = ArrayList<String>()
         parts += "Body $bodyMatches"
         parts += "Title $titleMatches"
+        if (coverSet) parts += "Cover ${coverUrl?.let { "→ $it" } ?: "not found"}"
         if (prevSet) parts += "Previous ${prevUrl?.let { "→ $it" } ?: "not found"}"
         if (nextSet) parts += "Next ${nextUrl?.let { "→ $it" } ?: "not found"}"
         val total = removeApplied + removeSkipped.size
@@ -84,6 +91,11 @@ data class ParseDiagnostics(
 object WebPageIngest {
     const val USER_AGENT = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    const val DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    private const val MAX_COVER_BYTES = 8 * 1024 * 1024
+
+    fun userAgent(desktop: Boolean) = if (desktop) DESKTOP_USER_AGENT else USER_AGENT
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -91,10 +103,10 @@ object WebPageIngest {
         .followRedirects(true)
         .build()
 
-    fun fetchHtml(url: String): String {
+    fun fetchHtml(url: String, desktop: Boolean = false): String {
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", userAgent(desktop))
             .get()
             .build()
         val html = client.newCall(request).execute().use { response ->
@@ -108,8 +120,38 @@ object WebPageIngest {
     }
 
     /** [selectors] null = Default parser (heuristics); non-null = Custom fields. */
-    fun fetchArticle(url: String, selectors: ParseSelectors? = null): WebArticle =
-        extractArticle(fetchHtml(url), url, selectors)
+    fun fetchArticle(url: String, selectors: ParseSelectors? = null, desktop: Boolean = false): WebArticle =
+        extractArticle(fetchHtml(url, desktop), url, selectors)
+
+    /** Cover image bytes and media type, or null when it can't be downloaded or isn't an image. */
+    fun fetchCover(url: String, referer: String, desktop: Boolean = false): EpubWriter.Cover? = runCatching {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", userAgent(desktop))
+            .header("Referer", referer)
+            .get()
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val body = response.body ?: return null
+            if (body.contentLength() > MAX_COVER_BYTES) return null
+            val bytes = body.byteStream().use { it.readNBytesCompat(MAX_COVER_BYTES + 1) }
+            if (bytes.size > MAX_COVER_BYTES) return null
+            val type = EpubWriter.imageType(bytes) ?: return null
+            EpubWriter.Cover(bytes, type)
+        }
+    }.getOrNull()
+
+    private fun java.io.InputStream.readNBytesCompat(max: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(16 * 1024)
+        while (out.size() < max) {
+            val n = read(buf, 0, minOf(buf.size, max - out.size()))
+            if (n < 0) break
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
 
     /** Parse already-fetched HTML (also used by unit tests / Test preview / crawl). */
     fun extractArticle(html: String, url: String, selectors: ParseSelectors? = null): WebArticle {
@@ -145,6 +187,7 @@ object WebPageIngest {
             ?: fallbackTitle(doc)
         val prevUrl = sel.prev?.let { linkOf(doc, it, url) }
         val nextUrl = sel.next?.let { linkOf(doc, it, url) }
+        val coverUrl = sel.cover?.let { imageOf(doc, it) }
 
         val roots = if (sel.body == null) {
             listOf(doc.selectFirst("article") ?: doc.selectFirst("main") ?: doc.body() ?: doc)
@@ -185,10 +228,13 @@ object WebPageIngest {
             pageTitle = fallbackTitle(doc).trim(),
             prevUrl = prevUrl,
             nextUrl = nextUrl,
+            coverUrl = coverUrl,
             diagnostics = ParseDiagnostics(
                 custom = true,
                 bodyMatches = roots.size,
                 titleMatches = titleHits.size,
+                coverSet = sel.cover != null,
+                coverUrl = coverUrl,
                 prevUrl = prevUrl,
                 nextUrl = nextUrl,
                 prevSet = sel.prev != null,
@@ -209,6 +255,36 @@ object WebPageIngest {
         val href = link.absUrl("href").takeIf { it.startsWith("http") } ?: return null
         return href.takeUnless { it.substringBefore('#') == pageUrl.substringBefore('#') }
     }
+
+    /**
+     * Absolute image URL of the first match: a meta's `content`, an image's (lazy) source, the first
+     * image inside it, or an inline `background-image`.
+     */
+    internal fun imageOf(doc: Document, css: String): String? {
+        val el = selectOrNull(doc, css)?.firstOrNull() ?: return null
+        if (el.tagName() == "meta") return el.absUrl("content").takeIf { it.startsWith("http") }
+        val img = el.takeIf { it.tagName() == "img" || it.tagName() == "source" }
+            ?: el.selectFirst("img, picture source")
+        img?.let { srcOf(it) }?.let { return it }
+        return Regex("""background-image\s*:\s*url\(\s*['"]?([^'")]+)""")
+            .find(el.attr("style"))
+            ?.groupValues?.get(1)
+            ?.let { resolve(doc, it) }
+    }
+
+    private fun srcOf(img: Element): String? {
+        for (attr in listOf("data-src", "data-lazy-src", "data-original", "src")) {
+            val v = img.absUrl(attr)
+            if (v.startsWith("http")) return v
+        }
+        val srcset = img.attr("srcset").ifBlank { img.attr("data-srcset") }
+        return srcset.split(',').firstOrNull()?.trim()?.substringBefore(' ')
+            ?.takeIf { it.isNotBlank() }?.let { resolve(img.ownerDocument() ?: return null, it) }
+    }
+
+    private fun resolve(doc: Document, href: String): String? =
+        runCatching { java.net.URI(doc.location()).resolve(href.trim()).toString() }
+            .getOrNull()?.takeIf { it.startsWith("http") }
 
     private fun selectOrNull(doc: Document, css: String): List<Element>? =
         runCatching { doc.select(css).toList() }.getOrNull()

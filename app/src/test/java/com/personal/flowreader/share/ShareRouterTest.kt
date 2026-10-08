@@ -2,6 +2,7 @@ package com.personal.flowreader.share
 
 import com.personal.flowreader.plugin.api.PluginManifest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -188,7 +189,9 @@ class ParseRulesJsonTest {
             removeCss = ".ads, .note",
             prevCss = "a.prev",
             nextCss = "a[rel=\"next\"]",
+            coverCss = "meta[property=og:image]",
             crawlLimit = 25,
+            desktop = true,
         )
         assertEquals(listOf(rule), ParseRules.decode(ParseRules.encode(listOf(rule))))
     }
@@ -198,6 +201,8 @@ class ParseRulesJsonTest {
         val old = """[{"id":"r","hostPattern":"a.com","parseMode":"Custom","contentCss":"div","order":0}]"""
         val rule = ParseRules.decode(old).single()
         assertNull(rule.nextCss)
+        assertNull(rule.coverCss)
+        assertFalse(rule.desktop)
         assertEquals(ParseRule.DEFAULT_CRAWL_LIMIT, rule.crawlLimit)
     }
 

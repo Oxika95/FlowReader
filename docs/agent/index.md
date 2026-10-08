@@ -71,19 +71,19 @@ Hand-written guide: [map.md](map.md).
 
 ## share
 
-- `EpubWriter.kt` (104) - obj EpubWriter:10
+- `EpubWriter.kt` (135) - obj EpubWriter:10
 - `HtmlParagraphs.kt` (67) - obj HtmlParagraphs:14
 - `SelectorBuilder.kt` (108) - data PathNode:7, data PickedSelector:15, obj SelectorBuilder:27
 - `ShareChooserCard.kt` (59) - ShareChooserCard:24, fallbackLabel:54
-- `ShareDomainRules.kt` (712) **large** - obj UrlDetector:8, obj ShareUrlMatch:58, obj RouterRules:222, obj ParseRules:428, obj ShareJson:604
-  - members: firstUrl:13, hostOf:22, pathOf:28, normalizePath:34, looksLikeBareUrl:42, normalize:49, matchUrlRule:59, matchParse:67, matchParseHost:73, firstOfKind:79, matches:82, matches:92, matchesHost:102, matches:117, matchesPath:133, globMatches:144, matchesRegex:149, locationKey:167, parseMatchInput:173, formatMatch:202, formatMatch:209, formatMatch:212, ParsedMatch:215, seed:226, pluginRuleId:249, withPluginHosts:257, encode:296, decode:317, migrateFromLegacy:347, decodeLegacyHandoffs:404, isProtected:431, withDefault:437, effectiveSelectors:450, canCrawl:462, appliesTo:465, defaultForUrl:470, encode:476, decode:501, migrateLegacy:540, appendJson:605, escape:610, splitObjects:623, readString:657, readBool:688, readInt:702
+- `ShareDomainRules.kt` (717) **large** - obj UrlDetector:8, obj ShareUrlMatch:58, obj RouterRules:222, obj ParseRules:428, obj ShareJson:609
+  - members: firstUrl:13, hostOf:22, pathOf:28, normalizePath:34, looksLikeBareUrl:42, normalize:49, matchUrlRule:59, matchParse:67, matchParseHost:73, firstOfKind:79, matches:82, matches:92, matchesHost:102, matches:117, matchesPath:133, globMatches:144, matchesRegex:149, locationKey:167, parseMatchInput:173, formatMatch:202, formatMatch:209, formatMatch:212, ParsedMatch:215, seed:226, pluginRuleId:249, withPluginHosts:257, encode:296, decode:317, migrateFromLegacy:347, decodeLegacyHandoffs:404, isProtected:431, withDefault:437, effectiveSelectors:450, canCrawl:463, appliesTo:466, defaultForUrl:471, encode:477, decode:504, migrateLegacy:545, appendJson:610, escape:615, splitObjects:628, readString:662, readBool:693, readInt:707
 - `ShareIngressActivity.kt` (95) - class ShareIngressActivity:27
-- `ShareModels.kt` (178) - enum ShareAskMode:5, enum ShareParseMode:11, enum RouterContentKind:24, data RouterLanding:43, data SharePrefs:100, data RouterRule:108, data ParseRule:128, data SharePayload:153, sealed ShareAction:158
+- `ShareModels.kt` (182) - enum ShareAskMode:5, enum ShareParseMode:11, enum RouterContentKind:24, data RouterLanding:43, data SharePrefs:100, data RouterRule:108, data ParseRule:128, data SharePayload:157, sealed ShareAction:162
 - `ShareOverlay.kt` (237) - obj ShareOverlayPermission:32, obj ShareDispatch:47, class ShareOverlayController:122
 - `ShareQueAliasController.kt` (34) - obj ShareQueAliasController:7
 - `ShareRouter.kt` (96) - obj ShareRouter:3
-- `WebCrawl.kt` (73) - enum CrawlStop:5, data CrawlResult:7, class WebCrawl:18
-- `WebPageIngest.kt` (253) - data WebArticle:11, data ParseSelectors:24, data ParseDiagnostics:51, obj WebPageIngest:84, obj CssList:231
+- `WebCrawl.kt` (74) - enum CrawlStop:5, data CrawlResult:7, class WebCrawl:18
+- `WebPageIngest.kt` (329) - data WebArticle:11, data ParseSelectors:25, data ParseDiagnostics:55, obj WebPageIngest:91, obj CssList:307
 
 ## tts
 
@@ -124,7 +124,7 @@ Hand-written guide: [map.md](map.md).
 
 - `FlowDisplayCard.kt` (250) - enum FlowDisplayLayout:45, data FlowCornerBadge:53, FlowDisplayCard:61, flowDisplayListPadding:204, FlowDisplayList:209, FlowDisplayGrid:224, FlowEmptyState:241
 - `FlowFloatingCard.kt` (60) - FlowFloatingCard:25, FlowFloatingChip:46
-- `FlowFullscreenCard.kt` (271) - enum FlowCardVariant:40, FlowFullscreenCard:61, FlowCardHeader:154, FlowActionRow:200, FlowTextAction:221, FlowConfirmCard:245
+- `FlowFullscreenCard.kt` (276) - enum FlowCardVariant:40, FlowFullscreenCard:61, FlowCardHeader:157, FlowActionRow:205, FlowTextAction:226, FlowConfirmCard:250
 
 ## ui/design/card/media
 
@@ -162,8 +162,8 @@ Hand-written guide: [map.md](map.md).
 - `LibraryBookCards.kt` (100) - LibraryBooksPane:33, librarySourceLabel:87, libraryLastRead:92, libraryBookSubtitle:99
 - `LibraryScreen.kt` (620) **large** - class PersistableOpenDocument:98, LibraryScreen:115, LibraryTopBar:413, AddTabOverlay:465, AddBookOverlay:534, QueTab:563
   - members: createIntent:99
-- `LibraryViewModel.kt` (939) **large** - data LibraryUi:41, data WebImportRequest:60, data CrawlProgress:67, class LibraryViewModel:74
-  - members: refresh:155, booksForTab:171, setTab:177, addCustomTab:186, removeCustomTab:208, setPluginEnabled:240, setViewMode:259, handleIncomingIntent:268, executeShareIntent:301, routeImportText:362, openPluginShare:418, parseRuleFor:443, startWebImport:461, answerCrawlPrompt:469, dismissCrawlPrompt:481, stopCrawl:488, importWebPage:493, crawlWeb:510, finishWebImport:543, autoPlayShare:550, refreshAfterIngest:557, tabForLanding:570, tabForShelf:577, shelfForAdd:580, openExternalUri:584, consumePendingOpen:632, ingestPluginText:636, ingestSharedText:674, queueFromClipboard:711, removeQue:720, reorderQue:730, removeFromLibrary:740, addFilter:762, updateFilter:778, setFilterEnabled:794, deleteFilters:814, reorderFilters:824, previewApply:834, persistGlobal:861, persistGroups:867, nextOrder:873, add:876, consumeMessage:926, consumeError:930
+- `LibraryViewModel.kt` (957) **large** - data LibraryUi:41, data WebImportRequest:60, data CrawlProgress:67, class LibraryViewModel:74
+  - members: refresh:155, booksForTab:171, setTab:177, addCustomTab:186, removeCustomTab:208, setPluginEnabled:240, setViewMode:259, handleIncomingIntent:268, executeShareIntent:301, routeImportText:362, openPluginShare:418, parseRuleFor:443, startWebImport:461, answerCrawlPrompt:469, dismissCrawlPrompt:481, stopCrawl:488, importWebPage:493, crawlWeb:526, finishWebImport:561, autoPlayShare:568, refreshAfterIngest:575, tabForLanding:588, tabForShelf:595, shelfForAdd:598, openExternalUri:602, consumePendingOpen:650, ingestPluginText:654, ingestSharedText:692, queueFromClipboard:729, removeQue:738, reorderQue:748, removeFromLibrary:758, addFilter:780, updateFilter:796, setFilterEnabled:812, deleteFilters:832, reorderFilters:842, previewApply:852, persistGlobal:879, persistGroups:885, nextOrder:891, add:894, consumeMessage:944, consumeError:948
 - `NowPlayingCard.kt` (65) - NowPlayingCard:26
 - `WebCrawlCards.kt` (40) - WebCrawlCards:9
 
@@ -219,10 +219,11 @@ Hand-written guide: [map.md](map.md).
 - `FilterEditorSession.kt` (11) - data FilterEditorSession:7
 - `FilterRuleList.kt` (63) - FilterRuleList:15
 - `FiltersSettings.kt` (400) - FiltersSettingsTab:189, FilterRuleEditorOverlay:227
-- `ImportParseRules.kt` (338) - ParseRuleList:42, ParseRuleEditorOverlay:97
+- `ImportParseRules.kt` (355) - ParseRuleList:43, ParseRuleEditorOverlay:98
 - `ImportRouterRules.kt` (289) - RouterRuleList:65, RouterRuleEditorOverlay:126
 - `ImportRuleControls.kt` (138) - DragHandle:22, MatchFields:81
-- `PagePickerOverlay.kt` (336) - data PickerFields:54, enum PickField:78, PagePickerOverlay:92
+- `PagePickerOverlay.kt` (465) **large** - data PickerFields:60, enum PickField:97, PagePickerOverlay:114, samePage:373, PickInspector:378, class PickerBridge:442, parsePick:451
+  - members: get:68, with:77, withPick:90, js:145, dropPick:149, open:157, onPick:446
 - `PlaybackSettingsTab.kt` (446) **large** - PlaybackSettingsTab:50, underlaySubtitle:392, underlayBtDeviceFieldValue:412, underlayBtDeviceSupportingText:419, underlayLevelSliderIndex:435
   - members: loadBondedAndOpen:102, openBtPicker:118
 - `PluginsSettingsTab.kt` (284) - PluginsSettingsTab:64
@@ -278,5 +279,6 @@ Hand-written guide: [map.md](map.md).
 - `ui/reader/ReaderHomeTest.kt`
 - `ui/reader/ReaderProgressPolicyTest.kt`
 - `ui/reader/ReaderTouchPolicyTest.kt`
+- `ui/settings/PickerFieldsTest.kt`
 
-Totals: 146 main files, 30010 lines.
+Totals: 146 main files, 30296 lines.

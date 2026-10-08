@@ -136,11 +136,15 @@ data class ParseRule(
     /** Body selector (stored under the original key). */
     val contentCss: String? = null,
     val titleCss: String? = null,
+    /** Cover image: an `img`, an element containing one, or a `meta[property=og:image]`. */
+    val coverCss: String? = null,
     val removeCss: String? = null,
     val prevCss: String? = null,
     val nextCss: String? = null,
     /** Most pages one crawl follows through Next. */
     val crawlLimit: Int = DEFAULT_CRAWL_LIMIT,
+    /** Fetch pages (imports, Test, picker) as a desktop browser instead of mobile. */
+    val desktop: Boolean = false,
     val testUrl: String? = null,
     val order: Int = 0,
 ) {

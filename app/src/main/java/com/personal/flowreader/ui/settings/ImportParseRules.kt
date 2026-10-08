@@ -2,6 +2,7 @@ package com.personal.flowreader.ui.settings
 
 import com.personal.flowreader.ui.design.controls.FlowLabel
 import com.personal.flowreader.ui.design.controls.FlowChipRow
+import com.personal.flowreader.ui.design.controls.FlowToggleRow
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowTextAction
@@ -108,6 +109,8 @@ internal fun ParseRuleEditorOverlay(
     var parseMode by remember(initial.id) { mutableStateOf(initial.parseMode) }
     var contentCss by remember(initial.id) { mutableStateOf(initial.contentCss.orEmpty()) }
     var titleCss by remember(initial.id) { mutableStateOf(initial.titleCss.orEmpty()) }
+    var coverCss by remember(initial.id) { mutableStateOf(initial.coverCss.orEmpty()) }
+    var desktop by remember(initial.id) { mutableStateOf(initial.desktop) }
     var removeCss by remember(initial.id) { mutableStateOf(initial.removeCss.orEmpty()) }
     var prevCss by remember(initial.id) { mutableStateOf(initial.prevCss.orEmpty()) }
     var nextCss by remember(initial.id) { mutableStateOf(initial.nextCss.orEmpty()) }
@@ -128,6 +131,8 @@ internal fun ParseRuleEditorOverlay(
             parseMode = parseMode,
             contentCss = contentCss.trim().ifBlank { null },
             titleCss = titleCss.trim().ifBlank { null },
+            coverCss = coverCss.trim().ifBlank { null },
+            desktop = desktop,
             removeCss = removeCss.trim().ifBlank { null },
             prevCss = prevCss.trim().ifBlank { null },
             nextCss = nextCss.trim().ifBlank { null },
@@ -160,7 +165,7 @@ internal fun ParseRuleEditorOverlay(
         scope.launch {
             try {
                 val article = withContext(Dispatchers.IO) {
-                    WebPageIngest.fetchArticle(url, selectors)
+                    WebPageIngest.fetchArticle(url, selectors, rule.desktop)
                 }
                 testTitle = article.title
                 testPreview = article.text.take(800)
@@ -253,9 +258,16 @@ internal fun ParseRuleEditorOverlay(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = FlowTokens.Space.XS),
         )
+        FlowToggleRow(
+            title = "Desktop site",
+            subtitle = "Load pages as a desktop browser (Test, Pick and imports). Some sites hide parts on mobile.",
+            checked = desktop,
+            onCheckedChange = { desktop = it },
+        )
         if (showCustom) {
             Spacer(Modifier.height(FlowTokens.Space.M))
             CssField("Title (optional)", titleCss, { titleCss = it }, "h1, h2.chapter-title")
+            CssField("Cover image (optional)", coverCss, { coverCss = it }, "img.cover, meta[property=og:image]")
             CssField("Body", contentCss, { contentCss = it }, "div.chapter-content")
             CssField("Previous Button (optional)", prevCss, { prevCss = it }, "a.prev, a[rel=prev]")
             CssField("Next Button (optional)", nextCss, { nextCss = it }, "a.next, a[rel=next]")
@@ -307,13 +319,18 @@ internal fun ParseRuleEditorOverlay(
             initial = PickerFields(
                 title = titleCss,
                 body = contentCss,
+                cover = coverCss,
                 prev = prevCss,
                 next = nextCss,
                 remove = removeCss,
             ),
+            desktop = desktop,
+            onDesktopChange = { desktop = it },
+            onUrlChange = { testUrl = it },
             onDismiss = { pickerOpen = false },
             onDone = { f ->
                 titleCss = f.title
+                coverCss = f.cover
                 contentCss = f.body
                 prevCss = f.prev
                 nextCss = f.next

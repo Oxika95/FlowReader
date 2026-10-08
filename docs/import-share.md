@@ -46,14 +46,19 @@ page HTML once (mobile Chrome user agent, no scripts run) and parses it with Jso
   | Field | Behavior |
   | --- | --- |
   | Title | First match's text; else og:title / `<title>` |
+  | Cover image | First match: a `meta`'s `content`, an `img`'s lazy/real source (`data-src`, `data-lazy-src`, `data-original`, `src`, `srcset`), the first image inside, or an inline `background-image`. Downloaded (JPEG/PNG/GIF/WebP, ≤ 8 MB) as the EPUB cover; a missing or failed cover just leaves the book without one |
   | Body | Every match, in page order; matches nested in another match are read once. No match or an invalid selector is an error (no fallback to the whole page). Blank = Default content heuristics |
   | Previous / Next Button | First match; link = its own `href`, else the enclosing `<a>`, else the first `<a href>` inside. Read before Remove runs |
   | Remove | Comma-separated; each entry is matched on the whole page and removes hits inside Body. Invalid entries are skipped (shown in Test), valid ones still apply |
 
   Custom strips only `script, style, noscript, iframe` first, so Body may target `nav`/`aside`.
+- Custom imports are saved as an EPUB (one chapter per page, cover if found), single pages included;
+  Default imports stay plain text.
+- **Desktop site** (per rule): Test, Pick, imports and crawls fetch with a desktop Chrome user agent,
+  for sites that hide parts on mobile.
 - Selectors copied from a desktop browser can miss: the server may send different HTML to the
-  mobile user agent, and content built by page scripts is not in the download. Use **Test** (shows
-  `Body 3 · Title 1 · Next → … · Remove 2/3`) or **Pick**.
+  mobile user agent (turn on Desktop site), and content built by page scripts is not in the download.
+  Use **Test** (shows `Body 3 · Title 1 · Cover → … · Next → … · Remove 2/3`) or **Pick**.
 
 ### Crawl (Next button)
 
@@ -64,22 +69,31 @@ apart) until there is no Next link, a URL repeats, the rule's Crawl limit is rea
 pressed (pages fetched so far are kept). A later page failing ends the crawl with the pages so far
 and an error message; a failing first page imports nothing. Pages become one EPUB
 ([`EpubWriter`](../app/src/main/java/com/personal/flowreader/share/EpubWriter.kt): one chapter per page,
-Title field as chapter title, nav ToC; book title = first page's `<title>`) landing per the router
+Title field as chapter title, nav ToC, first page's Cover image; book title = first page's `<title>`) landing per the router
 rule (Queue or a Files tab). The same crawl produces the same bytes, so re-crawling updates one book.
 
 ### On-page picker
 
 **Pick** in the Custom editor opens the Test URL in a WebView (live page, scripts on, same user agent)
 with [`picker.js`](../app/src/main/assets/picker/picker.js) injected; links are disabled. The page
-runs edge to edge under a field tab bar (Title · Body · Prev · Next · Remove). Tap an element,
-adjust with the **Narrower** / **Wider** icons, then **Set** (Remove: **Add**); **Clear** empties the
-field. The line under the page shows the picked selector (or the field's saved one) with its counts,
-plus the picked text or a warning. Filled fields are outlined on the page. The close button cancels.
+runs edge to edge (pinch to zoom) under a field tab bar (Title · Cover · Body · Prev · Next · Remove).
+Tapping an element fills the active field right away (Remove: adds an entry); **Narrower** / **Wider**
+adjust that pick in place, and switching tabs starts a fresh pick. **Clear** empties the field,
+**Save** writes all fields back to the editor, and the close button discards picker changes. The line
+under the page shows the field's selector with its counts, plus the picked text or a warning. Filled
+fields are outlined on the page.
+- **Navigate** (compass, header): taps reach the page (menus, spoilers, links). Navigating away from
+  the Test URL asks **Leave the Test URL?** first; **Open** loads the page and makes it the rule's
+  Test URL right away (also if the picker is then closed). Script-only URL changes (`pushState`)
+  can't be stopped and update the Test URL as they happen.
+- **Desktop site** (header; phone icon = mobile view, monitor = desktop): toggles the rule's Desktop
+  site setting; reloads the page with
+  the desktop user agent and a 1200 px viewport, and re-downloads the import copy.
 [`SelectorBuilder`](../app/src/main/java/com/personal/flowreader/share/SelectorBuilder.kt) builds the
 selector against the separately downloaded HTML (what imports parse): id, class, class-qualified
 ancestor, then positional path; single fields must match exactly one element, Remove may match many.
 The panel shows `Page N · Import M`; **Not in fetched HTML, won't import** means the element only
-exists after page scripts run (try Wider). **Done** writes the fields back to the editor.
+exists after page scripts run (try Wider).
 - Text is saved paragraph by paragraph ([`HtmlParagraphs.kt`](../app/src/main/java/com/personal/flowreader/share/HtmlParagraphs.kt)):
   every block element, `<br>` and `<pre>` line ends a paragraph, so words never join across a
   break; text directly inside a `<div>` is kept and nested blocks are read once. Plugin chapter

@@ -87,9 +87,10 @@ Default idea: EPUB → Files; raw text / most URLs → Queue; plugin domains →
 
 ### Parser
 
-Parse rules (`share_parse_rules`): Test URL, URL match, Default/Custom parser, then Custom fields in
-order **Title, Body, Previous Button, Next Button, Remove** (comma-separated), Crawl limit (shown when
-Next is set, default 100). Footer: **Test** (preview + per-field match summary) and **Pick**
+Parse rules (`share_parse_rules`): Test URL, URL match, Default/Custom parser, **Desktop site**
+(desktop user agent for Test, Pick and imports), then Custom fields in order **Title, Cover image,
+Body, Previous Button, Next Button, Remove** (comma-separated), Crawl limit (shown when Next is set,
+default 100). Footer: **Test** (preview + per-field match summary) and **Pick**
 (on-page picker for the Test URL, see [import-share.md](import-share.md#on-page-picker)).
 While both are filled, the URL match outline is green when it covers the Test URL and red (with a
 warning) when it doesn't (shares from that URL would use another rule).

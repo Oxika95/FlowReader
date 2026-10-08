@@ -452,6 +452,7 @@ object ParseRules {
         return ParseSelectors.of(
             title = rule.titleCss,
             body = rule.contentCss,
+            cover = rule.coverCss,
             prev = rule.prevCss,
             next = rule.nextCss,
             remove = rule.removeCss,
@@ -486,10 +487,12 @@ object ParseRules {
                 ShareJson.appendJson(this, "parseMode", rule.parseMode.name); append(',')
                 ShareJson.appendJson(this, "contentCss", rule.contentCss.orEmpty()); append(',')
                 ShareJson.appendJson(this, "titleCss", rule.titleCss.orEmpty()); append(',')
+                ShareJson.appendJson(this, "coverCss", rule.coverCss.orEmpty()); append(',')
                 ShareJson.appendJson(this, "removeCss", rule.removeCss.orEmpty()); append(',')
                 ShareJson.appendJson(this, "prevCss", rule.prevCss.orEmpty()); append(',')
                 ShareJson.appendJson(this, "nextCss", rule.nextCss.orEmpty()); append(',')
                 append("\"crawlLimit\":").append(rule.crawlLimit).append(',')
+                append("\"desktop\":").append(rule.desktop).append(',')
                 ShareJson.appendJson(this, "testUrl", rule.testUrl.orEmpty()); append(',')
                 append("\"order\":").append(rule.order)
                 append('}')
@@ -520,11 +523,13 @@ object ParseRules {
                     parseMode = parseMode,
                     contentCss = content,
                     titleCss = ShareJson.readString(obj, "titleCss").ifBlank { null },
+                    coverCss = ShareJson.readString(obj, "coverCss").ifBlank { null },
                     removeCss = ShareJson.readString(obj, "removeCss").ifBlank { null },
                     prevCss = ShareJson.readString(obj, "prevCss").ifBlank { null },
                     nextCss = ShareJson.readString(obj, "nextCss").ifBlank { null },
                     crawlLimit = ShareJson.readInt(obj, "crawlLimit", ParseRule.DEFAULT_CRAWL_LIMIT)
                         .coerceIn(1, ParseRule.MAX_CRAWL_LIMIT),
+                    desktop = ShareJson.readBool(obj, "desktop", false),
                     testUrl = ShareJson.readString(obj, "testUrl").ifBlank { null },
                     order = ShareJson.readInt(obj, "order", index),
                 )

@@ -33,6 +33,7 @@ FlowFullscreenCard(
 | `showClose` | Close button top-right (default on except `Hero`) |
 | `scrollable` | `false` when the body hosts a `LazyColumn` (give it `Modifier.weight(1f, fill = false)`) |
 | `bodyPadding` / `bodySpacing` | Defaults: `Pad.CardBody` sides, `Space.S` between children |
+| `headerActions` | Icon toggles in the header before Close (`FlowIconButton`, tint `primary` when on); keep to ≤2 |
 | `tabs` | Pinned under the header (does not scroll) |
 | `footer` | Pinned under the body. Use `FlowActionRow(start = { destructive / secondary }) { Cancel; Confirm }` |
 

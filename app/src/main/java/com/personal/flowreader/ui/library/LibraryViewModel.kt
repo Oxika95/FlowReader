@@ -491,10 +491,26 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun importWebPage(request: WebImportRequest) {
+        val selectors = ParseRules.effectiveSelectors(request.rule)
+        val desktop = request.rule.desktop
         val article = withContext(Dispatchers.IO) {
-            WebPageIngest.fetchArticle(request.url, ParseRules.effectiveSelectors(request.rule))
+            WebPageIngest.fetchArticle(request.url, selectors, desktop)
         }
         val landing = request.landing
+        if (selectors != null) {
+            val saved = withContext(Dispatchers.IO) {
+                val cover = article.coverUrl?.let { WebPageIngest.fetchCover(it, request.url, desktop) }
+                flow.catalog.addEpub(
+                    bytes = WebCrawl.toEpub(listOf(article), request.url, cover),
+                    title = article.title,
+                    inLibrary = !landing.isQueue,
+                    enqueue = landing.isQueue,
+                    libraryTabId = landing.libraryShelfId,
+                )
+            }
+            finishWebImport(request, saved.progress, saved.progress.title)
+            return
+        }
         val result = withContext(Dispatchers.IO) {
             flow.catalog.addText(
                 text = article.text,
@@ -513,7 +529,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         crawlStopRequested = false
         _ui.value = _ui.value.copy(crawlProgress = CrawlProgress(0, limit, ""))
         try {
-            val crawl = WebCrawl(selectors, limit, fetchHtml = { WebPageIngest.fetchHtml(it) })
+            val desktop = request.rule.desktop
+            val crawl = WebCrawl(selectors, limit, fetchHtml = { WebPageIngest.fetchHtml(it, desktop) })
             val result = withContext(Dispatchers.IO) {
                 crawl.run(request.url, stopRequested = { crawlStopRequested }) { count, page ->
                     val current = _ui.value.crawlProgress ?: return@run
@@ -523,8 +540,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             val title = WebCrawl.bookTitle(result.pages)
             val landing = request.landing
             val saved = withContext(Dispatchers.IO) {
+                val cover = result.pages.first().coverUrl?.let { WebPageIngest.fetchCover(it, request.url, desktop) }
                 flow.catalog.addEpub(
-                    bytes = WebCrawl.toEpub(result.pages, request.url),
+                    bytes = WebCrawl.toEpub(result.pages, request.url, cover),
                     title = title,
                     inLibrary = !landing.isQueue,
                     enqueue = landing.isQueue,

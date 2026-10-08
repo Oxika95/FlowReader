@@ -70,6 +70,7 @@ fun FlowFullscreenCard(
     scrollable: Boolean = true,
     bodyPadding: PaddingValues = defaultBodyPadding(variant),
     bodySpacing: Arrangement.Vertical = Arrangement.spacedBy(FlowTokens.Space.S),
+    headerActions: (@Composable RowScope.() -> Unit)? = null,
     tabs: (@Composable () -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -101,6 +102,7 @@ fun FlowFullscreenCard(
                         title = title.orEmpty(),
                         onClose = if (showClose && dismissible) onDismiss else null,
                         onBack = onBack,
+                        actions = headerActions,
                     )
                 }
                 tabs?.invoke()
@@ -147,7 +149,8 @@ private fun defaultBodyPadding(variant: FlowCardVariant): PaddingValues = when (
 }
 
 /**
- * Fullscreen card header: optional back arrow, title, close button (top-right, "Close").
+ * Fullscreen card header: optional back arrow, title, [actions] (icon toggles, before Close),
+ * close button (top-right, "Close").
  * Drawn by [FlowFullscreenCard]; use directly only inside custom hero content.
  */
 @Composable
@@ -156,6 +159,7 @@ fun FlowCardHeader(
     onClose: (() -> Unit)?,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    actions: (@Composable RowScope.() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -181,6 +185,7 @@ fun FlowCardHeader(
                 .weight(1f)
                 .padding(start = if (onBack == null) FlowTokens.Pad.HeaderTitleStart else FlowTokens.Space.None),
         )
+        actions?.invoke(this)
         if (onClose != null) {
             IconButton(onClick = onClose) {
                 Icon(Icons.Filled.Close, contentDescription = "Close")

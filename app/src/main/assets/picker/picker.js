@@ -1,7 +1,10 @@
 (function () {
   if (window.__flowPicker) return;
   var P = (window.__flowPicker = {});
-  var COLORS = { title: '#7e57c2', body: '#43a047', prev: '#1e88e5', next: '#fb8c00', remove: '#e53935' };
+  var COLORS = {
+    title: '#7e57c2', cover: '#00acc1', body: '#43a047', prev: '#1e88e5', next: '#fb8c00', remove: '#e53935'
+  };
+  var mode = 'pick';
   var Z = '2147483647';
 
   var layer = document.createElement('div');
@@ -52,15 +55,26 @@
   }
 
   function block(e) {
+    if (mode === 'nav') return;
     e.preventDefault();
     e.stopPropagation();
     if (e.stopImmediatePropagation) e.stopImmediatePropagation();
   }
 
-  document.addEventListener('click', function (e) { block(e); select(e.target); }, true);
+  document.addEventListener('click', function (e) {
+    if (mode === 'nav') return;
+    block(e);
+    select(e.target);
+  }, true);
   ['mousedown', 'mouseup', 'submit', 'auxclick', 'dblclick'].forEach(function (t) {
     document.addEventListener(t, block, true);
   });
+
+  // 'nav' lets taps reach the page; the app intercepts any navigation away from the Test URL.
+  P.setMode = function (m) {
+    mode = m;
+    cursor.style.display = m === 'nav' || !current ? 'none' : 'block';
+  };
 
   P.wider = function () {
     if (!current) return;
@@ -74,6 +88,12 @@
     if (!current) return;
     if (widened.length) select(widened.pop(), true);
     else if (current.firstElementChild) select(current.firstElementChild, true);
+  };
+
+  P.clear = function () {
+    current = null;
+    widened = [];
+    cursor.style.display = 'none';
   };
 
   P.count = function (css) {
