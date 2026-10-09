@@ -9,7 +9,7 @@ Hand-written guide: [map.md](map.md).
 
 - `AppPositionStore.kt` (28) - class AppPositionStore:9
 - `FlowApp.kt` (163) - class FlowApp:34
-- `MainActivity.kt` (247) - class MainActivity:41
+- `MainActivity.kt` (248) - class MainActivity:41
 
 ## data
 
@@ -100,6 +100,7 @@ Hand-written guide: [map.md](map.md).
 ## share
 
 - `EpubWriter.kt` (135) - obj EpubWriter:10
+- `HiddenContent.kt` (51) - obj HiddenContent:11
 - `HtmlParagraphs.kt` (67) - obj HtmlParagraphs:14
 - `SelectorBuilder.kt` (108) - data PathNode:7, data PickedSelector:15, obj SelectorBuilder:27
 - `ShareChooserCard.kt` (59) - ShareChooserCard:24, fallbackLabel:54
@@ -110,7 +111,7 @@ Hand-written guide: [map.md](map.md).
 - `ShareOverlay.kt` (237) - obj ShareOverlayPermission:32, obj ShareDispatch:47, class ShareOverlayController:122
 - `ShareRouter.kt` (96) - obj ShareRouter:3
 - `WebCrawl.kt` (74) - enum CrawlStop:5, data CrawlResult:7, class WebCrawl:18
-- `WebPageIngest.kt` (329) - data WebArticle:11, data ParseSelectors:25, data ParseDiagnostics:55, obj WebPageIngest:91, obj CssList:307
+- `WebPageIngest.kt` (330) - data WebArticle:11, data ParseSelectors:25, data ParseDiagnostics:55, obj WebPageIngest:91, obj CssList:308
 
 ## tts
 
@@ -231,17 +232,17 @@ Hand-written guide: [map.md](map.md).
 - `ReaderHome.kt` (50) - enum PlaybackPinEdge:10, data SentenceSpan:13, obj ReaderHome:15
 - `ReaderLayout.kt` (14) - ReaderContentStartPadding:11, ReaderListEndPadding:14
 - `ReaderProgressPolicy.kt` (16) - obj ReaderProgressPolicy:4
-- `ReaderQueueMode.kt` (154) - class ReaderQueueMode:17
+- `ReaderQueueMode.kt` (186) - class ReaderQueueMode:17
 - `ReaderRail.kt` (352) - LocusRail:112
-- `ReaderScreen.kt` (1150) **large** - RailGutterWidth:106, data BlockSentence:121, ReaderScreen:128, PlaybackPinCard:1077, rememberImmersiveSystemBars:1122
+- `ReaderScreen.kt` (1153) **large** - RailGutterWidth:106, data BlockSentence:121, ReaderScreen:128, PlaybackPinCard:1080, rememberImmersiveSystemBars:1125
   - members: clearTextSelection:195, trackedSentenceIndex:309, scrollToHome:318, jumpToSavedPosition:351, playResumingSavedPosition:360, toggleChrome:438, enableScrollLock:447, disableScrollLock:457, navigateBack:462, resumeFollow:474, dispatch:483, onReaderGesture:494
 - `ReaderSessions.kt` (125) - obj ReaderSessions:20
 - `ReaderTextLayout.kt` (149) - drawTtsHighlightRange:21, sentenceAtPosition:138
 - `ReaderTextToolbar.kt` (149) - class ReaderTextToolbar:20
 - `ReaderTouchGestures.kt` (88) - ReaderSelectionContainer:18, detectSelectionCancelGestures:32, detectRightEdgeBackSwipe:50
 - `ReaderTouchPolicy.kt` (80) - enum ReaderOverlay:7, enum ReaderTouchTarget:14, enum ReaderGestureKind:22, sealed ReaderTouchAction:28, resolveTouch:41
-- `ReaderViewModel.kt` (484) **large** - data ReaderUi:35, class ReaderViewModel:71, enum FilterPreviewMode:472
-  - members: load:112, loadQueue:157, onQueueUpdate:175, reorderQueue:195, removeQueue:200, openBook:205, savedLocus:214, show:224, collectWindow:283, onViewport:298, releaseFocus:313, reapply:320, editFilters:334, addFilter:345, updateFilter:348, setFilterEnabled:351, deleteFilters:354, reorderFilters:357, previewApply:360, currentBlockSample:388, persistLocal:395, nextOrder:407, jumpToChapter:411, jumpTo:425, onSpoken:431, onLocus:437, persistNow:453, persist:457, onCleared:465
+- `ReaderViewModel.kt` (507) **large** - data ReaderUi:36, class ReaderViewModel:72, enum FilterPreviewMode:495
+  - members: load:113, loadQueue:158, onQueueUpdate:176, refreshQueue:181, applyQueueAction:194, reorderQueue:218, removeQueue:223, openBook:228, savedLocus:237, show:247, collectWindow:306, onViewport:321, releaseFocus:336, reapply:343, editFilters:357, addFilter:368, updateFilter:371, setFilterEnabled:374, deleteFilters:377, reorderFilters:380, previewApply:383, currentBlockSample:411, persistLocal:418, nextOrder:430, jumpToChapter:434, jumpTo:448, onSpoken:454, onLocus:460, persistNow:476, persist:480, onCleared:488
 - `TocOverlay.kt` (104) - TocOverlay:32
 
 ## ui/settings
@@ -307,6 +308,7 @@ Hand-written guide: [map.md](map.md).
 - `plugin/sync/ProgressReconcileTest.kt`
 - `plugin/sync/SyncStateTest.kt`
 - `plugin/updates/UpdateDiffTest.kt`
+- `share/HiddenContentTest.kt`
 - `share/SelectorBuilderTest.kt`
 - `share/ShareRouterTest.kt`
 - `share/WebCrawlTest.kt`
@@ -330,4 +332,4 @@ Hand-written guide: [map.md](map.md).
 - `ui/reader/ReaderTouchPolicyTest.kt`
 - `ui/settings/PickerFieldsTest.kt`
 
-Totals: 176 main files, 34338 lines.
+Totals: 177 main files, 34449 lines.

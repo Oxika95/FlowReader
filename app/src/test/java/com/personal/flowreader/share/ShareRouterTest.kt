@@ -182,6 +182,7 @@ class ParseRulesJsonTest {
             coverCss = "meta[property=og:image]",
             crawlLimit = 25,
             desktop = true,
+            stripHidden = false,
         )
         assertEquals(listOf(rule), ParseRules.decode(ParseRules.encode(listOf(rule))))
     }
@@ -193,6 +194,7 @@ class ParseRulesJsonTest {
         assertNull(rule.nextCss)
         assertNull(rule.coverCss)
         assertFalse(rule.desktop)
+        assertTrue(rule.stripHidden)
         assertEquals(ParseRule.DEFAULT_CRAWL_LIMIT, rule.crawlLimit)
     }
 

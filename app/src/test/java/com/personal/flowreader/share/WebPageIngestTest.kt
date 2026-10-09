@@ -179,4 +179,22 @@ class WebPageIngestTest {
         assertNull(a.coverUrl)
         assertTrue(a.diagnostics!!.summary(), "Cover not found" in a.diagnostics!!.summary())
     }
+
+    @Test
+    fun cssHiddenNoticesAreDroppedInDefaultAndCustom() {
+        val hiddenPage = """
+            <html><head><style>.cXyZ { display: none; speak: never; }</style></head><body>
+            <article><div class="chapter-inner"><p>First.</p><p class="cXyZ">Report it on Amazon.</p><p>Second.</p></div></article>
+            </body></html>
+        """.trimIndent()
+        assertEquals(listOf("First.", "Second."), WebPageIngest.extractArticle(hiddenPage, url).paragraphs)
+        assertEquals(
+            listOf("First.", "Second."),
+            WebPageIngest.extractArticle(hiddenPage, url, ParseSelectors.of(body = ".chapter-inner")).paragraphs,
+        )
+        assertEquals(
+            listOf("First.", "Report it on Amazon.", "Second."),
+            WebPageIngest.extractArticle(hiddenPage, url, stripHidden = false).paragraphs,
+        )
+    }
 }

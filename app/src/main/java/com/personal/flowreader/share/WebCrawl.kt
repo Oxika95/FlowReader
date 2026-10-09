@@ -19,6 +19,7 @@ class WebCrawl(
     private val selectors: ParseSelectors,
     private val limit: Int,
     private val fetchHtml: suspend (String) -> String,
+    private val stripHidden: Boolean = true,
     private val delayMs: Long = 400,
     private val pause: suspend (Long) -> Unit = { delay(it) },
 ) {
@@ -33,7 +34,7 @@ class WebCrawl(
         while (true) {
             seen += key(url)
             val page = try {
-                WebPageIngest.extractArticle(fetchHtml(url), url, selectors)
+                WebPageIngest.extractArticle(fetchHtml(url), url, selectors, stripHidden)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Throwable) {

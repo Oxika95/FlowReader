@@ -111,6 +111,7 @@ internal fun ParseRuleEditorOverlay(
     var titleCss by remember(initial.id) { mutableStateOf(initial.titleCss.orEmpty()) }
     var coverCss by remember(initial.id) { mutableStateOf(initial.coverCss.orEmpty()) }
     var desktop by remember(initial.id) { mutableStateOf(initial.desktop) }
+    var stripHidden by remember(initial.id) { mutableStateOf(initial.stripHidden) }
     var removeCss by remember(initial.id) { mutableStateOf(initial.removeCss.orEmpty()) }
     var prevCss by remember(initial.id) { mutableStateOf(initial.prevCss.orEmpty()) }
     var nextCss by remember(initial.id) { mutableStateOf(initial.nextCss.orEmpty()) }
@@ -133,6 +134,7 @@ internal fun ParseRuleEditorOverlay(
             titleCss = titleCss.trim().ifBlank { null },
             coverCss = coverCss.trim().ifBlank { null },
             desktop = desktop,
+            stripHidden = stripHidden,
             removeCss = removeCss.trim().ifBlank { null },
             prevCss = prevCss.trim().ifBlank { null },
             nextCss = nextCss.trim().ifBlank { null },
@@ -165,7 +167,7 @@ internal fun ParseRuleEditorOverlay(
         scope.launch {
             try {
                 val article = withContext(Dispatchers.IO) {
-                    WebPageIngest.fetchArticle(url, selectors, rule.desktop)
+                    WebPageIngest.fetchArticle(url, selectors, rule.desktop, rule.stripHidden)
                 }
                 testTitle = article.title
                 testPreview = article.text.take(800)
@@ -263,6 +265,12 @@ internal fun ParseRuleEditorOverlay(
             subtitle = "Load pages as a desktop browser (Test, Pick and imports). Some sites hide parts on mobile.",
             checked = desktop,
             onCheckedChange = { desktop = it },
+        )
+        FlowToggleRow(
+            title = "Remove hidden text",
+            subtitle = "Drop text the page's own CSS hides, such as anti-copy notices. Turn off if real text goes missing.",
+            checked = stripHidden,
+            onCheckedChange = { stripHidden = it },
         )
         if (showCustom) {
             Spacer(Modifier.height(FlowTokens.Space.M))

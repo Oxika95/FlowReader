@@ -37,6 +37,14 @@ The first `http(s)://` or `www.` URL in the shared text is used, even when surro
 [`WebPageIngest.kt`](../app/src/main/java/com/personal/flowreader/share/WebPageIngest.kt) fetches the
 page HTML once (mobile Chrome user agent, no scripts run) and parses it with Jsoup.
 
+- Before either parser runs, [`HiddenContent.kt`](../app/src/main/java/com/personal/flowreader/share/HiddenContent.kt)
+  removes elements hidden by the page's own `<style>` rules or inline `style` (`display: none`,
+  `visibility: hidden|collapse`, `speak: never|none`) and `[hidden]` elements. This drops anti-scrape
+  notices such as Royal Road's (random class + `display: none; speak: never`). Selectors with `:`,
+  invalid selectors, and `html`/`head`/`body` are ignored; external stylesheets are not read.
+  On by default; each parse rule (Default included) has a **Remove hidden text** toggle
+  (`ParseRule.stripHidden`) that applies to Test, imports, and crawls.
+
 - The first matching parse rule wins; the protected **Default** rule (`seed-parse-default`, any URL)
   is always last, can't be deleted or disabled, and only its parser mode / CSS are editable.
 - **Default** parser: strips `script, style, nav, footer, aside, noscript, iframe`, then reads the

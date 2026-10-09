@@ -120,8 +120,12 @@ object WebPageIngest {
     }
 
     /** [selectors] null = Default parser (heuristics); non-null = Custom fields. */
-    fun fetchArticle(url: String, selectors: ParseSelectors? = null, desktop: Boolean = false): WebArticle =
-        extractArticle(fetchHtml(url, desktop), url, selectors)
+    fun fetchArticle(
+        url: String,
+        selectors: ParseSelectors? = null,
+        desktop: Boolean = false,
+        stripHidden: Boolean = true,
+    ): WebArticle = extractArticle(fetchHtml(url, desktop), url, selectors, stripHidden)
 
     /** Cover image bytes and media type, or null when it can't be downloaded or isn't an image. */
     fun fetchCover(url: String, referer: String, desktop: Boolean = false): EpubWriter.Cover? = runCatching {
@@ -154,8 +158,14 @@ object WebPageIngest {
     }
 
     /** Parse already-fetched HTML (also used by unit tests / Test preview / crawl). */
-    fun extractArticle(html: String, url: String, selectors: ParseSelectors? = null): WebArticle {
+    fun extractArticle(
+        html: String,
+        url: String,
+        selectors: ParseSelectors? = null,
+        stripHidden: Boolean = true,
+    ): WebArticle {
         val doc = Jsoup.parse(html, url)
+        if (stripHidden) HiddenContent.strip(doc)
         return if (selectors == null) extractDefault(doc, url) else extractCustom(doc, url, selectors)
     }
 

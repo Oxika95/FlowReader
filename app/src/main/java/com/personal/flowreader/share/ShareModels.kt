@@ -145,6 +145,8 @@ data class ParseRule(
     val crawlLimit: Int = DEFAULT_CRAWL_LIMIT,
     /** Fetch pages (imports, Test, picker) as a desktop browser instead of mobile. */
     val desktop: Boolean = false,
+    /** Drop elements the page's own CSS hides ([HiddenContent]), e.g. anti-scrape notices. */
+    val stripHidden: Boolean = true,
     val testUrl: String? = null,
     val order: Int = 0,
 ) {

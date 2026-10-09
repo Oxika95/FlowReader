@@ -478,7 +478,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         val selectors = ParseRules.effectiveSelectors(request.rule)
         val desktop = request.rule.desktop
         val article = withContext(Dispatchers.IO) {
-            WebPageIngest.fetchArticle(request.url, selectors, desktop)
+            WebPageIngest.fetchArticle(request.url, selectors, desktop, request.rule.stripHidden)
         }
         val landing = request.landing
         if (selectors != null) {
@@ -516,7 +516,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(crawlProgress = CrawlProgress(0, limit, ""))
         try {
             val desktop = request.rule.desktop
-            val crawl = WebCrawl(selectors, limit, fetchHtml = { WebPageIngest.fetchHtml(it, desktop) })
+            val crawl = WebCrawl(
+                selectors,
+                limit,
+                fetchHtml = { WebPageIngest.fetchHtml(it, desktop) },
+                stripHidden = request.rule.stripHidden,
+            )
             val result = withContext(Dispatchers.IO) {
                 crawl.run(request.url, stopRequested = { crawlStopRequested }) { count, page ->
                     val current = _ui.value.crawlProgress ?: return@run

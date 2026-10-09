@@ -412,6 +412,7 @@ object ParseRules {
                 ShareJson.appendJson(this, "nextCss", rule.nextCss.orEmpty()); append(',')
                 append("\"crawlLimit\":").append(rule.crawlLimit).append(',')
                 append("\"desktop\":").append(rule.desktop).append(',')
+                append("\"stripHidden\":").append(rule.stripHidden).append(',')
                 ShareJson.appendJson(this, "testUrl", rule.testUrl.orEmpty()); append(',')
                 append("\"order\":").append(rule.order)
                 append('}')
@@ -443,6 +444,7 @@ object ParseRules {
                     crawlLimit = ShareJson.readInt(obj, "crawlLimit", ParseRule.DEFAULT_CRAWL_LIMIT)
                         .coerceIn(1, ParseRule.MAX_CRAWL_LIMIT),
                     desktop = ShareJson.readBool(obj, "desktop", false),
+                    stripHidden = ShareJson.readBool(obj, "stripHidden", true),
                     testUrl = ShareJson.readString(obj, "testUrl").ifBlank { null },
                     order = ShareJson.readInt(obj, "order", index),
                 )
