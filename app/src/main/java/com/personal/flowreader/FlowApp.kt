@@ -74,6 +74,7 @@ class FlowApp : Application() {
         pluginBooks = PluginBookStore(pluginManager, appScope) { settings.pluginCacheDefaultsOnce() }
         pluginSync = TwoWaySync(this)
         pluginBooks.positionChanged = pluginSync::localPositionChanged
+        pluginBooks.tocStored = pluginSync::tocStored
         pluginRepos = RepoManager(settings)
         pluginInstaller = PluginInstaller(pluginManager, pluginRepos)
         progress = ProgressWriter(db.progress(), appScope) { update ->

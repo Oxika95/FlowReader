@@ -156,6 +156,8 @@ data class PluginWorkDetail(
     val chapters: List<PluginChapterRef> = emptyList(),
     /** Declarative media card slots; null when the plugin fills none. */
     val card: PluginCard? = null,
+    /** The site's reading position (chapter URL) when signed in; blank when unknown or unread. */
+    val readChapterUrl: String = "",
 ) {
     fun toWork(subtitle: String = ""): PluginWork =
         PluginWork(id = id, title = title, url = url, author = author, cover = cover, subtitle = subtitle)
@@ -254,6 +256,7 @@ data class PluginUpdateInfo(
 data class PluginReadPosition(
     val id: String,
     val chapterUrl: String,
+    val chapterTitle: String = "",
 )
 
 enum class PluginErrorCode {
@@ -483,6 +486,7 @@ object PluginJson {
                 )
             },
             card = card(o.optJSONObject("card")),
+            readChapterUrl = o.optString("readChapterUrl").trim(),
         )
     }
 
@@ -519,6 +523,6 @@ object PluginJson {
     fun readPositions(value: Any?): List<PluginReadPosition> = (value as? JSONArray).objects().mapNotNull { o ->
         val id = o.optString("id").trim()
         val url = o.optString("chapterUrl").trim()
-        if (id.isEmpty() || url.isEmpty()) null else PluginReadPosition(id, url)
+        if (id.isEmpty() || url.isEmpty()) null else PluginReadPosition(id, url, o.optString("chapterTitle").trim())
     }
 }

@@ -128,6 +128,7 @@ type WorkDetail = {
   synopsis?: string; tags?: string[];
   chapters: ChapterRef[];            // full table of contents, reading order
   card?: Card;                       // media card slots
+  readChapterUrl?: string;           // signed-in reading position on this page (progressSync)
 };
 type Chapter = { title: string; html?: string; text?: string };   // html preferred
 type Session = { loggedIn: boolean; account?: string };
@@ -218,10 +219,18 @@ on **Sync now**:
   the site is removed locally only if it was there at the last sync.
 - `syncProgress(workId, chapter)` pushes the reading position when it moves to another chapter.
   Pushes that fail are queued and retried; it may throw on network errors.
-- `readPositions(works)` (optional) returns `[{ id, chapterUrl }]`: the site's last-read chapter for
-  each work it can tell, preferably from list pages that cover many works. `works[]` has the same
-  shape as `checkUpdates`. Omit unknown works; never throw `AUTH_REQUIRED` for single works.
-- When only one side moved since the last sync it wins; when both moved the user picks.
+- `readPositions(works)` (optional) returns `[{ id, chapterUrl, chapterTitle? }]`: the site's
+  last-read chapter for each work a list page covers (no per-work requests). `works[]` has the same
+  shape as `checkUpdates` (`chapters: 0`, `lastChapterUrl: ""` for works never loaded). Omit unknown
+  works; never throw `AUTH_REQUIRED` for single works.
+- `WorkDetail.readChapterUrl` (optional): the site's reading position read from the same work page
+  `loadWork` fetched. The host merges it whenever it stores the ToC (story opened, refreshed,
+  new-chapter check), so works no list page covers still sync without extra requests.
+- A work whose saved ToC is missing or lacks the returned chapter is not loaded for it: the host
+  keeps the position (and `chapterTitle`, shown as "Last read") and applies it when the ToC is next
+  stored.
+- When only one side moved since the last sync it wins; when both moved the user picks. Overwrite
+  (**Replace with site lists**) applies every site position as is.
 - Fetch chapter bodies with `flow.fetch(url, { cookies: false })` when the site records reads on
   page views, so downloads ahead of the reader do not move the site's position.
 

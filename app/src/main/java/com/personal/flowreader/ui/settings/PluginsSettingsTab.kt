@@ -48,8 +48,12 @@ import com.personal.flowreader.ui.design.controls.FlowTextField
 import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.design.tabs.FlowTabLevel
 import com.personal.flowreader.ui.design.tabs.flowTextTabs
+import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.plugin.PluginAccountSettings
+import com.personal.flowreader.ui.plugin.PluginDataSettings
 import com.personal.flowreader.ui.plugin.PluginSettingsForm
+import com.personal.flowreader.ui.plugin.erasePluginData
+import com.personal.flowreader.ui.plugin.pluginDataSummary
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlinx.coroutines.launch
 
@@ -83,6 +87,8 @@ internal fun PluginsSettingsTab() {
                 HorizontalDivider()
             }
             PluginSettingsForm(pluginId = selected.id)
+            HorizontalDivider()
+            PluginDataSettings(selected)
         }
     }
 }
@@ -249,14 +255,28 @@ private fun InstalledPluginsPane(onOpenSettings: (String) -> Unit) {
         FlowConfirmCard(
             visible = true,
             title = "Uninstall ${plugin.name}?",
-            message = "Your downloaded stories and sign-in are kept, so reinstalling restores them.",
+            message = "Uninstall keeps its data, so reinstalling restores it. Delete data too: " +
+                pluginDataSummary(plugin).replaceFirstChar { it.lowercase() },
             confirmLabel = "Uninstall",
-            destructive = true,
             onConfirm = {
                 confirmUninstall = null
                 run("Uninstalling") { app.pluginManager.uninstall(plugin.id); "Uninstalled ${plugin.name}" }
             },
             onDismiss = { confirmUninstall = null },
+            extraActions = {
+                FlowTextAction(
+                    "Delete data too",
+                    {
+                        confirmUninstall = null
+                        run("Uninstalling") {
+                            erasePluginData(app, plugin)
+                            app.pluginManager.uninstall(plugin.id)
+                            "Uninstalled ${plugin.name} and deleted its data"
+                        }
+                    },
+                    destructive = true,
+                )
+            },
         )
     }
 }

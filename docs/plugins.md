@@ -13,8 +13,11 @@ screen, owns the chapter cache and the reader, and routes shared links.
 stories defaults, available plugins (Install), and repositories. Each installed plugin then has its
 own sub-tab with its manifest settings. The official repository
 (`https://oxika95.github.io/flow-reader-plugins/index.json`) is pre-added; third-party
-repositories must be `https://` and show a trust prompt. Uninstalling keeps story data and
-sign-in, so a reinstall restores the library.
+repositories must be `https://` and show a trust prompt. **Uninstall** keeps story data and
+sign-in, so a reinstall restores the library; **Delete data too** on the same card also erases it.
+The plugin's sub-tab has **Delete {plugin} data** (`PluginDataEraser`): library entries, covers,
+downloaded chapters, lists, reading positions, sync state, `flow.storage`, settings, and sign-in
+(encrypted cookies and WebView cookies). Nothing on the site changes. Sign out alone keeps data.
 
 **Plugin updates** (Settings → About → Notifications): a background job (`PluginVersionWorker`,
 WorkManager, any network; every 0–24 h, default 24 h) refreshes the repositories and, with
@@ -104,10 +107,17 @@ before each new-chapter check. Code: [`plugin/sync/`](../app/src/main/java/com/p
   plugin data dir). A change on one side is copied to the other; additions and removals propagate
   both ways. A removed story keeps its downloads until it is on no list (Delete removes it from the
   site lists too).
-- **First sync:** lists are unioned (nothing deleted); positions take the further chapter.
+- **First sync:** lists are unioned (nothing deleted); positions take the further chapter. Stories
+  never opened, or whose saved ToC lacks the site's chapter, are not loaded: the card shows
+  "Last read: {chapter}" and the position applies when the ToC is next stored (opening the story,
+  new-chapter check). Royal Road reads every Follow's position from the Follows pages; stories only
+  on Favorite / Read Later (those pages show no position) get theirs from "Continue Reading" on the
+  story page whenever that page is loaded for its ToC. Sync never requests a page per story.
 - **Guard:** site removals are skipped when the site list is empty or under half of a last-synced
   list of 4 or more (login-gated or truncated page); the Account sheet says so.
-  **Replace with site lists** (Overwrite) accepts the site as is and resets the baseline.
+  **Replace with site lists** (Overwrite) accepts the site as is and resets the baseline: lists and
+  every reading position the site reports (no conflict prompts; queued position pushes dropped).
+  Merge there runs the normal position merge.
 - **Positions:** a chapter change in the reader pushes to the site (not when it equals the synced
   chapter, or opening an unread story at chapter 1). When both sides moved since the last sync, the
   story gets a **Position conflict** badge and a card: Use {site} / Keep mine / Later.

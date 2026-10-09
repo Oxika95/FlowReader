@@ -70,6 +70,10 @@ data class PluginMediaInfo(
     val cleanup: Boolean = false,
     /** New-chapter bell state; null hides the bell. */
     val notify: Boolean? = null,
+    /** A reading position is saved (else the story is unread and [locus] is chapter 1). */
+    val hasPosition: Boolean = false,
+    /** Title of chapter [locus]. */
+    val locusTitle: String = "",
 )
 
 /**
@@ -174,11 +178,13 @@ object PluginMediaCardAdapter {
             }
             add(MediaAction(MediaActionIds.READ, "Read", MediaActionKind.Primary, enabled = canRead))
         }
-        val status = if (downloadProgress != null) {
-            "Downloading ${downloadProgress.first} / ${downloadProgress.second}"
-        } else {
-            "Cached ${info.downloadedCount} / ${info.chapterCount} chapters · next ${info.cacheLevel} · " +
-                "cleanup ${if (info.cleanup) "on" else "off"}"
+        val status = when {
+            downloadProgress != null -> "Downloading ${downloadProgress.first} / ${downloadProgress.second}"
+            info.hasPosition && info.chapterCount > 0 -> {
+                val chapter = (info.locus + 1).coerceIn(1, info.chapterCount)
+                "Last read: ${info.locusTitle.ifBlank { "Chapter $chapter" }} · $chapter / ${info.chapterCount}"
+            }
+            else -> "Not started"
         }
         return MediaCardModel(
             title = info.title,

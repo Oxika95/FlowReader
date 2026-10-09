@@ -61,6 +61,8 @@ internal fun StoryMediaCard(
                     card = s.card,
                     cleanup = s.cleanup,
                     notify = s.notify,
+                    hasPosition = s.hasSavedPosition,
+                    locusTitle = s.toc.getOrNull(s.chapterIndex)?.title.orEmpty(),
                 ),
                 busy = ui.busy,
                 downloadProgress = progress,

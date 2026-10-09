@@ -55,7 +55,7 @@ rail ─────── list toggles (membershipToggle) ... host, manifest or
              New-chapter bell .................. host (toggle; see plugins.md)
              Share ............................. host
              plugin rail actions (≤2) .......... card.actions placement "rail"
-body ─────── status line ....................... host ("Cached 12 / 40 chapters · cache level 5")
+body ─────── status line ....................... host ("Last read: {chapter} · 12 / 40", "Not started", or download progress)
              links (≤3) ........................ card.links
 footer ───── Download, Refresh, Delete ......... host
              plugin footer actions (≤2) ........ card.actions placement "footer"

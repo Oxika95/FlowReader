@@ -54,7 +54,7 @@ Result:
 │ A short synopsis…                                               │
 │ ▮▮▮▯▯▯▯▯▯▯▯▯▯▯▯▯▯▯▯▯ (chapter cache strip)                      │
 └─────────────────────────────────────────────────────────────────┘
-  Cached 3 / 120 chapters · cache level 5
+  Last read: Chapter 3 · 3 / 120
   Author Name ↗
   [Download] [Refresh] [Delete]
   [              Read              ]

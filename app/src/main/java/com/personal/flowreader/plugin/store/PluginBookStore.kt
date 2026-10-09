@@ -78,8 +78,21 @@ class PluginBookStore(
     private val upkeepJobs = HashMap<String, Job>()
     private val upkeepLocus = HashMap<String, Int>()
 
+    /** Stops chapter upkeep (sync push, downloads) for [bookIds] before their data is deleted. */
+    fun cancelUpkeep(bookIds: Collection<String>) {
+        synchronized(upkeepJobs) {
+            bookIds.forEach { id ->
+                upkeepJobs.remove(id)?.cancel()
+                upkeepLocus.remove(id)
+            }
+        }
+    }
+
     /** Two-way sync's push of a new reading chapter (set by the app). */
     var positionChanged: (suspend (PluginReadSession, Int) -> Unit)? = null
+
+    /** Two-way sync hook: a story's ToC was stored, with the site's reading chapter URL (may be blank). */
+    var tocStored: (suspend (PluginReadSession, String) -> Unit)? = null
 
     /**
      * The reading position of [bookId] is now chapter [locus]: when the chapter changed, sync it
@@ -166,6 +179,7 @@ class PluginBookStore(
             ),
         )
         PluginSessionStore.reconcileChapterFiles(r.dir, oldUrls, newUrls)
+        runCatching { tocStored?.invoke(session, detail.readChapterUrl) }
         return session
     }
 

@@ -35,6 +35,12 @@ sealed interface SyncOp {
 data class PositionConflict(val workId: String, val localUrl: String, val remoteUrl: String)
 
 /**
+ * The site's reading chapter for a story whose saved ToC doesn't have it yet (never opened, or
+ * older than the chapter). Applied when the ToC is next stored; [overwrite] skips the merge.
+ */
+data class PendingPosition(val workId: String, val chapterUrl: String, val chapterTitle: String, val overwrite: Boolean = false)
+
+/**
  * One plugin's two-way sync memory (`{dataDir}/sync.json`). [lists] and [positions] are the
  * baseline both sides agreed on at the last sync; a list missing from [lists] has never synced.
  */
@@ -46,6 +52,7 @@ data class SyncState(
     val lastSyncedAt: Long = 0L,
     /** Lists whose site removals were skipped at the last sync (truncated-list guard). */
     val guardedLists: Set<String> = emptySet(),
+    val pending: Map<String, PendingPosition> = emptyMap(),
 ) {
     fun enqueue(op: SyncOp): SyncState = copy(outbox = outbox.filter { it.key != op.key } + op)
 
@@ -79,6 +86,14 @@ data class SyncState(
         put("conflicts", JSONArray(conflicts.values.map { JSONObject().put("id", it.workId).put("local", it.localUrl).put("remote", it.remoteUrl) }))
         put("lastSyncedAt", lastSyncedAt)
         put("guardedLists", JSONArray(guardedLists.sorted()))
+        put(
+            "pending",
+            JSONArray(
+                pending.values.map {
+                    JSONObject().put("id", it.workId).put("url", it.chapterUrl).put("title", it.chapterTitle).put("overwrite", it.overwrite)
+                },
+            ),
+        )
     }
 
     companion object {
@@ -94,6 +109,11 @@ data class SyncState(
                 val id = c.optString("id")
                 if (id.isBlank()) null else PositionConflict(id, c.optString("local"), c.optString("remote"))
             }.associateBy { it.workId }
+            val pending = objects(o.optJSONArray("pending")).mapNotNull { p ->
+                val id = p.optString("id").ifBlank { return@mapNotNull null }
+                val url = p.optString("url").ifBlank { return@mapNotNull null }
+                PendingPosition(id, url, p.optString("title"), p.optBoolean("overwrite"))
+            }.associateBy { it.workId }
             return SyncState(
                 lists = lists,
                 positions = positions,
@@ -101,6 +121,7 @@ data class SyncState(
                 conflicts = conflicts,
                 lastSyncedAt = o.optLong("lastSyncedAt"),
                 guardedLists = strings(o.optJSONArray("guardedLists")).toSet(),
+                pending = pending,
             )
         }
 

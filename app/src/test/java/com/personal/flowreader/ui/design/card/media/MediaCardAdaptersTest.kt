@@ -123,9 +123,11 @@ class MediaCardAdaptersTest {
     }
 
     @Test
-    fun status_reflectsDownloadProgress() {
-        val idle = model(info())
-        assertEquals("Cached 3 / 10 chapters · next 5 · cleanup off", idle.status)
+    fun status_showsLastReadOrDownloadProgress() {
+        assertEquals("Not started", model(info()).status)
+        val reading = model(info().copy(hasPosition = true, locusTitle = "The Return"))
+        assertEquals("Last read: The Return · 2 / 10", reading.status)
+        assertEquals("Last read: Chapter 2 · 2 / 10", model(info().copy(hasPosition = true)).status)
         val downloading = PluginMediaCardAdapter.model(manifest, info(), busy = false, downloadProgress = 4 to 10, error = null)
         assertEquals("Downloading 4 / 10", downloading.status)
     }

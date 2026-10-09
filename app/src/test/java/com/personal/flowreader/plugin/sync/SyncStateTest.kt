@@ -17,6 +17,10 @@ class SyncStateTest {
             conflicts = mapOf("4" to PositionConflict("4", "https://s/c/1", "https://s/c/5")),
             lastSyncedAt = 1234L,
             guardedLists = setOf("readlater"),
+            pending = mapOf(
+                "5" to PendingPosition("5", "https://s/c/42", "Chapter 42"),
+                "6" to PendingPosition("6", "https://s/c/7", "", overwrite = true),
+            ),
         )
         assertEquals(state, SyncState.parse(state.toJson()))
     }

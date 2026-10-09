@@ -158,7 +158,8 @@ Sub-tabs: **Installed**, then one per installed plugin (its name).
 - **Per plugin:** name and version (description and hosts behind the info icon); **Account** for plugins with `auth` (sign-in status,
   Sign in / Sign out, `PluginAccountSettings`; sign-in changes reach the library tab through
   `PluginManager.sessionChanges`); then the manifest's `settings[]` form (`PluginSettingsForm`;
-  saved per plugin by `PluginManager.setSetting`).
+  saved per plugin by `PluginManager.setSetting`); then **Data** (`PluginDataSettings`: Delete
+  {plugin} data, confirmed). Uninstall's confirm card offers Uninstall (keeps data) or Delete data too.
 
 See [plugins.md](plugins.md).
 

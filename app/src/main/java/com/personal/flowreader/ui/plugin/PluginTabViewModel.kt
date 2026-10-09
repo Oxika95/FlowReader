@@ -623,13 +623,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             actions.setBusy(true)
             try {
                 withContext(Dispatchers.IO) {
+                    // ToC first: storing it applies a site position waiting for it.
+                    val toc = books.openStory(bookId).toc
                     val row = flow.db.progress().get(bookId)
-                    val toc = books.session(bookId)?.toc.orEmpty()
-                    val start = when {
-                        row == null -> 0
-                        toc.isEmpty() -> row.chapterIndex
-                        else -> PluginSessionStore.savedChapter(toc, row.chapterHref, row.chapterIndex)
-                    }
+                    val start = if (row == null) 0 else PluginSessionStore.savedChapter(toc, row.chapterHref, row.chapterIndex)
                     startAndSnapshot(bookId, start)
                 }
                 refreshLocal()

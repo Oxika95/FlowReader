@@ -132,7 +132,10 @@ fun PluginTabContent(
                         val row = ui.listRows[book.bookId]
                         val author = meta?.author?.ifBlank { null } ?: row?.author.orEmpty()
                         val chapters = meta?.chapterCount ?: 0
+                        val lastRead = ui.sync.pendingTitles[book.bookId]?.let { "Last read: $it" }
                         when {
+                            author.isNotBlank() && lastRead != null -> "$author · $lastRead"
+                            lastRead != null -> lastRead
                             author.isNotBlank() && chapters > 0 -> "$author · $chapters chapters"
                             chapters > 0 -> "$chapters chapters"
                             author.isNotBlank() -> author

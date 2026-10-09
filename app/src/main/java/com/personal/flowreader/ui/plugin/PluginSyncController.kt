@@ -25,6 +25,8 @@ data class PluginSyncUi(
     val conflictBookIds: Set<String> = emptySet(),
     val queued: Int = 0,
     val guardedLists: Set<String> = emptySet(),
+    /** Library book id → site's last-read chapter title, for stories whose ToC isn't loaded yet. */
+    val pendingTitles: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -64,6 +66,9 @@ internal class PluginSyncController(
                         conflictBookIds = state.conflicts.keys.map { id -> app.pluginManager.bookIdFor(pluginId, id) }.toSet(),
                         queued = state.outbox.size,
                         guardedLists = state.guardedLists,
+                        pendingTitles = state.pending.values
+                            .filter { p -> p.chapterTitle.isNotBlank() }
+                            .associate { p -> app.pluginManager.bookIdFor(pluginId, p.workId) to p.chapterTitle },
                     ),
                 )
             }
@@ -105,20 +110,21 @@ internal class PluginSyncController(
         scope.launch {
             ui.update { it.copy(busy = true, error = null, syncListId = null) }
             try {
-                val count = withContext(Dispatchers.IO) {
+                val (count, positions) = withContext(Dispatchers.IO) {
                     val count = sync.lists.applyLists(pluginId, lists.associate { it.id to sync.lists.fetchList(pluginId, it.id) }, mode)
                     sync.resetListBaselines(pluginId, lists.filterNot { it.isBrowse }.map { it.id })
-                    count
+                    count to sync.pullPositions(pluginId, overwrite = mode == SyncMode.Overwrite).positionsPulled
                 }
                 onChanged()
+                val head = when (mode) {
+                    SyncMode.Merge -> "Merged $count from $title"
+                    SyncMode.Overwrite -> "Replaced $title with $count stories"
+                }
                 ui.update {
                     it.copy(
                         busy = false,
                         showAccount = false,
-                        message = when (mode) {
-                            SyncMode.Merge -> "Merged $count from $title"
-                            SyncMode.Overwrite -> "Replaced $title with $count stories"
-                        },
+                        message = if (positions > 0) "$head, $positions reading positions set" else head,
                     )
                 }
                 refreshState()

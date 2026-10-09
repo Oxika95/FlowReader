@@ -181,6 +181,20 @@ class PluginManager(private val context: Context) {
         return get(manifest.id) ?: throw PluginException(PluginErrorCode.Error, "Install failed")
     }
 
+    /**
+     * Deletes the plugin's data dir (lists, stories, sync state, `flow.storage`, settings) and its
+     * encrypted sign-in (secrets, cookies). Library rows are the caller's ([PluginDataEraser]).
+     */
+    fun eraseData(pluginId: String) {
+        closeRuntime(pluginId)
+        File(dataRoot, pluginId).deleteRecursively()
+        PluginSecrets(context, pluginId).run {
+            clear()
+            clearCookies()
+        }
+        sessionChanged(pluginId)
+    }
+
     /** Removes plugin code. Story data and sign-in stay so a reinstall restores the library. */
     fun uninstall(pluginId: String) {
         closeRuntime(pluginId)

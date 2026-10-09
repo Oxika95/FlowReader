@@ -20,7 +20,7 @@ data class MediaCardModel(
     val segments: MediaSegments? = null,
     /** Accessibility label for a long press on [segments]; blank when it has none. */
     val segmentsLongPressLabel: String = "",
-    /** Host-owned status line under the band ("Cached 12 / 40 chapters"). */
+    /** Host-owned status line under the band ("Last read: Chapter 12 · 12 / 40"). */
     val status: String = "",
     val error: String = "",
     val links: List<MediaLink> = emptyList(),

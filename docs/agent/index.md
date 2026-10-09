@@ -7,7 +7,7 @@ Hand-written guide: [map.md](map.md).
 
 ## (root)
 
-- `FlowApp.kt` (142) - class FlowApp:30
+- `FlowApp.kt` (143) - class FlowApp:30
 - `MainActivity.kt` (222) - class MainActivity:40
 
 ## data
@@ -38,15 +38,15 @@ Hand-written guide: [map.md](map.md).
 
 ## plugin
 
-- `PluginManager.kt` (261) - data InstalledPlugin:25, class PluginManager:40
+- `PluginManager.kt` (275) - data InstalledPlugin:25, class PluginManager:40
 - `PluginShareRequest.kt` (7) - data PluginShareRequest:7
 - `PluginSource.kt` (126) - class PluginSource:23
 
 ## plugin/api
 
 - `PluginManifest.kt` (235) - PLUGIN_HOST_API_VERSION:10, PLUGIN_MIN_API_VERSION:13, enum PluginCapability:15, enum PluginListKind:33, data PluginList:46, data PluginAuthField:62, data PluginWebLogin:71, data PluginAuth:76, enum PluginSettingType:83, data PluginSettingOption:95, data PluginSetting:97, data PluginManifest:110, strings:216, objects:221, compareVersions:227
-- `PluginModels.kt` (524) **large** - data PluginWork:7, enum PluginTone:26, data PluginStat:39, data PluginLink:47, enum PluginActionPlacement:49, data PluginCardAction:63, data PluginCard:77, data PluginCardPatch:109, data PluginCardActionResult:117, obj PluginCardLimits:124, data PluginChapterRef:139, data PluginWorkDetail:148, data PluginChapter:165, data PluginPage:171, data PluginSort:177, data PluginBrowseTab:180, data PluginBrowseSection:186, data PluginBrowseGroup:195, data PluginBrowsePage:201, data PluginSession:228, data PluginUpdateQuery:234, data PluginUpdateInfo:242, data PluginReadPosition:254, enum PluginErrorCode:259, class PluginException:282, obj PluginJson:288
-  - members: apply:86, capped:94, isValidActionId:135, toWork:160, isNewer:248, work:289, badges:309, badgesToJson:325, stats:329, links:335, actions:341, card:357, cardPatch:368, cardActionResult:378, cardToJson:388, page:408, browsePage:417, works:462, detail:464, chapter:489, session:495, chapterRef:503, updateQuery:506, updates:512, readPositions:519
+- `PluginModels.kt` (528) **large** - data PluginWork:7, enum PluginTone:26, data PluginStat:39, data PluginLink:47, enum PluginActionPlacement:49, data PluginCardAction:63, data PluginCard:77, data PluginCardPatch:109, data PluginCardActionResult:117, obj PluginCardLimits:124, data PluginChapterRef:139, data PluginWorkDetail:148, data PluginChapter:167, data PluginPage:173, data PluginSort:179, data PluginBrowseTab:182, data PluginBrowseSection:188, data PluginBrowseGroup:197, data PluginBrowsePage:203, data PluginSession:230, data PluginUpdateQuery:236, data PluginUpdateInfo:244, data PluginReadPosition:256, enum PluginErrorCode:262, class PluginException:285, obj PluginJson:291
+  - members: apply:86, capped:94, isValidActionId:135, toWork:162, isNewer:250, work:292, badges:312, badgesToJson:328, stats:332, links:338, actions:344, card:360, cardPatch:371, cardActionResult:381, cardToJson:391, page:411, browsePage:420, works:465, detail:467, chapter:493, session:499, chapterRef:507, updateQuery:510, updates:516, readPositions:523
 
 ## plugin/repo
 
@@ -66,8 +66,9 @@ Hand-written guide: [map.md](map.md).
 
 ## plugin/store
 
-- `PluginBookStore.kt` (459) **large** - class PluginBookStore:36
-  - members: Ref:46, ref:50, source:56, fetchLock:60, chapterText:66, scheduleMaintain:88, read:108, isPluginBook:111, pluginIdFor:113, fetchAndStoreWork:116, ensureSessionToc:125, libraryMeta:172, libraryMetas:182, readSplashBundle:185, cachedChapterIndices:191, downloadAllChapters:201, downloadAhead:219, setCachePolicy:229, setNotify:238, session:245, updatePinnedRanges:247, maintainChapterCache:263, pruneChapterCache:293, prune:299, ensureSessionForDownload:309, runCardAction:320, refreshToc:331, deleteLocalSession:336, startReading:342, openStory:349, chapter:355, seekToChapter:363, loadThrough:375, downloadCover:390
+- `PluginBookStore.kt` (473) **large** - class PluginBookStore:36
+  - members: Ref:46, ref:50, source:56, fetchLock:60, chapterText:66, cancelUpkeep:82, scheduleMaintain:101, read:121, isPluginBook:124, pluginIdFor:126, fetchAndStoreWork:129, ensureSessionToc:138, libraryMeta:186, libraryMetas:196, readSplashBundle:199, cachedChapterIndices:205, downloadAllChapters:215, downloadAhead:233, setCachePolicy:243, setNotify:252, session:259, updatePinnedRanges:261, maintainChapterCache:277, pruneChapterCache:307, prune:313, ensureSessionForDownload:323, runCardAction:334, refreshToc:345, deleteLocalSession:350, startReading:356, openStory:363, chapter:369, seekToChapter:377, loadThrough:389, downloadCover:404
+- `PluginDataEraser.kt` (22) - class PluginDataEraser:12
 - `PluginListWriter.kt` (114) - enum SyncMode:7, class PluginListWriter:13
 - `PluginMembershipStore.kt` (86) - obj PluginMembershipStore:16
 - `PluginSessionStore.kt` (387) - data PluginReadSession:12, data PluginCachePolicy:42, data PluginSplashMeta:53, data PluginLibraryMeta:61, obj PluginSessionStore:68
@@ -76,8 +77,9 @@ Hand-written guide: [map.md](map.md).
 
 - `ListReconcile.kt` (55) - data ListPlan:4, obj ListReconcile:14
 - `ProgressReconcile.kt` (74) - iface ProgressAction:3, data ProgressDecision:11, obj ProgressReconcile:13
-- `SyncState.kt` (166) - iface SyncOp:8, data PositionConflict:35, data SyncState:41, obj SyncStateStore:137
-- `TwoWaySync.kt` (369) - data SyncReport:27, enum PushResult:39, class TwoWaySync:46
+- `SyncState.kt` (187) - iface SyncOp:8, data PositionConflict:35, data PendingPosition:41, data SyncState:47, obj SyncStateStore:158
+- `TwoWaySync.kt` (470) **large** - data SyncReport:27, enum PushResult:39, class TwoWaySync:46
+  - members: flushLock:57, dataDir:59, state:61, changed:64, supports:69, syncsLists:71, runAll:76, runIfStale:91, run:97, syncLists:112, syncPositions:168, mergeSitePosition:223, tocStored:276, saveBaseline:288, knownWorks:298, applyPosition:312, localPositionChanged:340, membershipChanged:355, resolveConflict:369, pullPositions:393, resetListBaselines:402, flush:415, Outcome:425, attempt:433, hasSavedPosition:458
 
 ## plugin/updates
 
@@ -147,7 +149,7 @@ Hand-written guide: [map.md](map.md).
 ## ui/design/card/media
 
 - `FlowMediaCard.kt` (337) - FlowMediaCard:73
-- `MediaCardAdapters.kt` (199) - data FileMediaInfo:8, obj FileMediaCardAdapter:22, data PluginMediaInfo:53, obj PluginMediaCardAdapter:79
+- `MediaCardAdapters.kt` (205) - data FileMediaInfo:8, obj FileMediaCardAdapter:22, data PluginMediaInfo:53, obj PluginMediaCardAdapter:83
 - `MediaCardModel.kt` (97) - data MediaCardModel:8, data MediaStat:35, data MediaLink:37, data MediaSegments:43, enum MediaActionKind:45, enum MediaActionOwner:57, data MediaAction:64, obj MediaActionIds:77, withoutHostActions:93
 - `MediaSegmentStrip.kt` (55) - MediaSegmentStrip:16
 
@@ -196,14 +198,15 @@ Hand-written guide: [map.md](map.md).
 - `AddFromSource.kt` (112) - PluginSearchPane:46, AddFromSourceSheet:79
 - `CreatorPage.kt` (340) - BrowseListPane:57, class CreatorPageActions:92, CreatorPageOverlay:109, data SectionGroup:294, sectionGroups:300
 - `PluginBrowse.kt` (133) - data PluginBrowseTabUi:17, data PluginBrowseUi:24, class PluginBrowseController:37
+- `PluginDataSettings.kt` (69) - erasePluginData:25, pluginDataSummary:32, PluginDataSettings:39
 - `PluginSettingsSheet.kt` (123) - PluginSettingsSheet:34, PluginSettingsForm:51
-- `PluginSyncController.kt` (164) - data PluginSyncUi:18, class PluginSyncController:34
-- `PluginTab.kt` (322) - rememberPluginTabViewModel:52, PluginTabContent:62, PluginTabFab:158, PluginTabOverlays:213, PluginStoryOverlays:274
-- `PluginTabViewModel.kt` (993) **large** - data PluginStory:45, iface PluginSection:78, data PluginTabUi:83, class PluginTabViewModel:142
-  - members: Library:79, Search:80, source:153, refreshLocal:177, storyLists:193, refreshSession:201, onSyncChanged:223, syncNow:232, resolveConflict:235, postponeConflict:240, membership:242, setSection:249, openBrowse:257, setBrowseTab:259, setBrowseSort:261, browseMore:263, setBrowsePostsOrder:265, openBrowseStory:271, localStory:287, closeBrowse:299, maybeRefreshBrowse:305, setQuery:320, setUrlDraft:322, setLoginField:324, setShowLogin:327, setShowAdd:331, setShowAccount:335, setShowSettings:337, askSync:341, consumeError:343, consumeMessage:345, fail:347, search:366, openUrl:394, openWork:412, openWorkInternal:423, openStory:444, showStory:461, closeStory:472, loadStory:481, toggleNotify:522, runCardAction:541, upsertWork:562, toggleList:567, syncList:610, readBook:620, readStory:647, startAndSnapshot:669, refreshStoryToc:691, deleteStory:710, onDownloadTap:734, dismissDownloadAll:747, downloadAllChapters:749, openPartial:759, closePartial:765, setCacheLevelDraft:769, setCleanup:777, saveCachePolicy:782, downloadAhead:800, runDownload:812, finishDownload:835, openPosition:852, closePosition:854, savePosition:860, login:911, completeWebLogin:942, syncAfterSignIn:968, logout:972
+- `PluginSyncController.kt` (170) - data PluginSyncUi:18, class PluginSyncController:36
+- `PluginTab.kt` (325) - rememberPluginTabViewModel:52, PluginTabContent:62, PluginTabFab:161, PluginTabOverlays:216, PluginStoryOverlays:277
+- `PluginTabViewModel.kt` (990) **large** - data PluginStory:45, iface PluginSection:78, data PluginTabUi:83, class PluginTabViewModel:142
+  - members: Library:79, Search:80, source:153, refreshLocal:177, storyLists:193, refreshSession:201, onSyncChanged:223, syncNow:232, resolveConflict:235, postponeConflict:240, membership:242, setSection:249, openBrowse:257, setBrowseTab:259, setBrowseSort:261, browseMore:263, setBrowsePostsOrder:265, openBrowseStory:271, localStory:287, closeBrowse:299, maybeRefreshBrowse:305, setQuery:320, setUrlDraft:322, setLoginField:324, setShowLogin:327, setShowAdd:331, setShowAccount:335, setShowSettings:337, askSync:341, consumeError:343, consumeMessage:345, fail:347, search:366, openUrl:394, openWork:412, openWorkInternal:423, openStory:444, showStory:461, closeStory:472, loadStory:481, toggleNotify:522, runCardAction:541, upsertWork:562, toggleList:567, syncList:610, readBook:620, readStory:644, startAndSnapshot:666, refreshStoryToc:688, deleteStory:707, onDownloadTap:731, dismissDownloadAll:744, downloadAllChapters:746, openPartial:756, closePartial:762, setCacheLevelDraft:766, setCleanup:774, saveCachePolicy:779, downloadAhead:797, runDownload:809, finishDownload:832, openPosition:849, closePosition:851, savePosition:857, login:908, completeWebLogin:939, syncAfterSignIn:965, logout:969
 - `PositionConflictCard.kt` (38) - POSITION_CONFLICT_BADGE:8, PositionConflictCard:15
 - `StoryCacheCards.kt` (224) - DownloadAllCard:39, PartialDownloadCard:61, PositionSliderCard:115, OutlinedFieldWithInfo:194
-- `StoryMediaCard.kt` (102) - StoryMediaCard:24
+- `StoryMediaCard.kt` (104) - StoryMediaCard:24
 - `SyncTargets.kt` (31) - SYNC_ALL_LISTS:7, syncTargets:10, defaultSyncChoice:15, syncTitle:24
 - `WebLoginOverlay.kt` (136) - WebLoginOverlay:38, obj WebLoginCookieStore:108
 - `WorkCard.kt` (100) - WorkCard:22, flowTones:43, iface GroupedRow:51, groupedRows:62, GroupHeader:95
@@ -253,7 +256,7 @@ Hand-written guide: [map.md](map.md).
   - members: get:68, with:77, withPick:90, js:145, dropPick:149, open:157, onPick:446
 - `PlaybackSettingsTab.kt` (425) **large** - PlaybackSettingsTab:50, underlaySubtitle:371, underlayBtDeviceFieldValue:391, underlayBtDeviceSupportingText:398, underlayLevelSliderIndex:414
   - members: loadBondedAndOpen:98, openBtPicker:114
-- `PluginsSettingsTab.kt` (278) - PluginsSettingsTab:58
+- `PluginsSettingsTab.kt` (298) - PluginsSettingsTab:62
 - `SettingsOverlay.kt` (239) - SettingsOverlay:29
 - `SettingsState.kt` (146) - data AppearanceSettingsState:15, data AppearanceSettingsCallbacks:33, AppearanceSettingsState:52, AppearanceSettingsCallbacks:70, data TtsSettingsState:89, data TtsSettingsCallbacks:112, data FilterSettingsState:132, data FilterSettingsCallbacks:139
 - `SharingSettingsTab.kt` (280) - data SharePluginOption:39, sealed ImportRuleEditRequest:44, class DomainRuleEditorState:60, DomainRuleEditorHost:65, SharingSettingsTab:92
@@ -318,4 +321,4 @@ Hand-written guide: [map.md](map.md).
 - `ui/reader/ReaderTouchPolicyTest.kt`
 - `ui/settings/PickerFieldsTest.kt`
 
-Totals: 167 main files, 33204 lines.
+Totals: 169 main files, 33484 lines.
