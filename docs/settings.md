@@ -1,10 +1,14 @@
 # Settings
 
-Shared overlay from library or reader. Primary tabs (alphabetical): **About | Audio | Filters | Import | Layout**.
+Shared overlay from library or reader. Primary tabs (alphabetical): **About | Audio | Filters | Import | Layout | Plugins**.
 
 ![About](images/settings-about.png)
 
 ## About
+
+Sub-tabs: **Info | Notifications | Data**.
+
+### Info
 
 | Control | Pref / notes |
 |---------|----------------|
@@ -13,6 +17,30 @@ Shared overlay from library or reader. Primary tabs (alphabetical): **About | Au
 | Latest release | Link via GitHub API |
 | GitHub | Oxika95/FlowReader |
 | Debug mode | `debug_enabled` — synth dump FAB |
+
+### Notifications
+
+Background checks (WorkManager) that post notifications. Intervals are a slider in whole hours,
+Off or 1–24 h (`CheckInterval`).
+
+| Control | Key / notes |
+|---------|-------------|
+| New chapters › Check every | `plugin_update_interval`, default 12 h; stories with the bell on |
+| New chapters › Wi-Fi only | `plugin_update_wifi_only`, default off |
+| New chapters › Check now | One run when the network allows |
+| Plugin updates › Check every | `plugin_version_interval`, default 24 h; refreshes repositories |
+| Plugin updates › Notify about updates | `plugin_version_notify`, default on; once per version (`plugin_version_notified`) |
+
+### Data
+
+Storage and download defaults.
+
+| Control | Key / notes |
+|---------|-------------|
+| Plugin story downloads › Cache level | `plugin_cache_level`, default 1; chapters downloaded ahead of the reading position for newly added plugin stories |
+| Plugin story downloads › Clean up old chapters | `plugin_cache_cleanup`, default off; deletes chapters more than the cache level behind |
+
+Each story can change its own values from the hold-Download card.
 
 ## Audio
 
@@ -42,8 +70,6 @@ Sub-tabs: **Voice | Playback**.
 | Auto-scroll with playback | `tts_auto_scroll` |
 | Double-tap starts playback | `tts_double_tap_play` |
 | Use mobile data when Wi-Fi is weak | `tts_mobile_data_fallback` — default On; Edge overlap / cellular-first lanes ([tts.md](tts.md#edge-requests-and-networks)) |
-| Auto Play on Share | `tts_auto_play_on_share` — default Off; a share saved to Library or Queue opens in the reader and starts TTS when nothing is playing ([tts.md](tts.md#playback-behavior)) |
-| Interrupt Playback | `tts_share_interrupts` — default Off; shown only with Auto Play on Share; the share also replaces current playback |
 | Tonal underlay | `tts_tonal_underlay` — float level (dB), snapped to `TtsPrefs.TONAL_UNDERLAY_STEPS` |
 | Underlay Bluetooth device | `tts_underlay_bt_address` / `tts_underlay_bt_name` — standby until A2DP/Headset connected |
 | Sentence offset (−500…+500 ms) | `tts_sentence_gap_ms` |
@@ -69,7 +95,7 @@ Storage: `global_filters` / `group_filters` JSON; Local → Room `book_filters`.
 
 ## Import
 
-Sub-tabs: **Router | Parser | Plugins**.
+Sub-tabs: **Router | Parser**.
 
 ![Router](images/settings-import.png)
 
@@ -80,6 +106,8 @@ Sub-tabs: **Router | Parser | Plugins**.
 | Control | Key / notes |
 |---------|-------------|
 | Manual Override | `share_ask_mode` — Ask vs Auto; Ask needs display-over permission |
+| Auto Play on Share | `tts_auto_play_on_share` — default Off; a share saved to Library or Queue opens in the reader and starts TTS when nothing is playing ([tts.md](tts.md#playback-behavior)) |
+| Interrupt Playback | `tts_share_interrupts` — default Off; shown only with Auto Play on Share; the share also replaces current playback |
 | Rules list | Enable switch; hold for edit mode (drag reorder, multi-select, Delete) like Filters → `share_router_rules` |
 | Rule editor | Content (Book files / Raw text / URL), URL match, Parse page, Destination (Files / Queue / shelves / Plugin) |
 
@@ -99,18 +127,9 @@ path (`*royalroad.com*`, `example.com/fiction/*/chapter/*`; a trailing `/*` also
 Hold a rule for edit mode (drag reorder, multi-select, Delete) like Filters. The **Default** rule
 (any URL) is always last and protected: no delete, switch, or drag; tap edits its parser mode / CSS.
 
-### Plugins
-
-Installed plugins (Update, Settings, Uninstall), **New stories** defaults (Cache level: chapters
-downloaded ahead of the reading position, default 1; Clean up old chapters, default off; each story
-can change its own from the hold-Download card), **New chapters** (Check every Off / 3h / 6h / 12h /
-Daily, default 12h, `plugin_update_interval`; Wi-Fi only, default off, `plugin_update_wifi_only`;
-Check now), available plugins from repositories (Install), and
-the repository list (Add repository, Refresh, Remove). See [plugins.md](plugins.md).
-
 ## Layout
 
-Sub-tabs: **Theme | UI | Font**.
+Sub-tabs: **Theme | UI | Font | Reading**.
 
 ![Theme](images/settings-layout.png)
 
@@ -121,8 +140,27 @@ Sub-tabs: **Theme | UI | Font**.
 | Area | Controls | Keys |
 |------|----------|------|
 | Theme | Light / Dark / OLED; Accent hue; Saturation (0–200% of the theme's accent saturation, default is the theme saturation); Lightness (black at the left, the theme's accent in the middle, white at the right) | `theme`, `accent_hue`, `accent_saturation`, `accent_lightness` |
-| UI | UI scale; Orientation; Chapter headings; Keep screen awake; Home position (15–85%, default 50%); Show home marker | `ui_scale`, `orientation`, `show_chapter_headings`, `keep_screen_awake`, `home_position`, `show_home_marker` |
+| UI | UI scale; Orientation | `ui_scale`, `orientation` |
 | Font | Sans/Serif/Mono; size; spacing; Justify | `font_family`, `font_scale`, `line_spacing`, `justify_text` |
+| Reading | Chapter headings in body; Keep screen awake; Home position (15–85%, default 50%); Show home marker | `show_chapter_headings`, `keep_screen_awake`, `home_position`, `show_home_marker` |
+
+## Plugins
+
+Sub-tabs: **Installed**, then one per installed plugin (its name).
+
+- **Installed:** one compact row per plugin (`FlowListRow`: name and version; "Update available"
+  line when the repositories have a newer version; info icon for description and allowed hosts;
+  icon actions Update, Settings (opens the plugin's sub-tab), Uninstall). The `+` beside the
+  Installed heading opens **Add plugin** (plugins from repositories that aren't installed; Install).
+  **Advanced** (collapsed) holds Repositories: Refresh beside the heading, the trust note behind its
+  info icon, one row per repository (name, official / plugin count, URL or error; Remove), and the
+  Repository URL field with an Add icon. Download defaults for new plugin stories are in About › Data.
+- **Per plugin:** name and version (description and hosts behind the info icon); **Account** for plugins with `auth` (sign-in status,
+  Sign in / Sign out, `PluginAccountSettings`; sign-in changes reach the library tab through
+  `PluginManager.sessionChanges`); then the manifest's `settings[]` form (`PluginSettingsForm`;
+  saved per plugin by `PluginManager.setSetting`).
+
+See [plugins.md](plugins.md).
 
 ## Source
 
@@ -132,6 +170,9 @@ Sub-tabs: **Theme | UI | Font**.
 - [`FiltersSettings.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/FiltersSettings.kt), [`FilterRuleList.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/FilterRuleList.kt) (edit mode)
 - [`SharingSettingsTab.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/SharingSettingsTab.kt)
 - [`AppearanceSettings.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/AppearanceSettings.kt)
+- [`NotificationSettings.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/NotificationSettings.kt)
+- [`DataSettings.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/DataSettings.kt)
+- [`PluginsSettingsTab.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/PluginsSettingsTab.kt)
 - [`SettingsStore.kt`](../app/src/main/java/com/personal/flowreader/data/SettingsStore.kt)
 
 [Back to hub](README.md)

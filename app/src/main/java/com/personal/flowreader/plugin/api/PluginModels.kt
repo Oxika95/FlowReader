@@ -16,7 +16,22 @@ data class PluginWork(
     val badges: List<String> = emptyList(),
     /** Compact stats on the display card. */
     val stats: List<PluginStat> = emptyList(),
+    /** Badge label → color; badges sent as `{ label, tone }`. */
+    val badgeTones: Map<String, PluginTone> = emptyMap(),
+    /** Section of a browse list or browse items tab; the host divides rows where it changes. */
+    val group: String = "",
 )
+
+/** Status color of a badge. */
+enum class PluginTone(val key: String) {
+    Positive("positive"),
+    Negative("negative"),
+    ;
+
+    companion object {
+        fun parse(raw: String?): PluginTone? = entries.firstOrNull { it.key == raw }
+    }
+}
 
 // --- Declarative media card slots --------------------------------------------------------------
 
@@ -125,6 +140,8 @@ data class PluginChapterRef(
     val title: String,
     val url: String,
     val id: String = "",
+    /** The signed-in account cannot read this chapter (paywalled). */
+    val locked: Boolean = false,
 )
 
 /** `loadWork` result: splash metadata plus the full ToC. */
@@ -155,6 +172,58 @@ data class PluginPage(
     val items: List<PluginWork>,
     val hasMore: Boolean = false,
 )
+
+/** One sort option offered by `browse`; the plugin does the sorting. */
+data class PluginSort(val id: String, val label: String)
+
+/** One tab on a browse entry page (e.g. a creator's About, Posts, Collections). */
+data class PluginBrowseTab(val id: String, val label: String)
+
+/**
+ * Block of a text tab: optional [heading] (starts a group), bold [title], [text] paragraphs, [links].
+ * [collapsed] on a heading section folds its group behind the heading until tapped.
+ */
+data class PluginBrowseSection(
+    val heading: String = "",
+    val title: String = "",
+    val text: String = "",
+    val links: List<PluginLink> = emptyList(),
+    val collapsed: Boolean = false,
+)
+
+/** Item group an items tab always shows (header, then [empty] when no item has this group). */
+data class PluginBrowseGroup(val title: String, val empty: String = "")
+
+/**
+ * `browse(id, page, sort, tab)` result: one tab of an entry page. The tab is a story pane when
+ * [storyId] is set, text when [text]/[cover]/[stats]/[badges]/[links] are set, else [items].
+ */
+data class PluginBrowsePage(
+    val items: List<PluginWork>,
+    val hasMore: Boolean = false,
+    val sorts: List<PluginSort> = emptyList(),
+    /** Sort applied to [items]; blank when the plugin offers none. */
+    val sort: String = "",
+    val tabs: List<PluginBrowseTab> = emptyList(),
+    /** Tab this page belongs to; blank when the plugin offers none. */
+    val tab: String = "",
+    val text: String = "",
+    val cover: String = "",
+    val stats: List<PluginStat> = emptyList(),
+    val badges: List<String> = emptyList(),
+    val badgeTones: Map<String, PluginTone> = emptyMap(),
+    val links: List<PluginLink> = emptyList(),
+    /** Text tab blocks after [text]. */
+    val sections: List<PluginBrowseSection> = emptyList(),
+    /** Items tab groups in display order, shown even when empty. */
+    val groups: List<PluginBrowseGroup> = emptyList(),
+    /** Work whose chapters this tab lists (lock / downloaded icons, tap opens its story card). */
+    val storyId: String = "",
+) {
+    val isText: Boolean
+        get() = items.isEmpty() && storyId.isEmpty() &&
+            (text.isNotBlank() || cover.isNotBlank() || links.isNotEmpty() || sections.isNotEmpty())
+}
 
 data class PluginSession(
     val loggedIn: Boolean = false,
@@ -215,6 +284,7 @@ object PluginJson {
         val id = o.optString("id").trim()
         val title = o.optString("title").trim()
         if (id.isEmpty() || title.isEmpty()) return null
+        val (badges, tones) = badges(o.optJSONArray("badges"))
         return PluginWork(
             id = id,
             title = title,
@@ -222,10 +292,33 @@ object PluginJson {
             author = o.optString("author"),
             cover = o.optString("cover"),
             subtitle = o.optString("subtitle"),
-            badges = o.optJSONArray("badges").strings().take(PluginCardLimits.MAX_BADGES),
+            badges = badges,
             stats = stats(o.optJSONArray("stats")).take(PluginCardLimits.MAX_STATS),
+            badgeTones = tones,
+            group = o.optString("group").trim(),
         )
     }
+
+    /** Badges given as strings or `{ label, tone }`: labels (capped) and the tones of toned ones. */
+    fun badges(arr: JSONArray?): Pair<List<String>, Map<String, PluginTone>> {
+        val labels = ArrayList<String>()
+        val tones = HashMap<String, PluginTone>()
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                if (labels.size == PluginCardLimits.MAX_BADGES) break
+                val o = arr.optJSONObject(i)
+                val label = (o?.optString("label") ?: arr.optString(i)).trim()
+                if (label.isEmpty()) continue
+                labels += label
+                PluginTone.parse(o?.optString("tone"))?.let { tones[label] = it }
+            }
+        }
+        return labels to tones
+    }
+
+    fun badgesToJson(badges: List<String>, tones: Map<String, PluginTone>): JSONArray = JSONArray(
+        badges.map { b -> tones[b]?.let { JSONObject().put("label", b).put("tone", it.key) } ?: b },
+    )
 
     fun stats(arr: JSONArray?): List<PluginStat> = arr.objects().mapNotNull { s ->
         val value = s.optString("value").trim()
@@ -315,6 +408,51 @@ object PluginJson {
         else -> PluginPage(emptyList())
     }
 
+    fun browsePage(value: Any?): PluginBrowsePage {
+        val o = value as? JSONObject ?: return PluginBrowsePage(page(value).items)
+        val sorts = o.optJSONArray("sorts").objects().mapNotNull { s ->
+            val id = s.optString("id").trim()
+            if (id.isEmpty()) null else PluginSort(id, s.optString("label").ifBlank { id })
+        }.distinctBy { it.id }
+        val sort = o.optString("sort").trim()
+        val tabs = o.optJSONArray("tabs").objects().mapNotNull { t ->
+            val id = t.optString("id").trim()
+            if (id.isEmpty()) null else PluginBrowseTab(id, t.optString("label").ifBlank { id })
+        }.distinctBy { it.id }
+        val tab = o.optString("tab").trim()
+        val (badges, tones) = badges(o.optJSONArray("badges"))
+        val sections = o.optJSONArray("sections").objects().map { s ->
+            val heading = s.optString("heading").trim()
+            PluginBrowseSection(
+                heading = heading,
+                title = s.optString("title").trim(),
+                text = s.optString("text").trim(),
+                links = links(s.optJSONArray("links")).take(PluginCardLimits.MAX_LINKS),
+                collapsed = heading.isNotEmpty() && s.optBoolean("collapsed", false),
+            )
+        }.filter { it.heading.isNotEmpty() || it.title.isNotEmpty() || it.text.isNotEmpty() || it.links.isNotEmpty() }
+        return PluginBrowsePage(
+            items = works(o.optJSONArray("items")),
+            hasMore = o.optBoolean("hasMore", false),
+            sorts = sorts,
+            sort = sort.takeIf { s -> sorts.any { it.id == s } } ?: sorts.firstOrNull()?.id.orEmpty(),
+            tabs = tabs,
+            tab = tab.takeIf { t -> tabs.any { it.id == t } } ?: tabs.firstOrNull()?.id.orEmpty(),
+            text = o.optString("text").trim(),
+            cover = o.optString("cover").trim(),
+            stats = stats(o.optJSONArray("stats")).take(PluginCardLimits.MAX_STATS),
+            badges = badges,
+            badgeTones = tones,
+            links = links(o.optJSONArray("links")).take(PluginCardLimits.MAX_LINKS),
+            sections = sections,
+            groups = o.optJSONArray("groups").objects().mapNotNull { g ->
+                val title = g.optString("title").trim()
+                if (title.isEmpty()) null else PluginBrowseGroup(title, g.optString("empty").trim())
+            }.distinctBy { it.title },
+            storyId = o.optString("storyId").trim(),
+        )
+    }
+
     fun works(arr: JSONArray?): List<PluginWork> = arr.objects().mapNotNull { work(it) }
 
     fun detail(o: JSONObject): PluginWorkDetail {
@@ -331,7 +469,12 @@ object PluginJson {
             chapters = o.optJSONArray("chapters").objects().mapNotNull { c ->
                 val url = c.optString("url").trim()
                 if (url.isEmpty()) return@mapNotNull null
-                PluginChapterRef(title = c.optString("title"), url = url, id = c.optString("id"))
+                PluginChapterRef(
+                    title = c.optString("title"),
+                    url = url,
+                    id = c.optString("id"),
+                    locked = c.optBoolean("locked", false),
+                )
             },
             card = card(o.optJSONObject("card")),
         )
@@ -352,7 +495,7 @@ object PluginJson {
     }
 
     fun chapterRef(ref: PluginChapterRef): JSONObject =
-        JSONObject().put("title", ref.title).put("url", ref.url).put("id", ref.id)
+        JSONObject().put("title", ref.title).put("url", ref.url).put("id", ref.id).put("locked", ref.locked)
 
     fun updateQuery(q: PluginUpdateQuery): JSONObject = JSONObject()
         .put("id", q.id)

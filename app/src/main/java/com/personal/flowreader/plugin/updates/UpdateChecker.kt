@@ -8,6 +8,7 @@ import com.personal.flowreader.plugin.api.PluginChapterRef
 import com.personal.flowreader.plugin.api.PluginUpdateQuery
 import com.personal.flowreader.plugin.store.PluginMembershipStore
 import com.personal.flowreader.plugin.store.PluginReadSession
+import com.personal.flowreader.plugin.store.PluginSessionStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -47,8 +48,9 @@ class UpdateChecker(private val app: FlowApp) {
     private suspend fun checkPlugin(plugin: InstalledPlugin): List<ChapterUpdate> {
         val manifest = plugin.manifest
         val dataDir = app.pluginManager.dataDir(plugin.id)
-        val members = manifest.lists.associate { it.id to PluginMembershipStore.workIds(dataDir, it.id) }
-        val syncable = manifest.lists.filter { it.syncable }.map { it.id }.toSet()
+        val members = manifest.lists.filterNot { it.isBrowse }
+            .associate { it.id to PluginMembershipStore.workIds(dataDir, it.id) }
+        val notifyLists = UpdateDiff.notifyLists(manifest.lists)
         val workIds = LinkedHashSet<String>()
         members.values.forEach { workIds += it }
         app.catalog.listPlugin(plugin.id).mapNotNullTo(workIds) { row ->
@@ -61,7 +63,7 @@ class UpdateChecker(private val app: FlowApp) {
             val bookId = app.pluginManager.bookIdFor(plugin.id, workId)
             val session = app.pluginBooks.session(bookId)?.takeIf { it.toc.isNotEmpty() }
             val listedIn = members.filterValues { workId in it }.keys
-            if (!UpdateDiff.notifyOn(session?.notify, listedIn, syncable)) continue
+            if (!UpdateDiff.notifyOn(session?.notify, listedIn, notifyLists)) continue
             if (session == null) baseline += workId else monitored += session
         }
 
@@ -102,7 +104,7 @@ class UpdateChecker(private val app: FlowApp) {
                 val added = UpdateDiff.newChapters(old.toc.map { it.url }, fresh.toc)
                 if (added.isEmpty()) continue
                 out += ChapterUpdate(plugin.id, fresh.bookId, fresh.title, added)
-                downloadAhead(fresh.bookId)
+                downloadAhead(fresh)
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
@@ -113,10 +115,12 @@ class UpdateChecker(private val app: FlowApp) {
     }
 
     /** Fill the cache level ahead of the saved position; stories never read are left alone. */
-    private suspend fun downloadAhead(bookId: String) {
+    private suspend fun downloadAhead(session: PluginReadSession) {
+        val bookId = session.bookId
         val row = app.db.progress().get(bookId) ?: return
         try {
-            app.pluginBooks.maintainChapterCache(bookId, row.chapterIndex)
+            val locus = PluginSessionStore.savedChapter(session.toc, row.chapterHref, row.chapterIndex)
+            app.pluginBooks.maintainChapterCache(bookId, locus)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {

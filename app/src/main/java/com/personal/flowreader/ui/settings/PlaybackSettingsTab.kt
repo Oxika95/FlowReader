@@ -50,8 +50,6 @@ import kotlin.math.roundToInt
 internal fun PlaybackSettingsTab(
     doubleTapPlay: Boolean = false,
     mobileDataFallback: Boolean = true,
-    autoPlayOnShare: Boolean = false,
-    shareInterruptsPlayback: Boolean = false,
     autoScrollWithTts: Boolean = false,
     minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
     underlayBtAddress: String = "",
@@ -61,8 +59,6 @@ internal fun PlaybackSettingsTab(
     highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
     onDoubleTapPlay: (Boolean) -> Unit = {},
     onMobileDataFallback: (Boolean) -> Unit = {},
-    onAutoPlayOnShare: (Boolean) -> Unit = {},
-    onShareInterruptsPlayback: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
     onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
     onUnderlayBtDevice: (String, String) -> Unit = { _, _ -> },
@@ -146,23 +142,6 @@ internal fun PlaybackSettingsTab(
         checked = mobileDataFallback,
         onCheckedChange = onMobileDataFallback,
     )
-    Spacer(Modifier.height(FlowTokens.Space.S))
-    FlowToggleRow(
-        title = "Auto Play on Share",
-        subtitle = "Open shared content in the reader and start reading it aloud when nothing is playing",
-        checked = autoPlayOnShare,
-        onCheckedChange = onAutoPlayOnShare,
-    )
-    AnimatedVisibility(visible = autoPlayOnShare) {
-        Column(Modifier.padding(start = FlowTokens.Space.L, top = FlowTokens.Space.S)) {
-            FlowToggleRow(
-                title = "Interrupt Playback",
-                subtitle = "Also start the share when something is already playing",
-                checked = shareInterruptsPlayback,
-                onCheckedChange = onShareInterruptsPlayback,
-            )
-        }
-    }
 
     Spacer(Modifier.height(FlowTokens.Space.L))
     FlowToggleRow(

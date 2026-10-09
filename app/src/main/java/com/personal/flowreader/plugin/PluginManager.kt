@@ -16,7 +16,9 @@ import com.personal.flowreader.plugin.runtime.PluginHttp
 import com.personal.flowreader.plugin.runtime.PluginKvStore
 import com.personal.flowreader.plugin.runtime.PluginSecrets
 import java.io.File
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
 
@@ -42,6 +44,14 @@ class PluginManager(private val context: Context) {
     private val _installed = MutableStateFlow<List<InstalledPlugin>>(emptyList())
     val installed: StateFlow<List<InstalledPlugin>> = _installed
     private val sources = HashMap<String, Pair<PluginSource, JsPluginRuntime>>()
+    private val _sessionChanges = MutableSharedFlow<String>(extraBufferCapacity = 8)
+
+    /** Plugin ids whose sign-in changed, so every screen showing that plugin's account can re-read it. */
+    val sessionChanges: SharedFlow<String> = _sessionChanges
+
+    fun sessionChanged(pluginId: String) {
+        _sessionChanges.tryEmit(pluginId)
+    }
 
     fun initialize() {
         installedRoot.mkdirs()
@@ -78,6 +88,12 @@ class PluginManager(private val context: Context) {
         val source = PluginSource(plugin.manifest, runtime)
         sources[pluginId] = source to runtime
         source
+    }
+
+    /** The cookie jar behind this plugin's `flow.fetch`. */
+    fun cookieJar(pluginId: String): PluginCookieJar {
+        source(pluginId)
+        return synchronized(sources) { sources.getValue(pluginId).second.http.cookieJar }
     }
 
     /** `{prefix}:{workId}` book id, or null when no installed plugin owns the prefix. */

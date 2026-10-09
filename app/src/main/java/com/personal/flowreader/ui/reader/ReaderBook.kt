@@ -48,7 +48,9 @@ internal class ReaderBook(
         )
 
         fun plugin(store: PluginBookStore, story: PluginReadSession): ReaderBook {
-            val titles = story.toc.mapIndexed { i, ref -> ref.title.ifBlank { "Chapter ${i + 1}" } }
+            val titles = story.toc.mapIndexed { i, ref ->
+                ref.title.ifBlank { "Chapter ${i + 1}" } + if (ref.locked) " (locked)" else ""
+            }
             return ReaderBook(
                 title = story.title,
                 chapterCount = story.toc.size,

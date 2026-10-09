@@ -210,7 +210,7 @@ class PluginShareSeedTest {
         id = "royalroad",
         name = "Royal Road",
         version = "1.0.0",
-        apiVersion = 3,
+        apiVersion = 4,
         shareHosts = listOf("royalroad.com", "www.royalroadl.com"),
     )
 
@@ -257,7 +257,7 @@ class ShareRouterTest {
                 id = "royalroad",
                 name = "Royal Road",
                 version = "1.0.0",
-                apiVersion = 3,
+                apiVersion = 4,
                 shareHosts = listOf("royalroad.com"),
             ),
         ),

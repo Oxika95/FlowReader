@@ -432,7 +432,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         if (plugin == null) {
             _ui.value = _ui.value.copy(
                 busy = false,
-                error = "The plugin for this link is not installed. Install it from Settings > Import > Plugins.",
+                error = "The plugin for this link is not installed. Install it from Settings > Plugins.",
             )
             return
         }

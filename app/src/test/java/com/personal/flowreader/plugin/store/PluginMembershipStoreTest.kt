@@ -1,5 +1,7 @@
 package com.personal.flowreader.plugin.store
 
+import com.personal.flowreader.plugin.api.PluginStat
+import com.personal.flowreader.plugin.api.PluginTone
 import com.personal.flowreader.plugin.api.PluginWork
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -34,6 +36,28 @@ class PluginMembershipStoreTest {
             PluginMembershipStore.removeFromAll(root, listOf("follow", "favorite"), "99")
             assertEquals(emptySet<String>(), PluginMembershipStore.workIds(root, "favorite"))
             assertEquals(setOf("21220"), PluginMembershipStore.workIds(root, "follow"))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun keepsRowBadgesAndStats() {
+        val root = File.createTempFile("plugin-lists", "").apply {
+            delete()
+            mkdirs()
+        }
+        try {
+            val creator = PluginWork(
+                id = "777",
+                title = "Plum Parrot",
+                badges = listOf("3 new", "Paid\tmember"),
+                stats = listOf(PluginStat("schedule", "2026-09-20", "Latest")),
+                badgeTones = mapOf("Paid\tmember" to PluginTone.Positive),
+                group = "Paid",
+            )
+            PluginMembershipStore.write(root, "memberships", listOf(creator, PluginWork(id = "5", title = "Bare")))
+            assertEquals(listOf(creator, PluginWork(id = "5", title = "Bare")), PluginMembershipStore.read(root, "memberships"))
         } finally {
             root.deleteRecursively()
         }

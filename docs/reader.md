@@ -56,7 +56,7 @@ Settings, Contents and their child editors are fullscreen cards that stack; Back
 
 The **current position** is always a sentence, never a paragraph: the spoken sentence while TTS
 plays, otherwise the saved locus sentence. The **home position** is a horizontal line in the
-viewport (Settings → Layout → UI, 15–85% from the top, default 50%). Every jump settles the current
+viewport (Settings → Layout → Reading, 15–85% from the top, default 50%). Every jump settles the current
 sentence's center on that line: TTS follow, pin tap, jump-back chip, double-tap, scroll lock, ToC,
 and opening the book. A sentence taller than the screen starts at the top instead.
 

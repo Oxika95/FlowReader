@@ -97,7 +97,9 @@ object PluginSessionStore {
             },
         )
         File(dir, "toc.txt").writeText(
-            session.toc.joinToString("\n") { "${escape(it.title)}\t${escape(it.url)}" },
+            session.toc.joinToString("\n") {
+                "${escape(it.title)}\t${escape(it.url)}" + if (it.locked) "\tlocked" else ""
+            },
         )
     }
 
@@ -153,9 +155,13 @@ object PluginSessionStore {
         val bookId = fields["bookId"] ?: return null
         val pluginId = fields["pluginId"] ?: return null
         val toc = tocFile.readLines().mapNotNull { line ->
-            val i = line.indexOf('\t')
-            if (i < 0) return@mapNotNull null
-            PluginChapterRef(title = unescape(line.substring(0, i)), url = unescape(line.substring(i + 1)))
+            val parts = line.split('\t')
+            if (parts.size < 2) return@mapNotNull null
+            PluginChapterRef(
+                title = unescape(parts[0]),
+                url = unescape(parts[1]),
+                locked = parts.getOrNull(2) == "locked",
+            )
         }
         if (toc.isEmpty()) return null
         return PluginReadSession(
@@ -245,6 +251,59 @@ object PluginSessionStore {
                 else -> i < keepFrom
             }
         }
+    }
+
+    /**
+     * Where each old ToC index lands after a ToC refresh, matched by chapter URL (duplicate URLs
+     * pair up in order). Null = the URL left the ToC. Indices without an old URL keep their place.
+     */
+    fun chapterMoves(oldUrls: List<String>, newUrls: List<String>): Map<Int, Int?> {
+        val slots = HashMap<String, ArrayDeque<Int>>()
+        newUrls.forEachIndexed { i, url -> slots.getOrPut(url) { ArrayDeque() }.addLast(i) }
+        val out = LinkedHashMap<Int, Int?>()
+        oldUrls.forEachIndexed { i, url -> out[i] = slots[url]?.removeFirstOrNull() }
+        return out
+    }
+
+    /** New index for old index [i]: its URL's new place, unchanged without an old URL, null if gone. */
+    fun movedIndex(moves: Map<Int, Int?>, i: Int, newSize: Int): Int? =
+        if (moves.containsKey(i)) moves[i] else i.takeIf { it in 0 until newSize }
+
+    /** [ranges] after [moves]; indices whose chapter left the ToC drop out. */
+    fun remapRanges(ranges: List<IntRange>, moves: Map<Int, Int?>, newSize: Int): List<IntRange> {
+        val indices = ranges.flatMap { it.toList() }.mapNotNull { movedIndex(moves, it, newSize) }.sorted()
+        return mergePinnedRanges(indices.map { it..it })
+    }
+
+    /** Move cached bodies to their chapter's new index; delete bodies whose chapter left the ToC. */
+    fun reconcileChapterFiles(dir: File, oldUrls: List<String>, newUrls: List<String>) {
+        val folder = File(dir, "c")
+        val moves = chapterMoves(oldUrls, newUrls)
+        val staged = ArrayList<Pair<File, Int>>()
+        for (i in chapterFileIndices(dir)) {
+            val target = movedIndex(moves, i, newUrls.size)
+            val file = File(folder, "$i.txt")
+            when (target) {
+                i -> Unit
+                null -> file.delete()
+                else -> {
+                    val tmp = File(folder, "m$i.tmp")
+                    if (file.renameTo(tmp)) staged += tmp to target
+                }
+            }
+        }
+        for ((tmp, target) in staged) {
+            val dest = File(folder, "$target.txt")
+            dest.delete()
+            tmp.renameTo(dest)
+        }
+    }
+
+    /** Saved chapter of a progress row in [toc]: the stored chapter URL wins over a drifted index. */
+    fun savedChapter(toc: List<PluginChapterRef>, chapterHref: String, chapterIndex: Int): Int {
+        val byHref = if (chapterHref.isBlank()) -1 else toc.indexOfFirst { it.url == chapterHref }
+        val i = if (byHref >= 0) byHref else chapterIndex
+        return i.coerceIn(0, (toc.size - 1).coerceAtLeast(0))
     }
 
     /** Every chapter body file index in [dir], including any past the ToC. */

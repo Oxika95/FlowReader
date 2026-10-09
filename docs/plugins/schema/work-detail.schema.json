@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Oxika95/FlowReader/docs/plugins/schema/work-detail.schema.json",
-  "title": "loadWork() result (WorkDetail), apiVersion 3",
+  "title": "loadWork() result (WorkDetail), apiVersion 4",
   "type": "object",
   "required": ["id", "chapters"],
   "properties": {
@@ -21,7 +21,8 @@
         "properties": {
           "title": { "type": "string" },
           "url": { "type": "string" },
-          "id": { "type": "string" }
+          "id": { "type": "string" },
+          "locked": { "type": "boolean", "default": false, "description": "The account cannot read this chapter" }
         }
       }
     },

@@ -30,8 +30,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +52,25 @@ private const val GITHUB_LATEST_API =
 
 @Composable
 internal fun AboutSettingsTab(
+    debugEnabled: Boolean,
+    onDebugEnabled: (Boolean) -> Unit,
+) {
+    var subTab by rememberSaveable { mutableIntStateOf(0) }
+    FlowTabBar(
+        tabs = flowTextTabs(listOf("Info", "Notifications", "Data"), subTab) { subTab = it },
+        level = FlowTabLevel.Secondary,
+        inset = FlowTokens.Space.None,
+    )
+    Spacer(Modifier.height(FlowTokens.Space.M))
+    when (subTab) {
+        0 -> AboutInfoPane(debugEnabled, onDebugEnabled)
+        1 -> NotificationSettingsPane()
+        else -> DataSettingsPane()
+    }
+}
+
+@Composable
+private fun AboutInfoPane(
     debugEnabled: Boolean,
     onDebugEnabled: (Boolean) -> Unit,
 ) {

@@ -9,7 +9,7 @@
     "name": { "type": "string" },
     "description": { "type": "string" },
     "version": { "type": "string", "pattern": "^\\d+(\\.\\d+)*$" },
-    "apiVersion": { "type": "integer", "const": 3 },
+    "apiVersion": { "type": "integer", "const": 4 },
     "site": { "type": "string", "format": "uri" },
     "iconUrl": { "type": "string" },
     "lang": { "type": "string" },
@@ -19,7 +19,7 @@
     "capabilities": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "enum": ["search", "lists", "auth", "membership", "progressSync", "resolveUrl", "updates"] }
+      "items": { "enum": ["search", "lists", "auth", "membership", "progressSync", "resolveUrl", "updates", "browse"] }
     },
     "lists": {
       "type": "array",
@@ -31,14 +31,28 @@
           "title": { "type": "string" },
           "icon": { "$ref": "#/$defs/iconToken", "default": "bookmark" },
           "membershipToggle": { "type": "boolean", "default": true },
-          "syncable": { "type": "boolean", "default": false }
+          "syncable": { "type": "boolean", "default": false },
+          "notifyDefault": { "type": "boolean", "default": false },
+          "kind": {
+            "enum": ["stories", "browse"],
+            "default": "stories",
+            "description": "browse: rows are entry points opened with browse(), never library stories; needs the browse capability"
+          }
         }
       }
     },
     "auth": {
       "type": "object",
-      "required": ["fields"],
+      "anyOf": [{ "required": ["fields"] }, { "required": ["web"] }],
       "properties": {
+        "web": {
+          "type": "object",
+          "required": ["url", "doneCookie"],
+          "properties": {
+            "url": { "type": "string", "pattern": "^https://" },
+            "doneCookie": { "type": "string", "minLength": 1 }
+          }
+        },
         "fields": {
           "type": "array",
           "items": {

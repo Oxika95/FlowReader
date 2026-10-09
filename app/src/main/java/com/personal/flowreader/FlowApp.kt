@@ -80,6 +80,7 @@ class FlowApp : Application() {
         queue = QueuePlayback(this).also { it.start() }
         appScope.launch {
             UpdateScheduler.apply(this@FlowApp, settings.pluginUpdatePrefsOnce())
+            UpdateScheduler.applyVersionCheck(this@FlowApp, settings.pluginVersionCheckPrefsOnce())
         }
         appScope.launch { sweepStaleCache() }
         appScope.launch {

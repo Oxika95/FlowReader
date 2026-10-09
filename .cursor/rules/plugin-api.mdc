@@ -1,5 +1,5 @@
 ---
-description: Flow Reader plugin API contract (apiVersion 3) and compatibility rules
+description: Flow Reader plugin API contract (apiVersion 4) and compatibility rules
 globs: app/src/main/java/com/personal/flowreader/plugin/**/*.kt,app/src/main/java/com/personal/flowreader/ui/plugin/**/*.kt,app/src/main/java/com/personal/flowreader/ui/design/card/media/**/*.kt,app/src/main/java/com/personal/flowreader/ui/design/FlowIcons.kt,docs/plugins/**
 alwaysApply: false
 ---
@@ -11,10 +11,20 @@ example `docs/plugins/examples/media-card.md`.
 
 ## Versions
 
-- `PLUGIN_HOST_API_VERSION = PLUGIN_MIN_API_VERSION = 3` (`plugin/api/PluginManifest.kt`). Alpha:
+- `PLUGIN_HOST_API_VERSION = PLUGIN_MIN_API_VERSION = 4` (`plugin/api/PluginManifest.kt`). Alpha:
   only the current contract is accepted; no compatibility shims for older plugins.
 - Optional `updates` capability: `checkUpdates(works)` → `PluginUpdateInfo[]`, used by the
   background new-chapter check (`plugin/updates/`); without it the host calls `loadWork`.
+- `auth.web { url, doneCookie }`: in-app browser sign-in (`ui/plugin/WebLoginOverlay.kt`), cookies
+  imported via `PluginCookieJar.import`; `lists[].notifyDefault` feeds `UpdateDiff.notifyLists`.
+- Browse lists: `lists[].kind = "browse"` + `browse(id, page, sort, tab)` → `PluginBrowsePage`
+  (`ui/plugin/PluginBrowse.kt`, `CreatorPage.kt`). Rows only (no books); excluded from notify lists,
+  the update checker, and story `listedIn`. Entry pages have `tabs`; each tab is text, story
+  (`storyId`), or items, loaded on first view and kept while open. Text tabs add `sections`;
+  `Work.group` drives `groupedRows` headers; badges may be `{label, tone}` (`PluginTone` →
+  `FlowBadgeTone`), persisted in membership rows via `PluginJson.badgesToJson`.
+- `ChapterRef.locked` persists as a third `toc.txt` column; downloads skip locked chapters.
+- ToC refresh reconciles by chapter URL (`PluginSessionStore.chapterMoves` / `reconcileChapterFiles`).
 - A breaking contract change bumps both constants, `HOST_API_VERSION` / `MIN_API_VERSION` in
   `flow-reader-plugins/scripts/build-index.mjs`, and every plugin's `apiVersion` + `version`.
 

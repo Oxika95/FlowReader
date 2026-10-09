@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Oxika95/FlowReader/docs/plugins/schema/browse-page.schema.json",
+  "title": "browse() result (BrowsePage), apiVersion 4",
+  "type": "object",
+  "required": ["items"],
+  "$defs": {
+    "badge": {
+      "description": "Plain label, or a label with a tone (positive = green, negative = red)",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["label"],
+          "properties": {
+            "label": { "type": "string", "minLength": 1 },
+            "tone": { "enum": ["positive", "negative"] }
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "url": { "type": "string" },
+          "author": { "type": "string" },
+          "cover": { "type": "string" },
+          "subtitle": { "type": "string" },
+          "badges": { "type": "array", "items": { "$ref": "#/$defs/badge" }, "maxItems": 4 },
+          "stats": { "type": "array", "items": { "$ref": "work-detail.schema.json#/$defs/stat" }, "maxItems": 6 },
+          "group": { "type": "string", "description": "Header shown where the group changes, when items carry two or more groups" }
+        }
+      }
+    },
+    "hasMore": { "type": "boolean", "default": false },
+    "sorts": {
+      "type": "array",
+      "description": "Sort options, shown as chips when there are two or more",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "sort": { "type": "string", "description": "Id of the sort applied to items; unknown ids fall back to the first sort" },
+    "tabs": {
+      "type": "array",
+      "description": "Entry page tabs, shown as a tab bar when there are two or more",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "tab": { "type": "string", "description": "Id of the tab this result fills; unknown ids fall back to the first tab" },
+    "text": { "type": "string", "description": "Text tab: paragraphs separated by blank lines" },
+    "cover": { "type": "string" },
+    "stats": { "type": "array", "items": { "$ref": "work-detail.schema.json#/$defs/stat" }, "maxItems": 6 },
+    "badges": { "type": "array", "items": { "$ref": "#/$defs/badge" }, "maxItems": 4 },
+    "links": { "type": "array", "items": { "$ref": "work-detail.schema.json#/$defs/link" }, "maxItems": 3 },
+    "sections": {
+      "type": "array",
+      "description": "Text tab: blocks below text; a heading starts a divided group, empty sections are dropped",
+      "items": {
+        "type": "object",
+        "properties": {
+          "heading": { "type": "string" },
+          "collapsed": { "type": "boolean", "default": false, "description": "With a heading: the group starts folded; the heading toggles it" },
+          "title": { "type": "string" },
+          "text": { "type": "string" },
+          "links": { "type": "array", "items": { "$ref": "work-detail.schema.json#/$defs/link" }, "maxItems": 3 }
+        }
+      }
+    },
+    "groups": {
+      "type": "array",
+      "description": "Items tab: item groups in display order; each shows a header, and its empty text when no item has that group (once hasMore is false)",
+      "items": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "description": "Matches items' group" },
+          "empty": { "type": "string" }
+        }
+      }
+    },
+    "storyId": { "type": "string", "description": "Story tab: work id whose chapters the host lists" }
+  }
+}

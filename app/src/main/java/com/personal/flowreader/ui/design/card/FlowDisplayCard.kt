@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import com.personal.flowreader.ui.design.card.media.MediaStat
+import com.personal.flowreader.ui.design.controls.FlowBadgeTone
 import com.personal.flowreader.ui.design.controls.FlowMetaRow
 import com.personal.flowreader.ui.design.surface.FlowCover
 import com.personal.flowreader.ui.design.surface.FlowProgressBar
@@ -68,6 +69,7 @@ fun FlowDisplayCard(
     badges: List<String> = emptyList(),
     stats: List<MediaStat> = emptyList(),
     progress: Float? = null,
+    badgeTones: Map<String, FlowBadgeTone> = emptyMap(),
     corner: FlowCornerBadge? = null,
     enabled: Boolean = true,
     onLongClick: (() -> Unit)? = null,
@@ -94,7 +96,7 @@ fun FlowDisplayCard(
         onClickLabel = "Open",
     ) {
         when (layout) {
-            FlowDisplayLayout.Row -> DisplayRow(title, art, subtitle, badges, stats, progress)
+            FlowDisplayLayout.Row -> DisplayRow(title, art, subtitle, badges, badgeTones, stats, progress)
             FlowDisplayLayout.Tile -> DisplayTile(title, art, progress)
         }
         if (corner != null) {
@@ -120,6 +122,7 @@ private fun DisplayRow(
     art: ImageBitmap?,
     subtitle: String,
     badges: List<String>,
+    badgeTones: Map<String, FlowBadgeTone>,
     stats: List<MediaStat>,
     progress: Float?,
 ) {
@@ -164,7 +167,7 @@ private fun DisplayRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            FlowMetaRow(badges, stats, Modifier.padding(top = FlowTokens.Space.XS))
+            FlowMetaRow(badges, stats, Modifier.padding(top = FlowTokens.Space.XS), badgeTones = badgeTones)
         }
     }
 }

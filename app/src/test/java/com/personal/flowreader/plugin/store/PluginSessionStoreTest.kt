@@ -52,6 +52,17 @@ class PluginSessionStoreTest {
     }
 
     @Test
+    fun lockedChaptersRoundTripInToc() {
+        withRoot { root ->
+            val dir = PluginSessionStore.dir(root, "4")
+            val toc = listOf(PluginChapterRef("A\tB", "a", locked = true), PluginChapterRef("C", "c"))
+            PluginSessionStore.writeMeta(dir, session("4", tocSize = 1).copy(toc = toc))
+            val loaded = PluginSessionStore.read(root, "4")!!.toc
+            assertEquals(listOf("A\tB" to true, "C" to false), loaded.map { it.title to it.locked })
+        }
+    }
+
+    @Test
     fun cachePolicyRoundTripsInMeta() {
         withRoot { root ->
             val dir = PluginSessionStore.dir(root, "3")
@@ -157,6 +168,50 @@ class PluginSessionStoreTest {
         loadedThrough = -1,
         chapters = emptyList(),
     )
+
+    @Test
+    fun chapterMovesFollowUrls() {
+        val moves = PluginSessionStore.chapterMoves(listOf("a", "b", "c"), listOf("x", "a", "c", "b2"))
+        assertEquals(mapOf(0 to 1, 1 to null, 2 to 2), moves)
+        assertEquals(1, PluginSessionStore.movedIndex(moves, 0, 4))
+        assertEquals(null, PluginSessionStore.movedIndex(moves, 1, 4))
+        assertEquals(3, PluginSessionStore.movedIndex(moves, 3, 4))
+        assertEquals(null, PluginSessionStore.movedIndex(moves, 7, 4))
+    }
+
+    @Test
+    fun chapterMovesPairDuplicateUrlsInOrder() {
+        val moves = PluginSessionStore.chapterMoves(listOf("a", "a"), listOf("z", "a", "a"))
+        assertEquals(mapOf(0 to 1, 1 to 2), moves)
+    }
+
+    @Test
+    fun remapRangesShiftsPinsAndDropsRemoved() {
+        val moves = PluginSessionStore.chapterMoves(listOf("a", "b", "c", "d"), listOf("new", "a", "c", "d"))
+        assertEquals(listOf(1..3), PluginSessionStore.remapRanges(listOf(0..3), moves, 4))
+    }
+
+    @Test
+    fun reconcileMovesCachedBodiesToNewIndices() {
+        withRoot { root ->
+            val dir = PluginSessionStore.dir(root, "r")
+            PluginSessionStore.writeChapter(dir, 0, "A", "body a")
+            PluginSessionStore.writeChapter(dir, 1, "B", "body b")
+            PluginSessionStore.writeChapter(dir, 2, "C", "body c")
+            PluginSessionStore.reconcileChapterFiles(dir, listOf("a", "b", "c"), listOf("n", "a", "b"))
+            assertEquals(setOf(1, 2), PluginSessionStore.chapterFileIndices(dir))
+            assertEquals("body a", PluginSessionStore.readChapterText(dir, 1)!!.second)
+            assertEquals("body b", PluginSessionStore.readChapterText(dir, 2)!!.second)
+        }
+    }
+
+    @Test
+    fun savedChapterPrefersHref() {
+        val toc = listOf(PluginChapterRef("A", "a"), PluginChapterRef("B", "b"), PluginChapterRef("C", "c"))
+        assertEquals(2, PluginSessionStore.savedChapter(toc, "c", 0))
+        assertEquals(1, PluginSessionStore.savedChapter(toc, "gone", 1))
+        assertEquals(2, PluginSessionStore.savedChapter(toc, "", 9))
+    }
 
     private fun withRoot(block: (File) -> Unit) {
         val root = File.createTempFile("plugin-session", "").apply {

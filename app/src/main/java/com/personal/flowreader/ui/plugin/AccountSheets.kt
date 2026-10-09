@@ -1,5 +1,6 @@
 package com.personal.flowreader.ui.plugin
 
+import android.app.Application
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -9,7 +10,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.personal.flowreader.plugin.InstalledPlugin
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -20,19 +26,36 @@ import com.personal.flowreader.ui.design.card.FlowConfirmCard
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowSection
 import com.personal.flowreader.ui.design.controls.FlowTextField
 import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.FlowType
+import okhttp3.Cookie
 
-/** Sign-in form generated from the manifest's `auth.fields`. */
+/** Sign-in form generated from the manifest's `auth.fields`, or the site's page for `auth.web`. */
 @Composable
 internal fun LoginSheet(
     ui: PluginTabUi,
     onField: (String, String) -> Unit,
     onSubmit: () -> Unit,
+    onWebSignedIn: (List<Cookie>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val auth = ui.manifest.auth ?: return
+    auth.web?.let { web ->
+        if (ui.showLogin) {
+            WebLoginOverlay(
+                title = "${ui.manifest.name} sign in",
+                web = web,
+                allowedHosts = ui.manifest.allowedHosts,
+                busy = ui.busy,
+                error = ui.error,
+                onSignedIn = onWebSignedIn,
+                onDismiss = onDismiss,
+            )
+        }
+        return
+    }
     FlowFullscreenCard(
         visible = ui.showLogin,
         onDismiss = onDismiss,
@@ -106,6 +129,40 @@ internal fun AccountSheet(
             }
         }
     }
+}
+
+/** Settings > Plugins > {plugin}: sign-in status with Sign in / Sign out. */
+@Composable
+internal fun PluginAccountSettings(plugin: InstalledPlugin) {
+    val app = LocalContext.current.applicationContext as Application
+    val vm: PluginTabViewModel = viewModel(
+        key = "plugin-account:${plugin.id}:${plugin.manifest.version}",
+        factory = PluginTabViewModel.factory(app, plugin.id),
+    )
+    val ui by vm.ui.collectAsState()
+    if (ui.manifest.auth == null) return
+    FlowSection("Account")
+    Text(
+        when {
+            !ui.session.loggedIn -> "Not signed in"
+            ui.session.account.isBlank() -> "Signed in"
+            else -> "Signed in as ${ui.session.account}"
+        },
+        style = FlowType.rowTitle,
+    )
+    if (ui.session.loggedIn) {
+        TextButton(onClick = vm::logout, enabled = !ui.busy) { Text("Sign out", style = FlowType.action) }
+    } else {
+        TextButton(onClick = { vm.setShowLogin(true) }, enabled = !ui.busy) { Text("Sign in", style = FlowType.action) }
+    }
+    if (!ui.showLogin) ui.error?.let { FlowHint(it, error = true) }
+    LoginSheet(
+        ui = ui,
+        onField = vm::setLoginField,
+        onSubmit = vm::login,
+        onWebSignedIn = vm::completeWebLogin,
+        onDismiss = { vm.setShowLogin(false) },
+    )
 }
 
 /** Merge keeps local additions; Overwrite makes the list match the site. */

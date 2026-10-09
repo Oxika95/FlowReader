@@ -7,10 +7,10 @@ import org.json.JSONObject
  * Host contract version. Alpha builds support only the current contract: plugins declaring any
  * other `apiVersion` are refused (the official repo is updated in lockstep with the app).
  */
-const val PLUGIN_HOST_API_VERSION = 3
+const val PLUGIN_HOST_API_VERSION = 4
 
 /** Oldest plugin contract this host still runs. */
-const val PLUGIN_MIN_API_VERSION = 3
+const val PLUGIN_MIN_API_VERSION = 4
 
 enum class PluginCapability(val key: String) {
     Search("search"),
@@ -21,10 +21,24 @@ enum class PluginCapability(val key: String) {
     ResolveUrl("resolveUrl"),
     /** Cheap `checkUpdates` for the background new-chapter check. */
     Updates("updates"),
+    /** `browse(id, page, sort)` for rows of a [PluginListKind.Browse] list. */
+    Browse("browse"),
     ;
 
     companion object {
         fun parse(raw: String): PluginCapability? = entries.firstOrNull { it.key == raw }
+    }
+}
+
+enum class PluginListKind(val key: String) {
+    /** Rows are stories (books in the library). */
+    Stories("stories"),
+    /** Rows are entry points (e.g. creators) opened with `browse`; never books, never notified. */
+    Browse("browse"),
+    ;
+
+    companion object {
+        fun parse(raw: String): PluginListKind = entries.firstOrNull { it.key == raw } ?: Stories
     }
 }
 
@@ -38,7 +52,12 @@ data class PluginList(
     val membershipToggle: Boolean = true,
     /** Account sync can page through `list(id, page)` to import remote membership. */
     val syncable: Boolean = false,
-)
+    /** New-chapter notifications default on for stories on this list (syncable lists always do). */
+    val notifyDefault: Boolean = false,
+    val kind: PluginListKind = PluginListKind.Stories,
+) {
+    val isBrowse: Boolean get() = kind == PluginListKind.Browse
+}
 
 data class PluginAuthField(
     val key: String,
@@ -48,9 +67,17 @@ data class PluginAuthField(
     val type: String = if (secret) "password" else "text",
 )
 
+/** Sign-in on the site itself in an in-app browser; done once [doneCookie] is set on an allowed host. */
+data class PluginWebLogin(
+    val url: String,
+    val doneCookie: String,
+)
+
 data class PluginAuth(
     val fields: List<PluginAuthField>,
     val note: String = "",
+    /** When set, sign-in opens [PluginWebLogin.url] instead of the field form. */
+    val web: PluginWebLogin? = null,
 )
 
 enum class PluginSettingType(val key: String) {
@@ -130,12 +157,15 @@ data class PluginManifest(
                     .mapNotNull { PluginCapability.parse(it) }
                     .toSet(),
                 lists = obj.optJSONArray("lists").objects().map { l ->
+                    val kind = PluginListKind.parse(l.optString("kind"))
                     PluginList(
                         id = l.getString("id"),
                         title = l.optString("title").ifBlank { l.getString("id") },
                         icon = l.optString("icon").ifBlank { "bookmark" },
-                        membershipToggle = l.optBoolean("membershipToggle", true),
+                        membershipToggle = kind == PluginListKind.Stories && l.optBoolean("membershipToggle", true),
                         syncable = l.optBoolean("syncable", false),
+                        notifyDefault = kind == PluginListKind.Stories && l.optBoolean("notifyDefault", false),
+                        kind = kind,
                     )
                 },
                 auth = obj.optJSONObject("auth")?.let { a ->
@@ -150,6 +180,13 @@ data class PluginManifest(
                             )
                         },
                         note = a.optString("note"),
+                        web = a.optJSONObject("web")?.let { w ->
+                            val url = w.optString("url").trim()
+                            val cookie = w.optString("doneCookie").trim()
+                            PluginWebLogin(url, cookie).takeIf {
+                                url.startsWith("https://") && cookie.isNotEmpty()
+                            }
+                        },
                     )
                 },
                 settings = obj.optJSONArray("settings").objects().mapNotNull { s ->

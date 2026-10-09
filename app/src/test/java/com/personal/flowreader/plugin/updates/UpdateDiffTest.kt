@@ -1,6 +1,8 @@
 package com.personal.flowreader.plugin.updates
 
 import com.personal.flowreader.plugin.api.PluginChapterRef
+import com.personal.flowreader.plugin.api.PluginList
+import com.personal.flowreader.plugin.api.PluginListKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -53,6 +55,25 @@ class UpdateDiffTest {
         assertFalse(UpdateDiff.notifyOn(null, setOf("favorite"), syncable))
         assertFalse(UpdateDiff.notifyOn(false, setOf("follow"), syncable))
         assertTrue(UpdateDiff.notifyOn(true, emptySet(), syncable))
+    }
+
+    @Test
+    fun notifyListsAreSyncableOrNotifyDefault() {
+        val lists = listOf(
+            PluginList("memberships", "Memberships", syncable = true, membershipToggle = false),
+            PluginList("follow", "Follow", notifyDefault = true),
+            PluginList("later", "Later"),
+        )
+        assertEquals(setOf("memberships", "follow"), UpdateDiff.notifyLists(lists))
+    }
+
+    @Test
+    fun browseListsNeverNotify() {
+        val lists = listOf(
+            PluginList("memberships", "Memberships", syncable = true, kind = PluginListKind.Browse),
+            PluginList("follow", "Follow", notifyDefault = true),
+        )
+        assertEquals(setOf("follow"), UpdateDiff.notifyLists(lists))
     }
 
     @Test

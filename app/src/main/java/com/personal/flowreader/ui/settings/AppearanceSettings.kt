@@ -284,7 +284,7 @@ internal fun LayoutSettingsTab(
     onShowHomeMarker: (Boolean) -> Unit,
 ) {
     var layoutTab by remember { mutableIntStateOf(0) }
-    val layoutTabs = listOf("Theme", "UI", "Font")
+    val layoutTabs = listOf("Theme", "UI", "Font", "Reading")
 
     FlowTabBar(tabs = flowTextTabs(layoutTabs, layoutTab) { layoutTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
 
@@ -316,7 +316,8 @@ internal fun LayoutSettingsTab(
                     )
                 }
             }
-            Spacer(Modifier.height(FlowTokens.Space.L))
+        }
+        3 -> {
             FlowToggleRow(
                 title = "Chapter headings in body",
                 subtitle = "Show each chapter title in the reading text",

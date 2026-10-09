@@ -1,10 +1,12 @@
 package com.personal.flowreader.ui.settings
 
 import com.personal.flowreader.ui.design.controls.FlowLabel
+import com.personal.flowreader.ui.design.controls.FlowToggleRow
 import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.design.tabs.FlowTabLevel
 import com.personal.flowreader.ui.design.tabs.flowTextTabs
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -92,10 +94,14 @@ fun SharingSettingsTab(
     routerRules: List<RouterRule>,
     parseRules: List<ParseRule>,
     overlayAllowed: Boolean,
+    autoPlayOnShare: Boolean,
+    shareInterruptsPlayback: Boolean,
     plugins: List<SharePluginOption>,
     customTabs: List<SharePluginOption> = emptyList(),
     editorState: DomainRuleEditorState,
     onManualOverride: (Boolean) -> Unit,
+    onAutoPlayOnShare: (Boolean) -> Unit,
+    onShareInterruptsPlayback: (Boolean) -> Unit,
     onSaveRouterRules: (List<RouterRule>) -> Unit,
     onSaveParseRules: (List<ParseRule>) -> Unit,
 ) {
@@ -108,7 +114,7 @@ fun SharingSettingsTab(
         Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
     ) {
-        FlowTabBar(tabs = flowTextTabs(listOf("Router", "Parser", "Plugins"), subTab) { subTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
+        FlowTabBar(tabs = flowTextTabs(listOf("Router", "Parser"), subTab) { subTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
         Spacer(Modifier.height(FlowTokens.Space.S))
 
         when (subTab) {
@@ -118,7 +124,11 @@ fun SharingSettingsTab(
                 overlayAllowed = overlayAllowed,
                 plugins = plugins,
                 customTitles = customTitles,
+                autoPlayOnShare = autoPlayOnShare,
+                shareInterruptsPlayback = shareInterruptsPlayback,
                 onManualOverride = onManualOverride,
+                onAutoPlayOnShare = onAutoPlayOnShare,
+                onShareInterruptsPlayback = onShareInterruptsPlayback,
                 onSaveRules = onSaveRouterRules,
                 onAdd = {
                     editorState.request = ImportRuleEditRequest.Router(
@@ -154,7 +164,7 @@ fun SharingSettingsTab(
                     )
                 },
             )
-            1 -> ParserPane(
+            else -> ParserPane(
                 rules = parseRules,
                 onSaveRules = onSaveParseRules,
                 onAdd = {
@@ -181,7 +191,6 @@ fun SharingSettingsTab(
                     )
                 },
             )
-            else -> PluginsSettingsTab()
         }
     }
 }
@@ -193,7 +202,11 @@ private fun RouterPane(
     overlayAllowed: Boolean,
     plugins: List<SharePluginOption>,
     customTitles: Map<String, String>,
+    autoPlayOnShare: Boolean,
+    shareInterruptsPlayback: Boolean,
     onManualOverride: (Boolean) -> Unit,
+    onAutoPlayOnShare: (Boolean) -> Unit,
+    onShareInterruptsPlayback: (Boolean) -> Unit,
     onSaveRules: (List<RouterRule>) -> Unit,
     onAdd: () -> Unit,
     onEdit: (RouterRule) -> Unit,
@@ -222,6 +235,22 @@ private fun RouterPane(
             }
         }
         Switch(checked = manualOverride, onCheckedChange = onManualOverride)
+    }
+    FlowToggleRow(
+        title = "Auto Play on Share",
+        subtitle = "Open shared content in the reader and start reading it aloud when nothing is playing",
+        checked = autoPlayOnShare,
+        onCheckedChange = onAutoPlayOnShare,
+    )
+    AnimatedVisibility(visible = autoPlayOnShare) {
+        Column(Modifier.padding(start = FlowTokens.Space.L)) {
+            FlowToggleRow(
+                title = "Interrupt Playback",
+                subtitle = "Also start the share when something is already playing",
+                checked = shareInterruptsPlayback,
+                onCheckedChange = onShareInterruptsPlayback,
+            )
+        }
     }
 
     Spacer(Modifier.height(FlowTokens.Space.M))

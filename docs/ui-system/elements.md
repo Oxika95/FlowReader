@@ -61,6 +61,14 @@ selected tab in view.
 | `FlowChipRow { FlowChip(...) }` / `FlowChoiceChips(options, selected, optionLabel, onSelect)` | Wrapping chip rows |
 | `FlowCollapsible(title, subtitle, initiallyExpanded) { }` / `FlowCollapsibleBox(visible) { }` | Expandable sections |
 
+## List rows (`FlowListRow.kt`)
+
+| Component | Notes |
+| --- | --- |
+| `FlowListRow(title, meta, subtitle, subtitleError, info) { actions }` | Compact item: title with meta beside it, optional one-line subtitle, trailing `FlowIconButton`s. Long `info` text hides behind an info icon and expands inline |
+| `FlowSectionRow(title, info) { actions }` | Section heading with trailing icon actions (e.g. `+`) on the same line |
+| `FlowInfoButton(expanded, onClick, contentDescription)` | The info icon itself (outlined, filled while open) |
+
 ## Meta (`FlowBadge.kt`)
 
 `FlowBadge(label, onCover)`, `FlowStat(stat, color)`, `FlowMetaRow(badges, stats, onCover)`:

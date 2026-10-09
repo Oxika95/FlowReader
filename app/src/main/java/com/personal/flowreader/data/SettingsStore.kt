@@ -210,7 +210,24 @@ data class PluginUpdatePrefs(
 ) {
     companion object {
         const val DEFAULT_INTERVAL_HOURS = 12
-        val INTERVAL_CHOICES = listOf(0, 3, 6, 12, 24)
+    }
+}
+
+/** Background check intervals: whole hours, 0 = off, at most daily. */
+object CheckInterval {
+    const val MAX_HOURS = 24
+
+    fun clamp(hours: Int): Int = hours.coerceIn(0, MAX_HOURS)
+}
+
+/** Background check of plugin repositories for newer versions of installed plugins. */
+data class PluginVersionCheckPrefs(
+    /** Hours between checks; 0 = off. */
+    val intervalHours: Int = DEFAULT_INTERVAL_HOURS,
+    val notify: Boolean = true,
+) {
+    companion object {
+        const val DEFAULT_INTERVAL_HOURS = 24
     }
 }
 
@@ -467,17 +484,40 @@ class SettingsStore(context: Context) {
     suspend fun pluginUpdatePrefsOnce(): PluginUpdatePrefs {
         val p = store.data.first()
         return PluginUpdatePrefs(
-            intervalHours = (p[KEY_PLUGIN_UPDATE_INTERVAL] ?: PluginUpdatePrefs.DEFAULT_INTERVAL_HOURS).coerceAtLeast(0),
+            intervalHours = CheckInterval.clamp(p[KEY_PLUGIN_UPDATE_INTERVAL] ?: PluginUpdatePrefs.DEFAULT_INTERVAL_HOURS),
             wifiOnly = p[KEY_PLUGIN_UPDATE_WIFI_ONLY] ?: false,
         )
     }
 
     suspend fun setPluginUpdateInterval(hours: Int) {
-        store.edit { it[KEY_PLUGIN_UPDATE_INTERVAL] = hours.coerceAtLeast(0) }
+        store.edit { it[KEY_PLUGIN_UPDATE_INTERVAL] = CheckInterval.clamp(hours) }
     }
 
     suspend fun setPluginUpdateWifiOnly(on: Boolean) {
         store.edit { it[KEY_PLUGIN_UPDATE_WIFI_ONLY] = on }
+    }
+
+    suspend fun pluginVersionCheckPrefsOnce(): PluginVersionCheckPrefs {
+        val p = store.data.first()
+        return PluginVersionCheckPrefs(
+            intervalHours = CheckInterval.clamp(p[KEY_PLUGIN_VERSION_INTERVAL] ?: PluginVersionCheckPrefs.DEFAULT_INTERVAL_HOURS),
+            notify = p[KEY_PLUGIN_VERSION_NOTIFY] ?: true,
+        )
+    }
+
+    suspend fun setPluginVersionCheckInterval(hours: Int) {
+        store.edit { it[KEY_PLUGIN_VERSION_INTERVAL] = CheckInterval.clamp(hours) }
+    }
+
+    suspend fun setPluginVersionNotify(on: Boolean) {
+        store.edit { it[KEY_PLUGIN_VERSION_NOTIFY] = on }
+    }
+
+    /** `id@version` of plugin updates already notified, so each new version notifies once. */
+    suspend fun notifiedPluginVersionsOnce(): Set<String> = decodeIdSet(store.data.first()[KEY_PLUGIN_VERSION_NOTIFIED])
+
+    suspend fun setNotifiedPluginVersions(keys: Set<String>) {
+        store.edit { it[KEY_PLUGIN_VERSION_NOTIFIED] = keys.sorted().joinToString(",") }
     }
 
     /** Parse rules, always ending with the protected Default rule ([ParseRules.withDefault]). */
@@ -537,6 +577,9 @@ class SettingsStore(context: Context) {
         private val KEY_PLUGIN_CACHE_CLEANUP = booleanPreferencesKey("plugin_cache_cleanup")
         private val KEY_PLUGIN_UPDATE_INTERVAL = intPreferencesKey("plugin_update_interval")
         private val KEY_PLUGIN_UPDATE_WIFI_ONLY = booleanPreferencesKey("plugin_update_wifi_only")
+        private val KEY_PLUGIN_VERSION_INTERVAL = intPreferencesKey("plugin_version_interval")
+        private val KEY_PLUGIN_VERSION_NOTIFY = booleanPreferencesKey("plugin_version_notify")
+        private val KEY_PLUGIN_VERSION_NOTIFIED = stringPreferencesKey("plugin_version_notified")
 
         private fun decodeIdSet(raw: String?): Set<String> =
             raw?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()

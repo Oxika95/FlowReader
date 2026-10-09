@@ -13,7 +13,8 @@ Each enabled plugin adds one library tab (next to Files and Queue).
   2. **Search** icon tab, if `search` is declared.
   3. Trailing action: **Account** (if `auth`), else **Plugin settings** (if `settings`).
 - **Body**: local stories use `LibraryBooksPane` (the Files display cards, following the library
-  view mode). Search results use `WorkCard` (a `FlowDisplayCard` row).
+  view mode). Search results and browse-list rows (`kind: "browse"`) use `WorkCard` (a
+  `FlowDisplayCard` row).
 - **FAB** (`PluginTabFab`): `+` in the library FAB slot, shown when `resolveUrl` or `search` is
   declared. Opens **Add from source**.
 
@@ -23,12 +24,15 @@ Each enabled plugin adds one library tab (next to Files and Queue).
 | --- | --- | --- | --- | --- |
 | `WorkCard` | `FlowDisplayCard` (Row) | Search results, add sheet | Cover, title, `author · subtitle`, `badges`/`stats` | Tap opens the media card |
 | Library card | `FlowDisplayCard` | Local stories on a list | Same card as Files | Tap reads at saved progress; long-press opens the media card |
+| `BrowseListPane` | `WorkCard` rows | A `browse` list's tab | Rows from `list()` with their `badges` (toned: positive green, negative red) / `stats`; `GroupHeader` (divider + `FlowSection` title) where `group` changes, when 2+ groups | Tap opens `CreatorPageOverlay` |
+| `CreatorPageOverlay` | `FlowFullscreenCard` | Tapping a browse-list row | Row title; pinned secondary `FlowTabBar` (2+ `tabs`); sort chips below the tabs (`FlowChoiceChips`: 2+ `sorts`, or Newest / Oldest first on a story tab). Tab body: text tab (header `FlowDisplayCard` with `cover`/`badges`/`stats`, `text` paragraphs, link buttons, then `sections`: `heading` as `GroupHeader`, or a folded `FlowCollapsible` when `collapsed`; `title`, paragraphs, links); story tab (chapter rows with lock / downloaded icons); items tab (grouped `WorkCard`s, declared `groups` always headed with a `FlowHint` when empty, "In {list}" badge when already on a story list, Load more) | Item tap opens its media card on top; chapter tap opens the story's media card positioned at that chapter |
 | `StoryMediaCard` | `FlowMediaCard` + `PluginMediaCardAdapter` | Opening any story | See [Media card](#media-card) | See [Media card](#media-card) |
 | `DownloadSheet` | `FlowFullscreenCard` | Download on the media card | Download all; partial download with cache settings | Download all, Begin partial download, Download range |
-| `LoginSheet` | `FlowFullscreenCard` | Account while signed out, or `AUTH_REQUIRED` | One field per `auth.fields[]` (secret fields masked), `auth.note` | Sign in, Cancel |
+| `LoginSheet` | `FlowFullscreenCard` | Account while signed out, Settings > Plugins > the plugin's Sign in, or `AUTH_REQUIRED` | One field per `auth.fields[]` (secret fields masked), `auth.note` | Sign in, Cancel |
+| `WebLoginOverlay` | `FlowFullscreenCard` + WebView | Instead of `LoginSheet` when `auth.web` is set | The site's `auth.web.url`; closes itself once `doneCookie` is set | Cancel |
 | `AccountSheet` | `FlowFullscreenCard` | Account while signed in | Account name | Sync lists (if any list is `syncable`), Settings, Sign out |
 | `SyncChoiceSheet` | `FlowConfirmCard` | After sign-in / Sync | Merge vs Overwrite | Merge, Overwrite, Cancel |
-| `PluginSettingsSheet` | `FlowFullscreenCard` | Settings > Import > Plugins > plugin, or the tab's settings action | One row per manifest `settings[]` entry | Edits persist immediately |
+| `PluginSettingsSheet` | `FlowFullscreenCard` | Settings > Plugins > the plugin's sub-tab (inline form), or the tab's settings action | One row per manifest `settings[]` entry | Edits persist immediately |
 | `AddFromSourceSheet` | `FlowFullscreenCard` | Tab FAB | Paste URL (`resolveUrl`); search box (`search`) | Go, Search, result tap |
 
 All sheets stack over the media card (Back closes the top one).

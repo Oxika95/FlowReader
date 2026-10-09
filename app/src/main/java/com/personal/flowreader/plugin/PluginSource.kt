@@ -1,5 +1,6 @@
 package com.personal.flowreader.plugin
 
+import com.personal.flowreader.plugin.api.PluginBrowsePage
 import com.personal.flowreader.plugin.api.PluginCapability
 import com.personal.flowreader.plugin.api.PluginCardActionResult
 import com.personal.flowreader.plugin.api.PluginChapter
@@ -32,6 +33,12 @@ class PluginSource(
     suspend fun list(listId: String, page: Int = 1): PluginPage {
         require(PluginCapability.Lists)
         return PluginJson.page(runtime.call("list", JSONArray().put(listId).put(page)))
+    }
+
+    /** Entry [id] of a browse list; blank [sort] lets the plugin pick its default. */
+    suspend fun browse(id: String, page: Int = 1, sort: String = "", tab: String = ""): PluginBrowsePage {
+        require(PluginCapability.Browse)
+        return PluginJson.browsePage(runtime.call("browse", JSONArray().put(id).put(page).put(sort).put(tab)))
     }
 
     suspend fun loadWork(workId: String): PluginWorkDetail {

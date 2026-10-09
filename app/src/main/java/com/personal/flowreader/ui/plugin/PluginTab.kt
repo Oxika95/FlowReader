@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -100,7 +101,15 @@ fun PluginTabContent(
             },
         )
         when (val section = ui.section) {
-            is PluginSection.Library -> {
+            is PluginSection.Library -> if (ui.manifest.list(section.listId)?.isBrowse == true) {
+                BrowseListPane(
+                    ui = ui,
+                    listId = section.listId,
+                    onOpen = { row -> vm.openBrowse(section.listId, row) },
+                    modifier = Modifier.weight(1f),
+                    bottomInset = bottomInset,
+                )
+            } else {
                 val listTitle = ui.manifest.list(section.listId)?.title ?: section.listId
                 LibraryBooksPane(
                     books = ui.visibleBooks,
@@ -210,6 +219,20 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
         onOpenUrl = { vm.openUrl() },
         onOpen = vm::openWork,
     )
+    CreatorPageOverlay(
+        ui = ui,
+        actions = remember(vm) {
+            CreatorPageActions(
+                onDismiss = vm::closeBrowse,
+                onTab = vm::setBrowseTab,
+                onSort = vm::setBrowseSort,
+                onMore = vm::browseMore,
+                onPostsOrder = vm::setBrowsePostsOrder,
+                onOpen = vm::openWork,
+                onOpenStory = vm::openBrowseStory,
+            )
+        },
+    )
     PluginStoryOverlays(vm = vm, onRead = { vm.readStory(actions) })
     AccountSheet(
         ui = ui,
@@ -223,6 +246,7 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
         ui = ui,
         onField = vm::setLoginField,
         onSubmit = vm::login,
+        onWebSignedIn = vm::completeWebLogin,
         onDismiss = { vm.setShowLogin(false) },
     )
     SyncChoiceSheet(

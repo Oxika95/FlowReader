@@ -1,11 +1,17 @@
 package com.personal.flowreader.plugin.store
 
+import com.personal.flowreader.plugin.api.PluginJson
+import com.personal.flowreader.plugin.api.PluginStat
 import com.personal.flowreader.plugin.api.PluginWork
+import com.personal.flowreader.plugin.api.objects
 import java.io.File
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Local list membership (Follow / Favorite / ...) per plugin, in `{dataDir}/_lists/{listId}.txt`.
- * One work per line: `workId \t title \t url \t author \t cover \t subtitle`.
+ * One work per line: `workId \t title \t url \t author \t cover \t subtitle \t badges \t stats \t group`
+ * (badges and stats as JSON arrays; browse-list rows show them).
  */
 object PluginMembershipStore {
     private val SAFE_LIST = Regex("[^A-Za-z0-9._-]")
@@ -20,6 +26,7 @@ object PluginMembershipStore {
             val p = line.split('\t')
             val id = p.getOrNull(0)?.let(PluginSessionStore::unescape)?.takeIf { it.isNotBlank() }
                 ?: return@mapNotNull null
+            val (badges, tones) = PluginJson.badges(jsonArray(p.getOrNull(6)))
             PluginWork(
                 id = id,
                 title = p.getOrNull(1)?.let(PluginSessionStore::unescape).orEmpty().ifBlank { id },
@@ -27,16 +34,31 @@ object PluginMembershipStore {
                 author = p.getOrNull(3)?.let(PluginSessionStore::unescape).orEmpty(),
                 cover = p.getOrNull(4)?.let(PluginSessionStore::unescape).orEmpty(),
                 subtitle = p.getOrNull(5)?.let(PluginSessionStore::unescape).orEmpty(),
+                badges = badges,
+                stats = jsonArray(p.getOrNull(7))?.objects().orEmpty().map {
+                    PluginStat(it.optString("icon"), it.optString("value"), it.optString("label"))
+                },
+                badgeTones = tones,
+                group = p.getOrNull(8)?.let(PluginSessionStore::unescape).orEmpty(),
             )
         }
     }
+
+    private fun jsonArray(raw: String?): JSONArray? =
+        raw?.let(PluginSessionStore::unescape)?.takeIf { it.isNotBlank() }?.let { runCatching { JSONArray(it) }.getOrNull() }
 
     fun write(dataDir: File, listId: String, works: List<PluginWork>) {
         val f = file(dataDir, listId)
         f.parentFile?.mkdirs()
         f.writeText(
             works.distinctBy { it.id }.joinToString("\n") { w ->
-                listOf(w.id, w.title, w.url, w.author, w.cover, w.subtitle)
+                val badges = if (w.badges.isEmpty()) "" else PluginJson.badgesToJson(w.badges, w.badgeTones).toString()
+                val stats = if (w.stats.isEmpty()) {
+                    ""
+                } else {
+                    JSONArray(w.stats.map { JSONObject().put("icon", it.icon).put("value", it.value).put("label", it.label) }).toString()
+                }
+                listOf(w.id, w.title, w.url, w.author, w.cover, w.subtitle, badges, stats, w.group)
                     .joinToString("\t") { PluginSessionStore.escape(it) }
             },
         )

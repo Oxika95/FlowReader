@@ -504,7 +504,7 @@ private fun AddTabOverlay(
         FlowSection("Plugins")
         FlowHint(
             if (plugins.isEmpty()) {
-                "No plugins installed. Browse repositories in Settings > Import > Plugins."
+                "No plugins installed. Browse repositories in Settings > Plugins."
             } else {
                 "Enable a plugin to add its tab next to Files and Queue."
             },

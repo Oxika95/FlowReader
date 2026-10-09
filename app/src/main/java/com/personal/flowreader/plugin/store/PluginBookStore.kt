@@ -116,8 +116,8 @@ class PluginBookStore(
     }
 
     /**
-     * Persist the full ToC + splash metadata. Keeps the stream position, cache policy, and
-     * cached bodies whose chapter URL did not move.
+     * Persist the full ToC + splash metadata. Keeps the stream position, cache policy, pins, and
+     * cached bodies, following each chapter URL to its new index when chapters were inserted.
      */
     suspend fun ensureSessionToc(pluginId: String, detail: PluginWorkDetail): PluginReadSession {
         if (detail.chapters.isEmpty()) {
@@ -126,8 +126,16 @@ class PluginBookStore(
         val r = ref(plugins.bookIdFor(pluginId, detail.id))
         val existing = read(r)
         val policy = existing?.let { PluginCacheDefaults(it.cacheLevel, it.cleanup) } ?: cacheDefaults()
+        val oldUrls = existing?.toc?.map { it.url }.orEmpty()
+        val newUrls = detail.chapters.map { it.url }
+        val moves = PluginSessionStore.chapterMoves(oldUrls, newUrls)
         val wasAllPinned = existing != null && existing.pinnedRanges == listOf(0..existing.toc.lastIndex)
-        val pins = if (wasAllPinned) listOf(0..detail.chapters.lastIndex) else existing?.pinnedRanges.orEmpty()
+        val pins = when {
+            wasAllPinned -> listOf(0..detail.chapters.lastIndex)
+            existing == null -> emptyList()
+            else -> PluginSessionStore.remapRanges(existing.pinnedRanges, moves, newUrls.size)
+        }
+        val start = existing?.let { PluginSessionStore.movedIndex(moves, it.startIndex, newUrls.size) ?: it.startIndex } ?: 0
         val session = PluginReadSession(
             bookId = plugins.bookIdFor(pluginId, detail.id),
             pluginId = pluginId,
@@ -136,8 +144,8 @@ class PluginBookStore(
             title = detail.title,
             author = detail.author,
             toc = detail.chapters,
-            startIndex = existing?.startIndex ?: 0,
-            loadedThrough = existing?.loadedThrough ?: -1,
+            startIndex = start.coerceIn(0, detail.chapters.lastIndex),
+            loadedThrough = if (existing == null || oldUrls == newUrls) existing?.loadedThrough ?: -1 else start - 1,
             chapters = emptyList(),
             cacheLevel = policy.cacheLevel,
             cleanup = policy.cleanup,
@@ -154,17 +162,8 @@ class PluginBookStore(
                 card = detail.card,
             ),
         )
-        reconcileChapterCache(r.dir, existing?.toc?.map { it.url }.orEmpty(), detail.chapters.map { it.url })
+        PluginSessionStore.reconcileChapterFiles(r.dir, oldUrls, newUrls)
         return session
-    }
-
-    /** Evict bodies whose URL at an index changed (inserted/reordered chapters). */
-    private fun reconcileChapterCache(dir: File, oldUrls: List<String>, newUrls: List<String>) {
-        for (i in newUrls.indices) {
-            val oldUrl = oldUrls.getOrNull(i)
-            if (oldUrl != null && oldUrl != newUrls[i]) PluginSessionStore.deleteChapter(dir, i)
-        }
-        for (i in newUrls.size until oldUrls.size) PluginSessionStore.deleteChapter(dir, i)
     }
 
     fun libraryMeta(bookId: String): PluginLibraryMeta? {
@@ -268,6 +267,7 @@ class PluginBookStore(
         if (session.toc.isEmpty()) return 0
         val policy = session.cachePolicy
         val fetch = PluginSessionStore.fetchIndices(locusChapter, session.toc.size, policy)
+            .filterNot { session.toc[it].locked && !PluginSessionStore.hasChapter(r.dir, it) }
         val total = fetch.size.coerceAtLeast(1)
         var downloaded = fetch.count { PluginSessionStore.hasChapter(r.dir, it) }
         onProgress(downloaded, total)

@@ -9,12 +9,14 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.personal.flowreader.data.PluginUpdatePrefs
+import com.personal.flowreader.data.PluginVersionCheckPrefs
 import java.util.concurrent.TimeUnit
 
 /** Keeps the WorkManager schedule for [ChapterUpdateWorker] in line with the settings. */
 object UpdateScheduler {
     private const val PERIODIC = "plugin_chapter_updates"
     private const val NOW = "plugin_chapter_updates_now"
+    private const val VERSIONS = "plugin_version_updates"
 
     fun apply(context: Context, prefs: PluginUpdatePrefs) {
         val work = WorkManager.getInstance(context)
@@ -26,6 +28,19 @@ object UpdateScheduler {
             .setConstraints(constraints(prefs.wifiOnly))
             .build()
         work.enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
+    }
+
+    /** Schedule (or cancel, at 0 hours) [PluginVersionWorker]. */
+    fun applyVersionCheck(context: Context, prefs: PluginVersionCheckPrefs) {
+        val work = WorkManager.getInstance(context)
+        if (prefs.intervalHours <= 0) {
+            work.cancelUniqueWork(VERSIONS)
+            return
+        }
+        val request = PeriodicWorkRequestBuilder<PluginVersionWorker>(prefs.intervalHours.toLong(), TimeUnit.HOURS)
+            .setConstraints(constraints(wifiOnly = false))
+            .build()
+        work.enqueueUniquePeriodicWork(VERSIONS, ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
     /** One run as soon as the network allows (Settings "Check now"). */

@@ -111,7 +111,10 @@ class PluginCookieJar(private val secrets: PluginSecrets) : CookieJar {
     private val lock = Any()
     private var cookies: List<Cookie> = secrets.loadCookies()
 
-    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) = import(cookies)
+
+    /** Store [cookies] (also ones captured outside OkHttp, e.g. the sign-in browser); same name + domain replaces. */
+    fun import(cookies: List<Cookie>) {
         synchronized(lock) {
             val byKey = this.cookies.associateBy { it.name to it.domain }.toMutableMap()
             cookies.forEach { byKey[it.name to it.domain] = it }

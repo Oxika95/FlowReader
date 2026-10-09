@@ -28,7 +28,7 @@ import org.json.JSONObject
 class JsPluginRuntime(
     private val manifest: PluginManifest,
     private val code: String,
-    private val http: PluginHttp,
+    val http: PluginHttp,
     private val secrets: PluginSecrets,
     private val kv: PluginKvStore,
     private val settingsJson: () -> String,

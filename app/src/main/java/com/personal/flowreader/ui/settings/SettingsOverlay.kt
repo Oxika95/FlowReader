@@ -19,7 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val SettingsSections = listOf("About", "Audio", "Filters", "Import", "Layout")
+private val SettingsSections = listOf("About", "Audio", "Filters", "Import", "Layout", "Plugins")
 
 /**
  * App settings (shared by Library and Reader): one fullscreen card with pinned primary tabs.
@@ -73,8 +73,6 @@ internal fun SettingsOverlay(
                 clipFlexChars = tts.clipFlexChars,
                 doubleTapPlay = tts.doubleTapPlay,
                 mobileDataFallback = tts.mobileDataFallback,
-                autoPlayOnShare = tts.autoPlayOnShare,
-                shareInterruptsPlayback = tts.shareInterruptsPlayback,
                 autoScrollWithTts = tts.autoScrollWithTts,
                 minSignal = tts.minSignal,
                 underlayBtAddress = tts.underlayBtAddress,
@@ -91,8 +89,6 @@ internal fun SettingsOverlay(
                 onClipFlexChars = ttsCallbacks.onClipFlexChars,
                 onDoubleTapPlay = ttsCallbacks.onDoubleTapPlay,
                 onMobileDataFallback = ttsCallbacks.onMobileDataFallback,
-                onAutoPlayOnShare = ttsCallbacks.onAutoPlayOnShare,
-                onShareInterruptsPlayback = ttsCallbacks.onShareInterruptsPlayback,
                 onAutoScrollWithTts = ttsCallbacks.onAutoScrollWithTts,
                 onMinSignal = ttsCallbacks.onMinSignal,
                 onUnderlayBtDevice = ttsCallbacks.onUnderlayBtDevice,
@@ -111,7 +107,14 @@ internal fun SettingsOverlay(
                 onReorder = filterCallbacks.onReorderFilters,
                 onDelete = filterCallbacks.onDeleteFilters,
             )
-            3 -> SharingSettingsHost(ruleEditor)
+            3 -> SharingSettingsHost(
+                ruleEditor = ruleEditor,
+                autoPlayOnShare = tts.autoPlayOnShare,
+                shareInterruptsPlayback = tts.shareInterruptsPlayback,
+                onAutoPlayOnShare = ttsCallbacks.onAutoPlayOnShare,
+                onShareInterruptsPlayback = ttsCallbacks.onShareInterruptsPlayback,
+            )
+            5 -> PluginsSettingsTab()
             else -> LayoutSettingsTab(
                 themeMode = appearance.themeMode,
                 accentHue = appearance.accentHue,
@@ -151,7 +154,13 @@ internal fun SettingsOverlay(
 }
 
 @Composable
-private fun SharingSettingsHost(ruleEditor: com.personal.flowreader.ui.settings.DomainRuleEditorState) {
+private fun SharingSettingsHost(
+    ruleEditor: DomainRuleEditorState,
+    autoPlayOnShare: Boolean,
+    shareInterruptsPlayback: Boolean,
+    onAutoPlayOnShare: (Boolean) -> Unit,
+    onShareInterruptsPlayback: (Boolean) -> Unit,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val app = context.applicationContext as com.personal.flowreader.FlowApp
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -190,6 +199,10 @@ private fun SharingSettingsHost(ruleEditor: com.personal.flowreader.ui.settings.
         routerRules = routerRules,
         parseRules = parseRules,
         overlayAllowed = overlayOk,
+        autoPlayOnShare = autoPlayOnShare,
+        shareInterruptsPlayback = shareInterruptsPlayback,
+        onAutoPlayOnShare = onAutoPlayOnShare,
+        onShareInterruptsPlayback = onShareInterruptsPlayback,
         plugins = app.pluginManager.installed.collectAsState().value.map {
             com.personal.flowreader.ui.settings.SharePluginOption(it.id, it.name)
         },

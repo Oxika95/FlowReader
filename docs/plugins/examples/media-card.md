@@ -8,8 +8,8 @@ How a plugin fills the story media card, using Royal Road as the model
 ```json
 {
   "id": "royalroad",
-  "version": "1.2.0",
-  "apiVersion": 3,
+  "version": "1.3.0",
+  "apiVersion": 4,
   "lists": [
     { "id": "follow", "title": "Follow", "icon": "add" },
     { "id": "favorite", "title": "Favorite", "icon": "favorite" },

@@ -17,7 +17,7 @@ class MediaCardAdaptersTest {
         id = "royalroad",
         name = "Royal Road",
         version = "1",
-        apiVersion = 3,
+        apiVersion = 4,
         lists = listOf(
             PluginList("follow", "Follow", icon = "add"),
             PluginList("favorite", "Favorite", icon = "favorite"),
