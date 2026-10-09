@@ -914,7 +914,10 @@ fun ReaderScreen(
                             onPause = { vm.tts.pause() },
                             onPrev = { vm.tts.skipPrev() },
                             onNext = { vm.tts.skipNext() },
-                            onToc = { overlay = ReaderOverlay.Toc },
+                            onToc = {
+                                if (ui.queue) vm.refreshQueue()
+                                overlay = ReaderOverlay.Toc
+                            },
                             onScrollLock = { enableScrollLock() },
                         )
                     }

@@ -20,6 +20,7 @@ import com.personal.flowreader.data.ReadingSession
 import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.data.TextFilters
+import com.personal.flowreader.tts.SynthDebugLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -173,7 +174,25 @@ class ReaderViewModel(
 
     /** The Queue table changed under the open stream: refresh in place or follow the rebuild. */
     private suspend fun onQueueUpdate(mode: ReaderQueueMode, update: QueueUpdate) {
-        when (val action = mode.onUpdate(update, _ui.value.locus)) {
+        applyQueueAction(mode, mode.onUpdate(update, _ui.value.locus))
+    }
+
+    /** Contents opened: pick up Queue rows added, done or edited since the stream was built. */
+    fun refreshQueue() {
+        val mode = queue ?: return
+        viewModelScope.launch {
+            try {
+                applyQueueAction(mode, mode.refresh(session, _ui.value.locus))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                SynthDebugLog.appendError("Queue: ${t.message ?: "could not refresh"}")
+            }
+        }
+    }
+
+    private suspend fun applyQueueAction(mode: ReaderQueueMode, action: ReaderQueueMode.UpdateAction?) {
+        when (action) {
             null -> Unit
             ReaderQueueMode.UpdateAction.InPlace -> {
                 book = mode.book?.reader
@@ -182,6 +201,10 @@ class ReaderViewModel(
             is ReaderQueueMode.UpdateAction.Show -> {
                 book = mode.book?.reader
                 show(action.locus, emptyList(), action.session)
+            }
+            is ReaderQueueMode.UpdateAction.Reopen -> {
+                book = mode.book?.reader
+                show(action.locus, emptyList(), reuse = null)
             }
             ReaderQueueMode.UpdateAction.Empty -> {
                 session?.let { releaseFocus(it) }

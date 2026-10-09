@@ -109,7 +109,8 @@ than one. Each item's title heads its text in the body (always, regardless of "C
 body"); the header shows the current item's title, cover and "Queue · n of N".
 
 The Queue's Contents follows the Queue table live (shares, Library edits, Done marks) without
-leaving the reader, and has the Library Queue's edit mode: hold an item to reorder (drag handle),
+leaving the reader, and re-reads the table each time it opens (catches changes made while TTS
+wasn't on the Queue). A share that opens the Queue replaces an open Queue reader at the new entry. It has the Library Queue's edit mode: hold an item to reorder (drag handle),
 select and delete (items only while editing; chapters return on Done). Items appended at the end
 and Done changes apply in place, so playback isn't interrupted and TTS continues into new items.
 Reordering or removing items rebuilds the stream at the same text; if TTS is playing it restarts

@@ -127,6 +127,38 @@ internal class ReaderQueueMode(
         class Show(val locus: Locus, val session: ReadingSession) : UpdateAction
 
         data object Empty : UpdateAction
+
+        /** Rows moved or went away: open a new session over [ref] at [locus]. */
+        class Reopen(val locus: Locus) : UpdateAction
+    }
+
+    /**
+     * Re-read the Queue table into the stream on screen. Covers changes [QueuePlayback] doesn't
+     * deliver (it only follows the stream while TTS is attached to it). Edits are left to it when
+     * it owns [session].
+     */
+    suspend fun refresh(session: ReadingSession?, locus: Locus): UpdateAction? {
+        val r = ref ?: return null
+        val old = r.book
+        val fresh = QueueStreams.build(flow, reuse = old)
+        if (ref !== r || r.book !== old) return null
+        return when (QueueChange.classify(old, fresh)) {
+            QueueChange.Same -> null
+            QueueChange.DoneOnly, QueueChange.Appended -> {
+                r.book = fresh
+                session?.updateSource(fresh.reader.chapterTitles, r.contentKey)
+                refreshToc()
+                applySegment(fresh.segmentIndexOf(locus.chapterIndex))
+                UpdateAction.InPlace
+            }
+            QueueChange.Edited -> {
+                if (session != null && flow.queue.current()?.second === session) return null
+                val target = fresh.remap(locus, old) ?: return UpdateAction.Empty
+                ref = QueueStreamRef(fresh, r.global, r.groups)
+                refreshToc()
+                UpdateAction.Reopen(target)
+            }
+        }
     }
 
     /** Apply [update] when it is about the stream on screen; null when it isn't. */

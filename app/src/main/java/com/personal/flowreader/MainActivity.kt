@@ -133,8 +133,9 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(libraryUi.pendingOpenQueId) {
                         val queId = libraryUi.pendingOpenQueId ?: return@LaunchedEffect
                         libraryVm.consumePendingOpenQue()
+                        // An open Queue reader is replaced, not reused: single-top would keep its old queId.
                         nav.navigate("reader/${QueueBook.ID}/que/$queId") {
-                            launchSingleTop = true
+                            popUpTo("library")
                         }
                     }
 
