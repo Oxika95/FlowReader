@@ -81,9 +81,8 @@ opened) and the newest post date. Sync never adds or deletes stories for a brows
 
 ## Sign-in
 
-Plugins sign in either with a form (`auth.fields`, e.g. Royal Road email + password; the password
-goes only to the site) or, with `auth.web`, on the site's own login page in an in-app browser
-(Patreon). The browser uses the plugin's user agent; once the manifest's `doneCookie` appears, the
+Plugins sign in either with a form (`auth.fields`; the password goes only to the site) or, with
+`auth.web`, on the site's own login page in an in-app browser (Royal Road, Patreon). The browser uses the plugin's user agent; once the manifest's `doneCookie` appears, the
 cookies of the plugin's `allowedHosts` move into the plugin's encrypted cookie jar and the browser
 closes. Sign out also clears those browser cookies. Google / Apple sign-in may refuse embedded
 browsers; use the site's email sign-in. Sign in / Sign out live in the plugin tab's Account sheet
