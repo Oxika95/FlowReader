@@ -30,7 +30,8 @@ Each enabled plugin adds one library tab (next to Files and Queue).
 | `DownloadSheet` | `FlowFullscreenCard` | Download on the media card | Download all; partial download with cache settings | Download all, Begin partial download, Download range |
 | `LoginSheet` | `FlowFullscreenCard` | Account while signed out, Settings > Plugins > the plugin's Sign in, or `AUTH_REQUIRED` | One field per `auth.fields[]` (secret fields masked), `auth.note` | Sign in, Cancel |
 | `WebLoginOverlay` | `FlowFullscreenCard` + WebView | Instead of `LoginSheet` when `auth.web` is set | The site's `auth.web.url`; closes itself once `doneCookie` is set | Cancel |
-| `AccountSheet` | `FlowFullscreenCard` | Account while signed in | Account name | Sync lists (if any list is `syncable`), Settings, Sign out |
+| `AccountSheet` | `FlowFullscreenCard` | Account while signed in | Account name; two-way plugins: last synced, conflicts, queued changes, guarded lists | Sync (one action for all `syncable` lists; hidden when none) or, two-way: Sync now + Replace with site lists; Settings, Sign out |
+| `PositionConflictCard` | `FlowConfirmCard` | Story with a **Position conflict** badge (two-way sync conflict) | App vs site chapter titles | Use {site}, Keep mine, Later |
 | `SyncChoiceSheet` | `FlowConfirmCard` | After sign-in / Sync | Merge vs Overwrite | Merge, Overwrite, Cancel |
 | `PluginSettingsSheet` | `FlowFullscreenCard` | Settings > Plugins > the plugin's sub-tab (inline form), or the tab's settings action | One row per manifest `settings[]` entry | Edits persist immediately |
 | `AddFromSourceSheet` | `FlowFullscreenCard` | Tab FAB | Paste URL (`resolveUrl`); search box (`search`) | Go, Search, result tap |

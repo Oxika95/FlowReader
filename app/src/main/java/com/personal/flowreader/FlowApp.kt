@@ -13,6 +13,7 @@ import com.personal.flowreader.plugin.PluginShareRequest
 import com.personal.flowreader.plugin.repo.PluginInstaller
 import com.personal.flowreader.plugin.repo.RepoManager
 import com.personal.flowreader.plugin.store.PluginBookStore
+import com.personal.flowreader.plugin.sync.TwoWaySync
 import com.personal.flowreader.plugin.updates.UpdateScheduler
 import com.personal.flowreader.share.RouterRules
 import com.personal.flowreader.tts.TtsController
@@ -47,6 +48,8 @@ class FlowApp : Application() {
         private set
     lateinit var progress: ProgressWriter
         private set
+    lateinit var pluginSync: TwoWaySync
+        private set
     internal lateinit var queue: QueuePlayback
         private set
 
@@ -69,6 +72,8 @@ class FlowApp : Application() {
         pluginManager = PluginManager(this)
         pluginManager.initialize()
         pluginBooks = PluginBookStore(pluginManager, appScope) { settings.pluginCacheDefaultsOnce() }
+        pluginSync = TwoWaySync(this)
+        pluginBooks.positionChanged = pluginSync::localPositionChanged
         pluginRepos = RepoManager(settings)
         pluginInstaller = PluginInstaller(pluginManager, pluginRepos)
         progress = ProgressWriter(db.progress(), appScope) { update ->

@@ -88,6 +88,35 @@ closes. Sign out also clears those browser cookies. Google / Apple sign-in may r
 browsers; use the site's email sign-in. Sign in / Sign out live in the plugin tab's Account sheet
 and in **Settings → Plugins → (plugin) → Account**; either one refreshes the other.
 
+Signed in, the Account sheet offers **Sync** (also prompted right after sign-in). With several
+`syncable` lists it is one **Sync lists** action covering all of them (Royal Road: Follow, Favorite,
+Read Later). **Merge** keeps local additions; **Overwrite** makes each list match the site and
+deletes a story's local data only when it is on none of the synced lists afterwards.
+
+### Two-way sync
+
+Plugins with `setMembership` and `readPositions` (Royal Road) sync lists and reading positions both
+ways: on tab open (at most every 10 min), **Sync now** in the Account sheet, after sign-in, and
+before each new-chapter check. Code: [`plugin/sync/`](../app/src/main/java/com/personal/flowreader/plugin/sync/)
+(`ListReconcile`, `ProgressReconcile` (pure), `SyncState`, `TwoWaySync`).
+
+- **Three-way merge:** each run compares local, site, and the last synced state (`sync.json` in the
+  plugin data dir). A change on one side is copied to the other; additions and removals propagate
+  both ways. A removed story keeps its downloads until it is on no list (Delete removes it from the
+  site lists too).
+- **First sync:** lists are unioned (nothing deleted); positions take the further chapter.
+- **Guard:** site removals are skipped when the site list is empty or under half of a last-synced
+  list of 4 or more (login-gated or truncated page); the Account sheet says so.
+  **Replace with site lists** (Overwrite) accepts the site as is and resets the baseline.
+- **Positions:** a chapter change in the reader pushes to the site (not when it equals the synced
+  chapter, or opening an unread story at chapter 1). When both sides moved since the last sync, the
+  story gets a **Position conflict** badge and a card: Use {site} / Keep mine / Later.
+- **Offline:** list toggles and position pushes queue in `sync.json` and retry on the next run;
+  network and sign-in errors don't count against the 5-attempt limit.
+- **Royal Road:** chapter downloads are anonymous (`cookies: false`) so preloading never moves the
+  site's "Continue"; pushes view the chapter signed in and submit RR's "Set Progress" form when
+  moving backwards (a signed-in view only moves progress forward).
+
 ## New-chapter notifications
 
 Sites can't push to the app, so a background job (WorkManager) checks for new chapters every
@@ -95,7 +124,8 @@ Sites can't push to the app, so a background job (WorkManager) checks for new ch
 12 h; optional Wi-Fi only; **Check now** runs once).
 
 - **Which stories:** the **bell** on the story media card. Unset, it is on while the story is on a
-  syncable story list or `notifyDefault` list (Royal Road: Follow; Patreon: Follow); tapping it
+  syncable story list or `notifyDefault` list (Royal Road: Follow, Favorite, Read Later; Patreon:
+  Follow); tapping it
   stores an explicit on/off (`notify=` in `meta.txt`).
 - **How:** plugins with the `updates` capability answer `checkUpdates` cheaply (Royal Road: the
   signed-in Follows page, else each story's public RSS feed; Patreon: the signed-in home feed, else

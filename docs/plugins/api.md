@@ -99,6 +99,7 @@ module.exports = {
   async session() {},                        // -> Session       (capability: auth)
   async setMembership(workId, listId, on) {},// -> boolean       (capability: membership)
   async syncProgress(workId, chapter) {},    //                  (capability: progressSync)
+  async readPositions(works) {},             // -> ReadPosition[] (capability: progressSync, optional)
   async resolveUrl(url) {},                  // -> workId | null (capability: resolveUrl)
   async cardAction(workId, actionId, on) {}, // -> CardActionResult (needed if card.actions is used)
   async checkUpdates(works) {},              // -> UpdateInfo[]  (capability: updates)
@@ -106,8 +107,9 @@ module.exports = {
 };
 ```
 
-`page` starts at 1. `setMembership` returns `true` if the site was updated, `false` if only the
-local list changed (for example signed out, or removal is not supported remotely).
+`page` starts at 1. `setMembership` returns `true` if the site was updated (added for `on: true`,
+removed for `on: false`), `false` if only the local list changed (for example signed out, or the
+site has no such list). Two-way sync calls it for both directions, so it must be idempotent.
 
 ### Types
 
@@ -205,6 +207,24 @@ ToC length, `lastChapterUrl` the last ToC entry's URL.
 - Never prompt: do not throw `AUTH_REQUIRED`; skip what needs sign-in. Errors fail the whole run.
 - Without the `updates` capability the host calls `loadWork` per monitored work instead.
 
+### Two-way sync: `readPositions(works)` and `syncProgress`
+
+While signed in, the host syncs `syncable` lists and reading positions in both directions on the
+background check interval, when the plugin tab opens (at most every 10 minutes), after sign-in, and
+on **Sync now**:
+
+- Lists: `list()` pulls each syncable list; local additions and removals are pushed with
+  `setMembership(workId, listId, on)`. The host keeps the last synced state, so a story missing on
+  the site is removed locally only if it was there at the last sync.
+- `syncProgress(workId, chapter)` pushes the reading position when it moves to another chapter.
+  Pushes that fail are queued and retried; it may throw on network errors.
+- `readPositions(works)` (optional) returns `[{ id, chapterUrl }]`: the site's last-read chapter for
+  each work it can tell, preferably from list pages that cover many works. `works[]` has the same
+  shape as `checkUpdates`. Omit unknown works; never throw `AUTH_REQUIRED` for single works.
+- When only one side moved since the last sync it wins; when both moved the user picks.
+- Fetch chapter bodies with `flow.fetch(url, { cookies: false })` when the site records reads on
+  page views, so downloads ahead of the reader do not move the site's position.
+
 ### Browse lists
 
 A list with `"kind": "browse"` holds entry points (for example the creators a user supports), not
@@ -271,7 +291,7 @@ before ones already read is safe. Keep each chapter's `url` stable; a removed UR
 
 | Call | Result |
 | --- | --- |
-| `await flow.fetch(url, { method, headers, form, body, contentType })` | `{ status, url, headers, text }`. `url` is the final URL after redirects; header names are lower-case. Non-2xx statuses are returned, not thrown. Cookies persist per plugin. |
+| `await flow.fetch(url, { method, headers, form, body, contentType, cookies })` | `{ status, url, headers, text }`. `url` is the final URL after redirects; header names are lower-case. Non-2xx statuses are returned, not thrown. Cookies persist per plugin; `cookies: false` sends and stores none for this request. |
 | `flow.html.parse(html, baseUrl?)` | `Node` (see below). Handles are valid only during the current call. |
 | `await flow.storage.get(key)` / `set(key, value)` / `remove(key)` | Per-plugin string key-value store. |
 | `await flow.secrets.get(key)` / `set` / `remove` / `clear()` | Per-plugin encrypted store. Never store passwords. |

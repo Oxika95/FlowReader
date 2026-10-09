@@ -39,6 +39,7 @@ import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.api.PluginCapability
 import androidx.compose.ui.unit.Dp
+import com.personal.flowreader.ui.design.controls.FlowBadgeTone
 import com.personal.flowreader.ui.design.controls.FlowFab
 import com.personal.flowreader.ui.design.tabs.FlowTab
 import com.personal.flowreader.ui.design.tabs.FlowTabBar
@@ -122,6 +123,9 @@ fun PluginTabContent(
                     },
                     onOpen = { bookId -> vm.readBook(actions, bookId) },
                     onLongOpen = vm::openStory,
+                    badgesFor = { book ->
+                        if (book.bookId in ui.sync.conflictBookIds) listOf(POSITION_CONFLICT_BADGE to FlowBadgeTone.Negative) else emptyList()
+                    },
                     bottomInset = bottomInset,
                     subtitleFor = { book ->
                         val meta = ui.libraryMeta[book.bookId]
@@ -240,6 +244,7 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
         onShowLogin = { vm.setShowLogin(true) },
         onLogout = vm::logout,
         onSync = { vm.askSync(it) },
+        onSyncNow = vm::syncNow,
         onSettings = { vm.setShowSettings(true) },
     )
     LoginSheet(
@@ -307,5 +312,11 @@ fun PluginStoryOverlays(
         busy = ui.busy,
         onDismiss = vm::closePosition,
         onSave = vm::savePosition,
+    )
+    PositionConflictCard(
+        ui = ui,
+        onUseRemote = { vm.resolveConflict(useRemote = true) },
+        onKeepMine = { vm.resolveConflict(useRemote = false) },
+        onLater = vm::postponeConflict,
     )
 }

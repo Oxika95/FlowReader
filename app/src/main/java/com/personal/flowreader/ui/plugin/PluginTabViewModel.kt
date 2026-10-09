@@ -24,6 +24,9 @@ import com.personal.flowreader.plugin.store.PluginLibraryMeta
 import com.personal.flowreader.plugin.store.PluginMembershipStore
 import com.personal.flowreader.plugin.store.PluginReadSession
 import com.personal.flowreader.plugin.store.PluginSessionStore
+import com.personal.flowreader.plugin.store.SyncMode
+import com.personal.flowreader.plugin.sync.ProgressReconcile
+import com.personal.flowreader.plugin.sync.PushResult
 import com.personal.flowreader.plugin.updates.UpdateDiff
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -65,11 +68,11 @@ data class PluginStory(
     val card: PluginCard? = null,
     /** New-chapter notifications for this story (bell on the media card). */
     val notify: Boolean = false,
+    /** Reading chapters (app, site) when both moved since the last sync; the user picks one. */
+    val positionConflict: Pair<Int, Int>? = null,
 ) {
     val chapterCount: Int get() = toc.size
 }
-
-enum class SyncMode { Merge, Overwrite }
 
 /** Which sub-tab of the plugin tab is showing. */
 sealed interface PluginSection {
@@ -117,6 +120,9 @@ data class PluginTabUi(
     val browse: PluginBrowseUi? = null,
     /** Work id → title of the first story list it is on ("In Follow" badges). */
     val storyLists: Map<String, String> = emptyMap(),
+    val sync: PluginSyncUi = PluginSyncUi(),
+    /** Book id whose position conflict card was put off ("Later") while its story card is open. */
+    val conflictDismissedFor: String? = null,
     val busy: Boolean = false,
     val message: String? = null,
     val error: String? = null,
@@ -149,6 +155,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     private var downloadJob: Job? = null
 
     private val browser = PluginBrowseController(viewModelScope, _ui, ::source, ::fail) { localStory(it, catalog = false) }
+
+    private val lists get() = flow.pluginSync.lists
+
+    private val syncer = PluginSyncController(viewModelScope, _ui, flow, pluginId, manifest, ::fail, ::onSyncChanged)
 
     /** Book id → chapter the open story card is positioned on instead of the saved position. */
     private var chapterFocus: Pair<String, Int>? = null
@@ -205,8 +215,29 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                 ui.copy(session = session, loginFields = prefill)
             }
             maybeRefreshBrowse(_ui.value.section)
+            syncer.autoSync()
         }
     }
+
+    /** A sync changed lists, positions or conflicts: reload the library and the open story. */
+    private fun onSyncChanged() {
+        refreshLocal()
+        val open = _ui.value.story ?: return
+        viewModelScope.launch {
+            val refreshed = withContext(Dispatchers.IO) { runCatching { loadStory(open.bookId) }.getOrNull() } ?: return@launch
+            _ui.update { ui -> if (ui.story?.bookId == open.bookId) ui.copy(story = refreshed) else ui }
+        }
+    }
+
+    fun syncNow() = syncer.syncNow()
+
+    /** Position conflict on the open story: take the site's chapter or keep the app's. */
+    fun resolveConflict(useRemote: Boolean) {
+        val story = _ui.value.story ?: return
+        syncer.resolveConflict(story.workId, useRemote)
+    }
+
+    fun postponeConflict() = _ui.update { it.copy(conflictDismissedFor = it.story?.bookId) }
 
     private fun membership(section: PluginSection): Pair<Set<String>, Map<String, PluginWork>> {
         val listId = (section as? PluginSection.Library)?.listId ?: return emptySet<String>() to emptyMap()
@@ -280,39 +311,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         if (!force && last != null && now - last < BROWSE_REFRESH_MS) return
         browseRefreshedAt[listId] = now
         viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { importList(list.id, SyncMode.Merge) } }
-                .onSuccess { refreshLocal() }
+            runCatching {
+                withContext(Dispatchers.IO) { lists.applyLists(pluginId, mapOf(list.id to lists.fetchList(pluginId, list.id)), SyncMode.Merge) }
+            }.onSuccess { refreshLocal() }
         }
-    }
-
-    /** Pages `list(listId)` into the list file; story lists also get catalog rows (and Overwrite drops stories). */
-    private suspend fun importList(listId: String, mode: SyncMode): Int {
-        val browse = manifest.list(listId)?.isBrowse == true
-        val remote = ArrayList<PluginWork>()
-        var page = 1
-        while (page <= MAX_SYNC_PAGES) {
-            val result = source().list(listId, page)
-            remote += result.items
-            if (!result.hasMore || result.items.isEmpty()) break
-            page++
-        }
-        val remoteIds = remote.map { it.id }.toSet()
-        val local = PluginMembershipStore.read(dataDir, listId)
-        if (mode == SyncMode.Overwrite && !browse) {
-            local.filter { it.id !in remoteIds }.forEach { dropped ->
-                PluginMembershipStore.remove(dataDir, listId, dropped.id)
-                if (PluginMembershipStore.listsContaining(dataDir, listIds, dropped.id).isEmpty()) {
-                    val bookId = manager.bookIdFor(pluginId, dropped.id)
-                    flow.catalog.removePluginMembership(bookId)
-                    books.deleteLocalSession(bookId)
-                }
-            }
-        }
-        val kept = if (mode == SyncMode.Overwrite) emptyList()
-        else PluginMembershipStore.read(dataDir, listId).filter { it.id !in remoteIds }
-        PluginMembershipStore.write(dataDir, listId, remote + kept)
-        if (!browse) remote.forEach { work -> runCatching { upsertWork(work) } }
-        return remote.size
     }
 
     fun setQuery(value: String) = _ui.update { it.copy(query = value) }
@@ -470,7 +472,9 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     fun closeStory() {
         chapterFocus = null
         val closed = _ui.value.story
-        _ui.update { it.copy(story = null, confirmDownloadAll = false, showPartial = false, showPosition = false) }
+        _ui.update {
+            it.copy(story = null, confirmDownloadAll = false, showPartial = false, showPosition = false, conflictDismissedFor = null)
+        }
         if (closed != null && closed.bookId in browser.postsBookIds()) refreshLocal()
     }
 
@@ -480,6 +484,12 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         val progress = flow.db.progress().get(bookId)
         val dir = PluginSessionStore.dir(dataDir, session.workId)
         val listedIn = PluginMembershipStore.listsContaining(dataDir, listIds, session.workId)
+        val tocUrls = session.toc.map { it.url }
+        val conflict = flow.pluginSync.state(pluginId).conflicts[session.workId]?.let { c ->
+            val local = ProgressReconcile.tocIndex(tocUrls, c.localUrl)
+            val remote = ProgressReconcile.tocIndex(tocUrls, c.remoteUrl)
+            if (local != null && remote != null) local to remote else null
+        }
         return PluginStory(
             bookId = bookId,
             workId = session.workId,
@@ -501,6 +511,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             listedIn = listedIn,
             card = splash?.card,
             notify = UpdateDiff.notifyOn(session.notify, listedIn, UpdateDiff.notifyLists(manifest.lists)),
+            positionConflict = conflict,
         ).let { s ->
             chapterFocus?.takeIf { it.first == bookId && it.second in s.toc.indices }
                 ?.let { s.copy(chapterIndex = it.second) } ?: s
@@ -548,30 +559,11 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         }
     }
 
-    private suspend fun upsertWork(work: PluginWork) {
-        val bookId = manager.bookIdFor(pluginId, work.id)
-        val existing = flow.db.progress().get(bookId)
-        var coverBytes: ByteArray? = null
-        if (work.cover.isNotBlank()) {
-            val path = existing?.storedPath
-                ?: File(
-                    File(flow.booksDir, bookId.replace(Regex("[^A-Za-z0-9._-]"), "_")).apply { mkdirs() },
-                    "book.txt",
-                ).absolutePath
-            coverBytes = books.downloadCover(work.cover, path)
-        }
-        flow.catalog.upsertPluginCatalogEntry(
-            bookId = bookId,
-            title = work.title,
-            sourceUri = work.url,
-            sourceKind = pluginId,
-            coverBytes = coverBytes,
-        )
-    }
+    private suspend fun upsertWork(work: PluginWork) = lists.upsertWork(pluginId, work)
 
     // --- Lists ------------------------------------------------------------------------------
 
-    /** Toggle the open story on/off a list (site first when the plugin supports membership). */
+    /** Toggle the open story on/off a list; the site change is queued and tried right away. */
     fun toggleList(listId: String) {
         val story = _ui.value.story ?: return
         val list = manifest.list(listId) ?: return
@@ -579,8 +571,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         viewModelScope.launch {
             _ui.update { it.copy(busy = true, error = null) }
             try {
-                val remote = withContext(Dispatchers.IO) {
-                    val remote = source().setMembership(story.workId, listId, on)
+                val pushed = withContext(Dispatchers.IO) {
                     if (on) {
                         PluginMembershipStore.upsert(
                             dataDir,
@@ -596,15 +587,17 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                     } else {
                         PluginMembershipStore.remove(dataDir, listId, story.workId)
                     }
-                    remote
+                    if (list.syncable) flow.pluginSync.membershipChanged(pluginId, story.workId, listId, on) else PushResult.LocalOnly
                 }
                 val refreshed = withContext(Dispatchers.IO) { runCatching { loadStory(story.bookId) }.getOrNull() }
                 refreshLocal()
-                val verb = when {
-                    !on -> "Removed ${story.title} from ${list.title}"
-                    remote -> "Added ${story.title} to ${list.title}"
-                    else -> "Saved ${story.title} to ${list.title}"
+                syncer.refreshState()
+                val where = when (pushed) {
+                    PushResult.Site -> " on ${manifest.name}"
+                    PushResult.Queued -> " (${manifest.name} updates when online)"
+                    PushResult.LocalOnly -> ""
                 }
+                val verb = if (on) "Added ${story.title} to ${list.title}$where" else "Removed ${story.title} from ${list.title}$where"
                 _ui.update { it.copy(busy = false, story = refreshed ?: it.story, message = verb) }
                 setSection(_ui.value.section)
             } catch (t: Throwable) {
@@ -613,30 +606,12 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         }
     }
 
-    /** Import a remote list (paged via `list(listId, page)`) into local membership. */
+    /** "Replace with site lists": [SYNC_ALL_LISTS] = every syncable list. */
     fun syncList(listId: String, mode: SyncMode) {
-        val list = manifest.list(listId) ?: return
-        viewModelScope.launch {
-            _ui.update { it.copy(busy = true, error = null, syncListId = null) }
-            try {
-                val count = withContext(Dispatchers.IO) { importList(listId, mode) }
-                if (list.isBrowse) browseRefreshedAt[listId] = SystemClock.elapsedRealtime()
-                refreshLocal()
-                _ui.update {
-                    it.copy(
-                        busy = false,
-                        showAccount = false,
-                        message = when (mode) {
-                            SyncMode.Merge -> "Merged $count from ${list.title}"
-                            SyncMode.Overwrite -> "Replaced ${list.title} with $count stories"
-                        },
-                    )
-                }
-                setSection(PluginSection.Library(listId))
-            } catch (t: Throwable) {
-                fail(t, "Could not sync ${list.title}")
-            }
-        }
+        val targets = syncTargets(manifest, listId).ifEmpty { return }
+        targets.filter { it.isBrowse }.forEach { browseRefreshedAt[it.id] = SystemClock.elapsedRealtime() }
+        syncer.replaceWithSite(listId, mode)
+        setSection(PluginSection.Library(targets.first().id))
     }
 
     // --- Reading ----------------------------------------------------------------------------
@@ -741,6 +716,9 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                     flow.catalog.removePluginMembership(story.bookId)
                     PluginMembershipStore.removeFromAll(dataDir, listIds, story.workId)
                     books.deleteLocalSession(story.bookId)
+                    story.listedIn.filter { manifest.list(it)?.syncable == true }.forEach { listId ->
+                        flow.pluginSync.membershipChanged(pluginId, story.workId, listId, on = false)
+                    }
                 }
                 refreshLocal()
                 _ui.update { it.copy(busy = false, story = null, message = "Removed ${story.title}") }
@@ -943,7 +921,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                 val session = withContext(Dispatchers.IO) { source().login(fields) }
                 if (!session.loggedIn) throw PluginException(PluginErrorCode.AuthRequired, "Sign in failed")
                 val secretKeys = auth.fields.filter { it.secret }.map { it.key }.toSet()
-                val firstSyncable = manifest.lists.firstOrNull { it.syncable }?.id
                 _ui.update {
                     it.copy(
                         busy = false,
@@ -951,10 +928,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                         loginFields = it.loginFields.filterKeys { k -> k !in secretKeys },
                         showLogin = false,
                         showAccount = true,
-                        syncListId = firstSyncable,
                     )
                 }
                 manager.sessionChanged(pluginId)
+                syncAfterSignIn()
             } catch (t: Throwable) {
                 _ui.update { it.copy(busy = false, error = t.message ?: "Sign in failed") }
             }
@@ -977,14 +954,19 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                         session = session,
                         showLogin = false,
                         showAccount = true,
-                        syncListId = manifest.lists.firstOrNull { l -> l.syncable }?.id,
                     )
                 }
                 manager.sessionChanged(pluginId)
+                syncAfterSignIn()
             } catch (t: Throwable) {
                 _ui.update { it.copy(busy = false, showLogin = false, error = t.message ?: "Sign in failed") }
             }
         }
+    }
+
+    /** Two-way sync right away; plugins without it get the Merge / Overwrite import choice. */
+    private fun syncAfterSignIn() {
+        if (flow.pluginSync.supports(manifest)) syncer.syncNow() else _ui.update { it.copy(syncListId = defaultSyncChoice(manifest)) }
     }
 
     fun logout() {
@@ -999,7 +981,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     }
 
     companion object {
-        private const val MAX_SYNC_PAGES = 100
         private const val BROWSE_REFRESH_MS = 15 * 60 * 1000L
 
         fun factory(app: Application, pluginId: String): ViewModelProvider.Factory =

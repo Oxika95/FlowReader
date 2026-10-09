@@ -1,6 +1,7 @@
 package com.personal.flowreader.ui.plugin
 
 import android.app.Application
+import android.text.format.DateUtils
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.flowreader.plugin.InstalledPlugin
+import com.personal.flowreader.plugin.store.SyncMode
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -91,7 +93,7 @@ internal fun LoginSheet(
     }
 }
 
-/** Account status, per-list sync, plugin settings, sign out. */
+/** Account status, two-way sync (or per-list import), plugin settings, sign out. */
 @Composable
 internal fun AccountSheet(
     ui: PluginTabUi,
@@ -99,22 +101,47 @@ internal fun AccountSheet(
     onShowLogin: () -> Unit,
     onLogout: () -> Unit,
     onSync: (String) -> Unit,
+    onSyncNow: () -> Unit,
     onSettings: () -> Unit,
 ) {
     val manifest = ui.manifest
+    val twoWay = ui.sync.supported
     FlowFullscreenCard(
         visible = ui.showAccount,
         onDismiss = onDismiss,
         title = if (manifest.auth != null) "${manifest.name} account" else manifest.name,
     ) {
-        FlowHint("Local stories stay on this device. Sync imports a list from the site when you choose.")
+        FlowHint(
+            if (twoWay) {
+                "Lists and reading positions sync both ways with ${manifest.name}: on the new-chapter check, " +
+                    "when you open this tab, and on Sync now."
+            } else {
+                "Local stories stay on this device. Sync imports a list from the site when you choose."
+            },
+        )
         if (manifest.auth != null) {
             if (ui.session.loggedIn) {
                 Text(ui.session.account.ifBlank { "Signed in" }, style = FlowType.rowTitle)
-                manifest.lists.filter { it.syncable }.forEach { list ->
-                    TextButton(onClick = { onSync(list.id) }, enabled = !ui.busy) {
+                if (twoWay) {
+                    TextButton(onClick = onSyncNow, enabled = !ui.busy && !ui.sync.running) {
                         Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.padding(end = FlowTokens.Space.S))
-                        Text("Sync ${list.title}", style = FlowType.action)
+                        Text(if (ui.sync.running) "Syncing…" else "Sync now", style = FlowType.action)
+                    }
+                    FlowHint(syncStatus(ui))
+                }
+                defaultSyncChoice(manifest)?.let { choice ->
+                    TextButton(onClick = { onSync(choice) }, enabled = !ui.busy && !ui.sync.running) {
+                        if (!twoWay) {
+                            Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.padding(end = FlowTokens.Space.S))
+                        }
+                        Text(
+                            when {
+                                twoWay -> "Replace with site lists"
+                                choice == SYNC_ALL_LISTS -> "Sync lists"
+                                else -> "Sync ${syncTitle(syncTargets(manifest, choice))}"
+                            },
+                            style = FlowType.action,
+                        )
                     }
                 }
                 TextButton(onClick = onLogout, enabled = !ui.busy) { Text("Sign out", style = FlowType.action) }
@@ -129,6 +156,26 @@ internal fun AccountSheet(
             }
         }
     }
+}
+
+/** "Last synced 5 minutes ago · 1 reading position to choose · 2 changes waiting to send". */
+private fun syncStatus(ui: PluginTabUi): String {
+    val s = ui.sync
+    val now = System.currentTimeMillis()
+    val last = when {
+        s.lastSyncedAt <= 0L -> "Not synced yet"
+        now - s.lastSyncedAt < DateUtils.MINUTE_IN_MILLIS -> "Last synced just now"
+        else -> "Last synced " + DateUtils.getRelativeTimeSpanString(s.lastSyncedAt, now, DateUtils.MINUTE_IN_MILLIS)
+    }
+    val parts = buildList {
+        add(last)
+        val conflicts = s.conflicts.size
+        if (conflicts > 0) add("$conflicts reading ${if (conflicts == 1) "position" else "positions"} to choose")
+        if (s.queued > 0) add("${s.queued} ${if (s.queued == 1) "change" else "changes"} waiting to send")
+        val guarded = s.guardedLists.mapNotNull { ui.manifest.list(it)?.title }
+        if (guarded.isNotEmpty()) add("${guarded.joinToString(" and ")} looked incomplete; removals skipped")
+    }
+    return parts.joinToString(" · ")
 }
 
 /** Settings > Plugins > {plugin}: sign-in status with Sign in / Sign out. */
@@ -165,7 +212,7 @@ internal fun PluginAccountSettings(plugin: InstalledPlugin) {
     )
 }
 
-/** Merge keeps local additions; Overwrite makes the list match the site. */
+/** Merge keeps local additions; Overwrite makes the list match the site (also the two-way sync recovery). */
 @Composable
 internal fun SyncChoiceSheet(
     ui: PluginTabUi,
@@ -173,11 +220,16 @@ internal fun SyncChoiceSheet(
     onChoose: (String, SyncMode) -> Unit,
 ) {
     val listId = ui.syncListId ?: return
-    val list = ui.manifest.list(listId) ?: return
+    val title = syncTitle(syncTargets(ui.manifest, listId)).ifEmpty { return }
     FlowConfirmCard(
         visible = true,
-        title = "Sync ${list.title}",
-        message = "Merge keeps stories you added locally. Overwrite makes ${list.title} match ${ui.manifest.name}.",
+        title = if (ui.sync.supported) "Replace $title" else "Sync $title",
+        message = if (ui.sync.supported) {
+            "Overwrite makes $title match ${ui.manifest.name} and removes stories only in the app. " +
+                "Merge keeps them and sends them to ${ui.manifest.name} on the next sync."
+        } else {
+            "Merge keeps stories you added locally. Overwrite makes $title match ${ui.manifest.name}."
+        },
         confirmLabel = "Merge",
         onConfirm = { if (!ui.busy) onChoose(listId, SyncMode.Merge) },
         onDismiss = { if (!ui.busy) onDismiss() },

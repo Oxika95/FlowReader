@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -31,6 +32,8 @@ class PluginHttp(
         .followRedirects(true)
         .cookieJar(cookieJar)
         .build()
+    /** `flow.fetch(url, { cookies: false })`: no session sent or stored, same request gap. */
+    private val anonymousClient: OkHttpClient = client.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
     private val rate = Mutex()
     private var lastFetchAt = 0L
 
@@ -68,10 +71,11 @@ class PluginHttp(
             else -> ByteArray(0).toRequestBody(null)
         }
         builder.method(method, body)
+        val caller = if (opts.optBoolean("cookies", true)) client else anonymousClient
         return withRateLimit {
             try {
                 withContext(Dispatchers.IO) {
-                    client.newCall(builder.build()).execute().use { response ->
+                    caller.newCall(builder.build()).execute().use { response ->
                         val length = response.body?.contentLength() ?: -1L
                         if (length > MAX_BYTES) {
                             return@use error("NETWORK", "Response too large")

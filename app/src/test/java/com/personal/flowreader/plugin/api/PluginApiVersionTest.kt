@@ -34,6 +34,15 @@ class PluginApiVersionTest {
     }
 
     @Test
+    fun readPositions_dropsRowsWithoutIdOrChapter() {
+        val arr = JSONArray(
+            """[{"id":"1","chapterUrl":" https://s/c/9 "},{"id":"2"},{"chapterUrl":"x"},{"id":" ","chapterUrl":"y"}]""",
+        )
+        assertEquals(listOf(PluginReadPosition("1", "https://s/c/9")), PluginJson.readPositions(arr))
+        assertEquals(emptyList<PluginReadPosition>(), PluginJson.readPositions(null))
+    }
+
+    @Test
     fun manifest_defaultsToV1() {
         val m = PluginManifest.parse("""{"id":"demo","name":"Demo"}""")
         assertEquals(1, m.apiVersion)

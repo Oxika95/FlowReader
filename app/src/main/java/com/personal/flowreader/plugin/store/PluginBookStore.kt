@@ -78,6 +78,9 @@ class PluginBookStore(
     private val upkeepJobs = HashMap<String, Job>()
     private val upkeepLocus = HashMap<String, Int>()
 
+    /** Two-way sync's push of a new reading chapter (set by the app). */
+    var positionChanged: (suspend (PluginReadSession, Int) -> Unit)? = null
+
     /**
      * The reading position of [bookId] is now chapter [locus]: when the chapter changed, sync it
      * to the site and fetch / clean up around it. A newer locus cancels the running upkeep.
@@ -90,7 +93,7 @@ class PluginBookStore(
             upkeepJobs[bookId] = scope.launch(Dispatchers.IO) {
                 try {
                     val r = ref(bookId)
-                    read(r)?.let { syncProgress(it, locus) }
+                    read(r)?.let { session -> runCatching { positionChanged?.invoke(session, locus) } }
                     maintainChapterCache(bookId, locus)
                 } catch (e: CancellationException) {
                     throw e
@@ -367,11 +370,6 @@ class PluginBookStore(
         val loaded = loadThrough(r, session, start)
         scheduleMaintain(bookId, start)
         return loaded
-    }
-
-    suspend fun syncProgress(session: PluginReadSession, chapterIndex: Int) {
-        val chapter = session.toc.getOrNull(chapterIndex) ?: return
-        runCatching { plugins.source(session.pluginId).syncProgress(session.workId, chapter) }
     }
 
     private suspend fun loadThrough(r: Ref, session: PluginReadSession, through: Int): PluginReadSession {

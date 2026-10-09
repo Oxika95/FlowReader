@@ -12,7 +12,7 @@ import com.personal.flowreader.plugin.store.PluginSessionStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.sync.Mutex
+import com.personal.flowreader.plugin.sync.TwoWaySync
 import kotlinx.coroutines.sync.withLock
 
 /** A monitored story that gained chapters during a check. */
@@ -30,7 +30,7 @@ data class ChapterUpdate(
  * story's cache level ahead of the saved position are downloaded.
  */
 class UpdateChecker(private val app: FlowApp) {
-    suspend fun run(): List<ChapterUpdate> = lock.withLock {
+    suspend fun run(): List<ChapterUpdate> = TwoWaySync.lock.withLock {
         val out = ArrayList<ChapterUpdate>()
         for (plugin in app.pluginManager.installed.value) {
             currentCoroutineContext().ensureActive()
@@ -132,6 +132,5 @@ class UpdateChecker(private val app: FlowApp) {
         private const val TAG = "FlowUpdates"
         private const val MAX_BASELINE_PER_RUN = 10
         private const val MAX_LOAD_WORK_PER_RUN = 100
-        private val lock = Mutex()
     }
 }

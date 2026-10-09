@@ -250,6 +250,12 @@ data class PluginUpdateInfo(
             (latestUrl.isNotEmpty() && latestUrl != than.lastChapterUrl)
 }
 
+/** `readPositions` result: the site's last-read chapter of one work. */
+data class PluginReadPosition(
+    val id: String,
+    val chapterUrl: String,
+)
+
 enum class PluginErrorCode {
     AuthRequired,
     Network,
@@ -508,5 +514,11 @@ object PluginJson {
         if (id.isEmpty()) return@mapNotNull null
         val chapters = if (o.has("chapters") && !o.isNull("chapters")) o.optInt("chapters", -1).takeIf { it >= 0 } else null
         PluginUpdateInfo(id = id, chapters = chapters, latestUrl = o.optString("latestUrl").trim())
+    }
+
+    fun readPositions(value: Any?): List<PluginReadPosition> = (value as? JSONArray).objects().mapNotNull { o ->
+        val id = o.optString("id").trim()
+        val url = o.optString("chapterUrl").trim()
+        if (id.isEmpty() || url.isEmpty()) null else PluginReadPosition(id, url)
     }
 }

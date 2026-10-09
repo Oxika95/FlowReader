@@ -23,6 +23,9 @@ example `docs/plugins/examples/media-card.md`.
   (`storyId`), or items, loaded on first view and kept while open. Text tabs add `sections`;
   `Work.group` drives `groupedRows` headers; badges may be `{label, tone}` (`PluginTone` →
   `FlowBadgeTone`), persisted in membership rows via `PluginJson.badgesToJson`.
+- Two-way sync (`plugin/sync/`): `syncable` lists and positions; optional `readPositions(works)` →
+  `PluginReadPosition[]` (progressSync); `setMembership(..., false)` removes on the site;
+  `flow.fetch(url, { cookies: false })` uses `PluginHttp`'s cookie-less client.
 - `ChapterRef.locked` persists as a third `toc.txt` column; downloads skip locked chapters.
 - ToC refresh reconciles by chapter URL (`PluginSessionStore.chapterMoves` / `reconcileChapterFiles`).
 - A breaking contract change bumps both constants, `HOST_API_VERSION` / `MIN_API_VERSION` in

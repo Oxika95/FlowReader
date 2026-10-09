@@ -10,6 +10,7 @@ import com.personal.flowreader.plugin.api.PluginException
 import com.personal.flowreader.plugin.api.PluginJson
 import com.personal.flowreader.plugin.api.PluginManifest
 import com.personal.flowreader.plugin.api.PluginPage
+import com.personal.flowreader.plugin.api.PluginReadPosition
 import com.personal.flowreader.plugin.api.PluginSession
 import com.personal.flowreader.plugin.api.PluginUpdateInfo
 import com.personal.flowreader.plugin.api.PluginUpdateQuery
@@ -87,6 +88,14 @@ class PluginSource(
     suspend fun syncProgress(workId: String, chapter: PluginChapterRef) {
         if (!manifest.has(PluginCapability.ProgressSync)) return
         runtime.call("syncProgress", JSONArray().put(workId).put(PluginJson.chapterRef(chapter)))
+    }
+
+    /** The site's last-read chapter for the works it knows; empty when the plugin can't tell. */
+    suspend fun readPositions(works: List<PluginUpdateQuery>): List<PluginReadPosition> {
+        if (!manifest.has(PluginCapability.ProgressSync) || !runtime.hasFunction("readPositions")) return emptyList()
+        val arr = JSONArray()
+        works.forEach { arr.put(PluginJson.updateQuery(it)) }
+        return PluginJson.readPositions(runtime.call("readPositions", JSONArray().put(arr)))
     }
 
     /** A plugin-declared media card action was tapped. */

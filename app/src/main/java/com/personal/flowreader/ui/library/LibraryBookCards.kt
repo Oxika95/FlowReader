@@ -24,6 +24,7 @@ import com.personal.flowreader.ui.design.card.FlowDisplayLayout
 import com.personal.flowreader.ui.design.card.FlowDisplayList
 import com.personal.flowreader.ui.design.card.FlowEmptyState
 import com.personal.flowreader.ui.design.card.flowDisplayListPadding
+import com.personal.flowreader.ui.design.controls.FlowBadgeTone
 import com.personal.flowreader.ui.theme.FlowTokens
 
 private val LinkedCorner = FlowCornerBadge(Icons.Filled.Link, "Linked file")
@@ -40,6 +41,7 @@ fun LibraryBooksPane(
     bottomInset: Dp = FlowTokens.Space.None,
     subtitleFor: (ProgressEntity) -> String = { libraryBookSubtitle(it) },
     onLongOpen: ((String) -> Unit)? = null,
+    badgesFor: (ProgressEntity) -> List<Pair<String, FlowBadgeTone>> = { emptyList() },
 ) {
     Box(modifier.fillMaxSize()) {
         if (books.isEmpty() && !busy) {
@@ -50,12 +52,12 @@ fun LibraryBooksPane(
         when (viewMode) {
             LibraryViewMode.List -> FlowDisplayList(contentPadding = padding) {
                 items(books, key = { it.bookId }) { book ->
-                    BookCard(book, FlowDisplayLayout.Row, subtitleFor(book), onOpen, onLongOpen)
+                    BookCard(book, FlowDisplayLayout.Row, subtitleFor(book), onOpen, onLongOpen, badgesFor(book))
                 }
             }
             LibraryViewMode.Shelf -> FlowDisplayGrid(contentPadding = padding) {
                 items(books, key = { it.bookId }) { book ->
-                    BookCard(book, FlowDisplayLayout.Tile, "", onOpen, onLongOpen)
+                    BookCard(book, FlowDisplayLayout.Tile, "", onOpen, onLongOpen, badgesFor(book))
                 }
             }
         }
@@ -69,6 +71,7 @@ private fun BookCard(
     subtitle: String,
     onOpen: (String) -> Unit,
     onLongOpen: ((String) -> Unit)?,
+    badges: List<Pair<String, FlowBadgeTone>>,
 ) {
     val edge = if (layout == FlowDisplayLayout.Row) FlowTokens.CoverEdge.Row else FlowTokens.CoverEdge.Tile
     val cover by rememberBookCover(book, maxEdge = edge)
@@ -78,6 +81,8 @@ private fun BookCard(
         onClick = { onOpen(book.bookId) },
         layout = layout,
         subtitle = subtitle,
+        badges = badges.map { it.first },
+        badgeTones = badges.toMap(),
         progress = book.readingProgress,
         corner = LinkedCorner.takeIf { book.sourceKind == BookSource.Linked.name },
         onLongClick = onLongOpen?.let { handler -> { handler(book.bookId) } },
