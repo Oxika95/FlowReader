@@ -91,7 +91,7 @@ Rules apply to **visible text and TTS**, not raw HTML. Editor fields: Title, Typ
 - **Hold** a rule to enter edit mode: drag handles reorder (saved on drop), checkboxes select,
   **All/None** toggles the selection, **Delete** asks for confirmation, **Done** or Back exits.
 
-Storage: `global_filters` / `group_filters` JSON; Local → Room `book_filters`.
+Storage: `global_filters` / `group_filters` JSON; Local → the `localFilters` column of the book's own row (Library, Queue entry, or plugin DB).
 
 ## Import
 

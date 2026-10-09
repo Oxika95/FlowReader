@@ -6,7 +6,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.personal.flowreader.data.EpubCover
-import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.BookItem
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +16,7 @@ import okhttp3.Request
 
 /** Shared cover remember helper for library cards, reader banner, and splashes. */
 @Composable
-fun rememberBookCover(book: ProgressEntity?, maxEdge: Int): androidx.compose.runtime.State<ImageBitmap?> =
+fun rememberBookCover(book: BookItem?, maxEdge: Int): androidx.compose.runtime.State<ImageBitmap?> =
     produceState(initialValue = null, book?.bookId, book?.storedPath, book?.sourceKind, maxEdge) {
         value = book?.let { row ->
             withContext(Dispatchers.IO) {
@@ -38,7 +38,7 @@ fun rememberBookCover(storedPath: String, maxEdge: Int): androidx.compose.runtim
         }
     }
 
-fun loadBookCoverBitmap(book: ProgressEntity, maxEdge: Int): android.graphics.Bitmap? {
+fun loadBookCoverBitmap(book: BookItem, maxEdge: Int): android.graphics.Bitmap? {
     val file = File(book.storedPath)
     // Plugin stories keep a downloaded cover next to their text snapshot.
     if (!file.name.endsWith(".epub", ignoreCase = true)) {

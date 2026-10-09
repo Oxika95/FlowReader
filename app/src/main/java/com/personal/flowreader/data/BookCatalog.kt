@@ -90,60 +90,162 @@ object SharedTextTitle {
     }
 }
 
+/** What the reader needs to open one book (a Library file or a plugin story) at its own row. */
+data class ReaderRow(
+    val session: ReadingSessionId,
+    val title: String,
+    val storedPath: String,
+    val sourceUri: String,
+    val sourceKind: String,
+    val position: ReadingPosition,
+    val localFilters: String,
+)
+
+/** Library (Files, shelves) and Queue rows, and the book files behind them. */
 class BookCatalog(private val app: FlowApp) {
     private val cr get() = app.contentResolver
+    private val library get() = app.db.library()
+    private val queue get() = app.db.queue()
 
-    suspend fun list(): List<ProgressEntity> = app.db.progress().library()
+    suspend fun list(): List<BookItem> = library.shelf("").map { it.toItem() }
 
-    /** Plugin tab membership. Not shown on Files. */
-    suspend fun listPlugin(sourceKind: String): List<ProgressEntity> =
-        app.db.progress().pluginLibrary(sourceKind)
+    suspend fun listTab(tabId: String): List<BookItem> = library.shelf(tabId).map { it.toItem() }
 
-    suspend fun listQue(): List<QueEntry> {
-        val items = app.db.que().all()
-        if (items.isEmpty()) return emptyList()
-        val byId = app.db.progress().getMany(items.map { it.bookId }.distinct())
-            .associateBy { it.bookId }
-        return items.mapNotNull { item ->
-            val progress = byId[item.bookId] ?: return@mapNotNull null
-            QueEntry(item, progress)
+    suspend fun clearLibraryTab(tabId: String) = library.clearShelf(tabId)
+
+    suspend fun libraryBook(bookId: String): LibraryBookEntity? = library.get(bookId)
+
+    /** Card data for [bookId]: its Library row, else its first Queue entry. */
+    suspend fun cardItem(bookId: String): BookItem? =
+        library.get(bookId)?.toItem() ?: queue.all().firstOrNull { it.bookId == bookId }?.toItem()
+
+    /** Library file or plugin story [bookId], ready to open in the reader. */
+    suspend fun readerRow(bookId: String): ReaderRow? {
+        app.pluginCatalog.get(bookId)?.let { p ->
+            return ReaderRow(
+                session = ReadingSessionId(PositionDomain.Plugin, bookId),
+                title = p.title,
+                storedPath = p.storedPath,
+                sourceUri = p.workUrl,
+                sourceKind = app.pluginCatalog.pluginIdFor(bookId).orEmpty(),
+                position = p.position,
+                localFilters = p.localFilters,
+            )
+        }
+        val b = library.get(bookId) ?: return null
+        return ReaderRow(
+            session = ReadingSessionId(PositionDomain.Library, bookId),
+            title = b.title,
+            storedPath = b.storedPath,
+            sourceUri = b.sourceUri,
+            sourceKind = b.sourceKind,
+            position = b.position,
+            localFilters = b.localFilters,
+        )
+    }
+
+    /** Local filter rules (JSON, blank = none) of the row [domain] / [key]. */
+    suspend fun setLocalFilters(domain: PositionDomain, key: String, json: String) {
+        when (domain) {
+            PositionDomain.Library -> library.setLocalFilters(key, json)
+            PositionDomain.Queue -> queue.setLocalFilters(key, json)
+            PositionDomain.Plugin -> app.pluginCatalog.setLocalFilters(key, json)
         }
     }
 
-    suspend fun getQue(id: String): QueItemEntity? = app.db.que().get(id)
+    // --- Queue ------------------------------------------------------------------------------
 
-    suspend fun nextUndoneQue(afterOrder: Int): QueEntry? {
-        val item = app.db.que().nextUndone(afterOrder) ?: return null
-        val progress = app.db.progress().get(item.bookId) ?: return null
-        return QueEntry(item, progress)
-    }
+    suspend fun listQue(): List<QueueItemEntity> = queue.all()
 
-    suspend fun markQueDone(id: String) {
-        val item = app.db.que().get(id) ?: return
-        app.db.que().upsert(item.copy(done = true))
-    }
+    suspend fun getQue(queId: String): QueueItemEntity? = queue.get(queId)
+
+    suspend fun markQueDone(queId: String) = queue.markDone(queId, System.currentTimeMillis())
 
     /** Rows in [ids] take sortOrder 0, 1, 2… in that order; rows not listed keep theirs. */
     suspend fun reorderQue(ids: List<String>) {
         app.db.withTransaction {
-            ids.forEachIndexed { i, id -> app.db.que().setSortOrder(id, i) }
+            ids.forEachIndexed { i, id -> queue.setSortOrder(id, i) }
         }
     }
 
-    /**
-     * Remove a Que row. Deletes the stored file only when the book is not in the
-     * library and no other Que rows still reference it.
-     */
-    suspend fun removeQue(id: String) {
-        val item = app.db.que().get(id) ?: return
-        app.db.que().delete(id)
-        val progress = app.db.progress().get(item.bookId) ?: return
-        if (progress.inLibrary) return
-        if (app.db.que().countForBook(item.bookId) > 0) return
-        File(progress.storedPath).parentFile?.deleteRecursively()
-        app.db.progress().delete(item.bookId)
-        app.db.bookFilters().delete(item.bookId)
+    /** Remove a Queue entry; its stored file goes too when nothing else uses it. */
+    suspend fun removeQue(queId: String) {
+        val item = queue.get(queId) ?: return
+        queue.delete(queId)
+        app.positionLog.event("QUEUE_REMOVE", "que" to queId, "book" to item.bookId)
+        if (app.pluginBooks.isPluginBook(item.bookId)) return
+        deleteFileIfUnused(item.storedPath, item.sourceKind)
     }
+
+    /** Queue entry for a Library book or plugin story, starting where that book is. */
+    suspend fun enqueueExisting(bookId: String): QueueItemEntity {
+        val plugin = app.pluginCatalog.get(bookId)
+        val item = if (plugin != null) {
+            newQueueItem(
+                bookId = bookId,
+                title = plugin.title,
+                storedPath = plugin.storedPath,
+                sourceUri = plugin.workUrl,
+                sourceKind = app.pluginCatalog.pluginIdFor(bookId).orEmpty(),
+                origin = QueueOrigin.Plugin,
+                position = plugin.position,
+            )
+        } else {
+            val b = library.get(bookId) ?: throw IllegalArgumentException("Book not found")
+            newQueueItem(
+                bookId = bookId,
+                title = b.title,
+                storedPath = b.storedPath,
+                sourceUri = b.sourceUri,
+                sourceKind = b.sourceKind,
+                origin = QueueOrigin.Library,
+                position = b.position,
+                localFilters = b.localFilters,
+            )
+        }
+        return insertQueue(item)
+    }
+
+    private suspend fun newQueueItem(
+        bookId: String,
+        title: String,
+        storedPath: String,
+        sourceUri: String,
+        sourceKind: String,
+        origin: QueueOrigin,
+        sourceUrl: String = "",
+        position: ReadingPosition = ReadingPosition(),
+        localFilters: String = "",
+    ): QueueItemEntity = QueueItemEntity(
+        queId = UUID.randomUUID().toString(),
+        bookId = bookId,
+        title = title,
+        storedPath = storedPath,
+        sourceUri = sourceUri,
+        sourceKind = sourceKind,
+        sourceUrl = sourceUrl,
+        origin = origin.name,
+        sortOrder = queue.maxSortOrder() + 1,
+        addedAt = System.currentTimeMillis(),
+        localFilters = localFilters,
+        position = position,
+    )
+
+    private suspend fun insertQueue(item: QueueItemEntity): QueueItemEntity {
+        queue.insert(item)
+        app.positionLog.event(
+            "QUEUE_ADD",
+            "que" to item.queId,
+            "book" to item.bookId,
+            "origin" to item.origin,
+            "url" to item.sourceUrl,
+            "title" to item.title,
+            "via" to PositionLog.callers(),
+        )
+        return item
+    }
+
+    // --- Ingest -----------------------------------------------------------------------------
 
     /**
      * Ingest shared plain text as a content-addressed TXT.
@@ -151,9 +253,10 @@ class BookCatalog(private val app: FlowApp) {
      * Stored file bytes are the shared text as-is. [SharedTextTitle] derives a
      * display label from the first characters only and must not rewrite the body.
      *
-     * @param inLibrary when true, show on Files; when false, only create progress if needed for Que
-     * @param enqueue when true, append a new Que playlist row
+     * @param inLibrary when true, show on Files (or [libraryTabId])
+     * @param enqueue when true, append a new Queue entry
      * @param displayTitle when set, used as the catalog title (plugins). Otherwise first chars of the body.
+     * @param sourceUrl web page the text came from
      */
     suspend fun addText(
         text: String,
@@ -162,11 +265,12 @@ class BookCatalog(private val app: FlowApp) {
         inLibrary: Boolean,
         enqueue: Boolean,
         libraryTabId: String = "",
+        sourceUrl: String = "",
     ): TextIngestResult {
         if (text.isBlank()) throw IllegalArgumentException("Nothing to share")
         val title = displayTitle?.trim()?.takeIf { it.isNotEmpty() }
             ?: SharedTextTitle.from(text, titleHint)
-        return addBytes(text.toByteArray(Charsets.UTF_8), "txt", title, inLibrary, enqueue, libraryTabId)
+        return addBytes(text.toByteArray(Charsets.UTF_8), "txt", title, inLibrary, enqueue, libraryTabId, sourceUrl)
     }
 
     /** Ingest a generated EPUB (web crawl) the same way as [addText]. */
@@ -176,7 +280,8 @@ class BookCatalog(private val app: FlowApp) {
         inLibrary: Boolean,
         enqueue: Boolean,
         libraryTabId: String = "",
-    ): TextIngestResult = addBytes(bytes, "epub", title, inLibrary, enqueue, libraryTabId)
+        sourceUrl: String = "",
+    ): TextIngestResult = addBytes(bytes, "epub", title, inLibrary, enqueue, libraryTabId, sourceUrl)
 
     private suspend fun addBytes(
         bytes: ByteArray,
@@ -185,208 +290,61 @@ class BookCatalog(private val app: FlowApp) {
         inLibrary: Boolean,
         enqueue: Boolean,
         libraryTabId: String,
+        sourceUrl: String,
     ): TextIngestResult {
         val id = BookBytes.sha256(bytes)
-        val existing = app.db.progress().get(id)
         val dest = destination(id, ext, BookSource.Imported)
         dest.parentFile?.mkdirs()
         dest.writeBytes(bytes)
         if (ext == "epub") EpubCover.ensureCached(dest)
 
-        val now = System.currentTimeMillis()
-        val shelf = libraryTabId.trim()
-        val row = ProgressEntity(
-            bookId = id,
-            title = existing?.title?.takeIf { it.isNotBlank() } ?: title,
-            storedPath = dest.absolutePath,
-            sourceUri = existing?.sourceUri.orEmpty(),
-            sourceKind = BookSource.Imported.name,
-            chapterIndex = existing?.chapterIndex ?: 0,
-            blockIndex = existing?.blockIndex ?: 0,
-            charOffset = existing?.charOffset ?: 0,
-            updatedAt = now,
-            inLibrary = (existing?.inLibrary == true) || inLibrary,
-            readingProgress = existing?.readingProgress ?: 0f,
-            libraryTabId = if (inLibrary && shelf.isNotEmpty()) {
-                shelf
+        var shownTitle = title
+        if (inLibrary) {
+            val shelf = libraryTabId.trim()
+            val existing = library.get(id)
+            if (existing == null) {
+                library.insert(
+                    LibraryBookEntity(
+                        bookId = id,
+                        title = title,
+                        storedPath = dest.absolutePath,
+                        sourceUri = sourceUrl,
+                        sourceKind = BookSource.Imported.name,
+                        shelfId = shelf,
+                        addedAt = System.currentTimeMillis(),
+                    ),
+                )
             } else {
-                existing?.libraryTabId.orEmpty()
-            },
-            anchorText = existing?.anchorText.orEmpty(),
-            chapterHref = existing?.chapterHref.orEmpty(),
-        )
-        app.db.progress().upsert(row)
-
+                shownTitle = existing.title.ifBlank { title }
+                library.updateFile(
+                    id,
+                    shownTitle,
+                    dest.absolutePath,
+                    existing.sourceUri.ifBlank { sourceUrl },
+                    existing.sourceKind,
+                    shelf.ifEmpty { existing.shelfId },
+                )
+            }
+        }
         val queItem = if (enqueue) {
-            val order = app.db.que().maxSortOrder() + 1
-            val item = QueItemEntity(
-                id = UUID.randomUUID().toString(),
-                bookId = id,
-                sortOrder = order,
-                addedAt = now,
-                done = false,
+            insertQueue(
+                newQueueItem(
+                    bookId = id,
+                    title = title,
+                    storedPath = dest.absolutePath,
+                    sourceUri = "",
+                    sourceKind = BookSource.Imported.name,
+                    origin = if (sourceUrl.isNotBlank()) QueueOrigin.Web else QueueOrigin.Text,
+                    sourceUrl = sourceUrl,
+                ),
             )
-            app.db.que().upsert(item)
-            item
         } else {
             null
         }
-        return TextIngestResult(row, queItem)
+        return TextIngestResult(id, shownTitle, queItem)
     }
 
-    /**
-     * Upsert a plugin-backed book. [bookId] is stable (`{bookIdPrefix}:{workId}`) so
-     * reopen and TTS streaming resume the same row. Not shown on Files.
-     * [startChapter] (absolute ToC index) moves the saved position to that chapter's start
-     * when it differs from the saved chapter.
-     */
-    suspend fun upsertPluginBook(
-        bookId: String,
-        title: String,
-        sourceUri: String,
-        sourceKind: String,
-        text: String,
-        startChapter: Int? = null,
-    ): ProgressEntity {
-        val existing = app.db.progress().get(bookId)
-        val dest = pluginBookFile(bookId)
-        dest.writeText(text)
-        val now = System.currentTimeMillis()
-        val moved = startChapter != null && startChapter != existing?.chapterIndex
-        val row = ProgressEntity(
-            bookId = bookId,
-            title = title,
-            storedPath = dest.absolutePath,
-            sourceUri = sourceUri,
-            sourceKind = sourceKind,
-            chapterIndex = if (moved) startChapter!! else existing?.chapterIndex ?: 0,
-            blockIndex = if (moved) 0 else existing?.blockIndex ?: 0,
-            charOffset = if (moved) 0 else existing?.charOffset ?: 0,
-            updatedAt = now,
-            inLibrary = false,
-            readingProgress = existing?.readingProgress ?: 0f,
-            anchorText = if (moved) "" else existing?.anchorText.orEmpty(),
-        )
-        app.db.progress().upsert(row)
-        return row
-    }
-
-    /**
-     * Add a plugin fiction to its tab catalog without downloading chapters.
-     * Preserves existing reading progress and chapter cache on disk.
-     */
-    suspend fun upsertPluginCatalogEntry(
-        bookId: String,
-        title: String,
-        sourceUri: String,
-        sourceKind: String,
-        coverBytes: ByteArray? = null,
-    ): ProgressEntity {
-        val existing = app.db.progress().get(bookId)
-        val dest = pluginBookFile(bookId)
-        if (!dest.exists() || dest.length() == 0L) {
-            dest.writeText(title)
-        }
-        if (coverBytes != null && coverBytes.isNotEmpty()) {
-            writePluginCover(dest, coverBytes)
-        }
-        val now = System.currentTimeMillis()
-        val row = ProgressEntity(
-            bookId = bookId,
-            title = title.ifBlank { existing?.title.orEmpty() }.ifBlank { bookId },
-            storedPath = dest.absolutePath,
-            sourceUri = sourceUri.ifBlank { existing?.sourceUri.orEmpty() },
-            sourceKind = sourceKind,
-            chapterIndex = existing?.chapterIndex ?: 0,
-            blockIndex = existing?.blockIndex ?: 0,
-            charOffset = existing?.charOffset ?: 0,
-            updatedAt = now,
-            inLibrary = false,
-            readingProgress = existing?.readingProgress ?: 0f,
-            anchorText = existing?.anchorText.orEmpty(),
-        )
-        app.db.progress().upsert(row)
-        return row
-    }
-
-    /**
-     * Remove a book from the Files tab. If Que still references it, only clears
-     * [ProgressEntity.inLibrary]. Otherwise deletes progress, filters, and the
-     * imported/cache file tree (never the user's original SAF document).
-     */
-    suspend fun removeFromLibrary(bookId: String) {
-        val progress = app.db.progress().get(bookId) ?: return
-        if (app.db.que().countForBook(bookId) > 0) {
-            app.db.progress().upsert(
-                progress.copy(inLibrary = false, updatedAt = System.currentTimeMillis()),
-            )
-            return
-        }
-        val kind = runCatching { BookSource.valueOf(progress.sourceKind) }
-            .getOrDefault(BookSource.Imported)
-        val stored = File(progress.storedPath)
-        when (kind) {
-            BookSource.Imported -> stored.parentFile?.deleteRecursively()
-            BookSource.Linked -> stored.parentFile?.deleteRecursively()
-        }
-        app.db.progress().delete(bookId)
-        app.db.bookFilters().delete(bookId)
-    }
-
-    /**
-     * Remove a plugin book from its tab. Keeps chapter cache under the plugin
-     * files dir so a later re-add can resume. Drops Que rows for this book.
-     */
-    suspend fun removePluginMembership(bookId: String) {
-        val progress = app.db.progress().get(bookId) ?: return
-        app.db.que().deleteForBook(bookId)
-        File(progress.storedPath).parentFile?.deleteRecursively()
-        app.db.progress().delete(bookId)
-        app.db.bookFilters().delete(bookId)
-    }
-
-    fun pluginCoverFile(storedPath: String): File? {
-        val dir = File(storedPath).parentFile ?: return null
-        return listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp")
-            .map { File(dir, it) }
-            .firstOrNull { it.exists() && it.length() > 0L }
-    }
-
-    private fun pluginBookFile(bookId: String): File {
-        val safe = bookId.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        return File(File(app.booksDir, safe).apply { mkdirs() }, "book.txt")
-    }
-
-    private fun writePluginCover(bookFile: File, bytes: ByteArray) {
-        val dir = bookFile.parentFile ?: return
-        listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp").forEach { name ->
-            File(dir, name).delete()
-        }
-        val ext = when {
-            bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() -> "jpg"
-            bytes.size >= 8 && bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() -> "png"
-            bytes.size >= 12 && bytes.copyOfRange(0, 4).contentEquals("RIFF".toByteArray()) -> "webp"
-            else -> "jpg"
-        }
-        File(dir, "cover.$ext").writeBytes(bytes)
-    }
-
-    suspend fun enqueueExisting(bookId: String): QueItemEntity {
-        app.db.progress().get(bookId)
-            ?: throw IllegalArgumentException("Book not found")
-        val order = app.db.que().maxSortOrder() + 1
-        val item = QueItemEntity(
-            id = UUID.randomUUID().toString(),
-            bookId = bookId,
-            sortOrder = order,
-            addedAt = System.currentTimeMillis(),
-            done = false,
-        )
-        app.db.que().upsert(item)
-        return item
-    }
-
-    suspend fun add(uri: Uri, source: BookSource, libraryTabId: String = ""): ProgressEntity {
+    suspend fun add(uri: Uri, source: BookSource, libraryTabId: String = ""): LibraryBookEntity {
         if (source == BookSource.Linked) persistReadAccess(uri)
         val tmp = File(app.cacheDir, "import-${UUID.randomUUID()}")
         try {
@@ -396,7 +354,7 @@ class BookCatalog(private val app: FlowApp) {
 
             val id = BookBytes.sha256(tmp)
             val ext = BookBytes.extension(tmp)
-            val existing = app.db.progress().get(id)
+            val existing = library.get(id)
             val kind = when {
                 source == BookSource.Imported -> BookSource.Imported
                 existing?.sourceKind == BookSource.Imported.name -> BookSource.Imported
@@ -411,40 +369,53 @@ class BookCatalog(private val app: FlowApp) {
 
             val title = ingestTitle(dest, ext, uri)
             val shelf = libraryTabId.trim()
-            val row = ProgressEntity(
-                bookId = id,
-                title = title,
-                storedPath = dest.absolutePath,
-                sourceUri = if (kind == BookSource.Linked) uri.toString() else "",
-                sourceKind = kind.name,
-                chapterIndex = existing?.chapterIndex ?: 0,
-                blockIndex = existing?.blockIndex ?: 0,
-                charOffset = existing?.charOffset ?: 0,
-                updatedAt = System.currentTimeMillis(),
-                inLibrary = true,
-                readingProgress = existing?.readingProgress ?: 0f,
-                libraryTabId = shelf.ifEmpty { existing?.libraryTabId.orEmpty() },
-                anchorText = existing?.anchorText.orEmpty(),
-                chapterHref = existing?.chapterHref.orEmpty(),
-            )
-            app.db.progress().upsert(row)
-            return row
+            val sourceUri = if (kind == BookSource.Linked) uri.toString() else ""
+            if (existing == null) {
+                library.insert(
+                    LibraryBookEntity(
+                        bookId = id,
+                        title = title,
+                        storedPath = dest.absolutePath,
+                        sourceUri = sourceUri,
+                        sourceKind = kind.name,
+                        shelfId = shelf,
+                        addedAt = System.currentTimeMillis(),
+                    ),
+                )
+            } else {
+                library.updateFile(id, title, dest.absolutePath, sourceUri, kind.name, shelf.ifEmpty { existing.shelfId })
+            }
+            return library.get(id) ?: throw IllegalStateException("Could not store book")
         } finally {
             tmp.delete()
         }
     }
 
-    suspend fun listTab(tabId: String): List<ProgressEntity> =
-        app.db.progress().libraryTab(tabId)
-
-    suspend fun clearLibraryTab(tabId: String) {
-        app.db.progress().clearLibraryTab(tabId)
+    /** Remove a book from the Files tab. Its file goes too when no Queue entry uses it. */
+    suspend fun removeFromLibrary(bookId: String) {
+        val book = library.get(bookId) ?: return
+        library.delete(bookId)
+        deleteFileIfUnused(book.storedPath, book.sourceKind)
     }
 
-    fun materialize(row: ProgressEntity): File {
-        val kind = runCatching { BookSource.valueOf(row.sourceKind) }
+    /** Imported copy or linked-cache folder, once no Library or Queue row points at it. */
+    private suspend fun deleteFileIfUnused(storedPath: String, sourceKind: String) {
+        if (storedPath.isBlank()) return
+        if (library.countForPath(storedPath) > 0 || queue.countForPath(storedPath) > 0) return
+        if (sourceKind != BookSource.Imported.name && sourceKind != BookSource.Linked.name) return
+        File(storedPath).parentFile?.deleteRecursively()
+    }
+
+    fun materialize(row: LibraryBookEntity): File = materialize(row.storedPath, row.sourceUri, row.sourceKind)
+
+    fun materialize(row: QueueItemEntity): File = materialize(row.storedPath, row.sourceUri, row.sourceKind)
+
+    fun materialize(row: ReaderRow): File = materialize(row.storedPath, row.sourceUri, row.sourceKind)
+
+    private fun materialize(storedPath: String, sourceUri: String, sourceKind: String): File {
+        val kind = runCatching { BookSource.valueOf(sourceKind) }
             .getOrDefault(BookSource.Imported)
-        val local = File(row.storedPath)
+        val local = File(storedPath)
         return when (kind) {
             BookSource.Imported -> {
                 if (!local.exists()) {
@@ -453,7 +424,7 @@ class BookCatalog(private val app: FlowApp) {
                 local
             }
             BookSource.Linked -> {
-                val uri = row.sourceUri.takeIf { it.isNotBlank() }?.let(Uri::parse)
+                val uri = sourceUri.takeIf { it.isNotBlank() }?.let(Uri::parse)
                     ?: throw IllegalArgumentException("Linked file has no location")
                 if (local.exists() && !isDocumentNewer(uri, local.lastModified())) {
                     return local

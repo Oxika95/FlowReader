@@ -1,0 +1,328 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 10,
+    "identityHash": "77975fb6d388992ce0fc57bb8d5c31eb",
+    "entities": [
+      {
+        "tableName": "library_books",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`bookId` TEXT NOT NULL, `title` TEXT NOT NULL, `storedPath` TEXT NOT NULL, `sourceUri` TEXT NOT NULL, `sourceKind` TEXT NOT NULL, `shelfId` TEXT NOT NULL, `addedAt` INTEGER NOT NULL, `localFilters` TEXT NOT NULL, `chapterIndex` INTEGER NOT NULL, `chapterHref` TEXT NOT NULL, `blockIndex` INTEGER NOT NULL, `charOffset` INTEGER NOT NULL, `anchorText` TEXT NOT NULL, `fraction` REAL NOT NULL, `positionAt` INTEGER NOT NULL, `positionSessionAt` INTEGER NOT NULL, `positionSource` TEXT NOT NULL, PRIMARY KEY(`bookId`))",
+        "fields": [
+          {
+            "fieldPath": "bookId",
+            "columnName": "bookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storedPath",
+            "columnName": "storedPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceUri",
+            "columnName": "sourceUri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceKind",
+            "columnName": "sourceKind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shelfId",
+            "columnName": "shelfId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "addedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localFilters",
+            "columnName": "localFilters",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.chapterIndex",
+            "columnName": "chapterIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.chapterHref",
+            "columnName": "chapterHref",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.blockIndex",
+            "columnName": "blockIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.charOffset",
+            "columnName": "charOffset",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.anchorText",
+            "columnName": "anchorText",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.fraction",
+            "columnName": "fraction",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.positionAt",
+            "columnName": "positionAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.positionSessionAt",
+            "columnName": "positionSessionAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.positionSource",
+            "columnName": "positionSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "bookId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "queue_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`queId` TEXT NOT NULL, `bookId` TEXT NOT NULL, `title` TEXT NOT NULL, `storedPath` TEXT NOT NULL, `sourceUri` TEXT NOT NULL, `sourceKind` TEXT NOT NULL, `sourceUrl` TEXT NOT NULL, `origin` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, `done` INTEGER NOT NULL, `doneAt` INTEGER NOT NULL, `localFilters` TEXT NOT NULL, `chapterIndex` INTEGER NOT NULL, `chapterHref` TEXT NOT NULL, `blockIndex` INTEGER NOT NULL, `charOffset` INTEGER NOT NULL, `anchorText` TEXT NOT NULL, `fraction` REAL NOT NULL, `positionAt` INTEGER NOT NULL, `positionSessionAt` INTEGER NOT NULL, `positionSource` TEXT NOT NULL, PRIMARY KEY(`queId`))",
+        "fields": [
+          {
+            "fieldPath": "queId",
+            "columnName": "queId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bookId",
+            "columnName": "bookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storedPath",
+            "columnName": "storedPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceUri",
+            "columnName": "sourceUri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceKind",
+            "columnName": "sourceKind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceUrl",
+            "columnName": "sourceUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "origin",
+            "columnName": "origin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "addedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "done",
+            "columnName": "done",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "doneAt",
+            "columnName": "doneAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localFilters",
+            "columnName": "localFilters",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.chapterIndex",
+            "columnName": "chapterIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.chapterHref",
+            "columnName": "chapterHref",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.blockIndex",
+            "columnName": "blockIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.charOffset",
+            "columnName": "charOffset",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.anchorText",
+            "columnName": "anchorText",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.fraction",
+            "columnName": "fraction",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.positionAt",
+            "columnName": "positionAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.positionSessionAt",
+            "columnName": "positionSessionAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.positionSource",
+            "columnName": "positionSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "queId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_queue_items_bookId",
+            "unique": false,
+            "columnNames": [
+              "bookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_queue_items_bookId` ON `${TABLE_NAME}` (`bookId`)"
+          },
+          {
+            "name": "index_queue_items_sortOrder_done",
+            "unique": false,
+            "columnNames": [
+              "sortOrder",
+              "done"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_queue_items_sortOrder_done` ON `${TABLE_NAME}` (`sortOrder`, `done`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "queue_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `currentQueId` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentQueId",
+            "columnName": "currentQueId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '77975fb6d388992ce0fc57bb8d5c31eb')"
+    ]
+  }
+}

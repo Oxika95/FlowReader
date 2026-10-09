@@ -107,7 +107,17 @@ class ReadingSession(
     private val loader: suspend (index: Int, targetChars: Int, flexChars: Int) -> PreparedChapter?,
     /** Chapters kept on each side of every focus. */
     private val keepRadius: Int = 1,
+    /** Table and row (or Queue stream) this session's positions are written to. */
+    val sessionId: ReadingSessionId? = null,
 ) {
+    /** Maps a locus in this session's window to its row; bound once the session is open. */
+    @Volatile
+    var locator: ProgressLocator? = null
+
+    /** Position update for [locus], stored in this session's own row; null before [locator] is bound. */
+    fun position(locus: Locus, source: PositionSource, at: Long = System.currentTimeMillis()): ProgressUpdate? =
+        locator?.locate(locus, at)?.copy(source = source)
+
     private val _window = MutableStateFlow(initial)
     val window: StateFlow<ReadingWindow> = _window
     private val mutex = Mutex()

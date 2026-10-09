@@ -8,41 +8,61 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * One reading position to store. [chapterIndex] is absolute (plugin books: ToC index).
- * Null [fraction], [anchorText] or [chapterHref] keeps the stored value.
+ * One reading position to store in row [rowKey] of [session]'s table ([ReadingSessionId.domain]).
+ * [chapterIndex] is in that row's own indices (plugin books: ToC index).
  */
 data class ProgressUpdate(
-    val bookId: String,
+    val session: ReadingSessionId,
+    val rowKey: String,
     val chapterIndex: Int,
     val blockIndex: Int,
     val charOffset: Int,
-    val fraction: Float?,
+    val fraction: Float,
     val at: Long,
-    val anchorText: String? = null,
-    val chapterHref: String? = null,
-)
+    val anchorText: String = "",
+    val chapterHref: String = "",
+    val source: PositionSource = PositionSource.Reader,
+) {
+    val domain: PositionDomain get() = session.domain
 
-/** Maps a locus in the open reading window to a full [ProgressUpdate]. */
+    fun toPosition() = ReadingPosition(
+        chapterIndex = chapterIndex,
+        chapterHref = chapterHref,
+        blockIndex = blockIndex,
+        charOffset = charOffset,
+        anchorText = anchorText,
+        fraction = fraction.coerceIn(0f, 1f),
+        positionAt = at,
+        positionSessionAt = session.openedAt,
+        positionSource = source.name,
+    )
+}
+
+/** Maps a locus in a session's reading window to the row it belongs to. Owned by the session. */
 fun interface ProgressLocator {
     fun locate(locus: Locus, at: Long): ProgressUpdate
 }
 
+/** Writes a position into the table and row the update names; false when the row is gone. */
+fun interface PositionStore {
+    suspend fun write(update: ProgressUpdate): Boolean
+}
+
 /**
- * The only writer of reading positions (reader, TTS with the reader closed, plugin seeks).
- * App-scoped so pending writes outlive the reader. Per book, a write older than the last one
- * stored is dropped, so a late flush can never rewind a newer position.
+ * The only writer of reading positions (reader, TTS with the reader closed, plugin seeks, sync).
+ * App-scoped so pending writes outlive the reader. Serialized: keeps the latest update per row
+ * and writes in order.
  */
 class ProgressWriter(
-    private val dao: ProgressDao,
+    private val store: PositionStore,
     private val scope: CoroutineScope,
     private val debounceMs: Long = 300L,
+    private val log: (ProgressUpdate, Boolean) -> Unit = { _, _ -> },
     private val onWritten: suspend (ProgressUpdate) -> Unit = {},
 ) {
-    private val pending = HashMap<String, ProgressUpdate>()
-    private val lastWrittenAt = HashMap<String, Long>()
+    private val pending = LinkedHashMap<String, ProgressUpdate>()
     private val writeLock = Mutex()
     private val wake = Channel<Unit>(Channel.CONFLATED)
-    private val locators = HashMap<String, ProgressLocator>()
 
     init {
         scope.launch {
@@ -53,25 +73,12 @@ class ProgressWriter(
         }
     }
 
-    /** Locator for [bookId]'s current reading window; replaced whenever the reader (re)loads it. */
-    fun setLocator(bookId: String, locator: ProgressLocator?) {
-        synchronized(locators) {
-            if (locator == null) locators.remove(bookId) else locators[bookId] = locator
-        }
-    }
-
-    /** Update for [locus] in [bookId]'s window; without a locator, indices are stored as given. */
-    fun locate(bookId: String, locus: Locus, at: Long): ProgressUpdate {
-        val locator = synchronized(locators) { locators[bookId] }
-        return locator?.locate(locus, at)
-            ?: ProgressUpdate(bookId, locus.chapterIndex, locus.blockIndex, locus.charOffset, null, at)
-    }
-
     fun submit(update: ProgressUpdate, flush: Boolean = false) {
-        if (update.bookId.isBlank()) return
+        if (update.rowKey.isBlank()) return
+        val key = "${update.domain}:${update.rowKey}"
         synchronized(pending) {
-            val current = pending[update.bookId]
-            if (current == null || current.at <= update.at) pending[update.bookId] = update
+            val current = pending[key]
+            if (current == null || current.at <= update.at) pending[key] = update
         }
         if (flush) scope.launch { drain() } else wake.trySend(Unit)
     }
@@ -82,25 +89,11 @@ class ProgressWriter(
             val batch = synchronized(pending) {
                 pending.values.toList().also { pending.clear() }
             }
-            for (update in batch) write(update)
+            for (update in batch) {
+                val written = store.write(update)
+                runCatching { log(update, written) }
+                if (written) runCatching { onWritten(update) }
+            }
         }
-    }
-
-    private suspend fun write(update: ProgressUpdate) {
-        if ((lastWrittenAt[update.bookId] ?: Long.MIN_VALUE) > update.at) return
-        val row = dao.get(update.bookId) ?: return
-        dao.upsert(
-            row.copy(
-                chapterIndex = update.chapterIndex,
-                blockIndex = update.blockIndex,
-                charOffset = update.charOffset,
-                readingProgress = update.fraction?.coerceIn(0f, 1f) ?: row.readingProgress,
-                updatedAt = update.at,
-                anchorText = update.anchorText ?: row.anchorText,
-                chapterHref = update.chapterHref ?: row.chapterHref,
-            ),
-        )
-        lastWrittenAt[update.bookId] = update.at
-        runCatching { onWritten(update) }
     }
 }

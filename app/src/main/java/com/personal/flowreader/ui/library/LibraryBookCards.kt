@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import com.personal.flowreader.data.BookSource
 import com.personal.flowreader.data.LibraryViewMode
-import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.BookItem
 import com.personal.flowreader.plugin.PluginManager
 import com.personal.flowreader.ui.common.rememberBookCover
 import com.personal.flowreader.ui.design.card.FlowCornerBadge
@@ -32,16 +32,16 @@ private val LinkedCorner = FlowCornerBadge(Icons.Filled.Link, "Linked file")
 /** Books as display cards: [LibraryViewMode.List] rows or a [LibraryViewMode.Shelf] tile grid. */
 @Composable
 fun LibraryBooksPane(
-    books: List<ProgressEntity>,
+    books: List<BookItem>,
     viewMode: LibraryViewMode,
     busy: Boolean,
     emptyMessage: String,
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
     bottomInset: Dp = FlowTokens.Space.None,
-    subtitleFor: (ProgressEntity) -> String = { libraryBookSubtitle(it) },
+    subtitleFor: (BookItem) -> String = { libraryBookSubtitle(it) },
     onLongOpen: ((String) -> Unit)? = null,
-    badgesFor: (ProgressEntity) -> List<Pair<String, FlowBadgeTone>> = { emptyList() },
+    badgesFor: (BookItem) -> List<Pair<String, FlowBadgeTone>> = { emptyList() },
 ) {
     Box(modifier.fillMaxSize()) {
         if (books.isEmpty() && !busy) {
@@ -66,7 +66,7 @@ fun LibraryBooksPane(
 
 @Composable
 private fun BookCard(
-    book: ProgressEntity,
+    book: BookItem,
     layout: FlowDisplayLayout,
     subtitle: String,
     onOpen: (String) -> Unit,
@@ -89,17 +89,17 @@ private fun BookCard(
     )
 }
 
-internal fun librarySourceLabel(book: ProgressEntity): String =
+internal fun librarySourceLabel(book: BookItem): String =
     PluginManager.displayNames[book.sourceKind]
         ?: runCatching { BookSource.valueOf(book.sourceKind).label }
             .getOrDefault(BookSource.Imported.label)
 
-internal fun libraryLastRead(book: ProgressEntity): String =
+internal fun libraryLastRead(book: BookItem): String =
     DateUtils.getRelativeTimeSpanString(
-        book.updatedAt,
+        book.lastReadAt,
         System.currentTimeMillis(),
         DateUtils.MINUTE_IN_MILLIS,
     ).toString()
 
-internal fun libraryBookSubtitle(book: ProgressEntity): String =
+internal fun libraryBookSubtitle(book: BookItem): String =
     "${librarySourceLabel(book)} · ${libraryLastRead(book)}"

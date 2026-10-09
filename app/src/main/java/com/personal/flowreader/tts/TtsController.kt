@@ -41,6 +41,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +57,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+
+/** A sentence playback reached, with the session it was read from. */
+class SpokenPosition(val session: ReadingSession, val sentence: Sentence)
 
 data class TtsUiState(
     val playing: Boolean = false,
@@ -305,6 +309,17 @@ class TtsController(
     /** Session playback is attached to; a reader reopening the same content reuses it. */
     fun attachedSession(): ReadingSession? = reading
 
+    private val _spoken = MutableSharedFlow<SpokenPosition>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Each sentence playback moves onto, paired with the session whose table it came from. */
+    val spoken: SharedFlow<SpokenPosition> = _spoken
+
+    private fun emitSpoken(s: Sentence?) {
+        val session = reading ?: return
+        if (s == null || !_state.value.playing) return
+        _spoken.tryEmit(SpokenPosition(session, s))
+    }
+
     /**
      * Filter rules from the reader (all scopes) or Library settings (Global/Groups, keeping the
      * attached book's Local rules). Only TTS-only rules matter here; a change re-keys the clip
@@ -378,7 +393,6 @@ class TtsController(
         bookKey = cacheKeyFor(session)
         val title = session.window.value.title
         bookTitle = title
-        _state.value = _state.value.copy(bookId = bookId, bookTitle = title)
         coverArt?.recycle()
         coverArt = null
         prefetchFailed.clear()
@@ -386,8 +400,11 @@ class TtsController(
         wordBoundariesBySentence.clear()
         cuesBySentence.clear()
         val first = sentences.getOrNull(index)
+        // One update: bookId and sentence must never be observed from different books.
         _state.update {
             it.copy(
+                bookId = bookId,
+                bookTitle = title,
                 playing = false,
                 sessionActive = sameBook && it.sessionActive,
                 following = it.autoScrollWithTts,
@@ -834,6 +851,10 @@ class TtsController(
             appendLine("--- events ---")
         }
         out.writeText(header + SynthDebugLog.snapshot().joinToString("\n") + "\n")
+        (context.applicationContext as? FlowApp)?.positionLog?.files?.forEach { log ->
+            out.appendText("--- ${log.name} ---\n")
+            runCatching { out.appendText(log.readText()) }
+        }
         SynthDebugLog.append("dump->${out.absolutePath}")
         return out
     }
@@ -1166,9 +1187,10 @@ class TtsController(
 
     private suspend fun loadCoverArt(bookId: String): Bitmap? {
         val app = context.applicationContext as? FlowApp ?: return null
-        val row = app.db.progress().get(bookId) ?: return null
-        val file = File(row.storedPath)
-        return EpubCover.loadBitmap(file)
+        val storedPath = app.catalog.libraryBook(bookId)?.storedPath
+            ?: app.pluginCatalog.get(bookId)?.storedPath
+            ?: return null
+        return EpubCover.loadBitmap(File(storedPath))
     }
 
     private fun restartLoop() {
@@ -1195,6 +1217,7 @@ class TtsController(
         _state.update {
             it.copy(sentence = s, sentenceIndex = index, snippet = s?.text.orEmpty())
         }
+        emitSpoken(s)
         focusChapter(s)
         updateSessionMetadata()
         TtsPlaybackService.refresh()
@@ -1211,6 +1234,7 @@ class TtsController(
         _state.update {
             it.copy(sentence = s, sentenceIndex = heardIndex, snippet = s.text)
         }
+        emitSpoken(s)
         focusChapter(s)
         updateSessionMetadata()
         TtsPlaybackService.refresh()

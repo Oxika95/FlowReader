@@ -7,8 +7,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.personal.flowreader.FlowApp
-import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.BookItem
+import com.personal.flowreader.data.PositionDomain
+import com.personal.flowreader.data.PositionSource
 import com.personal.flowreader.data.ProgressUpdate
+import com.personal.flowreader.data.ReadingSessionId
+import com.personal.flowreader.plugin.store.toItem
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.PluginSource
 import com.personal.flowreader.plugin.api.PluginCapability
@@ -82,7 +86,7 @@ sealed interface PluginSection {
 
 data class PluginTabUi(
     val manifest: PluginManifest,
-    val books: List<ProgressEntity> = emptyList(),
+    val books: List<BookItem> = emptyList(),
     val libraryMeta: Map<String, PluginLibraryMeta> = emptyMap(),
     val section: PluginSection = manifest.lists.firstOrNull()?.let { PluginSection.Library(it.id) }
         ?: PluginSection.Search,
@@ -127,7 +131,7 @@ data class PluginTabUi(
     val message: String? = null,
     val error: String? = null,
 ) {
-    val visibleBooks: List<ProgressEntity>
+    val visibleBooks: List<BookItem>
         get() = if (listBookIds.isEmpty()) emptyList() else books.filter { it.bookId in listBookIds }
 
     val anyOverlay: Boolean
@@ -176,7 +180,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
 
     fun refreshLocal() {
         viewModelScope.launch {
-            val rows = withContext(Dispatchers.IO) { flow.catalog.listPlugin(pluginId) }
+            val rows = withContext(Dispatchers.IO) { flow.pluginCatalog.list(pluginId).map { it.toItem(pluginId) } }
             val (ids, listRows) = withContext(Dispatchers.IO) { membership(_ui.value.section) }
             val meta = withContext(Dispatchers.IO) { books.libraryMetas(rows.map { it.bookId }) }
             val storyLists = withContext(Dispatchers.IO) { storyLists() }
@@ -481,7 +485,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     private suspend fun loadStory(bookId: String): PluginStory {
         val (session, splash) = books.readSplashBundle(bookId)
             ?: throw PluginException(PluginErrorCode.Error, "Story is not cached")
-        val progress = flow.db.progress().get(bookId)
+        val progress = flow.pluginCatalog.get(bookId)?.position
         val dir = PluginSessionStore.dir(dataDir, session.workId)
         val listedIn = PluginMembershipStore.listsContaining(dataDir, listIds, session.workId)
         val tocUrls = session.toc.map { it.url }
@@ -502,10 +506,9 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             toc = session.toc,
             downloadedCount = PluginSessionStore.cachedChapterCount(dir, session.toc.size),
             cachedIndices = PluginSessionStore.cachedChapterIndices(dir, session.toc.size),
-            readingProgress = progress?.readingProgress ?: 0f,
+            readingProgress = progress?.fraction ?: 0f,
             chapterIndex = PluginSessionStore.savedChapter(session.toc, progress?.chapterHref.orEmpty(), progress?.chapterIndex ?: 0),
-            hasSavedPosition = progress != null &&
-                (progress.chapterIndex > 0 || progress.blockIndex > 0 || progress.charOffset > 0),
+            hasSavedPosition = progress?.hasProgress == true,
             cacheLevel = session.cacheLevel,
             cleanup = session.cleanup,
             listedIn = listedIn,
@@ -625,7 +628,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                 withContext(Dispatchers.IO) {
                     // ToC first: storing it applies a site position waiting for it.
                     val toc = books.openStory(bookId).toc
-                    val row = flow.db.progress().get(bookId)
+                    val row = flow.pluginCatalog.get(bookId)?.position
                     val start = if (row == null) 0 else PluginSessionStore.savedChapter(toc, row.chapterHref, row.chapterIndex)
                     startAndSnapshot(bookId, start)
                 }
@@ -674,13 +677,15 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                 append(ch.blocks.joinToString("\n\n") { it.text })
             }
         }
-        flow.catalog.upsertPluginBook(
+        flow.pluginCatalog.upsertBook(
+            pluginId = pluginId,
             bookId = started.bookId,
             title = started.title,
             sourceUri = started.workUrl,
-            sourceKind = pluginId,
             text = text.ifBlank { started.title },
             startChapter = started.startIndex,
+            chapterHref = started.toc.getOrNull(started.startIndex)?.url.orEmpty(),
+            chapterCount = started.toc.size,
         )
         return started
     }
@@ -710,7 +715,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             _ui.update { it.copy(busy = true, error = null) }
             try {
                 withContext(Dispatchers.IO) {
-                    flow.catalog.removePluginMembership(story.bookId)
+                    flow.pluginCatalog.removeMembership(story.bookId)
                     PluginMembershipStore.removeFromAll(dataDir, listIds, story.workId)
                     books.deleteLocalSession(story.bookId)
                     story.listedIn.filter { manifest.list(it)?.syncable == true }.forEach { listId ->
@@ -861,7 +866,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             _ui.update { it.copy(busy = true, error = null) }
             try {
                 val refreshed = withContext(Dispatchers.IO) {
-                    if (flow.db.progress().get(story.bookId) == null) {
+                    if (flow.pluginCatalog.get(story.bookId) == null) {
                         upsertWork(
                             PluginWork(
                                 id = story.workId,
@@ -874,7 +879,8 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                     }
                     flow.progress.submit(
                         ProgressUpdate(
-                            bookId = story.bookId,
+                            session = ReadingSessionId(PositionDomain.Plugin, story.bookId),
+                            rowKey = story.bookId,
                             chapterIndex = index,
                             blockIndex = 0,
                             charOffset = 0,
@@ -882,6 +888,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                             at = System.currentTimeMillis(),
                             anchorText = "",
                             chapterHref = story.toc.getOrNull(index)?.url.orEmpty(),
+                            source = PositionSource.PluginSeek,
                         ),
                     )
                     flow.progress.drain()

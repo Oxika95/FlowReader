@@ -13,8 +13,9 @@ import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.LibraryTabId
 import com.personal.flowreader.data.LibraryViewMode
-import com.personal.flowreader.data.ProgressEntity
-import com.personal.flowreader.data.QueEntry
+import com.personal.flowreader.data.BookItem
+import com.personal.flowreader.data.QueueItemEntity
+import com.personal.flowreader.data.TextIngestResult
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.InstalledPlugin
@@ -40,8 +41,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class LibraryUi(
-    val books: List<ProgressEntity> = emptyList(),
-    val que: List<QueEntry> = emptyList(),
+    val books: List<BookItem> = emptyList(),
+    val que: List<QueueItemEntity> = emptyList(),
     val viewMode: LibraryViewMode = LibraryViewMode.List,
     val tab: LibraryTabId = LibraryTabId.Files,
     val filtersGlobal: List<FilterRule> = emptyList(),
@@ -53,6 +54,8 @@ data class LibraryUi(
     val error: String? = null,
     /** When set, MainActivity should navigate to the reader for this bookId. */
     val pendingOpenBookId: String? = null,
+    /** When set, MainActivity should open the Queue stream at this Queue entry. */
+    val pendingOpenQueId: String? = null,
     /** A shared page whose rule has a Next selector: ask before crawling. */
     val crawlPrompt: WebImportRequest? = null,
     val crawlProgress: CrawlProgress? = null,
@@ -80,43 +83,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     val ui: StateFlow<LibraryUi> = _ui
 
     val pluginActions: LibraryPluginActions = object : LibraryPluginActions {
-        override fun ingestAndOpen(title: String, text: String) {
-            ingestPluginText(title, text, enqueue = false, open = true)
-        }
-
-        override fun ingestAndQueue(title: String, text: String) {
-            ingestPluginText(title, text, enqueue = true, open = false)
-        }
-
         override fun openBook(bookId: String) {
             _ui.value = _ui.value.copy(
                 busy = false,
                 error = null,
                 pendingOpenBookId = bookId,
             )
-        }
-
-        override fun queueBook(bookId: String) {
-            viewModelScope.launch {
-                _ui.value = _ui.value.copy(busy = true, error = null, message = null)
-                try {
-                    val row = withContext(Dispatchers.IO) {
-                        flow.catalog.enqueueExisting(bookId)
-                        flow.db.progress().get(bookId)
-                    }
-                    val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
-                    _ui.value = _ui.value.copy(
-                        que = que,
-                        busy = false,
-                        message = "Queued ${row?.title ?: "book"}",
-                    )
-                } catch (t: Throwable) {
-                    _ui.value = _ui.value.copy(
-                        busy = false,
-                        error = t.message ?: "Could not queue book",
-                    )
-                }
-            }
         }
 
         override fun setBusy(busy: Boolean) {
@@ -169,7 +141,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun booksForTab(tab: LibraryTabId): List<ProgressEntity> =
+    private suspend fun booksForTab(tab: LibraryTabId): List<BookItem> =
         when (tab) {
             is LibraryTabId.Custom -> flow.catalog.listTab(tab.tabId)
             else -> flow.catalog.list()
@@ -326,8 +298,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                                 libraryTabId = shelf,
                             )
                         }
-                        refreshAfterIngest(tabForShelf(shelf), "Added ${result.progress.title}")
-                        autoPlayShare(result.progress.bookId)
+                        refreshAfterIngest(tabForShelf(shelf), "Added ${result.title}")
+                        autoPlay(result)
                     }
                     ShareDispatch.KIND_QUEUE -> {
                         val text = intent.getStringExtra(ShareDispatch.EXTRA_TEXT).orEmpty()
@@ -340,8 +312,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                                 enqueue = true,
                             )
                         }
-                        refreshAfterIngest(LibraryTabId.Que, "Queued ${result.progress.title}")
-                        autoPlayShare(result.progress.bookId)
+                        refreshAfterIngest(LibraryTabId.Que, "Queued ${result.title}")
+                        autoPlay(result)
                     }
                     ShareDispatch.KIND_CRAWL -> {
                         val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
@@ -394,7 +366,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         refreshAfterIngest(
                             tabForShelf(action.libraryTabId),
-                            "Added ${result.progress.title}",
+                            "Added ${result.title}",
                         )
                     }
                     is ShareAction.ToQueue -> {
@@ -406,7 +378,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                                 enqueue = true,
                             )
                         }
-                        refreshAfterIngest(LibraryTabId.Que, "Queued ${result.progress.title}")
+                        refreshAfterIngest(LibraryTabId.Que, "Queued ${result.title}")
                     }
                     is ShareAction.Crawl ->
                         startWebImport(WebImportRequest(action.url, action.rule, action.landing, autoPlay = false))
@@ -518,9 +490,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     inLibrary = !landing.isQueue,
                     enqueue = landing.isQueue,
                     libraryTabId = landing.libraryShelfId,
+                    sourceUrl = request.url,
                 )
             }
-            finishWebImport(request, saved.progress, saved.progress.title)
+            finishWebImport(request, saved, saved.title)
             return
         }
         val result = withContext(Dispatchers.IO) {
@@ -530,9 +503,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 inLibrary = !landing.isQueue,
                 enqueue = landing.isQueue,
                 libraryTabId = landing.libraryShelfId,
+                sourceUrl = request.url,
             )
         }
-        finishWebImport(request, result.progress, result.progress.title)
+        finishWebImport(request, result, result.title)
     }
 
     private suspend fun crawlWeb(request: WebImportRequest) {
@@ -559,29 +533,39 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     inLibrary = !landing.isQueue,
                     enqueue = landing.isQueue,
                     libraryTabId = landing.libraryShelfId,
+                    sourceUrl = request.url,
                 )
             }
             val count = result.pages.size
-            val label = "${saved.progress.title} ($count ${if (count == 1) "chapter" else "chapters"})"
-            finishWebImport(request, saved.progress, label)
+            val label = "${saved.title} ($count ${if (count == 1) "chapter" else "chapters"})"
+            finishWebImport(request, saved, label)
             result.error?.let { _ui.value = _ui.value.copy(error = "Crawl stopped early: $it") }
         } finally {
             _ui.value = _ui.value.copy(crawlProgress = null)
         }
     }
 
-    private suspend fun finishWebImport(request: WebImportRequest, row: ProgressEntity, label: String) {
+    private suspend fun finishWebImport(request: WebImportRequest, result: TextIngestResult, label: String) {
         val landing = request.landing
         refreshAfterIngest(tabForLanding(landing), if (landing.isQueue) "Queued $label" else "Added $label")
-        if (request.autoPlay) autoPlayShare(row.bookId)
+        if (request.autoPlay) autoPlay(result)
     }
 
-    /** Auto Play on Share: open the shared book in the reader, which starts TTS once loaded. */
-    private fun autoPlayShare(bookId: String) {
+    /**
+     * Auto Play on Share: open the shared item in the reader, which starts TTS once loaded. A
+     * queued share opens the Queue at its entry.
+     */
+    private fun autoPlay(result: TextIngestResult) {
         val state = tts.state.value
         if (!state.autoPlayOnShare || (state.playing && !state.shareInterruptsPlayback)) return
-        flow.pendingSharePlay = bookId
-        _ui.value = _ui.value.copy(pendingOpenBookId = bookId)
+        val queId = result.queItem?.queId
+        if (queId != null) {
+            flow.pendingSharePlay = queId
+            _ui.value = _ui.value.copy(pendingOpenQueId = queId)
+        } else {
+            flow.pendingSharePlay = result.bookId
+            _ui.value = _ui.value.copy(pendingOpenBookId = result.bookId)
+        }
     }
 
     private suspend fun refreshAfterIngest(tab: LibraryTabId, message: String) {
@@ -626,7 +610,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 if (landing.isQueue) {
-                    withContext(Dispatchers.IO) { flow.catalog.enqueueExisting(row.bookId) }
+                    val item = withContext(Dispatchers.IO) { flow.catalog.enqueueExisting(row.bookId) }
                     val books = withContext(Dispatchers.IO) { booksForTab(LibraryTabId.Que) }
                     val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
                     flow.settings.setLibraryTabId(LibraryTabId.Que.persistKey)
@@ -636,7 +620,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                         tab = LibraryTabId.Que,
                         busy = false,
                         message = "Queued ${row.title}",
-                        pendingOpenBookId = row.bookId,
+                        pendingOpenQueId = item.queId,
                     )
                 } else {
                     val tab = tabForLanding(landing)
@@ -663,78 +647,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(pendingOpenBookId = null)
     }
 
-    private fun ingestPluginText(title: String, text: String, enqueue: Boolean, open: Boolean) {
-        viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null, message = null)
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    flow.catalog.addText(
-                        text = text,
-                        displayTitle = title,
-                        inLibrary = false,
-                        enqueue = enqueue,
-                    )
-                }
-                val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
-                val tab = if (enqueue) LibraryTabId.Que else _ui.value.tab
-                if (enqueue) {
-                    flow.settings.setLibraryTabId(tab.persistKey)
-                }
-                val msg = if (enqueue) {
-                    "Queued ${result.progress.title}"
-                } else {
-                    "Opened ${result.progress.title}"
-                }
-                _ui.value = _ui.value.copy(
-                    que = que,
-                    tab = tab,
-                    busy = false,
-                    message = msg,
-                    pendingOpenBookId = if (open) result.progress.bookId else null,
-                )
-            } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
-                    busy = false,
-                    error = t.message ?: "Could not import plugin text",
-                )
-            }
-        }
-    }
-
-    fun ingestSharedText(text: String, toQue: Boolean) {
-        viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null, message = null)
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    flow.catalog.addText(
-                        text = text,
-                        inLibrary = !toQue,
-                        enqueue = toQue,
-                    )
-                }
-                val books = withContext(Dispatchers.IO) { flow.catalog.list() }
-                val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
-                val tab = if (toQue) LibraryTabId.Que else LibraryTabId.Files
-                flow.settings.setLibraryTabId(tab.persistKey)
-                val msg = if (toQue) {
-                    "Queued ${result.progress.title}"
-                } else {
-                    "Added ${result.progress.title}"
-                }
-                _ui.value = _ui.value.copy(
-                    books = books,
-                    que = que,
-                    tab = tab,
-                    busy = false,
-                    message = msg,
-                )
-            } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
-                    busy = false,
-                    error = t.message ?: "Could not import shared text",
-                )
-            }
-        }
+    fun consumePendingOpenQue() {
+        _ui.value = _ui.value.copy(pendingOpenQueId = null)
     }
 
     /** Queue / route clipboard text through the Import router. */
@@ -758,7 +672,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Queue row ids in their new order. */
     fun reorderQue(ids: List<String>) {
-        val byId = _ui.value.que.associateBy { it.item.id }
+        val byId = _ui.value.que.associateBy { it.queId }
         _ui.value = _ui.value.copy(que = ids.mapNotNull { byId[it] })
         viewModelScope.launch {
             withContext(Dispatchers.IO) { flow.catalog.reorderQue(ids) }

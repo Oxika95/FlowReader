@@ -62,8 +62,8 @@ internal class QueuePlayback(private val flow: FlowApp) {
                 .collect { chapter -> if (chapter != null) onSpokenChapter(chapter) }
         }
         flow.appScope.launch {
-            flow.db.que().observeAll()
-                .map { rows -> rows.map { it.id to it.done } }
+            flow.db.queue().observeAll()
+                .map { rows -> rows.map { it.queId to it.done } }
                 .distinctUntilChanged()
                 .debounce(ROWS_DEBOUNCE_MS)
                 .collect { applyRows() }
@@ -98,12 +98,20 @@ internal class QueuePlayback(private val flow: FlowApp) {
         try {
             val old = a.ref.book
             val fresh = QueueStreams.build(flow, reuse = old)
-            when (val change = QueueChange.classify(old, fresh)) {
+            val change = QueueChange.classify(old, fresh)
+            if (change != QueueChange.Same) {
+                flow.positionLog.event(
+                    "QUEUE_CHANGE",
+                    "change" to change.name,
+                    "from" to old.signature,
+                    "to" to fresh.signature,
+                )
+            }
+            when (change) {
                 QueueChange.Same -> Unit
                 QueueChange.DoneOnly, QueueChange.Appended -> {
                     a.ref.book = fresh
                     a.session.updateSource(fresh.reader.chapterTitles, a.ref.contentKey)
-                    flow.progress.setLocator(QueueBook.ID, fresh.locator(a.session))
                     _updates.emit(QueueUpdate(change, old, a.ref, a.session))
                 }
                 QueueChange.Edited -> rebuild(a, old, fresh)
@@ -129,7 +137,6 @@ internal class QueuePlayback(private val flow: FlowApp) {
             ?.let { Locus(it.chapterIndex, it.blockIndex, it.start) }
         val target = spoken?.let { fresh.remap(it, old) } ?: Locus(0, 0, 0)
         val session = QueueStreams.open(flow, ref, target.chapterIndex)
-        flow.progress.setLocator(QueueBook.ID, fresh.locator(session))
         withContext(Dispatchers.Main) {
             flow.tts.setSpeechFilters(ref.global, ref.groups, fresh.segmentAt(target.chapterIndex)?.local.orEmpty())
             flow.tts.attach(session, ReaderSessions.readable(session.window.value, target))

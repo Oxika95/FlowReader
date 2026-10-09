@@ -3,7 +3,7 @@ package com.personal.flowreader.ui.reader
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.Locus
-import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.ReadingPosition
 import com.personal.flowreader.data.ReadingSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +32,7 @@ internal class ReaderQueueMode(
      * is reading (or no row was given), start at the spoken sentence instead. A stream TTS is
      * still attached to is reused with its holder, so live changes keep reaching it.
      */
-    suspend fun open(savedLocus: suspend (ProgressEntity, ReaderBook) -> Locus): Start {
+    suspend fun open(savedLocus: (ReadingPosition, ReaderBook) -> Locus): Start {
         val global = flow.settings.globalFiltersOnce()
         val groups = flow.settings.groupFiltersOnce()
         val live = flow.queue.current()
@@ -45,7 +45,8 @@ internal class ReaderQueueMode(
         ref = r
         val queue = r.book
         val spoken = spokenLocus(queue)
-        val tapped = queId?.let(queue::indexOfQue)?.takeIf { it >= 0 }
+        val last = if (queId == null) withContext(Dispatchers.IO) { flow.db.queue().state()?.currentQueId } else null
+        val tapped = (queId ?: last)?.let(queue::indexOfQue)?.takeIf { it >= 0 }
         val useSpoken = spoken != null && (tapped == null || tapped == queue.segmentIndexOf(spoken.chapterIndex))
         val startSeg = when {
             useSpoken -> queue.segmentIndexOf(spoken!!.chapterIndex)
@@ -57,8 +58,9 @@ internal class ReaderQueueMode(
         refreshToc()
         applySegment(startSeg)
         if (useSpoken) return Start(spoken!!, reused?.second)
-        val row = flow.db.progress().get(segment.bookId) ?: throw IllegalArgumentException("Book not found")
-        return Start(queue.toGlobal(startSeg, savedLocus(row, segment.book)), reused?.second, row.anchorText)
+        val item = withContext(Dispatchers.IO) { flow.catalog.getQue(segment.queId) }
+            ?: throw IllegalArgumentException("Queue item not found")
+        return Start(queue.toGlobal(startSeg, savedLocus(item.position, segment.book)), reused?.second, item.position.anchorText)
     }
 
     /** The sentence TTS is reading in the Queue stream, mapped into [queue] (rows may have moved). */

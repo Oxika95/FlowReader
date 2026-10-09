@@ -12,9 +12,10 @@ import kotlinx.coroutines.sync.withLock
 class PluginDataEraser(private val app: FlowApp) {
     /** Returns how many library stories were removed. */
     suspend fun erase(pluginId: String): Int = TwoWaySync.lock.withLock {
-        val rows = app.catalog.listPlugin(pluginId)
+        val rows = app.pluginCatalog.list(pluginId)
         app.pluginBooks.cancelUpkeep(rows.map { it.bookId })
-        rows.forEach { app.catalog.removePluginMembership(it.bookId) }
+        rows.forEach { app.pluginCatalog.removeMembership(it.bookId) }
+        app.pluginDbs.delete(pluginId)
         app.pluginManager.eraseData(pluginId)
         app.pluginSync.changed(pluginId)
         rows.size

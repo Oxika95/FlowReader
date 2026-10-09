@@ -67,7 +67,8 @@ opened) and the newest post date. Sync never adds or deletes stories for a brows
   and syncs that chapter to the site as read (fetching or preloading alone doesn't sync)
 - Each chapter opens with its title as a heading (like an EPUB chapter), shown and spoken; a body
   that already starts with the title isn't repeated
-- **Saved position** (the progress row) is the one anchor: the cache bar's locus, the partial
+- **Saved position** (the story's row in the plugin's own database, `plugin_<id>.db`; see
+  [data.md](data.md#room-flowdb)) is the one anchor: the cache bar's locus, the partial
   download start, and the stream window all use it. **Hold the cache bar** to open a chapter slider
   (with − / + for exact steps); **Save** asks before replacing an existing position, writes the
   start of that chapter, then downloads ahead from it

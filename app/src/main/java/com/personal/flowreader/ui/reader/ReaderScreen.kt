@@ -422,7 +422,7 @@ fun ReaderScreen(
     LaunchedEffect(tts.sentence, tts.playing) {
         if (!tts.playing) return@LaunchedEffect
         tts.sentence?.let { s ->
-            vm.onLocus(Locus(s.chapterIndex, s.blockIndex, s.start))
+            vm.onSpoken(Locus(s.chapterIndex, s.blockIndex, s.start))
         }
     }
 

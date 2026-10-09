@@ -20,27 +20,64 @@ Theme, TTS, filters JSON, share router/parse rules — see [settings.md](setting
 
 ## Room (`flow.db`)
 
-[`ProgressDb.kt`](../app/src/main/java/com/personal/flowreader/data/ProgressDb.kt), schema version 9.
-Alpha: no migrations; a version bump drops every table (`fallbackToDestructiveMigration`).
+[`ProgressDb.kt`](../app/src/main/java/com/personal/flowreader/data/ProgressDb.kt), schema version 10,
+schemas exported to `app/schemas/`. Schema changes ship a `Migration` (data is kept); versions 1–8
+and downgrades are destructive. Each domain owns its rows and positions; nothing is shared.
 
 | Table | Contents |
 |-------|----------|
-| `progress` | Locus (`chapterIndex`, `blockIndex`, `charOffset`) plus `chapterHref` and `anchorText` to re-find it, `readingProgress`, `inLibrary`, `libraryTabId`, `sourceKind` (`Imported` / `Linked` / plugin) |
-| `book_filters` | Per-book Local filter JSON |
-| `que_items` | Queue rows (`done`, `sortOrder`) |
+| `library_books` | Files / shelf books: `bookId` (SHA-256), `title`, `storedPath`, `sourceUri`, `sourceKind` (`Imported` / `Linked`), `shelfId`, `addedAt`, `localFilters`, position |
+| `queue_items` | One row per Queue entry, keyed by `queId`: its own copy of the file reference (`bookId`, `storedPath`, `sourceUri`, `sourceKind`), `sourceUrl` (web imports), `origin` (`Text` / `Web` / `File` / `Library` / `Plugin`), `sortOrder`, `done`, `doneAt`, `localFilters`, position |
+| `queue_state` | Single row: `currentQueId` (last entry the Queue stream wrote a position for) |
+
+Plugin stories live in one Room database per plugin, `plugin_<id>.db`
+([`PluginDb.kt`](../app/src/main/java/com/personal/flowreader/plugin/store/PluginDb.kt), table
+`plugin_books`: `bookId`, `workId`, `title`, `storedPath`, `workUrl`, `addedAt`, `localFilters`,
+position). Columns are app-defined. Erasing a plugin's data deletes its database.
+
+Every table embeds the same position columns
+([`ReadingPosition.kt`](../app/src/main/java/com/personal/flowreader/data/ReadingPosition.kt)):
+`chapterIndex`, `chapterHref`, `blockIndex`, `charOffset`, `anchorText`, `fraction`, plus provenance:
+`positionAt` (write time), `positionSessionAt` (reading session start), `positionSource`
+(`Reader` / `Tts` / `PluginSeek` / `Sync` / `Migration`).
+
+Migration 9 → 10 ([`LegacyMigration.kt`](../app/src/main/java/com/personal/flowreader/data/LegacyMigration.kt),
+pure mapper JVM-tested): library rows move to `library_books`; each old Queue row gets its own
+`queue_items` row with a copy of the book's position; plugin rows go to a staging table that
+`PluginStorageMigrator` drains into each installed plugin's database at startup (plugin reads wait
+for it).
 
 ### Reading position writes
 
 All position writes go through `FlowApp.progress`
-([`ProgressWriter.kt`](../app/src/main/java/com/personal/flowreader/data/ProgressWriter.kt)): debounced,
-app-scoped (outlives the reader), and per book a write older than the last stored one is dropped.
-Sources: reader jumps (`ReaderViewModel.persist`, only after load and only once the position moved),
-and every spoken TTS sentence (`FlowApp.persistSpokenPosition`, also with the reader closed). The
-reader registers a `ProgressLocator` per book that adds whole-book `readingProgress`, `chapterHref`
-and a 64-character `anchorText` to each write. The plugin story card's position slider also writes
-here (chapter start, blank anchor). For plugin books each write calls
-`PluginBookStore.scheduleMaintain`, which on a chapter change syncs the site and downloads / cleans
-up in its own job (newer chapter cancels it), never inside the writer.
+([`ProgressWriter.kt`](../app/src/main/java/com/personal/flowreader/data/ProgressWriter.kt)): one
+app-scoped, debounced, serialized writer. Each `ProgressUpdate` names its `ReadingSessionId`
+(domain, row key, opened-at) and a row key; `AppPositionStore` writes the position columns of
+exactly that row in that domain's table and nothing else. A write for a missing row is dropped.
+
+Each reader launch opens a `ReadingSession` with its own `ReadingSessionId` and `ProgressLocator`,
+so a locus is always mapped by the session it came from:
+
+- Library / plugin books: row = `bookId`.
+- Queue stream: the session's key is blank; the locator maps each locus through the stream's own
+  segments to the `queId` under it. Queue writes never touch `library_books` or plugin rows.
+
+Sources: reader jumps (`ReaderViewModel.persist`, only after load and once moved), every spoken
+TTS sentence (`TtsController.spoken` carries the session that spoke it; `FlowApp.persistSpokenPosition`
+writes through that session, also with the reader closed), the plugin card's position slider
+(`PluginSeek`), and two-way sync (`Sync`). Plugin-domain writes call
+`PluginBookStore.scheduleMaintain`, which on a chapter change syncs the site and downloads /
+cleans up in its own job. A plugin story read through the Queue writes its Queue row only, so it
+does not trigger downloads ahead.
+
+### Position log
+
+[`PositionLog.kt`](../app/src/main/java/com/personal/flowreader/data/PositionLog.kt):
+`filesDir/logs/positions.log` (rotated to `.1` past 512 KB), appended to the Synth log dump. Lines
+are tab-separated: every write (`POS`, source, session, `domain:row`, locus, fraction, href,
+`written` / `noRow`) and events: `QUEUE_ADD` (with caller frames), `QUEUE_REMOVE`, `QUEUE_CHANGE`,
+`INTENT` (share intents: action, kind, activity recreated, launched from history, extras hash),
+`MIGRATE`, `MIGRATE_FAILED`.
 
 Locus meaning:
 

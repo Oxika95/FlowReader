@@ -71,7 +71,7 @@ class PluginListWriter(private val app: FlowApp) {
         val siteIds = fromSite.map { it.id }.toSet()
         val rows = fromSite + local.filter { it.id !in siteIds && it.id !in remove }
         PluginMembershipStore.write(dir, listId, rows)
-        fromSite.filter { it.id !in localIds || app.db.progress().get(manager.bookIdFor(pluginId, it.id)) == null }
+        fromSite.filter { it.id !in localIds || app.pluginCatalog.get(manager.bookIdFor(pluginId, it.id)) == null }
             .forEach { work -> runCatching { upsertWork(pluginId, work) } }
     }
 
@@ -81,7 +81,7 @@ class PluginListWriter(private val app: FlowApp) {
         val listIds = storyListIds(pluginId)
         workIds.filter { PluginMembershipStore.listsContaining(dir, listIds, it).isEmpty() }.forEach { workId ->
             val bookId = manager.bookIdFor(pluginId, workId)
-            app.catalog.removePluginMembership(bookId)
+            app.pluginCatalog.removeMembership(bookId)
             app.pluginBooks.deleteLocalSession(bookId)
         }
     }
@@ -89,7 +89,7 @@ class PluginListWriter(private val app: FlowApp) {
     /** Library (catalog) row for [work], downloading its cover once. */
     suspend fun upsertWork(pluginId: String, work: PluginWork) {
         val bookId = manager.bookIdFor(pluginId, work.id)
-        val existing = app.db.progress().get(bookId)
+        val existing = app.pluginCatalog.get(bookId)
         var coverBytes: ByteArray? = null
         if (work.cover.isNotBlank()) {
             val path = existing?.storedPath
@@ -99,11 +99,11 @@ class PluginListWriter(private val app: FlowApp) {
                 ).absolutePath
             coverBytes = app.pluginBooks.downloadCover(work.cover, path)
         }
-        app.catalog.upsertPluginCatalogEntry(
+        app.pluginCatalog.upsertCatalogEntry(
+            pluginId = pluginId,
             bookId = bookId,
             title = work.title,
             sourceUri = work.url,
-            sourceKind = pluginId,
             coverBytes = coverBytes,
         )
     }

@@ -2,6 +2,7 @@ package com.personal.flowreader.data
 
 import androidx.room.Dao
 import androidx.room.Database
+import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Insert
@@ -11,151 +12,191 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import kotlinx.coroutines.flow.Flow
 
-@Entity(tableName = "progress")
-data class ProgressEntity(
+/** A book on the Files tab or a custom shelf. */
+@Entity(tableName = "library_books")
+data class LibraryBookEntity(
+    /** SHA-256 of the file bytes. */
     @PrimaryKey val bookId: String,
     val title: String,
     val storedPath: String,
+    /** Persisted SAF URI for Linked books; blank for Imported copies. */
     val sourceUri: String = "",
+    /** [BookSource] name. */
     val sourceKind: String = BookSource.Imported.name,
-    val chapterIndex: Int,
-    val blockIndex: Int,
-    val charOffset: Int,
-    val updatedAt: Long,
-    /** When true, the book appears on the Files tab. Que-only shares stay false. */
-    val inLibrary: Boolean = true,
-    /** 0–1 reading progress matching the eReader header bar (block index / last block). */
-    val readingProgress: Float = 0f,
-    /**
-     * Custom library tab id when sorted into a user shelf. Blank = Files tab.
-     * Ignored when [inLibrary] is false (Que-only).
-     */
-    val libraryTabId: String = "",
-    /** Text at the locus, to re-find it if indices drift (see `LocusAnchor`). */
-    val anchorText: String = "",
-    /** Stable key of the locus chapter (EPUB entry path), checked before [chapterIndex]. */
-    val chapterHref: String = "",
+    /** Custom shelf id; blank = Files tab. */
+    val shelfId: String = "",
+    val addedAt: Long,
+    /** Local filter rules (JSON); blank = none. */
+    val localFilters: String = "",
+    @Embedded val position: ReadingPosition = ReadingPosition(),
 )
 
-@Entity(tableName = "book_filters")
-data class BookFiltersEntity(
-    @PrimaryKey val bookId: String,
-    val rulesJson: String,
-)
-
+/**
+ * One Queue entry. Owns its file reference and its own reading position: two entries with the
+ * same content, or an entry whose book is also in the library, never share a position.
+ */
 @Entity(
-    tableName = "que_items",
+    tableName = "queue_items",
     indices = [
         Index(value = ["bookId"]),
         Index(value = ["sortOrder", "done"]),
     ],
 )
-data class QueItemEntity(
-    @PrimaryKey val id: String,
+data class QueueItemEntity(
+    @PrimaryKey val queId: String,
+    /** Content id: SHA-256 of the stored file, or a plugin book id (`rr:…`). */
     val bookId: String,
+    val title: String,
+    val storedPath: String,
+    val sourceUri: String = "",
+    /** [BookSource] name, or the plugin id for plugin stories. */
+    val sourceKind: String = BookSource.Imported.name,
+    /** Web page the entry was imported from; blank for text, files and plugin stories. */
+    val sourceUrl: String = "",
+    /** [QueueOrigin] name. */
+    val origin: String = QueueOrigin.Text.name,
     val sortOrder: Int,
     val addedAt: Long,
     val done: Boolean = false,
+    val doneAt: Long = 0L,
+    val localFilters: String = "",
+    @Embedded val position: ReadingPosition = ReadingPosition(),
 )
 
-/** Que row joined with its progress/title for the Que tab UI. */
-data class QueEntry(
-    val item: QueItemEntity,
-    val progress: ProgressEntity,
+/** How a Queue entry was added. */
+enum class QueueOrigin { Text, Web, File, Library, Plugin }
+
+/** The Queue as a whole (single row, [id] 0): the entry the stream was last reading. */
+@Entity(tableName = "queue_state")
+data class QueueStateEntity(
+    @PrimaryKey val id: Int = 0,
+    val currentQueId: String = "",
+    val updatedAt: Long = 0L,
 )
 
 @Dao
-interface ProgressDao {
-    @Query("SELECT * FROM progress WHERE bookId = :id")
-    suspend fun get(id: String): ProgressEntity?
+interface LibraryDao {
+    @Query("SELECT * FROM library_books WHERE bookId = :id")
+    suspend fun get(id: String): LibraryBookEntity?
 
-    @Query("SELECT * FROM progress ORDER BY updatedAt DESC LIMIT 1")
-    suspend fun latest(): ProgressEntity?
+    @Query("SELECT * FROM library_books WHERE bookId IN (:ids)")
+    suspend fun getMany(ids: List<String>): List<LibraryBookEntity>
 
-    @Query("SELECT * FROM progress WHERE inLibrary = 1 AND libraryTabId = '' ORDER BY updatedAt DESC")
-    suspend fun library(): List<ProgressEntity>
+    @Query("SELECT * FROM library_books WHERE shelfId = :shelfId ORDER BY MAX(addedAt, positionAt) DESC")
+    suspend fun shelf(shelfId: String): List<LibraryBookEntity>
+
+    @Query("SELECT * FROM library_books ORDER BY MAX(addedAt, positionAt) DESC")
+    suspend fun all(): List<LibraryBookEntity>
+
+    @Query("UPDATE library_books SET shelfId = '' WHERE shelfId = :shelfId")
+    suspend fun clearShelf(shelfId: String)
+
+    @Query("SELECT COUNT(*) FROM library_books WHERE storedPath = :storedPath")
+    suspend fun countForPath(storedPath: String): Int
+
+    /** Returns -1 when the row already exists. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(row: LibraryBookEntity): Long
 
     @Query(
-        "SELECT * FROM progress WHERE inLibrary = 1 AND libraryTabId = :tabId ORDER BY updatedAt DESC",
+        "UPDATE library_books SET title = :title, storedPath = :storedPath, sourceUri = :sourceUri, " +
+            "sourceKind = :sourceKind, shelfId = :shelfId WHERE bookId = :id",
     )
-    suspend fun libraryTab(tabId: String): List<ProgressEntity>
+    suspend fun updateFile(id: String, title: String, storedPath: String, sourceUri: String, sourceKind: String, shelfId: String)
 
-    @Query("UPDATE progress SET libraryTabId = '' WHERE libraryTabId = :tabId")
-    suspend fun clearLibraryTab(tabId: String)
+    @Query("UPDATE library_books SET localFilters = :json WHERE bookId = :id")
+    suspend fun setLocalFilters(id: String, json: String): Int
 
     @Query(
-        "SELECT * FROM progress WHERE sourceKind = :sourceKind ORDER BY updatedAt DESC",
+        "UPDATE library_books SET chapterIndex = :chapterIndex, chapterHref = :chapterHref, " +
+            "blockIndex = :blockIndex, charOffset = :charOffset, anchorText = :anchorText, fraction = :fraction, " +
+            "positionAt = :positionAt, positionSessionAt = :positionSessionAt, positionSource = :positionSource " +
+            "WHERE bookId = :id",
     )
-    suspend fun pluginLibrary(sourceKind: String): List<ProgressEntity>
+    suspend fun writePosition(
+        id: String,
+        chapterIndex: Int,
+        chapterHref: String,
+        blockIndex: Int,
+        charOffset: Int,
+        anchorText: String,
+        fraction: Float,
+        positionAt: Long,
+        positionSessionAt: Long,
+        positionSource: String,
+    ): Int
 
-    @Query("SELECT * FROM progress WHERE bookId IN (:ids)")
-    suspend fun getMany(ids: List<String>): List<ProgressEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(row: ProgressEntity)
-
-    @Query("DELETE FROM progress WHERE bookId = :id")
+    @Query("DELETE FROM library_books WHERE bookId = :id")
     suspend fun delete(id: String)
 }
 
 @Dao
-interface BookFiltersDao {
-    @Query("SELECT * FROM book_filters WHERE bookId = :id")
-    suspend fun get(id: String): BookFiltersEntity?
+interface QueueDao {
+    @Query("SELECT * FROM queue_items ORDER BY sortOrder ASC, addedAt ASC")
+    suspend fun all(): List<QueueItemEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(row: BookFiltersEntity)
+    @Query("SELECT * FROM queue_items ORDER BY sortOrder ASC, addedAt ASC")
+    fun observeAll(): Flow<List<QueueItemEntity>>
 
-    @Query("DELETE FROM book_filters WHERE bookId = :id")
-    suspend fun delete(id: String)
-}
+    @Query("SELECT * FROM queue_items WHERE queId = :queId")
+    suspend fun get(queId: String): QueueItemEntity?
 
-@Dao
-interface QueDao {
-    @Query("SELECT * FROM que_items ORDER BY sortOrder ASC, addedAt ASC")
-    suspend fun all(): List<QueItemEntity>
-
-    @Query("SELECT * FROM que_items ORDER BY sortOrder ASC, addedAt ASC")
-    fun observeAll(): Flow<List<QueItemEntity>>
-
-    @Query("SELECT * FROM que_items WHERE id = :id")
-    suspend fun get(id: String): QueItemEntity?
-
-    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM que_items")
+    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM queue_items")
     suspend fun maxSortOrder(): Int
 
-    @Query("SELECT COUNT(*) FROM que_items WHERE bookId = :bookId")
-    suspend fun countForBook(bookId: String): Int
+    @Query("SELECT COUNT(*) FROM queue_items WHERE storedPath = :storedPath")
+    suspend fun countForPath(storedPath: String): Int
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(row: QueItemEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(row: QueueItemEntity)
 
-    @Query("DELETE FROM que_items WHERE id = :id")
-    suspend fun delete(id: String)
+    @Query("DELETE FROM queue_items WHERE queId = :queId")
+    suspend fun delete(queId: String)
 
-    @Query("UPDATE que_items SET sortOrder = :sortOrder WHERE id = :id")
-    suspend fun setSortOrder(id: String, sortOrder: Int)
-
-    @Query("DELETE FROM que_items WHERE bookId = :bookId")
+    @Query("DELETE FROM queue_items WHERE bookId = :bookId")
     suspend fun deleteForBook(bookId: String)
 
-    @Query("SELECT * FROM que_items WHERE bookId = :bookId")
-    suspend fun forBook(bookId: String): List<QueItemEntity>
+    @Query("UPDATE queue_items SET sortOrder = :sortOrder WHERE queId = :queId")
+    suspend fun setSortOrder(queId: String, sortOrder: Int)
+
+    @Query("UPDATE queue_items SET done = 1, doneAt = :at WHERE queId = :queId AND done = 0")
+    suspend fun markDone(queId: String, at: Long)
+
+    @Query("UPDATE queue_items SET localFilters = :json WHERE queId = :queId")
+    suspend fun setLocalFilters(queId: String, json: String): Int
 
     @Query(
-        "SELECT * FROM que_items WHERE sortOrder > :afterOrder AND done = 0 " +
-            "ORDER BY sortOrder ASC, addedAt ASC LIMIT 1",
+        "UPDATE queue_items SET chapterIndex = :chapterIndex, chapterHref = :chapterHref, " +
+            "blockIndex = :blockIndex, charOffset = :charOffset, anchorText = :anchorText, fraction = :fraction, " +
+            "positionAt = :positionAt, positionSessionAt = :positionSessionAt, positionSource = :positionSource " +
+            "WHERE queId = :queId",
     )
-    suspend fun nextUndone(afterOrder: Int): QueItemEntity?
+    suspend fun writePosition(
+        queId: String,
+        chapterIndex: Int,
+        chapterHref: String,
+        blockIndex: Int,
+        charOffset: Int,
+        anchorText: String,
+        fraction: Float,
+        positionAt: Long,
+        positionSessionAt: Long,
+        positionSource: String,
+    ): Int
+
+    @Query("SELECT * FROM queue_state WHERE id = 0")
+    suspend fun state(): QueueStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun setState(state: QueueStateEntity)
 }
 
 @Database(
-    entities = [ProgressEntity::class, BookFiltersEntity::class, QueItemEntity::class],
-    version = 9,
-    exportSchema = false,
+    entities = [LibraryBookEntity::class, QueueItemEntity::class, QueueStateEntity::class],
+    version = 10,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
-    abstract fun progress(): ProgressDao
-    abstract fun bookFilters(): BookFiltersDao
-    abstract fun que(): QueDao
+    abstract fun library(): LibraryDao
+    abstract fun queue(): QueueDao
 }

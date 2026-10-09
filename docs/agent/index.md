@@ -7,23 +7,27 @@ Hand-written guide: [map.md](map.md).
 
 ## (root)
 
-- `FlowApp.kt` (143) - class FlowApp:30
-- `MainActivity.kt` (222) - class MainActivity:40
+- `AppPositionStore.kt` (28) - class AppPositionStore:9
+- `FlowApp.kt` (163) - class FlowApp:34
+- `MainActivity.kt` (247) - class MainActivity:41
 
 ## data
 
-- `BookCatalog.kt` (531) **large** - obj BookBytes:15, obj FileAccessAdvice:48, obj SharedTextTitle:62, class BookCatalog:93
-  - members: looksLikeTxt:16, sha256:22, sha256:33, sha256:35, extension:41, forSdk:49, from:66, list:96, listPlugin:99, listQue:102, getQue:113, nextUndoneQue:115, markQueDone:121, reorderQue:127, removeQue:137, addText:158, addEpub:173, addBytes:181, upsertPluginBook:243, upsertPluginCatalogEntry:278, removeFromLibrary:317, removePluginMembership:340, pluginCoverFile:348, pluginBookFile:355, writePluginCover:360, enqueueExisting:374, add:389, listTab:437, clearLibraryTab:440, materialize:444, destination:476, ingestTitle:485, persistReadAccess:495, isDocumentNewer:506, documentLastModified:511, queryDisplayName:522
+- `BookCatalog.kt` (502) **large** - obj BookBytes:15, obj FileAccessAdvice:48, obj SharedTextTitle:62, data ReaderRow:94, class BookCatalog:105
+  - members: looksLikeTxt:16, sha256:22, sha256:33, sha256:35, extension:41, forSdk:49, from:66, list:110, listTab:112, clearLibraryTab:114, libraryBook:116, cardItem:119, readerRow:123, setLocalFilters:148, listQue:158, getQue:160, markQueDone:162, reorderQue:165, removeQue:172, enqueueExisting:181, newQueueItem:209, insertQueue:234, addText:261, addEpub:277, addBytes:286, add:347, removeFromLibrary:395, deleteFileIfUnused:402, materialize:409, materialize:411, materialize:413, materialize:415, destination:447, ingestTitle:456, persistReadAccess:466, isDocumentNewer:477, documentLastModified:482, queryDisplayName:493
 - `ChapterSource.kt` (61) - iface ChapterSource:10, class BookMeter:41
 - `EpubChapterSource.kt` (120) - class EpubChapterSource:10
 - `EpubCover.kt` (171) - obj EpubCover:11
 - `Ingest.kt` (132) - obj EpubIngest:12, obj TxtIngest:108
 - `KoehnSentenceBreak.kt` (104) - obj KoehnSentenceBreak:9
+- `LegacyMigration.kt` (272) - data LegacyProgressRow:10, data LegacyQueRow:28, data StagedPluginRow:37, class MigratedRows:42, obj LegacyMigration:49, rows:262, str:268, int:270, long:272
 - `LocusAnchor.kt` (40) - obj LocusAnchor:8
-- `Models.kt` (306) - enum BlockKind:3, data Block:9, data Chapter:15, data BookDoc:20, data ReaderItem:70, data Locus:83, data Sentence:102, enum ThemeMode:110, obj AccentHue:128, obj AccentSaturation:135, obj AccentLightness:146, obj UiScale:162, obj HomePosition:176, enum ReaderFont:185, enum ReaderOrientation:199, obj TtsEngines:214, data TtsEngineOption:225, data TtsVoiceOption:230, enum BookSource:237, enum LibraryViewMode:249, sealed LibraryTabId:255, data CustomLibraryTab:296, data TextIngestResult:303
-- `ProgressDb.kt` (161) - data ProgressEntity:15, data BookFiltersEntity:41, data QueItemEntity:53, data QueEntry:62, iface ProgressDao:68, iface BookFiltersDao:102, iface QueDao:114, class AppDatabase:157
-- `ProgressWriter.kt` (106) - data ProgressUpdate:14, iface ProgressLocator:26, class ProgressWriter:35
-- `ReadingSession.kt` (171) - data PreparedChapter:9, class ReadingWindow:35, class ReadingSession:102
+- `Models.kt` (339) - enum BlockKind:3, data Block:9, data Chapter:15, data BookDoc:20, data ReaderItem:70, data Locus:83, data Sentence:102, enum ThemeMode:110, obj AccentHue:128, obj AccentSaturation:135, obj AccentLightness:146, obj UiScale:162, obj HomePosition:176, enum ReaderFont:185, enum ReaderOrientation:199, obj TtsEngines:214, data TtsEngineOption:225, data TtsVoiceOption:230, enum BookSource:237, enum LibraryViewMode:249, sealed LibraryTabId:255, data CustomLibraryTab:296, data TextIngestResult:303, data BookItem:310, toItem:321, toItem:331
+- `PositionLog.kt` (70) - class PositionLog:13, obj PositionLogFormat:51
+- `ProgressDb.kt` (202) - data LibraryBookEntity:17, data QueueItemEntity:45, enum QueueOrigin:67, data QueueStateEntity:71, iface LibraryDao:78, iface QueueDao:134, class AppDatabase:199
+- `ProgressWriter.kt` (99) - data ProgressUpdate:14, iface ProgressLocator:42, iface PositionStore:47, class ProgressWriter:56
+- `ReadingPosition.kt` (48) - data ReadingPosition:7, enum PositionSource:29, enum PositionDomain:32, data ReadingSessionId:39
+- `ReadingSession.kt` (181) - data PreparedChapter:9, class ReadingWindow:35, class ReadingSession:102
 - `SentenceLengthNormalizer.kt` (131) - obj SentenceLengthNormalizer:10
 - `SentenceSplitter.kt` (110) - obj SentenceSplitter:9
 - `SentenceTable.kt` (107) - class SentenceTable:9
@@ -34,7 +38,7 @@ Hand-written guide: [map.md](map.md).
 
 ## library/plugin
 
-- `LibraryPluginActions.kt` (12) - iface LibraryPluginActions:4
+- `LibraryPluginActions.kt` (9) - iface LibraryPluginActions:4
 
 ## plugin
 
@@ -68,24 +72,27 @@ Hand-written guide: [map.md](map.md).
 
 - `PluginBookStore.kt` (473) **large** - class PluginBookStore:36
   - members: Ref:46, ref:50, source:56, fetchLock:60, chapterText:66, cancelUpkeep:82, scheduleMaintain:101, read:121, isPluginBook:124, pluginIdFor:126, fetchAndStoreWork:129, ensureSessionToc:138, libraryMeta:186, libraryMetas:196, readSplashBundle:199, cachedChapterIndices:205, downloadAllChapters:215, downloadAhead:233, setCachePolicy:243, setNotify:252, session:259, updatePinnedRanges:261, maintainChapterCache:277, pruneChapterCache:307, prune:313, ensureSessionForDownload:323, runCardAction:334, refreshToc:345, deleteLocalSession:350, startReading:356, openStory:363, chapter:369, seekToChapter:377, loadThrough:389, downloadCover:404
-- `PluginDataEraser.kt` (22) - class PluginDataEraser:12
+- `PluginCatalog.kt` (169) - toItem:12, class PluginCatalog:23
+- `PluginDataEraser.kt` (23) - class PluginDataEraser:12
+- `PluginDb.kt` (97) - data PluginBookEntity:18, iface PluginBookDao:32, class PluginDatabase:73, class PluginDatabases:78
 - `PluginListWriter.kt` (114) - enum SyncMode:7, class PluginListWriter:13
 - `PluginMembershipStore.kt` (86) - obj PluginMembershipStore:16
 - `PluginSessionStore.kt` (387) - data PluginReadSession:12, data PluginCachePolicy:42, data PluginSplashMeta:53, data PluginLibraryMeta:61, obj PluginSessionStore:68
+- `PluginStorageMigrator.kt` (80) - class PluginStorageMigrator:17
 
 ## plugin/sync
 
 - `ListReconcile.kt` (55) - data ListPlan:4, obj ListReconcile:14
 - `ProgressReconcile.kt` (74) - iface ProgressAction:3, data ProgressDecision:11, obj ProgressReconcile:13
 - `SyncState.kt` (187) - iface SyncOp:8, data PositionConflict:35, data PendingPosition:41, data SyncState:47, obj SyncStateStore:158
-- `TwoWaySync.kt` (470) **large** - data SyncReport:27, enum PushResult:39, class TwoWaySync:46
-  - members: flushLock:57, dataDir:59, state:61, changed:64, supports:69, syncsLists:71, runAll:76, runIfStale:91, run:97, syncLists:112, syncPositions:168, mergeSitePosition:223, tocStored:276, saveBaseline:288, knownWorks:298, applyPosition:312, localPositionChanged:340, membershipChanged:355, resolveConflict:369, pullPositions:393, resetListBaselines:402, flush:415, Outcome:425, attempt:433, hasSavedPosition:458
+- `TwoWaySync.kt` (471) **large** - data SyncReport:30, enum PushResult:42, class TwoWaySync:49
+  - members: flushLock:60, dataDir:62, state:64, changed:67, supports:72, syncsLists:74, runAll:79, runIfStale:94, run:100, syncLists:115, syncPositions:171, mergeSitePosition:226, tocStored:279, saveBaseline:291, knownWorks:301, applyPosition:314, localPositionChanged:344, membershipChanged:359, resolveConflict:373, pullPositions:397, resetListBaselines:406, flush:419, Outcome:429, attempt:437
 
 ## plugin/updates
 
 - `ChapterUpdateWorker.kt` (17) - class ChapterUpdateWorker:9
 - `PluginVersionWorker.kt` (31) - class PluginVersionWorker:10
-- `UpdateChecker.kt` (136) - data ChapterUpdate:19, class UpdateChecker:32
+- `UpdateChecker.kt` (134) - data ChapterUpdate:19, class UpdateChecker:32
 - `UpdateDiff.kt` (30) - obj UpdateDiff:7
 - `UpdateNotifier.kt` (139) - obj UpdateNotifier:19
 - `UpdateScheduler.kt` (57) - obj UpdateScheduler:16
@@ -122,8 +129,8 @@ Hand-written guide: [map.md](map.md).
 - `SynthDebugLog.kt` (79) - obj SynthDebugLog:14
 - `TtsAudioEngine.kt` (548) **large** - class TtsAudioEngine:27
   - members: playbackHeadFrames:43, writtenFrames:48, sampleRateHz:50, peekPendingMediaSeedSec:52, hasPendingRemainder:56, underrunCount:59, cancel:64, release:70, clearDecodeCache:91, prefetchDecode:96, play:110, playClipCrossfading:150, writeSilence:286, resolveAndDecodeNext:317, decodeCached:337, decodeFile:349, appendPcm16:439, writeSamples:453, ensureTrack:481, releaseTrackOnly:524, PcmClip:539
-- `TtsController.kt` (2216) **large** - data TtsUiState:60, class TtsController:114
-  - members: WordSegment:143, setNotificationPermissionAsker:231, sessionToken:235, mediaTitle:237, mediaSubtitle:239, mediaCover:247, attachedSession:306, setSpeechFilters:313, speechFilterKeyOf:341, attach:349, cacheKeyFor:431, pullMore:438, pullMoreAsync:461, focusChapter:470, invalidateEdgeCache:484, speakPreview:489, previewWithEdge:510, playPreviewFile:517, cancelPreview:550, releasePreviewPlayer:560, play:579, pause:584, stop:589, skipNext:593, skipPrev:603, setSpeed:613, setPitch:624, setPrefetchCount:634, setDoubleTapPlay:643, setAutoPlayOnShare:649, setShareInterruptsPlayback:655, setMobileDataFallback:661, setAutoScrollWithTts:670, setMinSignal:682, setUnderlayBtDevice:689, underlayBondedDevices:708, refreshUnderlayBtConnection:710, setSentenceGapMs:714, setHighlightSyncMs:722, setClipTargetChars:729, setClipFlexChars:739, resplitAttachedForClipBand:750, setDebugEnabled:782, reportMediaError:793, reportSkippedSentence:804, dumpSynthLog:815, forceRegenerateSentence:845, setEngine:871, setVoice:898, userScrolledAway:908, followAgain:915, jumpTo:920, moveToCurrentSentence:932, advancePlayheadLocked:940, release:956, startPlayback:978, pausePlayback:1017, refreshCatalog:1044, setEdgeVoices:1069, voicesFor:1075, systemVoices:1086, ensureSession:1108, setSessionState:1136, updateSessionMetadata:1152, loadCoverArt:1167, restartLoop:1174, publishSentence:1193, publishHeardSentence:1208, awaitHeardCatchUp:1220, markGenerating:1232, unmarkGenerating:1238, markReady:1244, publishGenerating:1253, publishReady:1259, publishUnmarkGenerating:1263, clearAudioStatus:1267, loop:1276, awaitNetworkRetry:1354, speak:1372, speechText:1380, startEdgeJob:1386, cancelStaleEdgeJobs:1405, scheduleAheadPrefetch:1417, pumpPrefetch:1423, launchPrefetchJob:1447, ensurePrefetchJob:1465, cancelEdgeJobs:1471, prefetch:1476, speakEdge:1495, peekReadyCacheFile:1588, slackMs:1594, ensureSentenceCached:1605, synthesizeEdge:1627, synthesizeToCache:1647, interruptClipPlayback:1692, stopSessionAudio:1699, syncKeepAlive:1707, pushWordSegment:1722, ensurePcmWordTracking:1731, stopPcmWordTracking:1773, updateWordHighlight:1779, clearWordHighlight:1799, ensureWordBoundariesLoaded:1804, wordsCacheFile:1828, writeWordBoundaries:1831, readWordBoundaries:1848, appendJsonString:1871, speakSystem:1891, ensureSystemForPackage:1952, ensureNotificationPermission:1992, requestAudioFocus:2009, abandonAudioFocus:2035, registerNoisyReceiver:2047, unregisterNoisyReceiver:2059, edgeVoiceId:2065, cacheFile:2070, voiceCacheKey:2072, sanitizeBookKey:2077, cachedSentenceIndex:2080, writeAtomically:2087, scanReadySentenceIndices:2101, cacheWindow:2109, effectivePrefetchCount:2121, inCacheWindow:2126, pruneCacheToWindow:2132, deleteCacheOutsideWindow:2150, dropForeignBookCache:2161, clearEdgeCache:2171, ratePercent:2184, pitchPercent:2186
+- `TtsController.kt` (2240) **large** - class SpokenPosition:62, data TtsUiState:64, class TtsController:118
+  - members: WordSegment:147, setNotificationPermissionAsker:235, sessionToken:239, mediaTitle:241, mediaSubtitle:243, mediaCover:251, attachedSession:310, emitSpoken:317, setSpeechFilters:328, speechFilterKeyOf:356, attach:364, cacheKeyFor:448, pullMore:455, pullMoreAsync:478, focusChapter:487, invalidateEdgeCache:501, speakPreview:506, previewWithEdge:527, playPreviewFile:534, cancelPreview:567, releasePreviewPlayer:577, play:596, pause:601, stop:606, skipNext:610, skipPrev:620, setSpeed:630, setPitch:641, setPrefetchCount:651, setDoubleTapPlay:660, setAutoPlayOnShare:666, setShareInterruptsPlayback:672, setMobileDataFallback:678, setAutoScrollWithTts:687, setMinSignal:699, setUnderlayBtDevice:706, underlayBondedDevices:725, refreshUnderlayBtConnection:727, setSentenceGapMs:731, setHighlightSyncMs:739, setClipTargetChars:746, setClipFlexChars:756, resplitAttachedForClipBand:767, setDebugEnabled:799, reportMediaError:810, reportSkippedSentence:821, dumpSynthLog:832, forceRegenerateSentence:866, setEngine:892, setVoice:919, userScrolledAway:929, followAgain:936, jumpTo:941, moveToCurrentSentence:953, advancePlayheadLocked:961, release:977, startPlayback:999, pausePlayback:1038, refreshCatalog:1065, setEdgeVoices:1090, voicesFor:1096, systemVoices:1107, ensureSession:1129, setSessionState:1157, updateSessionMetadata:1173, loadCoverArt:1188, restartLoop:1196, publishSentence:1215, publishHeardSentence:1231, awaitHeardCatchUp:1244, markGenerating:1256, unmarkGenerating:1262, markReady:1268, publishGenerating:1277, publishReady:1283, publishUnmarkGenerating:1287, clearAudioStatus:1291, loop:1300, awaitNetworkRetry:1378, speak:1396, speechText:1404, startEdgeJob:1410, cancelStaleEdgeJobs:1429, scheduleAheadPrefetch:1441, pumpPrefetch:1447, launchPrefetchJob:1471, ensurePrefetchJob:1489, cancelEdgeJobs:1495, prefetch:1500, speakEdge:1519, peekReadyCacheFile:1612, slackMs:1618, ensureSentenceCached:1629, synthesizeEdge:1651, synthesizeToCache:1671, interruptClipPlayback:1716, stopSessionAudio:1723, syncKeepAlive:1731, pushWordSegment:1746, ensurePcmWordTracking:1755, stopPcmWordTracking:1797, updateWordHighlight:1803, clearWordHighlight:1823, ensureWordBoundariesLoaded:1828, wordsCacheFile:1852, writeWordBoundaries:1855, readWordBoundaries:1872, appendJsonString:1895, speakSystem:1915, ensureSystemForPackage:1976, ensureNotificationPermission:2016, requestAudioFocus:2033, abandonAudioFocus:2059, registerNoisyReceiver:2071, unregisterNoisyReceiver:2083, edgeVoiceId:2089, cacheFile:2094, voiceCacheKey:2096, sanitizeBookKey:2101, cachedSentenceIndex:2104, writeAtomically:2111, scanReadySentenceIndices:2125, cacheWindow:2133, effectivePrefetchCount:2145, inCacheWindow:2150, pruneCacheToWindow:2156, deleteCacheOutsideWindow:2174, dropForeignBookCache:2185, clearEdgeCache:2195, ratePercent:2208, pitchPercent:2210
 - `TtsPlaybackService.kt` (190) - class TtsPlaybackService:26
 - `UnderlayBluetoothMonitor.kt` (305) - data PairedBtDevice:25, class UnderlayBluetoothMonitor:39
 - `WordHighlight.kt` (139) - obj WordHighlight:13
@@ -183,8 +190,8 @@ Hand-written guide: [map.md](map.md).
 - `LibraryBookCards.kt` (105) - LibraryBooksPane:34, librarySourceLabel:92, libraryLastRead:97, libraryBookSubtitle:104
 - `LibraryScreen.kt` (620) **large** - class PersistableOpenDocument:98, LibraryScreen:115, LibraryTopBar:413, AddTabOverlay:465, AddBookOverlay:534, QueTab:563
   - members: createIntent:99
-- `LibraryViewModel.kt` (963) **large** - data LibraryUi:42, data WebImportRequest:61, data CrawlProgress:68, class LibraryViewModel:75
-  - members: refresh:156, booksForTab:172, setTab:178, addCustomTab:187, removeCustomTab:209, setPluginEnabled:241, setViewMode:260, handleIncomingIntent:269, executeShareIntent:310, routeImportText:370, openPluginShare:426, openPluginTab:429, parseRuleFor:455, startWebImport:473, answerCrawlPrompt:481, dismissCrawlPrompt:493, stopCrawl:500, importWebPage:505, crawlWeb:538, finishWebImport:573, autoPlayShare:580, refreshAfterIngest:587, tabForLanding:600, tabForShelf:607, shelfForAdd:610, openExternalUri:614, consumePendingOpen:662, ingestPluginText:666, ingestSharedText:704, queueFromClipboard:741, removeQue:750, reorderQue:760, removeFromLibrary:770, addFilter:792, updateFilter:808, setFilterEnabled:824, deleteFilters:844, reorderFilters:854, previewApply:864, persistGlobal:891, persistGroups:897, nextOrder:903, add:906, consumeMessage:956, consumeError:960
+- `LibraryViewModel.kt` (877) **large** - data LibraryUi:43, data WebImportRequest:64, data CrawlProgress:71, class LibraryViewModel:78
+  - members: refresh:128, booksForTab:144, setTab:150, addCustomTab:159, removeCustomTab:181, setPluginEnabled:213, setViewMode:232, handleIncomingIntent:241, executeShareIntent:282, routeImportText:342, openPluginShare:398, openPluginTab:401, parseRuleFor:427, startWebImport:445, answerCrawlPrompt:453, dismissCrawlPrompt:465, stopCrawl:472, importWebPage:477, crawlWeb:512, finishWebImport:548, autoPlay:558, refreshAfterIngest:571, tabForLanding:584, tabForShelf:591, shelfForAdd:594, openExternalUri:598, consumePendingOpen:646, consumePendingOpenQue:650, queueFromClipboard:655, removeQue:664, reorderQue:674, removeFromLibrary:684, addFilter:706, updateFilter:722, setFilterEnabled:738, deleteFilters:758, reorderFilters:768, previewApply:778, persistGlobal:805, persistGroups:811, nextOrder:817, add:820, consumeMessage:870, consumeError:874
 - `NowPlayingCard.kt` (65) - NowPlayingCard:26
 - `WebCrawlCards.kt` (40) - WebCrawlCards:9
 
@@ -202,8 +209,8 @@ Hand-written guide: [map.md](map.md).
 - `PluginSettingsSheet.kt` (123) - PluginSettingsSheet:34, PluginSettingsForm:51
 - `PluginSyncController.kt` (170) - data PluginSyncUi:18, class PluginSyncController:36
 - `PluginTab.kt` (325) - rememberPluginTabViewModel:52, PluginTabContent:62, PluginTabFab:161, PluginTabOverlays:216, PluginStoryOverlays:277
-- `PluginTabViewModel.kt` (990) **large** - data PluginStory:45, iface PluginSection:78, data PluginTabUi:83, class PluginTabViewModel:142
-  - members: Library:79, Search:80, source:153, refreshLocal:177, storyLists:193, refreshSession:201, onSyncChanged:223, syncNow:232, resolveConflict:235, postponeConflict:240, membership:242, setSection:249, openBrowse:257, setBrowseTab:259, setBrowseSort:261, browseMore:263, setBrowsePostsOrder:265, openBrowseStory:271, localStory:287, closeBrowse:299, maybeRefreshBrowse:305, setQuery:320, setUrlDraft:322, setLoginField:324, setShowLogin:327, setShowAdd:331, setShowAccount:335, setShowSettings:337, askSync:341, consumeError:343, consumeMessage:345, fail:347, search:366, openUrl:394, openWork:412, openWorkInternal:423, openStory:444, showStory:461, closeStory:472, loadStory:481, toggleNotify:522, runCardAction:541, upsertWork:562, toggleList:567, syncList:610, readBook:620, readStory:644, startAndSnapshot:666, refreshStoryToc:688, deleteStory:707, onDownloadTap:731, dismissDownloadAll:744, downloadAllChapters:746, openPartial:756, closePartial:762, setCacheLevelDraft:766, setCleanup:774, saveCachePolicy:779, downloadAhead:797, runDownload:809, finishDownload:832, openPosition:849, closePosition:851, savePosition:857, login:908, completeWebLogin:939, syncAfterSignIn:965, logout:969
+- `PluginTabViewModel.kt` (997) **large** - data PluginStory:49, iface PluginSection:82, data PluginTabUi:87, class PluginTabViewModel:146
+  - members: Library:83, Search:84, source:157, refreshLocal:181, storyLists:197, refreshSession:205, onSyncChanged:227, syncNow:236, resolveConflict:239, postponeConflict:244, membership:246, setSection:253, openBrowse:261, setBrowseTab:263, setBrowseSort:265, browseMore:267, setBrowsePostsOrder:269, openBrowseStory:275, localStory:291, closeBrowse:303, maybeRefreshBrowse:309, setQuery:324, setUrlDraft:326, setLoginField:328, setShowLogin:331, setShowAdd:335, setShowAccount:339, setShowSettings:341, askSync:345, consumeError:347, consumeMessage:349, fail:351, search:370, openUrl:398, openWork:416, openWorkInternal:427, openStory:448, showStory:465, closeStory:476, loadStory:485, toggleNotify:525, runCardAction:544, upsertWork:565, toggleList:570, syncList:613, readBook:623, readStory:647, startAndSnapshot:669, refreshStoryToc:693, deleteStory:712, onDownloadTap:736, dismissDownloadAll:749, downloadAllChapters:751, openPartial:761, closePartial:767, setCacheLevelDraft:771, setCleanup:779, saveCachePolicy:784, downloadAhead:802, runDownload:814, finishDownload:837, openPosition:854, closePosition:856, savePosition:862, login:915, completeWebLogin:946, syncAfterSignIn:972, logout:976
 - `PositionConflictCard.kt` (38) - POSITION_CONFLICT_BADGE:8, PositionConflictCard:15
 - `StoryCacheCards.kt` (224) - DownloadAllCard:39, PartialDownloadCard:61, PositionSliderCard:115, OutlinedFieldWithInfo:194
 - `StoryMediaCard.kt` (104) - StoryMediaCard:24
@@ -214,9 +221,9 @@ Hand-written guide: [map.md](map.md).
 ## ui/reader
 
 - `HomeMarker.kt` (122) - HomeMarker:48
-- `QueueBook.kt` (237) - class QueueSegment:14, class QueueBook:29, data QueueTocItem:201, enum QueueChange:210
-- `QueuePlayback.kt` (176) - class QueueUpdate:21, class QueuePlayback:34
-- `QueueStreams.kt` (89) - obj QueueStreams:15, class QueueStreamRef:80
+- `QueueBook.kt` (245) - class QueueSegment:16, class QueueBook:31, data QueueTocItem:209, enum QueueChange:218
+- `QueuePlayback.kt` (183) - class QueueUpdate:21, class QueuePlayback:34
+- `QueueStreams.kt` (96) - obj QueueStreams:18, class QueueStreamRef:87
 - `QueueTocOverlay.kt` (149) - QueueTocOverlay:40
 - `ReaderBook.kt` (66) - class ReaderBook:14
 - `ReaderBookCard.kt` (53) - ReaderBookCard:31
@@ -224,17 +231,17 @@ Hand-written guide: [map.md](map.md).
 - `ReaderHome.kt` (50) - enum PlaybackPinEdge:10, data SentenceSpan:13, obj ReaderHome:15
 - `ReaderLayout.kt` (14) - ReaderContentStartPadding:11, ReaderListEndPadding:14
 - `ReaderProgressPolicy.kt` (16) - obj ReaderProgressPolicy:4
-- `ReaderQueueMode.kt` (152) - class ReaderQueueMode:17
+- `ReaderQueueMode.kt` (154) - class ReaderQueueMode:17
 - `ReaderRail.kt` (352) - LocusRail:112
 - `ReaderScreen.kt` (1150) **large** - RailGutterWidth:106, data BlockSentence:121, ReaderScreen:128, PlaybackPinCard:1077, rememberImmersiveSystemBars:1122
   - members: clearTextSelection:195, trackedSentenceIndex:309, scrollToHome:318, jumpToSavedPosition:351, playResumingSavedPosition:360, toggleChrome:438, enableScrollLock:447, disableScrollLock:457, navigateBack:462, resumeFollow:474, dispatch:483, onReaderGesture:494
-- `ReaderSessions.kt` (118) - obj ReaderSessions:19
+- `ReaderSessions.kt` (125) - obj ReaderSessions:20
 - `ReaderTextLayout.kt` (149) - drawTtsHighlightRange:21, sentenceAtPosition:138
 - `ReaderTextToolbar.kt` (149) - class ReaderTextToolbar:20
 - `ReaderTouchGestures.kt` (88) - ReaderSelectionContainer:18, detectSelectionCancelGestures:32, detectRightEdgeBackSwipe:50
 - `ReaderTouchPolicy.kt` (80) - enum ReaderOverlay:7, enum ReaderTouchTarget:14, enum ReaderGestureKind:22, sealed ReaderTouchAction:28, resolveTouch:41
-- `ReaderViewModel.kt` (460) **large** - data ReaderUi:32, class ReaderViewModel:68, enum FilterPreviewMode:448
-  - members: load:106, loadQueue:150, onQueueUpdate:163, reorderQueue:183, removeQueue:188, openBook:193, savedLocus:202, show:212, collectWindow:263, onViewport:278, releaseFocus:293, loadLocalFilters:300, reapply:305, editFilters:319, addFilter:330, updateFilter:333, setFilterEnabled:336, deleteFilters:339, reorderFilters:342, previewApply:345, currentBlockSample:373, persistLocal:379, nextOrder:391, jumpToChapter:395, jumpTo:409, onLocus:414, persistNow:430, persist:434, onCleared:441
+- `ReaderViewModel.kt` (484) **large** - data ReaderUi:35, class ReaderViewModel:71, enum FilterPreviewMode:472
+  - members: load:112, loadQueue:157, onQueueUpdate:175, reorderQueue:195, removeQueue:200, openBook:205, savedLocus:214, show:224, collectWindow:283, onViewport:298, releaseFocus:313, reapply:320, editFilters:334, addFilter:345, updateFilter:348, setFilterEnabled:351, deleteFilters:354, reorderFilters:357, previewApply:360, currentBlockSample:388, persistLocal:395, nextOrder:407, jumpToChapter:411, jumpTo:425, onSpoken:431, onLocus:437, persistNow:453, persist:457, onCleared:465
 - `TocOverlay.kt` (104) - TocOverlay:32
 
 ## ui/settings
@@ -277,8 +284,10 @@ Hand-written guide: [map.md](map.md).
 - `data/BookBytesTest.kt`
 - `data/ChapterSourceTest.kt`
 - `data/IngestTest.kt`
+- `data/LegacyMigrationTest.kt`
 - `data/LibraryTabIdTest.kt`
 - `data/LocusAnchorTest.kt`
+- `data/PositionLogFormatTest.kt`
 - `data/ProgressWriterTest.kt`
 - `data/ReadingSessionTest.kt`
 - `data/SentenceSplitterTest.kt`
@@ -321,4 +330,4 @@ Hand-written guide: [map.md](map.md).
 - `ui/reader/ReaderTouchPolicyTest.kt`
 - `ui/settings/PickerFieldsTest.kt`
 
-Totals: 169 main files, 33484 lines.
+Totals: 176 main files, 34338 lines.

@@ -62,6 +62,11 @@ Lists pad by the dock height, so the card never covers the last row.
 
 Queue is for share/clipboard ingest and TTS auto-advance — not for dumping plugin stories.
 
+Each Queue entry has its own row and reading position. Queuing a Files or plugin book copies its
+position at that moment; after that, reading in the Queue and reading the original book move
+independently. A shared item with Auto Play opens the Queue at that entry. Storage:
+[data.md](data.md#room-flowdb).
+
 ## Add a tab
 
 ![Add a tab](images/library-add-tab.png)

@@ -9,7 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.personal.flowreader.FlowApp
-import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.BookItem
 import com.personal.flowreader.ui.design.card.media.MediaActionIds
 import com.personal.flowreader.ui.library.FilesBookSplash
 import com.personal.flowreader.ui.plugin.PluginStoryOverlays
@@ -40,8 +40,8 @@ internal fun ReaderBookCard(bookId: String, openRequests: Int) {
         PluginStoryOverlays(vm = vm, onRead = vm::closeStory, hiddenActions = ReaderHiddenActions)
         return
     }
-    var row by remember { mutableStateOf<ProgressEntity?>(null) }
-    LaunchedEffect(openRequests) { row = app.db.progress().get(bookId) }
+    var row by remember { mutableStateOf<BookItem?>(null) }
+    LaunchedEffect(openRequests) { row = app.catalog.cardItem(bookId) }
     FilesBookSplash(
         book = row,
         busy = false,

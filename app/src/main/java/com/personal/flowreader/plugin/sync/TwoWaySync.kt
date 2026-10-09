@@ -2,7 +2,10 @@ package com.personal.flowreader.plugin.sync
 
 import android.util.Log
 import com.personal.flowreader.FlowApp
-import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.PositionDomain
+import com.personal.flowreader.data.PositionSource
+import com.personal.flowreader.data.ReadingSessionId
+import com.personal.flowreader.plugin.store.PluginBookEntity
 import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.plugin.api.PluginCapability
 import com.personal.flowreader.plugin.api.PluginChapterRef
@@ -229,8 +232,8 @@ class TwoWaySync(private val app: FlowApp) {
         val dir = dataDir(pluginId)
         val workId = session.workId
         val urls = session.toc.map { it.url }
-        val row = app.db.progress().get(session.bookId)
-        val localUrl = row?.takeIf(::hasSavedPosition)
+        val row = app.pluginCatalog.get(session.bookId)
+        val localUrl = row?.position?.takeIf { it.hasProgress }
             ?.let { urls[PluginSessionStore.savedChapter(session.toc, it.chapterHref, it.chapterIndex)] }
         val indexOf = { url: String -> ProgressReconcile.tocIndex(urls, url) }
         val decision = if (overwrite) {
@@ -301,15 +304,14 @@ class TwoWaySync(private val app: FlowApp) {
         manifest.lists.filterNot { it.isBrowse }.forEach { list ->
             PluginMembershipStore.read(dir, list.id).forEach { work -> if (out[work.id].isNullOrBlank()) out[work.id] = work.url }
         }
-        app.catalog.listPlugin(pluginId).forEach { row ->
-            val workId = manager.resolveBookId(row.bookId)?.takeIf { it.first.id == pluginId }?.second ?: return@forEach
-            if (out[workId].isNullOrBlank()) out[workId] = row.sourceUri
+        app.pluginCatalog.list(pluginId).forEach { row ->
+            if (out[row.workId].isNullOrBlank()) out[row.workId] = row.workUrl
         }
         return out
     }
 
     /** Writes chapter [index] through the progress writer, whose hook downloads ahead. */
-    private suspend fun applyPosition(pluginId: String, session: PluginReadSession, index: Int, row: ProgressEntity?) {
+    private suspend fun applyPosition(pluginId: String, session: PluginReadSession, index: Int, row: PluginBookEntity?) {
         if (row == null) {
             val cover = PluginSessionStore.readSplash(PluginSessionStore.dir(dataDir(pluginId), session.workId))?.cover.orEmpty()
             lists.upsertWork(
@@ -319,7 +321,8 @@ class TwoWaySync(private val app: FlowApp) {
         }
         app.progress.submit(
             ProgressUpdate(
-                bookId = session.bookId,
+                session = ReadingSessionId(PositionDomain.Plugin, session.bookId),
+                rowKey = session.bookId,
                 chapterIndex = index,
                 blockIndex = 0,
                 charOffset = 0,
@@ -327,6 +330,7 @@ class TwoWaySync(private val app: FlowApp) {
                 at = System.currentTimeMillis(),
                 anchorText = "",
                 chapterHref = session.toc[index].url,
+                source = PositionSource.Sync,
             ),
         )
         app.progress.drain()
@@ -375,7 +379,7 @@ class TwoWaySync(private val app: FlowApp) {
         if (useRemote) {
             saveBaseline(dir, workId, conflict.remoteUrl)
             ProgressReconcile.tocIndex(urls, conflict.remoteUrl)?.let {
-                applyPosition(pluginId, session, it, app.db.progress().get(bookId))
+                applyPosition(pluginId, session, it, app.pluginCatalog.get(bookId))
             }
         } else {
             saveBaseline(dir, workId, conflict.localUrl)
@@ -454,9 +458,6 @@ class TwoWaySync(private val app: FlowApp) {
             Outcome.Failed(offline)
         }
     }
-
-    private fun hasSavedPosition(row: ProgressEntity): Boolean =
-        row.chapterIndex > 0 || row.blockIndex > 0 || row.charOffset > 0
 
     companion object {
         private const val TAG = "FlowSync"

@@ -8,7 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.personal.flowreader.data.BookSource
-import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.BookItem
 import com.personal.flowreader.ui.common.rememberBookCover
 import com.personal.flowreader.ui.design.card.media.FileMediaCardAdapter
 import com.personal.flowreader.ui.design.card.media.FileMediaInfo
@@ -21,7 +21,7 @@ import java.io.File
 /** Files tab media card: cover + file metadata, Share / Remove / Open. */
 @Composable
 fun FilesBookSplash(
-    book: ProgressEntity?,
+    book: BookItem?,
     busy: Boolean,
     onDismiss: () -> Unit,
     onOpen: (String) -> Unit,
@@ -55,7 +55,7 @@ fun FilesBookSplash(
     )
 }
 
-private fun fileMediaInfo(book: ProgressEntity): FileMediaInfo {
+private fun fileMediaInfo(book: BookItem): FileMediaInfo {
     val file = book.storedPath.takeIf { it.isNotBlank() }?.let(::File)
     return FileMediaInfo(
         title = book.title,
@@ -68,7 +68,7 @@ private fun fileMediaInfo(book: ProgressEntity): FileMediaInfo {
     )
 }
 
-private fun shareBook(context: Context, book: ProgressEntity) {
+private fun shareBook(context: Context, book: BookItem) {
     val uri = book.sourceUri.takeIf { it.isNotBlank() }?.let(Uri::parse)
     val send = Intent(Intent.ACTION_SEND).apply {
         if (uri != null && (uri.scheme == "content" || uri.scheme == "file")) {

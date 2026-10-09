@@ -299,8 +299,41 @@ data class CustomLibraryTab(
     val order: Int = 0,
 )
 
-/** Result of sharing text into the library and/or Que. */
+/** Result of sharing text into the library and/or Queue. */
 data class TextIngestResult(
-    val progress: ProgressEntity,
-    val queItem: QueItemEntity? = null,
+    val bookId: String,
+    val title: String,
+    val queItem: QueueItemEntity? = null,
+)
+
+/** A book as library cards and splashes show it (Files, shelves, plugin tabs). */
+data class BookItem(
+    val bookId: String,
+    val title: String,
+    val storedPath: String,
+    val sourceUri: String,
+    /** [BookSource] name, or the plugin id. */
+    val sourceKind: String,
+    val readingProgress: Float,
+    val lastReadAt: Long,
+)
+
+fun LibraryBookEntity.toItem() = BookItem(
+    bookId = bookId,
+    title = title,
+    storedPath = storedPath,
+    sourceUri = sourceUri,
+    sourceKind = sourceKind,
+    readingProgress = position.fraction,
+    lastReadAt = maxOf(addedAt, position.positionAt),
+)
+
+fun QueueItemEntity.toItem() = BookItem(
+    bookId = bookId,
+    title = title,
+    storedPath = storedPath,
+    sourceUri = sourceUri,
+    sourceKind = sourceKind,
+    readingProgress = position.fraction,
+    lastReadAt = maxOf(addedAt, position.positionAt),
 )

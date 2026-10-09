@@ -10,6 +10,7 @@ import com.personal.flowreader.data.PreparedChapter
 import com.personal.flowreader.data.ProgressLocator
 import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.data.ReadingSession
+import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.ReadingWindow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,7 @@ internal object ReaderSessions {
      */
     suspend fun open(
         bookId: String,
+        sessionId: ReadingSessionId,
         book: ReaderBook,
         center: Int,
         rules: List<FilterRule>,
@@ -59,6 +61,7 @@ internal object ReaderSessions {
         contentKey: Int = contentKey(rules),
         rulesFor: (Int) -> List<FilterRule> = { rules },
         current: () -> ReaderBook = { book },
+        locator: (ReadingSession) -> ProgressLocator = { s -> locator(sessionId, book, s) },
     ): ReadingSession {
         val first = prepare(book, center, rulesFor(center), targetChars, flexChars)
         val session = ReadingSession(
@@ -67,7 +70,9 @@ internal object ReaderSessions {
             initial = ReadingWindow.of(book.title, book.chapterTitles, listOf(first), origin = center),
             chapterCount = { current().chapterCount },
             loader = { i, t, f -> prepare(current(), i, rulesFor(i), t, f) },
+            sessionId = sessionId,
         )
+        session.locator = locator(session)
         var next = center + 1
         while (session.window.value.table.isEmpty() && next < book.chapterCount && next - center <= MAX_EMPTY_SKIP) {
             session.loadAdjacent(next++, targetChars, flexChars)
@@ -91,16 +96,18 @@ internal object ReaderSessions {
         return book.meter.fraction(locus.chapterIndex, within)
     }
 
-    fun locator(bookId: String, book: ReaderBook, session: ReadingSession) = ProgressLocator { locus, at ->
+    /** A single book's session: every locus belongs to [sessionId]'s own row. */
+    fun locator(sessionId: ReadingSessionId, book: ReaderBook, session: ReadingSession) = ProgressLocator { locus, at ->
         val window = session.window.value
         ProgressUpdate(
-            bookId = bookId,
+            session = sessionId,
+            rowKey = sessionId.key,
             chapterIndex = locus.chapterIndex,
             blockIndex = locus.blockIndex,
             charOffset = locus.charOffset,
             fraction = fraction(book, window, locus),
             at = at,
-            anchorText = window.chapters[locus.chapterIndex]?.let { LocusAnchor.of(it.chapter, locus) },
+            anchorText = window.chapters[locus.chapterIndex]?.let { LocusAnchor.of(it.chapter, locus) }.orEmpty(),
             chapterHref = book.href(locus.chapterIndex),
         )
     }

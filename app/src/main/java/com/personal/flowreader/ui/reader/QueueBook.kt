@@ -5,9 +5,11 @@ import com.personal.flowreader.data.Chapter
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.LocusAnchor
+import com.personal.flowreader.data.PositionDomain
 import com.personal.flowreader.data.ProgressLocator
 import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.data.ReadingSession
+import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.TextFilters
 
 /** One Queue row inside a [QueueBook]: its own book, Local filters and saved position. */
@@ -157,24 +159,30 @@ internal class QueueBook(val segments: List<QueueSegment>) {
         },
     )
 
-    /** Writes go to the item under the locus, in its own indices, with its own progress fraction. */
-    fun locator(session: ReadingSession) = ProgressLocator { locus, at ->
+    /**
+     * Writes go to the Queue item under the locus (its own row, keyed by queId), in its own
+     * indices, with its own progress fraction.
+     */
+    fun locate(session: ReadingSession, locus: Locus, at: Long): ProgressUpdate {
         val (seg, local) = toLocal(locus)
         val s = segments[seg]
         val prepared = session.window.value.chapters[locus.chapterIndex]
         val blocks = prepared?.chapter?.blocks?.size ?: 0
         val within = if (blocks > 0) locus.blockIndex.toFloat() / blocks else 0f
-        ProgressUpdate(
-            bookId = s.bookId,
+        return ProgressUpdate(
+            session = session.sessionId ?: ReadingSessionId(PositionDomain.Queue, ""),
+            rowKey = s.queId,
             chapterIndex = local.chapterIndex,
             blockIndex = local.blockIndex,
             charOffset = local.charOffset,
             fraction = s.book.meter.fraction(local.chapterIndex, within),
             at = at,
-            anchorText = prepared?.let { LocusAnchor.of(it.chapter, locus) },
+            anchorText = prepared?.let { LocusAnchor.of(it.chapter, locus) }.orEmpty(),
             chapterHref = s.book.href(local.chapterIndex),
         )
     }
+
+    fun locator(session: ReadingSession) = ProgressLocator { locus, at -> locate(session, locus, at) }
 
     private suspend fun loadChapter(index: Int): Chapter {
         val seg = segmentIndexOf(index)

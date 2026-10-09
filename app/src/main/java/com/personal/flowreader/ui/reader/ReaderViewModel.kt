@@ -6,15 +6,18 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.BookDoc
-import com.personal.flowreader.data.BookFiltersEntity
 import com.personal.flowreader.data.ChapterSource
 import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.LocusAnchor
-import com.personal.flowreader.data.ProgressEntity
+import com.personal.flowreader.data.PositionDomain
+import com.personal.flowreader.data.PositionSource
+import com.personal.flowreader.data.ReaderRow
+import com.personal.flowreader.data.ReadingPosition
 import com.personal.flowreader.data.ReadingSession
+import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.data.TextFilters
 import kotlinx.coroutines.CancellationException
@@ -86,6 +89,9 @@ class ReaderViewModel(
     private val queue: ReaderQueueMode? = if (isQueue) ReaderQueueMode(flow, queId, _ui) else null
     private var book: ReaderBook? = null
     private var session: ReadingSession? = null
+
+    /** Single book: its table and row (Library or plugin), set on load. Unused in Queue mode. */
+    private var bookSessionId: ReadingSessionId? = null
     private var windowJob: Job? = null
     private val showLock = Mutex()
     private var viewport: IntRange? = null
@@ -109,14 +115,15 @@ class ReaderViewModel(
             return
         }
         try {
-            val row = flow.db.progress().get(bookId)
+            val row = withContext(Dispatchers.IO) { flow.catalog.readerRow(bookId) }
                 ?: throw IllegalArgumentException("Book not found")
             val opened = withContext(Dispatchers.IO) { openBook(row) }
             if (opened.chapterCount == 0) throw IllegalStateException("No readable chapters")
             book = opened
+            bookSessionId = ReadingSessionId(row.session.domain, row.session.key)
             val global = flow.settings.globalFiltersOnce()
             val groups = flow.settings.groupFiltersOnce()
-            val local = loadLocalFilters()
+            val local = TextFilters.decodeRules(row.localFilters.ifBlank { null })
             _ui.update {
                 it.copy(
                     title = opened.title,
@@ -134,7 +141,7 @@ class ReaderViewModel(
             val spoken = tts.state.value.takeIf { it.bookId == bookId }?.sentence
             when {
                 spoken != null -> show(Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start), rules, reuse)
-                else -> show(savedLocus(row, opened), rules, reuse, anchor = row.anchorText)
+                else -> show(savedLocus(row.position, opened), rules, reuse, anchor = row.position.anchorText)
             }
             if (flow.pendingSharePlay == bookId) {
                 flow.pendingSharePlay = null
@@ -152,6 +159,11 @@ class ReaderViewModel(
             val start = mode.open(::savedLocus)
             book = mode.book?.reader
             show(start.locus, emptyList(), start.reuse, anchor = start.anchor)
+            val playing = _ui.value.currentQueId
+            if (playing.isNotEmpty() && flow.pendingSharePlay == playing) {
+                flow.pendingSharePlay = null
+                tts.play()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
@@ -190,8 +202,8 @@ class ReaderViewModel(
         viewModelScope.launch { mode.remove(ids) }
     }
 
-    private suspend fun openBook(row: ProgressEntity): ReaderBook =
-        if (flow.pluginBooks.isPluginBook(bookId)) {
+    private suspend fun openBook(row: ReaderRow): ReaderBook =
+        if (row.session.domain == PositionDomain.Plugin) {
             val story = flow.pluginBooks.openStory(bookId)
             ReaderBook.plugin(flow.pluginBooks, story)
         } else {
@@ -199,10 +211,10 @@ class ReaderViewModel(
         }
 
     /** Saved position in current chapter indices (the stored href wins over a drifted index). */
-    private fun savedLocus(row: ProgressEntity, book: ReaderBook): Locus {
-        val byHref = book.indexOfHref(row.chapterHref)
-        val chapter = if (byHref >= 0) byHref else row.chapterIndex
-        return Locus(chapter.coerceIn(0, book.chapterCount - 1), row.blockIndex, row.charOffset)
+    private fun savedLocus(position: ReadingPosition, book: ReaderBook): Locus {
+        val byHref = book.indexOfHref(position.chapterHref)
+        val chapter = if (byHref >= 0) byHref else position.chapterIndex
+        return Locus(chapter.coerceIn(0, book.chapterCount - 1), position.blockIndex, position.charOffset)
     }
 
     /**
@@ -223,7 +235,16 @@ class ReaderViewModel(
             ?: if (ref != null) {
                 QueueStreams.open(flow, ref, start.chapterIndex)
             } else {
-                ReaderSessions.open(bookId, b, start.chapterIndex, rules, clip.clipTargetChars, clip.clipFlexChars)
+                val id = bookSessionId ?: return@withLock
+                ReaderSessions.open(
+                    bookId,
+                    ReadingSessionId(id.domain, id.key),
+                    b,
+                    start.chapterIndex,
+                    rules,
+                    clip.clipTargetChars,
+                    clip.clipFlexChars,
+                )
             }
         val window = s.window.value
         val anchored = window.chapters[start.chapterIndex]
@@ -235,7 +256,6 @@ class ReaderViewModel(
         session = s
         viewport = null
         ref?.book?.let { queue?.applySegment(it.segmentIndexOf(locus.chapterIndex)) }
-        flow.progress.setLocator(sessionId, ref?.book?.locator(s) ?: ReaderSessions.locator(bookId, b, s))
         _ui.value.let { tts.setSpeechFilters(it.filtersGlobal, it.filtersGroups, it.filtersLocal) }
         tts.attach(s, locus)
         ref?.let { flow.queue.attach(it, s) }
@@ -295,11 +315,6 @@ class ReaderViewModel(
             s.setFocus(ReadingSession.FOCUS_READER, null)
             s.setFocus(ReadingSession.FOCUS_READER_END, null)
         }
-    }
-
-    private suspend fun loadLocalFilters(): List<FilterRule> {
-        val json = flow.db.bookFilters().get(_ui.value.currentBookId)?.rulesJson
-        return TextFilters.decodeRules(json)
     }
 
     private suspend fun reapply(
@@ -376,16 +391,17 @@ class ReaderViewModel(
         return chapter.blocks.getOrNull(locus.blockIndex)?.text.orEmpty()
     }
 
+    /** Local rules belong to the open row: the book, or the Queue item under the locus. */
     private suspend fun persistLocal(rules: List<FilterRule>) {
-        val bookId = _ui.value.currentBookId
-        if (bookId.isBlank()) return
-        if (rules.isEmpty()) {
-            flow.db.bookFilters().delete(bookId)
+        val json = if (rules.isEmpty()) "" else TextFilters.encodeRules(rules)
+        val (domain, key) = if (queue != null) {
+            PositionDomain.Queue to _ui.value.currentQueId
         } else {
-            flow.db.bookFilters().upsert(
-                BookFiltersEntity(bookId = bookId, rulesJson = TextFilters.encodeRules(rules)),
-            )
+            val id = bookSessionId ?: return
+            id.domain to id.key
         }
+        if (key.isBlank()) return
+        withContext(Dispatchers.IO) { flow.catalog.setLocalFilters(domain, key, json) }
     }
 
     private fun nextOrder(rules: List<FilterRule>): Int =
@@ -411,6 +427,13 @@ class ReaderViewModel(
         tts.jumpTo(locus)
     }
 
+    /** TTS moved on; follows only when playback reads this reader's own session. */
+    fun onSpoken(locus: Locus) {
+        val s = session ?: return
+        if (tts.attachedSession() !== s) return
+        onLocus(locus)
+    }
+
     fun onLocus(locus: Locus) {
         positionMoved = true
         val b = book
@@ -434,7 +457,8 @@ class ReaderViewModel(
     private fun persist(locus: Locus, flush: Boolean = false) {
         val ui = _ui.value
         if (!ReaderProgressPolicy.mayPersist(sessionId, ui.doc != null, ui.loading, ui.error, positionMoved)) return
-        flow.progress.submit(flow.progress.locate(sessionId, locus, System.currentTimeMillis()), flush = flush)
+        val update = session?.position(locus, PositionSource.Reader) ?: return
+        flow.progress.submit(update, flush = flush)
     }
 
     /** Playback keeps running after the reader closes; the Library now-playing card controls it. */

@@ -53,9 +53,7 @@ class UpdateChecker(private val app: FlowApp) {
         val notifyLists = UpdateDiff.notifyLists(manifest.lists)
         val workIds = LinkedHashSet<String>()
         members.values.forEach { workIds += it }
-        app.catalog.listPlugin(plugin.id).mapNotNullTo(workIds) { row ->
-            app.pluginManager.resolveBookId(row.bookId)?.takeIf { it.first.id == plugin.id }?.second
-        }
+        app.pluginCatalog.list(plugin.id).mapTo(workIds) { it.workId }
 
         val monitored = ArrayList<PluginReadSession>()
         val baseline = ArrayList<String>()
@@ -117,9 +115,9 @@ class UpdateChecker(private val app: FlowApp) {
     /** Fill the cache level ahead of the saved position; stories never read are left alone. */
     private suspend fun downloadAhead(session: PluginReadSession) {
         val bookId = session.bookId
-        val row = app.db.progress().get(bookId) ?: return
+        val row = app.pluginCatalog.get(bookId)?.takeIf { it.position.hasProgress } ?: return
         try {
-            val locus = PluginSessionStore.savedChapter(session.toc, row.chapterHref, row.chapterIndex)
+            val locus = PluginSessionStore.savedChapter(session.toc, row.position.chapterHref, row.position.chapterIndex)
             app.pluginBooks.maintainChapterCache(bookId, locus)
         } catch (e: CancellationException) {
             throw e

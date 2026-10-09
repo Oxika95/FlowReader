@@ -56,7 +56,7 @@ import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.LibraryTabId
 import com.personal.flowreader.data.LibraryViewMode
-import com.personal.flowreader.data.QueEntry
+import com.personal.flowreader.data.QueueItemEntity
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowEmptyState
@@ -231,7 +231,7 @@ fun LibraryScreen(
                     entries = ui.que,
                     busy = ui.busy,
                     bottomInset = docks.bottom,
-                    onOpen = { entry -> onOpenQue(entry.progress.bookId, entry.item.id) },
+                    onOpen = { entry -> onOpenQue(entry.bookId, entry.queId) },
                     onReorder = vm::reorderQue,
                     onRemove = vm::removeQue,
                     modifier = paneModifier,
@@ -561,10 +561,10 @@ private fun AddBookOverlay(
 
 @Composable
 private fun QueTab(
-    entries: List<QueEntry>,
+    entries: List<QueueItemEntity>,
     busy: Boolean,
     bottomInset: androidx.compose.ui.unit.Dp,
-    onOpen: (QueEntry) -> Unit,
+    onOpen: (QueueItemEntity) -> Unit,
     onReorder: (List<String>) -> Unit,
     onRemove: (Set<String>) -> Unit,
     modifier: Modifier = Modifier,
@@ -582,8 +582,8 @@ private fun QueTab(
         ) {
             EditableRuleList(
                 rules = entries,
-                idOf = { it.item.id },
-                nameOf = { it.progress.title },
+                idOf = { it.queId },
+                nameOf = { it.title },
                 text = RuleListText(
                     title = "Queue",
                     empty = "",
@@ -596,7 +596,7 @@ private fun QueTab(
                 onReorder = onReorder,
                 onDelete = onRemove,
                 trailing = { entry ->
-                    if (entry.item.done) {
+                    if (entry.done) {
                         Text(
                             "Done",
                             style = FlowType.label,
@@ -607,11 +607,11 @@ private fun QueTab(
                 },
             ) { entry, rowModifier ->
                 Text(
-                    entry.progress.title,
+                    entry.title,
                     style = FlowType.body,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    color = if (entry.item.done) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified,
+                    color = if (entry.done) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified,
                     modifier = rowModifier.padding(start = FlowTokens.Space.XS),
                 )
             }

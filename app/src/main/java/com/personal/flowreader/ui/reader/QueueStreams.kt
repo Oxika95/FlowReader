@@ -3,8 +3,11 @@ package com.personal.flowreader.ui.reader
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.ChapterSource
 import com.personal.flowreader.data.FilterRule
-import com.personal.flowreader.data.QueEntry
+import com.personal.flowreader.data.PositionDomain
+import com.personal.flowreader.data.ProgressLocator
+import com.personal.flowreader.data.QueueItemEntity
 import com.personal.flowreader.data.ReadingSession
+import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.tts.SynthDebugLog
 import kotlinx.coroutines.CancellationException
@@ -18,52 +21,55 @@ internal object QueueStreams {
      * already in [reuse] keep their opened book and Local rules.
      */
     suspend fun build(flow: FlowApp, reuse: QueueBook? = null): QueueBook = withContext(Dispatchers.IO) {
-        val entries = flow.catalog.listQue()
+        val items = flow.catalog.listQue()
         val known = reuse?.segments?.associateBy { it.queId }.orEmpty()
         QueueBook(
-            entries.mapNotNull { entry ->
-                val old = known[entry.item.id]?.takeIf { it.bookId == entry.progress.bookId }
+            items.mapNotNull { item ->
+                val old = known[item.queId]?.takeIf { it.bookId == item.bookId }
                 if (old != null) {
-                    QueueSegment(old.queId, old.bookId, entry.progress.title, entry.item.done, old.storedPath, old.book, old.local)
+                    QueueSegment(old.queId, old.bookId, item.title, item.done, old.storedPath, old.book, old.local)
                 } else {
-                    segment(flow, entry)
+                    segment(flow, item)
                 }
             },
         )
     }
 
-    private suspend fun segment(flow: FlowApp, entry: QueEntry): QueueSegment? {
-        val row = entry.progress
+    private suspend fun segment(flow: FlowApp, item: QueueItemEntity): QueueSegment? {
         val book = try {
-            if (flow.pluginBooks.isPluginBook(row.bookId)) {
-                ReaderBook.plugin(flow.pluginBooks, flow.pluginBooks.openStory(row.bookId))
+            if (flow.pluginBooks.isPluginBook(item.bookId)) {
+                ReaderBook.plugin(flow.pluginBooks, flow.pluginBooks.openStory(item.bookId))
             } else {
-                ReaderBook.local(ChapterSource.open(flow.catalog.materialize(row), row.title))
+                ReaderBook.local(ChapterSource.open(flow.catalog.materialize(item), item.title))
             }
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            SynthDebugLog.appendError("Queue: skipped \"${row.title}\" (${t.message ?: t.javaClass.simpleName})")
+            SynthDebugLog.appendError("Queue: skipped \"${item.title}\" (${t.message ?: t.javaClass.simpleName})")
             return null
         }
         if (book.chapterCount == 0) return null
         return QueueSegment(
-            queId = entry.item.id,
-            bookId = row.bookId,
-            title = row.title,
-            done = entry.item.done,
-            storedPath = row.storedPath,
+            queId = item.queId,
+            bookId = item.bookId,
+            title = item.title,
+            done = item.done,
+            storedPath = item.storedPath,
             book = book,
-            local = TextFilters.decodeRules(flow.db.bookFilters().get(row.bookId)?.rulesJson),
+            local = TextFilters.decodeRules(item.localFilters.ifBlank { null }),
         )
     }
 
-    /** Session over [ref]: loads read [QueueStreamRef.book], so appended rows show up in place. */
+    /**
+     * Session over [ref]: loads read [QueueStreamRef.book], so appended rows show up in place.
+     * Positions map through [ref]'s current book, so they always land on that stream's items.
+     */
     suspend fun open(flow: FlowApp, ref: QueueStreamRef, center: Int): ReadingSession {
         val clip = flow.tts.state.value
         val queue = ref.book
         return ReaderSessions.open(
             bookId = QueueBook.ID,
+            sessionId = ReadingSessionId(PositionDomain.Queue, ""),
             book = queue.reader,
             center = center,
             rules = emptyList(),
@@ -72,6 +78,7 @@ internal object QueueStreams {
             contentKey = queue.contentKey(ref.global, ref.groups),
             rulesFor = { ref.book.rulesFor(it, ref.global, ref.groups) },
             current = { ref.book.reader },
+            locator = { s -> ProgressLocator { locus, at -> ref.book.locate(s, locus, at) } },
         )
     }
 }

@@ -32,6 +32,7 @@ import com.personal.flowreader.ui.library.LibraryViewModel
 import com.personal.flowreader.ui.open.OpenBookViewModel
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
+import com.personal.flowreader.ui.reader.QueueBook
 import com.personal.flowreader.ui.reader.ReaderScreen
 import com.personal.flowreader.ui.reader.ReaderViewModel
 import com.personal.flowreader.ui.theme.FlowTheme
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (isIncomingIntent(intent)) {
+            logIncoming("onCreate", intent, recreated = savedInstanceState != null)
             pendingIncoming.value = Intent(intent)
         }
         val asker: (onDone: () -> Unit) -> Unit = asker@{ onDone ->
@@ -128,6 +130,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    LaunchedEffect(libraryUi.pendingOpenQueId) {
+                        val queId = libraryUi.pendingOpenQueId ?: return@LaunchedEffect
+                        libraryVm.consumePendingOpenQue()
+                        nav.navigate("reader/${QueueBook.ID}/que/$queId") {
+                            launchSingleTop = true
+                        }
+                    }
+
                     FlowOverlayHost(
                         system = {
                             if (openUi.debugEnabled || tts.debugEnabled) {
@@ -195,8 +205,23 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (isIncomingIntent(intent)) {
+            logIncoming("onNewIntent", intent, recreated = false)
             pendingIncoming.value = Intent(intent)
         }
+    }
+
+    private fun logIncoming(from: String, intent: Intent, recreated: Boolean) {
+        val extras = intent.extras
+        val digest = extras?.keySet()?.sorted()?.joinToString("|") { "$it=${extras.get(it)}" }.orEmpty()
+        (application as FlowApp).positionLog.event(
+            "INTENT",
+            "from" to from,
+            "action" to intent.action,
+            "kind" to intent.getStringExtra(com.personal.flowreader.share.ShareDispatch.EXTRA_KIND),
+            "recreated" to recreated,
+            "fromHistory" to (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0),
+            "extras" to Integer.toHexString(digest.hashCode()),
+        )
     }
 
     private fun isIncomingIntent(intent: Intent?): Boolean =

@@ -4,8 +4,11 @@ import android.app.Application
 import androidx.room.Room
 import com.personal.flowreader.data.AppDatabase
 import com.personal.flowreader.data.BookCatalog
+import com.personal.flowreader.data.LegacyMigration
 import com.personal.flowreader.data.Locus
-import com.personal.flowreader.data.ProgressUpdate
+import com.personal.flowreader.data.PositionDomain
+import com.personal.flowreader.data.PositionLog
+import com.personal.flowreader.data.PositionSource
 import com.personal.flowreader.data.ProgressWriter
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.plugin.PluginManager
@@ -13,6 +16,9 @@ import com.personal.flowreader.plugin.PluginShareRequest
 import com.personal.flowreader.plugin.repo.PluginInstaller
 import com.personal.flowreader.plugin.repo.RepoManager
 import com.personal.flowreader.plugin.store.PluginBookStore
+import com.personal.flowreader.plugin.store.PluginCatalog
+import com.personal.flowreader.plugin.store.PluginDatabases
+import com.personal.flowreader.plugin.store.PluginStorageMigrator
 import com.personal.flowreader.plugin.sync.TwoWaySync
 import com.personal.flowreader.plugin.updates.UpdateScheduler
 import com.personal.flowreader.share.RouterRules
@@ -23,8 +29,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class FlowApp : Application() {
@@ -50,6 +54,12 @@ class FlowApp : Application() {
         private set
     lateinit var pluginSync: TwoWaySync
         private set
+    lateinit var pluginDbs: PluginDatabases
+        private set
+    lateinit var pluginCatalog: PluginCatalog
+        private set
+    lateinit var positionLog: PositionLog
+        private set
     internal lateinit var queue: QueuePlayback
         private set
 
@@ -62,8 +72,11 @@ class FlowApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        positionLog = PositionLog(File(filesDir, "logs/positions.log"))
         db = Room.databaseBuilder(this, AppDatabase::class.java, "flow.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(LegacyMigration.MIGRATION_9_10)
+            .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5, 6, 7, 8)
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
         settings = SettingsStore(this)
         tts = TtsController(this, settings)
@@ -71,15 +84,22 @@ class FlowApp : Application() {
         catalog = BookCatalog(this)
         pluginManager = PluginManager(this)
         pluginManager.initialize()
+        pluginDbs = PluginDatabases(this)
+        pluginCatalog = PluginCatalog(this)
+        appScope.launch {
+            runCatching { PluginStorageMigrator(this@FlowApp).run() }
+                .onFailure { positionLog.event("MIGRATE_FAILED", "error" to it.message) }
+            pluginCatalog.markMigrated()
+        }
         pluginBooks = PluginBookStore(pluginManager, appScope) { settings.pluginCacheDefaultsOnce() }
         pluginSync = TwoWaySync(this)
         pluginBooks.positionChanged = pluginSync::localPositionChanged
         pluginBooks.tocStored = pluginSync::tocStored
         pluginRepos = RepoManager(settings)
         pluginInstaller = PluginInstaller(pluginManager, pluginRepos)
-        progress = ProgressWriter(db.progress(), appScope) { update ->
-            if (pluginBooks.isPluginBook(update.bookId)) {
-                pluginBooks.scheduleMaintain(update.bookId, update.chapterIndex)
+        progress = ProgressWriter(AppPositionStore(this), appScope, log = positionLog::position) { update ->
+            if (update.domain == PositionDomain.Plugin) {
+                pluginBooks.scheduleMaintain(update.rowKey, update.chapterIndex)
             }
         }
         persistSpokenPosition()
@@ -112,17 +132,17 @@ class FlowApp : Application() {
         notificationPermissionAsker?.invoke {}
     }
 
-    /** Playback keeps going with the reader closed; every spoken sentence is the new position. */
+    /**
+     * Playback keeps going with the reader closed; every spoken sentence is the new position,
+     * stored through the session it was read from.
+     */
     private fun persistSpokenPosition() {
         appScope.launch {
-            tts.state
-                .map { s -> s.sentence?.takeIf { s.playing && s.bookId.isNotBlank() }?.let { s.bookId to it } }
-                .distinctUntilChanged()
-                .collect { spoken ->
-                    val (bookId, sentence) = spoken ?: return@collect
-                    val locus = Locus(sentence.chapterIndex, sentence.blockIndex, sentence.start)
-                    progress.submit(progress.locate(bookId, locus, System.currentTimeMillis()))
-                }
+            tts.spoken.collect { spoken ->
+                val s = spoken.sentence
+                spoken.session.position(Locus(s.chapterIndex, s.blockIndex, s.start), PositionSource.Tts)
+                    ?.let(progress::submit)
+            }
         }
     }
 

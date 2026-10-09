@@ -6,8 +6,10 @@ import com.personal.flowreader.data.BookMeter
 import com.personal.flowreader.data.Chapter
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.Locus
+import com.personal.flowreader.data.PositionDomain
 import com.personal.flowreader.data.PreparedChapter
 import com.personal.flowreader.data.ReadingSession
+import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.ReadingWindow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -88,13 +90,16 @@ class QueueBookTest {
             initial = ReadingWindow.of(QueueBook.TITLE, queue.reader.chapterTitles, listOf(prepared), origin = 3),
             chapterCount = { queue.chapterCount },
             loader = { _, _, _ -> null },
+            sessionId = ReadingSessionId(PositionDomain.Queue, "", openedAt = 7L),
         )
         val update = queue.locator(session).locate(Locus(3, 1, 0), at = 42L)
-        assertEquals("book-b", update.bookId)
+        assertEquals(PositionDomain.Queue, update.domain)
+        assertEquals("b", update.rowKey)
+        assertEquals(7L, update.session.openedAt)
         assertEquals(2, update.chapterIndex)
         assertEquals(1, update.blockIndex)
         assertEquals("h2", update.chapterHref)
-        assertEquals((2 + 0.5f) / 3f, update.fraction!!, 1e-4f)
+        assertEquals((2 + 0.5f) / 3f, update.fraction, 1e-4f)
     }
 
     private fun same(s: QueueSegment, done: Boolean = s.done) =
