@@ -6,9 +6,10 @@ alwaysApply: false
 
 # TTS and audio
 
-- Priorities, in order: stability → latency → footprint (`docs/tts.md`).
-- `TtsController.kt` and `AudioSettings.kt` are large: find members in `docs/agent/index.md` and Read
-  by offset. Don't read them whole.
+- Priority order and engine behavior: `docs/tts.md` `## Engines`.
+- `TtsController.kt` is large (`docs/agent/map.md` `## Large files`): find members in
+  `docs/agent/index/tts.md` and Read by offset.
 - Pure helpers (`Crossfade`, `WordHighlight`, `EdgeHandshake`) have JVM tests; keep new timing/
   splitting logic pure and tested.
-- History, rejected approaches, device quirks: `../flow-reader-chats/areas/tts-audio.md`.
+- Where to edit: `docs/agent/map.md` `## tts-audio`. History, rejected approaches, device quirks:
+  `../flow-reader-chats/areas/tts-audio.md`.

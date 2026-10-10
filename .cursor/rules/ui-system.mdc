@@ -22,9 +22,9 @@ Full reference: `docs/ui-system/` (README, tokens, layers, cards, elements, reci
 
 ## Forbidden in feature code
 
-`AlertDialog`, `Dialog`, `ModalBottomSheet`, M3 `Card`, `Scaffold`, new tab-bar composables,
-literal `dp`/alpha/`zIndex` values (use `FlowTokens` / `FlowLayer`), per-feature enter/exit
-animations for cards (components own motion).
+Banned components and literals: `AGENTS.md` `## Hard rules` (use `FlowTokens` / `FlowLayer` for
+values). Also no new tab-bar composables and no per-feature enter/exit animations for cards
+(components own motion).
 
 ## Behavior
 

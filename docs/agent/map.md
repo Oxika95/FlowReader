@@ -1,108 +1,103 @@
-# Agent map
+# Code map
 
-Start here. Find the area, open the listed files with offsets from [index.md](index.md) (generated;
-every file, declaration, and line number), and read the area's history in
-`../flow-reader-chats/areas/<area>.md` when it exists. Search only for what this page doesn't answer.
-Paths below are relative to `app/src/main/java/com/personal/flowreader/`.
+Change X, edit Y. One section per area (ids match the area list in the private context repo).
+Paths are relative to `app/src/main/java/com/personal/flowreader/`. Line numbers: [index.md](index.md).
 
-## Repos
-
-| Repo | Role | Agent entry |
-| --- | --- | --- |
-| `flow-reader` (this) | Android app, plugin contract (`docs/plugins/`) | `AGENTS.md`, this file |
-| `../flow-reader-plugins` | Public plugin sources, Node test host, index build, Pages publish | its `AGENTS.md` |
-| `../flow-reader-chats` | Private: area history, decisions, plans, handoffs, raw transcripts | its `README.md` |
-
-## Runtime shape
-
-```mermaid
-flowchart LR
-  app[FlowApp singletons] --> main[MainActivity NavHost + FlowOverlayHost]
-  main --> lib[LibraryScreen / LibraryViewModel]
-  main --> rdr[ReaderScreen / ReaderViewModel]
-  share[ShareIngressActivity] --> router[ShareRouter + RouterRules] --> lib
-  lib --> plug[PluginTab / PluginTabViewModel] --> src[PluginSource] --> js[JsPluginRuntime QuickJS]
-  rdr --> tts[TtsController] --> eng[TtsAudioEngine / EdgeTtsClient / system TTS]
-  lib --> data[BookCatalog, ProgressDb Room, SettingsStore DataStore]
-  rdr --> data
-```
-
-`FlowApp` owns the singletons: `db`, `settings`, `tts`, `catalog`, `pluginManager`, `pluginBooks`,
-`pluginRepos`, `pluginInstaller`, `appScope`. ViewModels reach them via the application.
-Routes and Back behavior: [navigation.md](../navigation.md).
-
-## Change X, edit Y
+## reader
 
 | Change | Files | Also update |
 | --- | --- | --- |
-| Reader rendering, pin card | `ui/reader/ReaderScreen.kt` (large; use index offsets), `ReaderChrome.kt`, `ReaderHome.kt` | `docs/reader.md` |
+| Reader rendering, pin card | `ui/reader/ReaderScreen.kt` (large), `ReaderChrome.kt`, `ReaderHome.kt` | `docs/reader.md` |
 | Margin rail (cache dots, hold-to-regenerate) | `ui/reader/ReaderRail.kt` | `docs/reader.md` |
 | TTS highlight drawing, justify offsets, hit-test | `ui/reader/ReaderTextLayout.kt` | |
-| Reader gestures / touch routing | `ui/reader/ReaderTouchPolicy.kt` (pure, tested), `ReaderTouchGestures.kt` | `ReaderTouchPolicyTest` |
-| Reader load, progress, filters, ToC | `ui/reader/ReaderViewModel.kt`, `ReaderBook.kt` (local/plugin book), `ReaderSessions.kt` (window build, locator), `TocOverlay.kt` | `docs/data.md` |
+| Gestures / touch routing | `ui/reader/ReaderTouchPolicy.kt` (pure), `ReaderTouchGestures.kt` | `ReaderTouchPolicyTest` |
+| Load, progress, filters, ToC | `ui/reader/ReaderViewModel.kt`, `ReaderBook.kt` (local/plugin book), `ReaderSessions.kt` (window build, locator), `TocOverlay.kt` | `docs/data.md` |
 | Chapter loading window, stable sentence indices | `data/ChapterSource.kt`, `EpubChapterSource.kt`, `TxtChapterSource.kt`, `ReadingSession.kt`, `SentenceTable.kt`, `LocusAnchor.kt` | `ChapterSourceTest`, `ReadingSessionTest`, `SentenceTableTest` |
-| Position writes (session id, per-domain row, log) | `data/ProgressWriter.kt`, `ReadingPosition.kt` (`ReadingSessionId`), `AppPositionStore.kt` (routes to Library / Queue / plugin tables), `PositionLog.kt` | `ProgressWriterTest`, `PositionLogFormatTest`, `docs/data.md` |
-| TTS playback, queueing, prefetch, cache | `tts/TtsController.kt` (large) | `docs/tts.md` |
+| Queue Contents (live, hold-to-edit) | `ui/reader/QueueTocOverlay.kt` (on `EditableRuleList` `below`/`deleteNote`), wired in `ReaderScreen` | `docs/reader.md` |
+
+## tts-audio
+
+| Change | Files | Also update |
+| --- | --- | --- |
+| Playback, queueing, prefetch, cache | `tts/TtsController.kt` (large) | `docs/tts.md` |
 | PCM output, crossfade, gaps | `tts/TtsAudioEngine.kt`, `Crossfade.kt` | `CrossfadeTest` |
 | Edge voices / synth | `tts/EdgeTtsClient.kt`, `EdgeHandshake.kt`; voice list `EdgeVoiceCatalog.kt` (pure), `EdgeVoiceStore.kt`, snapshot `resources/tts/edge_voices.json` | `EdgeTtsClientTest`, `EdgeVoiceCatalogTest` |
-| Edge race stagger / network fallback (Wi-Fi ↔ cellular lanes, offline wait) | `tts/RaceSchedule.kt`, `NetworkLanePolicy.kt` (pure), `NetworkMonitor.kt`, `EdgeNetwork.kt`, `TtsController.awaitNetworkRetry` | `RaceScheduleTest`, `NetworkLanePolicyTest`, `docs/tts.md` |
+| Edge race stagger / network fallback (Wi-Fi and cellular lanes, offline wait) | `tts/RaceSchedule.kt`, `NetworkLanePolicy.kt` (pure), `NetworkMonitor.kt`, `EdgeNetwork.kt`, `TtsController.awaitNetworkRetry` | `RaceScheduleTest`, `NetworkLanePolicyTest`, `docs/tts.md` |
 | Word highlight timing | `tts/WordHighlight.kt` | `WordHighlightTest` |
 | Media session / background | `tts/TtsPlaybackService.kt`, `AudioKeepAlive.kt`, `UnderlayBluetoothMonitor.kt` | |
 | Sentence splitting | `data/SentenceSplitter.kt`, `KoehnSentenceBreak.kt`, `SentenceLengthNormalizer.kt` | `SentenceSplitterTest` |
-| Text filters (Global/Groups/Local) | `data/TextFilters.kt`; UI `ui/settings/FiltersSettings.kt` (tab, editor), `FilterRuleList.kt` (list) on `EditableRuleList.kt` (shared hold-to-edit, reorder, delete; also Router/Parser lists); TTS-only rules reach playback via `TtsController.setSpeechFilters` | `TextFiltersTest`, `docs/settings.md` |
 | Unspeakable / rejected sentences (skip, log) | `tts/SpeechText.kt` (pure), `TtsController.loop`, `EdgeContentException` in `EdgeTtsClient.kt` | `SpeechTextTest`, `docs/tts.md` |
+
+## library-queue
+
+| Change | Files | Also update |
+| --- | --- | --- |
 | EPUB/TXT ingest, covers | `data/Ingest.kt`, `EpubCover.kt`, `BookCatalog.kt` | `IngestTest` |
-| Library tabs, shelves, view mode | `ui/library/LibraryViewModel.kt`, `LibraryScreen.kt`, `data/Models.kt` (`LibraryTabId`) | `docs/library.md` |
+| Library tabs, shelves, view mode | `ui/library/LibraryViewModel.kt` (large), `LibraryScreen.kt`, `data/Models.kt` (`LibraryTabId`) | `docs/library.md` |
 | Queue | `BookCatalog` (`listQue`, `reorderQue`, `markQueDone`), `ProgressDb` (`queue_items`, `queue_state`); list UI `QueTab` in `LibraryScreen.kt` (on `EditableRuleList`) | `docs/library.md` |
-| Queue stream (one document in reader + TTS) | `ui/reader/QueueBook.kt` (pure composite book, locator, `QueueChange`, `remap`, `tocItems`), `QueueStreams.kt` (build/open, `QueueStreamRef`), `QueuePlayback.kt` (live owner: `queue_items` Flow → in-place append or rebuild, done marking), `ReaderQueueMode.kt` (reader side) | `QueueBookTest`, `docs/tts.md` |
-| Queue Contents (live, hold-to-edit) | `ui/reader/QueueTocOverlay.kt` (on `EditableRuleList` `below`/`deleteNote`), wired in `ReaderScreen` | `docs/reader.md` |
-| A setting (new key) | `data/SettingsStore.kt` (prefs + setter), `ui/settings/SettingsState.kt`, the tab file | `docs/settings.md`, `docs/data.md` |
-| Layout theme (hue, saturation, lightness) | `ui/settings/ThemeSettingsPane.kt`; color math `ui/theme/Theme.kt`; `AccentLightness.scale` in `data/Models.kt` | `docs/settings.md`, `AccentLightnessTest` |
-| Audio settings UI | `ui/settings/AudioSettings.kt` (tab shell), `VoiceSettingsTab.kt`, `PlaybackSettingsTab.kt` (incl. underlay), `AudioSettingsControls.kt` (flyout header, labels, center slider) | `docs/settings.md` |
-| Room schema | `data/ProgressDb.kt` (bump version + `Migration`; schemas in `app/schemas/`), `LegacyMigration.kt` (9 → 10); plugin DBs `plugin/store/PluginDb.kt`, `PluginCatalog.kt`, `PluginStorageMigrator.kt` | `LegacyMigrationTest`, `docs/data.md` |
-| Share routing / parse rules | `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`), `ShareRouter.kt`; UI `ui/settings/SharingSettingsTab.kt` (panes), `ImportRouterRules.kt`, `ImportParseRules.kt`, `ImportRuleControls.kt` | `ShareRouterTest`, `docs/import-share.md` |
-| Web page parse (Custom fields, Next-link crawl → EPUB) | `share/WebPageIngest.kt` (`ParseSelectors`, `CssList`), `HiddenContent.kt` (CSS-hidden watermark removal), `WebCrawl.kt`, `EpubWriter.kt`, `HtmlParagraphs.kt` (HTML → paragraphs, also plugin chapters); crawl prompt `ui/library/WebCrawlCards.kt` + `LibraryViewModel.startWebImport` | `WebPageIngestTest`, `WebCrawlTest`, `HtmlParagraphsTest` |
-| Parser on-page picker | `ui/settings/PagePickerOverlay.kt` (WebView), `assets/picker/picker.js`, `share/SelectorBuilder.kt` (pure) | `SelectorBuilderTest`, `docs/import-share.md` |
-| Plugin runtime / `flow.*` host API | `plugin/runtime/*` | Cross-repo checklist |
-| Plugin models, caps, versions | `plugin/api/PluginModels.kt`, `PluginManifest.kt` | Cross-repo checklist |
-| Plugin tab UI, story card, downloads, position slider, sign-in | `ui/plugin/PluginTabViewModel.kt` (large), `PluginTab.kt`, `StoryMediaCard.kt`, `StoryCacheCards.kt`, `AccountSheets.kt`, `WebLoginOverlay.kt` (`auth.web` browser sign-in; cookie parsing `plugin/runtime/WebLoginCookies.kt`), `PluginBrowse.kt` (browse entry-page state, `PluginBrowseController`: per-tab load and cache), `CreatorPage.kt` (`BrowseListPane`, `CreatorPageOverlay` tabs / text / story / items panes) | `docs/plugins.md` |
-| Plugin chapter cache policy (cache level ahead, cleanup, pins, URL-keyed ToC refresh) | `plugin/store/PluginSessionStore.kt` (`fetchIndices`, `pruneIndices`, `chapterMoves`, `savedChapter`, pure), `PluginBookStore.kt` (`maintainChapterCache`, `scheduleMaintain`) | `PluginSessionStoreTest`, `docs/plugins.md` |
-| Plugin two-way sync (lists, reading positions, outbox, conflicts, pending positions) | `plugin/sync/` (`ListReconcile`, `ProgressReconcile` pure, `SyncState`, `TwoWaySync`: `run`, `tocStored`, `localPositionChanged`); list writes `plugin/store/PluginListWriter.kt`; UI `ui/plugin/PluginSyncController.kt`, `PositionConflictCard.kt`, `AccountSheets.kt`; plugin side `readPositions`, `setMembership`, `syncProgress`, `WorkDetail.readChapterUrl` | `ListReconcileTest`, `ProgressReconcileTest`, `SyncStateTest`, `docs/plugins.md` |
+| Queue stream (one document in reader + TTS) | `ui/reader/QueueBook.kt` (pure composite book, locator, `QueueChange`, `remap`, `tocItems`), `QueueStreams.kt` (build/open, `QueueStreamRef`), `QueuePlayback.kt` (live owner: `queue_items` Flow, in-place append or rebuild, done marking), `ReaderQueueMode.kt` | `QueueBookTest`, `docs/tts.md` |
+| Position writes (session id, per-domain row, log) | `data/ProgressWriter.kt`, `ReadingPosition.kt` (`ReadingSessionId`), `AppPositionStore.kt` (routes to Library / Queue / plugin tables), `PositionLog.kt` | `ProgressWriterTest`, `PositionLogFormatTest`, `docs/data.md` |
+
+## plugins
+
+| Change | Files | Also update |
+| --- | --- | --- |
+| Runtime / `flow.*` host API | `plugin/runtime/*` | [cross-repo.md](cross-repo.md) |
+| Models, caps, versions | `plugin/api/PluginModels.kt`, `PluginManifest.kt` | [cross-repo.md](cross-repo.md) |
+| Tab UI, story card, downloads, position slider, sign-in | `ui/plugin/PluginTabViewModel.kt` (large), `PluginTab.kt`, `StoryMediaCard.kt`, `StoryCacheCards.kt`, `AccountSheets.kt`, `WebLoginOverlay.kt` (`auth.web`; cookies `plugin/runtime/WebLoginCookies.kt`), `PluginBrowse.kt` (`PluginBrowseController`), `CreatorPage.kt` (`BrowseListPane`, `CreatorPageOverlay`) | `docs/plugins.md` |
+| Chapter cache policy (cache ahead, cleanup, pins, URL-keyed ToC refresh) | `plugin/store/PluginSessionStore.kt` (`fetchIndices`, `pruneIndices`, `chapterMoves`, `savedChapter`, pure), `PluginBookStore.kt` (`maintainChapterCache`, `scheduleMaintain`) | `PluginSessionStoreTest`, `docs/plugins.md` |
+| Two-way sync (lists, positions, outbox, conflicts) | `plugin/sync/` (`ListReconcile`, `ProgressReconcile` pure, `SyncState`, `TwoWaySync`); list writes `plugin/store/PluginListWriter.kt`; UI `ui/plugin/PluginSyncController.kt`, `PositionConflictCard.kt`, `AccountSheets.kt`; plugin side `readPositions`, `setMembership`, `syncProgress`, `WorkDetail.readChapterUrl` | `ListReconcileTest`, `ProgressReconcileTest`, `SyncStateTest`, `docs/plugins.md` |
 | Delete plugin data | `plugin/store/PluginDataEraser.kt`, `PluginManager.eraseData`; UI `ui/plugin/PluginDataSettings.kt`, uninstall card in `ui/settings/PluginsSettingsTab.kt` | `docs/plugins.md` |
-| New-chapter notifications (bell, background check, deep link) | `plugin/updates/` (`UpdateChecker`, `UpdateDiff` pure, `UpdateNotifier`, `UpdateScheduler`, `ChapterUpdateWorker`); bell in `MediaCardAdapters.kt` + `PluginTabViewModel.toggleNotify`; settings `ui/settings/NotificationSettings.kt` (About › Notifications); plugin side `checkUpdates` (capability `updates`); default-on lists `UpdateDiff.notifyLists` | `UpdateDiffTest`, `docs/plugins.md` |
-| Plugin version updates (background repo check, notify toggle) | `plugin/updates/PluginVersionWorker.kt`, `UpdateScheduler.applyVersionCheck`, `UpdateNotifier.postPluginUpdates`; pure `plugin/repo/PluginVersionUpdates.kt`; settings `PluginVersionCheckSection` in `ui/settings/NotificationSettings.kt`, `SettingsStore.PluginVersionCheckPrefs` / `CheckInterval` | `PluginVersionUpdatesTest`, `docs/plugins.md` |
-| Plugin repos / install, per-plugin settings | `plugin/repo/*`, `ui/settings/PluginsSettingsTab.kt` (Settings › Plugins: Installed + one sub-tab per plugin with `PluginAccountSettings` in `ui/plugin/AccountSheets.kt` and `PluginSettingsForm`); sign-in sync between screens `PluginManager.sessionChanges`; new-story download defaults `ui/settings/DataSettings.kt` (About › Data) | `RepoIndexTest`, `docs/settings.md` |
+| New-chapter notifications | `plugin/updates/` (`UpdateChecker`, `UpdateDiff` pure, `UpdateNotifier`, `UpdateScheduler`, `ChapterUpdateWorker`); bell in `MediaCardAdapters.kt` + `PluginTabViewModel.toggleNotify`; settings `ui/settings/NotificationSettings.kt`; plugin side `checkUpdates` (capability `updates`) | `UpdateDiffTest`, `docs/plugins.md` |
+| Plugin version updates | `plugin/updates/PluginVersionWorker.kt`, `UpdateScheduler.applyVersionCheck`, `UpdateNotifier.postPluginUpdates`; pure `plugin/repo/PluginVersionUpdates.kt`; settings `PluginVersionCheckSection`, `SettingsStore.PluginVersionCheckPrefs` | `PluginVersionUpdatesTest`, `docs/plugins.md` |
+| Repos / install, per-plugin settings | `plugin/repo/*`, `ui/settings/PluginsSettingsTab.kt` (`PluginAccountSettings`, `PluginSettingsForm`); sign-in sync `PluginManager.sessionChanges`; download defaults `ui/settings/DataSettings.kt` | `RepoIndexTest`, `docs/settings.md` |
 | Media card content | `ui/design/card/media/MediaCardAdapters.kt` (pure) | `MediaCardAdaptersTest` |
-| Any UI component / token | `ui/design/**`, `ui/theme/**` | `docs/ui-system/` (rule: `ui-system.mdc`) |
-| App icon, themed icon, splash, notification icon | Re-trace from `brand/concept/` (`brand/trace`: `npm run trace`, `npm run compare`) or edit `brand/flow-reader-mark.svg`, run `node brand/build.mjs` (writes `res/drawable/ic_launcher_*`, `ic_stat_flow`, `values/brand_colors.xml`); wiring `res/mipmap-anydpi/ic_launcher.xml`, `res/values-v31/themes.xml` | `docs/brand.md` |
-| Release | `app/build.gradle.kts` (`versionCode`, `versionName`) | `../flow-reader-chats/areas/release.md` |
 
-## Large files (read by offset, never whole)
+## import-share
 
-`TtsController.kt` 2045, `ReaderScreen.kt` ~1100 (one composable), `LibraryViewModel.kt` 840,
-`PluginTabViewModel.kt` 838. Member line numbers are in [index.md](index.md). Single-class files can't
-be split by moving code; they need helper-class extraction (separate, tested refactors).
+| Change | Files | Also update |
+| --- | --- | --- |
+| Share routing / parse rules | `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`), `ShareRouter.kt`; UI `ui/settings/SharingSettingsTab.kt`, `ImportRouterRules.kt`, `ImportParseRules.kt`, `ImportRuleControls.kt` | `ShareRouterTest`, `docs/import-share.md` |
+| Web page parse, Next-link crawl to EPUB | `share/WebPageIngest.kt` (`ParseSelectors`, `CssList`), `HiddenContent.kt`, `WebCrawl.kt`, `EpubWriter.kt`, `HtmlParagraphs.kt` (also plugin chapters); crawl prompt `ui/library/WebCrawlCards.kt` + `LibraryViewModel.startWebImport` | `WebPageIngestTest`, `WebCrawlTest`, `HtmlParagraphsTest` |
+| On-page picker | `ui/settings/PagePickerOverlay.kt` (WebView), `assets/picker/picker.js`, `share/SelectorBuilder.kt` (pure) | `SelectorBuilderTest`, `docs/import-share.md` |
 
-## Cross-repo change checklist (plugin-visible changes)
+## settings
 
-1. **Versions:** app `PLUGIN_HOST_API_VERSION` / `PLUGIN_MIN_API_VERSION` (`plugin/api/PluginManifest.kt`)
-   and plugins `HOST_API_VERSION` / `MIN_API_VERSION` (`../flow-reader-plugins/scripts/build-index.mjs`)
-   move together. Alpha: only the current version is accepted, so a bump means republishing every plugin.
-2. **Host API:** any `flow.*` change in `plugin/runtime/*` is mirrored in
-   `../flow-reader-plugins/test/host.mjs`.
-3. **Contract:** `docs/plugins/api.md`, `ui-contract.md`, `schema/*.json`, `examples/`. Icon tokens
-   (`ui/design/FlowIcons.kt`) are append-only.
-4. **Tests:** app `.\gradlew.bat :app:testDebugUnitTest`; plugins `npm test`, `npm run build`, `npm run check`.
-5. **Plugin release:** bump `version` in `<Plugin>/plugin.json`, rebuild `index.json`, commit. Never
-   change `id` or `bookIdPrefix`.
-6. **Order:** ship the app change first. Pushing plugins `main` publishes to users immediately via
-   Pages; apps on an older `apiVersion` stop being offered the bumped plugin until they update.
-7. Device test: `.\gradlew.bat :app:installDebug` bundles the sibling plugins checkout.
+| Change | Files | Also update |
+| --- | --- | --- |
+| A setting (new key) | `data/SettingsStore.kt` (prefs + setter), `ui/settings/SettingsState.kt`, the tab file | `docs/settings.md`, `docs/data.md` |
+| Text filters (Global/Groups/Local) | `data/TextFilters.kt`; UI `ui/settings/FiltersSettings.kt`, `FilterRuleList.kt` on `EditableRuleList.kt` (shared with Router/Parser lists); TTS-only rules via `TtsController.setSpeechFilters` | `TextFiltersTest`, `docs/settings.md` |
+| Layout theme (hue, saturation, lightness) | `ui/settings/ThemeSettingsPane.kt`; color math `ui/theme/Theme.kt`; `AccentLightness.scale` in `data/Models.kt` | `docs/settings.md`, `AccentLightnessTest` |
+| Audio settings UI | `ui/settings/AudioSettings.kt` (tab shell), `VoiceSettingsTab.kt`, `PlaybackSettingsTab.kt`, `AudioSettingsControls.kt` | `docs/settings.md` |
 
-## Verify
+## ui-system
 
-```powershell
-.\gradlew.bat :app:compileDebugKotlin
-.\gradlew.bat :app:testDebugUnitTest
-.\scripts\gen-agent-index.ps1          # after adding/moving/splitting files
-```
+| Change | Files | Also update |
+| --- | --- | --- |
+| Any UI component / token | `ui/design/**`, `ui/theme/**` | `docs/ui-system/` (rule `ui-system.mdc`) |
+
+## brand
+
+| Change | Files | Also update |
+| --- | --- | --- |
+| App icon, themed icon, splash, notification icon | Re-trace from `brand/concept/` (`brand/trace`: `npm run trace`, `npm run compare`) or edit `brand/flow-reader-mark.svg`, then `node brand/build.mjs` (writes `res/drawable/ic_launcher_*`, `ic_stat_flow`, `values/brand_colors.xml`); wiring `res/mipmap-anydpi/ic_launcher.xml`, `res/values-v31/themes.xml` | `docs/brand.md` |
+
+## release
+
+| Change | Files | Also update |
+| --- | --- | --- |
+| Version | `app/build.gradle.kts` (`versionCode`, `versionName`) | release stage in the context repo |
+
+## shared
+
+| Change | Files | Also update |
+| --- | --- | --- |
+| Room schema | `data/ProgressDb.kt` (bump version + `Migration`; schemas in `app/schemas/`), `LegacyMigration.kt` (9 to 10); plugin DBs `plugin/store/PluginDb.kt`, `PluginCatalog.kt`, `PluginStorageMigrator.kt` | `LegacyMigrationTest`, `docs/data.md` |
+| App singletons, routes | [architecture.md](architecture.md) | `docs/navigation.md` |
+
+## Large files
+
+Read by offset from [index.md](index.md), never whole: `TtsController.kt` 2240,
+`ReaderScreen.kt` 1153 (one composable), `PluginTabViewModel.kt` 997, `LibraryViewModel.kt` 882.
+Single-class files can't be split by moving code; they need helper-class extraction (separate,
+tested refactors).

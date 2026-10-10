@@ -6,8 +6,9 @@ alwaysApply: false
 
 # Plugin API
 
-Docs: `docs/plugins/api.md`, `docs/plugins/ui-contract.md`, schemas in `docs/plugins/schema/`,
-example `docs/plugins/examples/media-card.md`.
+Docs: `docs/plugins/api.md` (router to manifest, functions, features, host pages),
+`docs/plugins/ui-contract.md`, schemas in `docs/plugins/schema/`, example
+`docs/plugins/examples/media-card.md`.
 
 ## Versions
 
@@ -28,8 +29,6 @@ example `docs/plugins/examples/media-card.md`.
   `flow.fetch(url, { cookies: false })` uses `PluginHttp`'s cookie-less client.
 - `ChapterRef.locked` persists as a third `toc.txt` column; downloads skip locked chapters.
 - ToC refresh reconciles by chapter URL (`PluginSessionStore.chapterMoves` / `reconcileChapterFiles`).
-- A breaking contract change bumps both constants, `HOST_API_VERSION` / `MIN_API_VERSION` in
-  `flow-reader-plugins/scripts/build-index.mjs`, and every plugin's `apiVersion` + `version`.
 
 ## Media card
 
@@ -45,8 +44,7 @@ example `docs/plugins/examples/media-card.md`.
 
 1. Update models/parsers in `plugin/api/PluginModels.kt` and tests in `app/src/test/.../plugin/api/`.
 2. Update `MediaCardAdapters.kt` + `MediaCardAdaptersTest`.
-3. Update `docs/plugins/api.md`, `ui-contract.md`, and the JSON schemas.
-4. Update the Node test host and plugins in `../flow-reader-plugins` if they rely on it.
+3. Follow `docs/agent/cross-repo.md` (version sync, contract docs, host mirror, release order).
 
-Full cross-repo checklist (version sync, host mirror, release order): `docs/agent/map.md`.
-History and open threads: `../flow-reader-chats/areas/plugins.md`.
+Where to edit: `docs/agent/map.md` `## plugins`. History and open threads:
+`../flow-reader-chats/areas/plugins.md`.

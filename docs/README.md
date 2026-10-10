@@ -51,9 +51,9 @@ Engines, playback, highlight, and queue auto-advance.
 
 DataStore keys, Room tables, and on-disk layout.
 
-### [Agent map](agent/map.md)
+### [Agent reference](agent/CONTEXT.md)
 
-Where code lives, what to edit for a change, and the cross-repo checklist. Generated [code index](agent/index.md).
+Where code lives ([map](agent/map.md)), runtime shape, the [cross-repo checklist](agent/cross-repo.md), and the generated [code index](agent/index.md).
 
 ---
 

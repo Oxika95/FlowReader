@@ -1,0 +1,54 @@
+# Tests (generated)
+
+Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../index.md](../index.md).
+
+- `data/AccentLightnessTest.kt`
+- `data/BookBytesTest.kt`
+- `data/ChapterSourceTest.kt`
+- `data/IngestTest.kt`
+- `data/LegacyMigrationTest.kt`
+- `data/LibraryTabIdTest.kt`
+- `data/LocusAnchorTest.kt`
+- `data/PositionLogFormatTest.kt`
+- `data/ProgressWriterTest.kt`
+- `data/ReadingSessionTest.kt`
+- `data/SentenceSplitterTest.kt`
+- `data/SentenceTableTest.kt`
+- `data/SharedTextTitleTest.kt`
+- `data/TextFiltersTest.kt`
+- `data/UiScaleTest.kt`
+- `plugin/api/PluginApiVersionTest.kt`
+- `plugin/api/PluginCardTest.kt`
+- `plugin/repo/PluginVersionUpdatesTest.kt`
+- `plugin/repo/RepoIndexTest.kt`
+- `plugin/runtime/WebLoginCookiesTest.kt`
+- `plugin/store/PluginChapterBlocksTest.kt`
+- `plugin/store/PluginMembershipStoreTest.kt`
+- `plugin/store/PluginSessionStoreTest.kt`
+- `plugin/sync/ListReconcileTest.kt`
+- `plugin/sync/ProgressReconcileTest.kt`
+- `plugin/sync/SyncStateTest.kt`
+- `plugin/updates/UpdateDiffTest.kt`
+- `share/HiddenContentTest.kt`
+- `share/SelectorBuilderTest.kt`
+- `share/ShareRouterTest.kt`
+- `share/WebCrawlTest.kt`
+- `share/WebPageIngestTest.kt`
+- `tts/CrossfadeTest.kt`
+- `tts/EdgeHandshakeTest.kt`
+- `tts/EdgeSynthLengthBench.kt`
+- `tts/EdgeTtsClientTest.kt`
+- `tts/EdgeVoiceCatalogTest.kt`
+- `tts/NetworkLanePolicyTest.kt`
+- `tts/RaceScheduleTest.kt`
+- `tts/SpeechTextTest.kt`
+- `tts/WordHighlightTest.kt`
+- `ui/design/card/media/MediaCardAdaptersTest.kt`
+- `ui/design/tabs/FlowTabLayoutTest.kt`
+- `ui/plugin/GroupedRowsTest.kt`
+- `ui/plugin/SyncTargetsTest.kt`
+- `ui/reader/QueueBookTest.kt`
+- `ui/reader/ReaderHomeTest.kt`
+- `ui/reader/ReaderProgressPolicyTest.kt`
+- `ui/reader/ReaderTouchPolicyTest.kt`
+- `ui/settings/PickerFieldsTest.kt`
