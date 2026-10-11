@@ -34,6 +34,7 @@ import com.personal.flowreader.share.ShareRouter
 import com.personal.flowreader.share.WebPageIngest
 import com.personal.flowreader.ui.reader.FilterPreviewMode
 import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -123,6 +124,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             )
             refresh()
         }
+        viewModelScope.launch { flow.shareInbox.process { action, claim -> executeShare(action, claim) } }
     }
 
     fun refresh() {
@@ -241,10 +243,6 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun handleIncomingIntent(intent: Intent?): Boolean {
         if (intent == null) return false
         when (intent.action) {
-            ShareDispatch.ACTION_EXECUTE -> {
-                executeShareIntent(intent)
-                return true
-            }
             UpdateNotifier.ACTION_OPEN_STORY -> {
                 val pluginId = intent.getStringExtra(UpdateNotifier.EXTRA_PLUGIN_ID).orEmpty()
                 val bookId = intent.getStringExtra(UpdateNotifier.EXTRA_BOOK_ID).orEmpty()
@@ -279,62 +277,49 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun executeShareIntent(intent: Intent) {
-        val kind = intent.getStringExtra(ShareDispatch.EXTRA_KIND) ?: return
-        viewModelScope.launch {
-            _ui.value = _ui.value.copy(busy = true, error = null, message = null)
-            try {
-                when (kind) {
-                    ShareDispatch.KIND_FILES -> {
-                        val text = intent.getStringExtra(ShareDispatch.EXTRA_TEXT).orEmpty()
-                        val title = intent.getStringExtra(ShareDispatch.EXTRA_TITLE)
-                        val shelf = intent.getStringExtra(ShareDispatch.EXTRA_LIBRARY_TAB).orEmpty()
-                        val result = withContext(Dispatchers.IO) {
-                            flow.catalog.addText(
-                                text = text,
-                                titleHint = title,
-                                inLibrary = true,
-                                enqueue = false,
-                                libraryTabId = shelf,
-                            )
-                        }
-                        refreshAfterIngest(tabForShelf(shelf), "Added ${result.title}")
-                        autoPlay(result)
-                    }
-                    ShareDispatch.KIND_QUEUE -> {
-                        val text = intent.getStringExtra(ShareDispatch.EXTRA_TEXT).orEmpty()
-                        val title = intent.getStringExtra(ShareDispatch.EXTRA_TITLE)
-                        val result = withContext(Dispatchers.IO) {
-                            flow.catalog.addText(
-                                text = text,
-                                titleHint = title,
-                                inLibrary = false,
-                                enqueue = true,
-                            )
-                        }
-                        refreshAfterIngest(LibraryTabId.Que, "Queued ${result.title}")
-                        autoPlay(result)
-                    }
-                    ShareDispatch.KIND_CRAWL -> {
-                        val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
-                        val landing = RouterLanding.parse(
-                            intent.getStringExtra(ShareDispatch.EXTRA_LANDING),
-                            RouterLanding.Queue,
+    /** One routed share from the inbox; returns once it is ingested (or the crawl prompt answered). */
+    private suspend fun executeShare(action: ShareAction, claimAutoPlay: () -> Boolean) {
+        _ui.value = _ui.value.copy(busy = true, error = null, message = null)
+        try {
+            when (action) {
+                is ShareAction.ToFiles -> {
+                    val result = withContext(Dispatchers.IO) {
+                        flow.catalog.addText(
+                            text = action.text,
+                            titleHint = action.titleHint,
+                            inLibrary = true,
+                            enqueue = false,
+                            libraryTabId = action.libraryTabId,
                         )
-                        startWebImport(WebImportRequest(url, parseRuleFor(intent), landing, autoPlay = true))
                     }
-                    ShareDispatch.KIND_PLUGIN -> {
-                        val url = intent.getStringExtra(ShareDispatch.EXTRA_URL).orEmpty()
-                        val pluginId = intent.getStringExtra(ShareDispatch.EXTRA_PLUGIN_ID)
-                        if (!pluginId.isNullOrBlank()) openPluginShare(pluginId, url)
-                    }
+                    refreshAfterIngest(tabForShelf(action.libraryTabId), "Added ${result.title}")
+                    autoPlay(result, claimAutoPlay)
                 }
-            } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(
-                    busy = false,
-                    error = t.message ?: "Could not handle shared content",
-                )
+                is ShareAction.ToQueue -> {
+                    val result = withContext(Dispatchers.IO) {
+                        flow.catalog.addText(
+                            text = action.text,
+                            titleHint = action.titleHint,
+                            inLibrary = false,
+                            enqueue = true,
+                        )
+                    }
+                    refreshAfterIngest(LibraryTabId.Que, "Queued ${result.title}")
+                    autoPlay(result, claimAutoPlay)
+                }
+                is ShareAction.Crawl ->
+                    startWebImport(WebImportRequest(action.url, action.rule, action.landing, autoPlay = true), claimAutoPlay)
+                is ShareAction.Plugin -> openPluginShare(action.pluginId, action.url)
+                is ShareAction.ShowChooser -> Unit
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            _ui.value = _ui.value.copy(
+                busy = false,
+                crawlProgress = null,
+                error = t.message ?: "Could not handle shared content",
+            )
         }
     }
 
@@ -424,46 +409,39 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private suspend fun parseRuleFor(intent: Intent): ParseRule {
-        val id = intent.getStringExtra(ShareDispatch.EXTRA_PARSE_RULE_ID)
-        if (!id.isNullOrBlank()) {
-            withContext(Dispatchers.IO) { flow.settings.shareParseRulesOnce() }
-                .firstOrNull { it.id == id }
-                ?.let { return it }
-        }
-        val body = intent.getStringExtra(ShareDispatch.EXTRA_SELECTOR)
-        return ParseRule(
-            hostPattern = "",
-            parseMode = if (body.isNullOrBlank()) ShareParseMode.Default else ShareParseMode.Custom,
-            contentCss = body,
-            titleCss = intent.getStringExtra(ShareDispatch.EXTRA_TITLE_CSS),
-            removeCss = intent.getStringExtra(ShareDispatch.EXTRA_REMOVE_CSS),
-        )
-    }
+    /** Crawl prompt answer: pages to crawl, 0 = this page only, null = cancelled. */
+    private var crawlAnswer: CompletableDeferred<Int?>? = null
 
-    /** Rules with a Next selector ask first: this page only, or crawl into one book. */
-    private suspend fun startWebImport(request: WebImportRequest) {
+    /**
+     * Rules with Crawl on ask first: this page only, or crawl a chosen number of pages into one
+     * book. Suspends until the prompt is answered, so later shares wait their turn.
+     */
+    private suspend fun startWebImport(request: WebImportRequest, claimAutoPlay: () -> Boolean = { false }) {
         if (ParseRules.canCrawl(request.rule)) {
+            val answer = CompletableDeferred<Int?>()
+            crawlAnswer?.complete(null)
+            crawlAnswer = answer
             _ui.value = _ui.value.copy(busy = false, crawlPrompt = request)
+            val pages = try {
+                answer.await()
+            } finally {
+                if (crawlAnswer === answer) crawlAnswer = null
+            }
+            _ui.value = _ui.value.copy(crawlPrompt = null)
+            pages ?: return
+            _ui.value = _ui.value.copy(busy = true, error = null, message = null)
+            if (pages > 0) crawlWeb(request, pages, claimAutoPlay) else importWebPage(request, claimAutoPlay)
             return
         }
-        importWebPage(request)
+        importWebPage(request, claimAutoPlay)
     }
 
-    fun answerCrawlPrompt(crawl: Boolean) {
-        val request = _ui.value.crawlPrompt ?: return
-        _ui.value = _ui.value.copy(crawlPrompt = null, busy = true, error = null, message = null)
-        viewModelScope.launch {
-            try {
-                if (crawl) crawlWeb(request) else importWebPage(request)
-            } catch (t: Throwable) {
-                _ui.value = _ui.value.copy(busy = false, crawlProgress = null, error = t.message ?: "Could not import")
-            }
-        }
+    fun answerCrawlPrompt(crawl: Boolean, limit: Int) {
+        crawlAnswer?.complete(if (crawl) limit.coerceIn(1, ParseRule.MAX_CRAWL_LIMIT) else 0)
     }
 
     fun dismissCrawlPrompt() {
-        _ui.value = _ui.value.copy(crawlPrompt = null)
+        crawlAnswer?.complete(null) ?: run { _ui.value = _ui.value.copy(crawlPrompt = null) }
     }
 
     @Volatile
@@ -474,7 +452,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value.crawlProgress?.let { _ui.value = _ui.value.copy(crawlProgress = it.copy(stopping = true)) }
     }
 
-    private suspend fun importWebPage(request: WebImportRequest) {
+    private suspend fun importWebPage(request: WebImportRequest, claimAutoPlay: () -> Boolean) {
         val selectors = ParseRules.effectiveSelectors(request.rule)
         val desktop = request.rule.desktop
         val article = withContext(Dispatchers.IO) {
@@ -493,7 +471,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     sourceUrl = request.url,
                 )
             }
-            finishWebImport(request, saved, saved.title)
+            finishWebImport(request, saved, saved.title, claimAutoPlay)
             return
         }
         val result = withContext(Dispatchers.IO) {
@@ -506,12 +484,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 sourceUrl = request.url,
             )
         }
-        finishWebImport(request, result, result.title)
+        finishWebImport(request, result, result.title, claimAutoPlay)
     }
 
-    private suspend fun crawlWeb(request: WebImportRequest) {
-        val selectors = ParseRules.effectiveSelectors(request.rule) ?: return importWebPage(request)
-        val limit = request.rule.crawlLimit
+    private suspend fun crawlWeb(request: WebImportRequest, limit: Int, claimAutoPlay: () -> Boolean) {
+        val selectors = ParseRules.effectiveSelectors(request.rule) ?: return importWebPage(request, claimAutoPlay)
         crawlStopRequested = false
         _ui.value = _ui.value.copy(crawlProgress = CrawlProgress(0, limit, ""))
         try {
@@ -543,26 +520,33 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             }
             val count = result.pages.size
             val label = "${saved.title} ($count ${if (count == 1) "chapter" else "chapters"})"
-            finishWebImport(request, saved, label)
+            finishWebImport(request, saved, label, claimAutoPlay)
             result.error?.let { _ui.value = _ui.value.copy(error = "Crawl stopped early: $it") }
         } finally {
             _ui.value = _ui.value.copy(crawlProgress = null)
         }
     }
 
-    private suspend fun finishWebImport(request: WebImportRequest, result: TextIngestResult, label: String) {
+    private suspend fun finishWebImport(
+        request: WebImportRequest,
+        result: TextIngestResult,
+        label: String,
+        claimAutoPlay: () -> Boolean,
+    ) {
         val landing = request.landing
         refreshAfterIngest(tabForLanding(landing), if (landing.isQueue) "Queued $label" else "Added $label")
-        if (request.autoPlay) autoPlay(result)
+        if (request.autoPlay) autoPlay(result, claimAutoPlay)
     }
 
     /**
      * Auto Play on Share: open the shared item in the reader, which starts TTS once loaded. A
-     * queued share opens the Queue at its entry.
+     * queued share opens the Queue at its entry. Only the first share of a burst may play; the
+     * rest stay queued and play after it.
      */
-    private fun autoPlay(result: TextIngestResult) {
+    private fun autoPlay(result: TextIngestResult, claimAutoPlay: () -> Boolean) {
         val state = tts.state.value
         if (!state.autoPlayOnShare || (state.playing && !state.shareInterruptsPlayback)) return
+        if (!claimAutoPlay()) return
         val queId = result.queItem?.queId
         if (queId != null) {
             flow.pendingSharePlay = queId

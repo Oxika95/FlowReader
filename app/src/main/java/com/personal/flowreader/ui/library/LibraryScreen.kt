@@ -7,32 +7,20 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -42,41 +30,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.personal.flowreader.data.BookSource
-import com.personal.flowreader.data.CustomLibraryTab
 import com.personal.flowreader.data.FileAccessAdvice
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.LibraryTabId
-import com.personal.flowreader.data.LibraryViewMode
-import com.personal.flowreader.data.QueueItemEntity
-import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowEmptyState
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowTextAction
-import com.personal.flowreader.ui.design.card.flowDisplayListPadding
 import com.personal.flowreader.ui.design.controls.FlowFab
 import com.personal.flowreader.ui.design.controls.FlowHint
-import com.personal.flowreader.ui.design.controls.FlowIconButton
-import com.personal.flowreader.ui.design.controls.FlowSection
-import com.personal.flowreader.ui.design.controls.FlowTextField
 import com.personal.flowreader.ui.design.layer.FlowScreen
 import com.personal.flowreader.ui.design.layer.FlowScreenKind
-import com.personal.flowreader.ui.design.tabs.FlowTab
-import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.plugin.PluginTabContent
 import com.personal.flowreader.ui.plugin.PluginTabFab
 import com.personal.flowreader.ui.plugin.PluginTabOverlays
-import com.personal.flowreader.ui.settings.EditableRuleList
-import com.personal.flowreader.ui.settings.RuleListText
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.settings.FilterEditorSession
@@ -117,7 +91,7 @@ fun LibraryScreen(
     appearance: AppearanceSettingsState,
     appearanceCallbacks: AppearanceSettingsCallbacks,
     onOpenBook: (String) -> Unit,
-    onOpenQue: (bookId: String, queId: String) -> Unit,
+    onOpenQue: (bookId: String, queId: String, chapter: Int?) -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
     val installedPlugins by vm.plugins.collectAsState()
@@ -231,7 +205,7 @@ fun LibraryScreen(
                     entries = ui.que,
                     busy = ui.busy,
                     bottomInset = docks.bottom,
-                    onOpen = { entry -> onOpenQue(entry.bookId, entry.queId) },
+                    onOpen = { entry, chapter -> onOpenQue(entry.bookId, entry.queId, chapter) },
                     onReorder = vm::reorderQue,
                     onRemove = vm::removeQue,
                     modifier = paneModifier,
@@ -408,128 +382,6 @@ fun LibraryScreen(
     }
 }
 
-/** App title, view-mode and settings actions, then the primary tab bar ending in the "+" action tab. */
-@Composable
-private fun LibraryTopBar(
-    tab: LibraryTabId,
-    plugins: List<InstalledPlugin>,
-    customTabs: List<CustomLibraryTab>,
-    viewMode: LibraryViewMode,
-    addTabOpen: Boolean,
-    onTab: (LibraryTabId) -> Unit,
-    onViewMode: (LibraryViewMode) -> Unit,
-    onAddTab: () -> Unit,
-    onSettings: () -> Unit,
-) {
-    val destinations = buildList {
-        add(LibraryTabId.Files to "Files")
-        add(LibraryTabId.Que to "Queue")
-        customTabs.sortedBy { it.order }.forEach { add(LibraryTabId.Custom(it.id) to it.title) }
-        plugins.forEach { add(LibraryTabId.Plugin(it.id) to it.name) }
-    }
-    val tabs = destinations.map { (id, label) ->
-        FlowTab.text(label, selected = !addTabOpen && tab == id, onClick = { onTab(id) }, key = id)
-    } + FlowTab.action(Icons.Filled.Add, "Add tab", open = addTabOpen, onClick = onAddTab)
-
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = FlowTokens.Pad.Screen, end = FlowTokens.Space.XS),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Flow Reader", style = FlowType.cardTitle, modifier = Modifier.weight(1f))
-            if (tab != LibraryTabId.Que) {
-                val accent = MaterialTheme.colorScheme.primary
-                val muted = MaterialTheme.colorScheme.onSurfaceVariant
-                FlowIconButton(
-                    icon = Icons.AutoMirrored.Filled.ViewList,
-                    contentDescription = "List view",
-                    onClick = { onViewMode(LibraryViewMode.List) },
-                    tint = if (viewMode == LibraryViewMode.List) accent else muted,
-                )
-                FlowIconButton(
-                    icon = Icons.Filled.GridView,
-                    contentDescription = "Shelf view",
-                    onClick = { onViewMode(LibraryViewMode.Shelf) },
-                    tint = if (viewMode == LibraryViewMode.Shelf) accent else muted,
-                )
-            }
-            FlowIconButton(icon = Icons.Filled.Settings, contentDescription = "Settings", onClick = onSettings)
-        }
-        FlowTabBar(tabs = tabs)
-    }
-}
-
-@Composable
-private fun AddTabOverlay(
-    visible: Boolean,
-    plugins: List<InstalledPlugin>,
-    enabledIds: Set<String>,
-    customTabs: List<CustomLibraryTab>,
-    onSetEnabled: (String, Boolean) -> Unit,
-    onAddCustom: (String) -> Unit,
-    onRemoveCustom: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var customTitle by remember(visible) { mutableStateOf("") }
-    FlowFullscreenCard(visible = visible, onDismiss = onDismiss, title = "Add a tab") {
-        FlowSection("Custom shelf")
-        FlowHint("Create a shelf and choose it as a Router destination under Import settings.")
-        FlowTextField(value = customTitle, onValueChange = { customTitle = it }, label = "Tab name")
-        FlowActionRow {
-            FlowTextAction(
-                "Add shelf",
-                {
-                    val name = customTitle.trim()
-                    if (name.isNotEmpty()) {
-                        onAddCustom(name)
-                        customTitle = ""
-                    }
-                },
-                enabled = customTitle.trim().isNotEmpty(),
-            )
-        }
-        customTabs.sortedBy { it.order }.forEach { tab ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(tab.title, style = FlowType.rowTitle, modifier = Modifier.weight(1f))
-                IconButton(onClick = { onRemoveCustom(tab.id) }) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Remove ${tab.title}")
-                }
-            }
-        }
-
-        HorizontalDivider(Modifier.padding(vertical = FlowTokens.Space.S))
-
-        FlowSection("Plugins")
-        FlowHint(
-            if (plugins.isEmpty()) {
-                "No plugins installed. Browse repositories in Settings > Plugins."
-            } else {
-                "Enable a plugin to add its tab next to Files and Queue."
-            },
-        )
-        plugins.forEach { plugin ->
-            val on = plugin.id in enabledIds
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSetEnabled(plugin.id, !on) }
-                    .padding(vertical = FlowTokens.Space.S),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(plugin.name, style = FlowType.rowTitle)
-                    if (plugin.manifest.description.isNotBlank()) FlowHint(plugin.manifest.description)
-                }
-                TextButton(onClick = { onSetEnabled(plugin.id, !on) }) {
-                    Text(if (on) "Remove" else "Add", style = FlowType.action)
-                }
-            }
-        }
-    }
-}
-
 @Composable
 private fun AddBookOverlay(
     visible: Boolean,
@@ -556,65 +408,5 @@ private fun AddBookOverlay(
         FlowHint(
             "Reference in place reads the original file. No extra copy. Access can be lost if the file is moved or the grant is revoked.",
         )
-    }
-}
-
-@Composable
-private fun QueTab(
-    entries: List<QueueItemEntity>,
-    busy: Boolean,
-    bottomInset: androidx.compose.ui.unit.Dp,
-    onOpen: (QueueItemEntity) -> Unit,
-    onReorder: (List<String>) -> Unit,
-    onRemove: (Set<String>) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(modifier.fillMaxSize()) {
-        if (entries.isEmpty() && !busy) {
-            FlowEmptyState("Queue is empty.\nPaste from the clipboard or share text to Flow Reader.")
-            return@Box
-        }
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(flowDisplayListPadding(bottomExtra = bottomInset)),
-        ) {
-            EditableRuleList(
-                rules = entries,
-                idOf = { it.queId },
-                nameOf = { it.title },
-                text = RuleListText(
-                    title = "Queue",
-                    empty = "",
-                    hint = "Plays top to bottom as one document. Hold an item to reorder or remove.",
-                    editingHint = "Drag the handle to change the order. The Queue plays top to bottom.",
-                    noun = "item",
-                ),
-                onAdd = null,
-                onEdit = onOpen,
-                onReorder = onReorder,
-                onDelete = onRemove,
-                trailing = { entry ->
-                    if (entry.done) {
-                        Text(
-                            "Done",
-                            style = FlowType.label,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(end = FlowTokens.Space.XS),
-                        )
-                    }
-                },
-            ) { entry, rowModifier ->
-                Text(
-                    entry.title,
-                    style = FlowType.body,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (entry.done) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified,
-                    modifier = rowModifier.padding(start = FlowTokens.Space.XS),
-                )
-            }
-        }
     }
 }

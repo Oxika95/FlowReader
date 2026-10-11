@@ -378,8 +378,8 @@ object ParseRules {
         )
     }
 
-    /** Next-link crawling is offered only for Custom rules with a Next selector. */
-    fun canCrawl(rule: ParseRule): Boolean = effectiveSelectors(rule)?.next != null
+    /** Next-link crawling is offered only for Custom rules with Crawl on and a Next selector. */
+    fun canCrawl(rule: ParseRule): Boolean = rule.crawl && effectiveSelectors(rule)?.next != null
 
     /** True when shared [url] would be routed to [rule] (ignoring rules ordered above it). */
     fun appliesTo(rule: ParseRule, url: String): Boolean {
@@ -410,6 +410,7 @@ object ParseRules {
                 ShareJson.appendJson(this, "removeCss", rule.removeCss.orEmpty()); append(',')
                 ShareJson.appendJson(this, "prevCss", rule.prevCss.orEmpty()); append(',')
                 ShareJson.appendJson(this, "nextCss", rule.nextCss.orEmpty()); append(',')
+                append("\"crawl\":").append(rule.crawl).append(',')
                 append("\"crawlLimit\":").append(rule.crawlLimit).append(',')
                 append("\"desktop\":").append(rule.desktop).append(',')
                 append("\"stripHidden\":").append(rule.stripHidden).append(',')
@@ -427,6 +428,7 @@ object ParseRules {
             ShareJson.splitObjects(json.trim()).mapIndexed { index, obj ->
                 val parseMode = runCatching { ShareParseMode.valueOf(ShareJson.readString(obj, "parseMode")) }
                     .getOrDefault(ShareParseMode.Default)
+                val nextCss = ShareJson.readString(obj, "nextCss").ifBlank { null }
                 ParseRule(
                     id = ShareJson.readString(obj, "id").ifBlank { UUID.randomUUID().toString() },
                     hostPattern = ShareJson.readString(obj, "hostPattern"),
@@ -440,7 +442,8 @@ object ParseRules {
                     coverCss = ShareJson.readString(obj, "coverCss").ifBlank { null },
                     removeCss = ShareJson.readString(obj, "removeCss").ifBlank { null },
                     prevCss = ShareJson.readString(obj, "prevCss").ifBlank { null },
-                    nextCss = ShareJson.readString(obj, "nextCss").ifBlank { null },
+                    nextCss = nextCss,
+                    crawl = ShareJson.readBool(obj, "crawl", false),
                     crawlLimit = ShareJson.readInt(obj, "crawlLimit", ParseRule.DEFAULT_CRAWL_LIMIT)
                         .coerceIn(1, ParseRule.MAX_CRAWL_LIMIT),
                     desktop = ShareJson.readBool(obj, "desktop", false),

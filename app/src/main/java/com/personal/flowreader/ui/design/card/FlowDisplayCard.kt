@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import com.personal.flowreader.ui.design.card.media.MediaStat
 import com.personal.flowreader.ui.design.controls.FlowBadgeTone
+import com.personal.flowreader.ui.design.controls.FlowCountBadge
 import com.personal.flowreader.ui.design.controls.FlowMetaRow
 import com.personal.flowreader.ui.design.surface.FlowCover
 import com.personal.flowreader.ui.design.surface.FlowProgressBar
@@ -73,6 +75,8 @@ fun FlowDisplayCard(
     corner: FlowCornerBadge? = null,
     enabled: Boolean = true,
     onLongClick: (() -> Unit)? = null,
+    /** New-chapter count: a [FlowCountBadge] on the row's trailing edge or the tile's top-right corner. */
+    newCount: Int = 0,
 ) {
     val sized = when (layout) {
         FlowDisplayLayout.Row -> modifier
@@ -88,30 +92,46 @@ fun FlowDisplayCard(
             .fillMaxWidth()
             .aspectRatio(FlowTokens.CoverAspect)
     }
-    FlowSurface(
-        modifier = sized,
-        style = FlowSurfaceStyle.Flat,
-        onClick = if (enabled) onClick else null,
-        onLongClick = if (enabled) onLongClick else null,
-        onClickLabel = "Open",
-    ) {
+    Box(sized) {
+        FlowSurface(
+            modifier = Modifier.fillMaxSize(),
+            style = FlowSurfaceStyle.Flat,
+            onClick = if (enabled) onClick else null,
+            onLongClick = if (enabled) onLongClick else null,
+            onClickLabel = "Open",
+        ) {
+            when (layout) {
+                FlowDisplayLayout.Row -> DisplayRow(title, art, subtitle, badges, badgeTones, stats, progress)
+                FlowDisplayLayout.Tile -> DisplayTile(title, art, progress)
+            }
+            if (corner != null) {
+                Icon(
+                    corner.icon,
+                    contentDescription = corner.contentDescription,
+                    tint = if (layout == FlowDisplayLayout.Tile) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(FlowTokens.Space.S)
+                        .size(FlowTokens.Icon.S),
+                )
+            }
+            if (progress != null && layout == FlowDisplayLayout.Row) {
+                FlowProgressBar(progress = progress, modifier = Modifier.align(Alignment.BottomCenter))
+            }
+        }
         when (layout) {
-            FlowDisplayLayout.Row -> DisplayRow(title, art, subtitle, badges, badgeTones, stats, progress)
-            FlowDisplayLayout.Tile -> DisplayTile(title, art, progress)
-        }
-        if (corner != null) {
-            Icon(
-                corner.icon,
-                contentDescription = corner.contentDescription,
-                tint = if (layout == FlowDisplayLayout.Tile) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(FlowTokens.Space.S)
-                    .size(FlowTokens.Icon.S),
+            FlowDisplayLayout.Row -> FlowCountBadge(
+                newCount,
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .offset(x = FlowTokens.Comp.CountBadge / 2),
             )
-        }
-        if (progress != null && layout == FlowDisplayLayout.Row) {
-            FlowProgressBar(progress = progress, modifier = Modifier.align(Alignment.BottomCenter))
+            FlowDisplayLayout.Tile -> FlowCountBadge(
+                newCount,
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(FlowTokens.Space.S),
+            )
         }
     }
 }

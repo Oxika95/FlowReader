@@ -129,7 +129,7 @@ object PluginCardLimits {
     const val MAX_FOOTER_ACTIONS = 2
 
     /** Ids the host uses for its own actions; plugin actions may not reuse them. */
-    val RESERVED_IDS = setOf("read", "download", "refresh", "delete", "share", "open", "remove", "notify")
+    val RESERVED_IDS = setOf("read", "download", "refresh", "delete", "share", "open", "remove", "notify", "rename")
     private val ID_PATTERN = Regex("^[a-z0-9][a-z0-9_-]{0,31}$")
 
     fun isValidActionId(id: String): Boolean =

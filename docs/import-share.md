@@ -18,7 +18,13 @@ See [`AndroidManifest.xml`](../app/src/main/AndroidManifest.xml).
 2. [`ShareRouter.decide`](../app/src/main/java/com/personal/flowreader/share/ShareRouter.kt) with prefs + router + parse rules
 3. Outcomes: Files, Queue, Crawl (fetch page), Plugin (by plugin id), or ShowChooser
 4. Optional floating overlay ([`ShareOverlay.kt`](../app/src/main/java/com/personal/flowreader/share/ShareOverlay.kt)): Plugin vs Parse/Queue, Cancel — needs `SYSTEM_ALERT_WINDOW` when Manual Override is Ask
-5. `ShareDispatch` → MainActivity `ACTION_EXECUTE` → library ingest
+5. `ShareDispatch` puts the action in the app's [`ShareInbox`](../app/src/main/java/com/personal/flowreader/share/ShareInbox.kt)
+   and brings MainActivity forward with a plain intent. The Library ingests inbox items one at a
+   time in share order (a crawl prompt holds later shares until answered). Share data never rides
+   in an intent, so activity recreation or a Recents relaunch can't replay a share.
+6. Auto Play on Share: only the first share of a burst (shares arriving while earlier ones are
+   still being ingested) opens and plays; the rest are queued and play after it. MainActivity
+   ignores any incoming intent redelivered on recreation or from Recents.
 
 ![Import Router](images/settings-import.png)
 
@@ -70,10 +76,12 @@ page HTML once (mobile Chrome user agent, no scripts run) and parses it with Jso
 
 ### Crawl (Next button)
 
-When the matched rule is Custom with a Next selector, sharing asks **Crawl chapters?**:
-**This page** (single import as before), **Crawl**, or Cancel.
+When the matched rule is Custom with a Next selector and **Crawl** on (`ParseRule.crawl`; rules saved
+before the toggle existed keep it on), sharing asks **Crawl chapters?** with a **Pages** field
+(prefilled from the rule's default, 1–2000): **This page** (single import as before), **Crawl**, or
+Cancel. With Crawl off, the page imports directly.
 [`WebCrawl`](../app/src/main/java/com/personal/flowreader/share/WebCrawl.kt) follows Next (about 400 ms
-apart) until there is no Next link, a URL repeats, the rule's Crawl limit is reached, or **Stop** is
+apart) until there is no Next link, a URL repeats, the chosen page count is reached, or **Stop** is
 pressed (pages fetched so far are kept). A later page failing ends the crawl with the pages so far
 and an error message; a failing first page imports nothing. Pages become one EPUB
 ([`EpubWriter`](../app/src/main/java/com/personal/flowreader/share/EpubWriter.kt): one chapter per page,

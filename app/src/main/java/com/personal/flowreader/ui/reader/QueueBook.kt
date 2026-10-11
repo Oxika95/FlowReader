@@ -116,6 +116,10 @@ internal class QueueBook(val segments: List<QueueSegment>) {
 
     fun baseOf(segment: Int): Int = bases[segment]
 
+    /** First row not marked done (else the first row); -1 when empty. */
+    fun firstUnfinished(): Int =
+        if (segments.isEmpty()) -1 else segments.indexOfFirst { !it.done }.takeIf { it >= 0 } ?: 0
+
     /** Segment index and the locus in that item's own chapter indices. */
     fun toLocal(locus: Locus): Pair<Int, Locus> {
         val seg = segmentIndexOf(locus.chapterIndex)

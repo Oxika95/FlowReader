@@ -29,6 +29,9 @@ object EpubIngest {
     internal fun titleOf(opf: Document): String? =
         opf.selectFirst("metadata > dc|title, metadata title, dc|title")?.text()?.ifBlank { null }
 
+    internal fun authorOf(opf: Document): String? =
+        opf.selectFirst("metadata > dc|creator, metadata creator, dc|creator")?.text()?.trim()?.ifBlank { null }
+
     internal fun extractBlocks(html: String, prefix: String): List<Block> =
         extractBlocks(Jsoup.parseBodyFragment(html).body(), prefix)
 

@@ -9,7 +9,7 @@ area); `Flat` is a hard edge for lists.
 | Fullscreen | `FlowFullscreenCard`, `FlowCardHeader`, `FlowActionRow`, `FlowTextAction`, `FlowConfirmCard` | `ui/design/card/FlowFullscreenCard.kt` |
 | Floating | `FlowFloatingCard`, `FlowFloatingChip` | `ui/design/card/FlowFloatingCard.kt` |
 | Display | `FlowDisplayCard`, `FlowDisplayList`, `FlowDisplayGrid`, `FlowEmptyState` | `ui/design/card/FlowDisplayCard.kt` |
-| Media | `FlowMediaCard`, `MediaCardModel`, adapters, `MediaSegmentStrip` | `ui/design/card/media/` |
+| Media | `FlowMediaCard`, `MediaCardModel`, adapters, `MediaSegmentSlider`, `MediaSegmentStrip` | `ui/design/card/media/` |
 
 ## Fullscreen card
 
@@ -105,6 +105,9 @@ FlowDisplayList(contentPadding = flowDisplayListPadding(bottomExtra = docks.bott
 ```
 
 Empty slots are hidden. `Row` is `Comp.ListRow` high (grows when badges/stats are present).
+`newCount` (plugin stories with new chapters) adds a `FlowCountBadge`: on a row it sits on the
+trailing edge, vertically centred, half past the border; on a tile it sits in the cover's top-right
+corner.
 `Tile` is a 2:3 cover with a dark title band. `FlowDisplayGrid` uses adaptive `Comp.GridMinCell`
 columns. Convention: **tap = primary (read/open), long-press = media card**.
 
@@ -142,7 +145,7 @@ FlowMediaCard(
 │ [badge] [badge]  ★ 4.6  👁 1.2M  📖 120                           │
 │ tags · tags                                                        │
 │ synopsis                                                           │
-│ progress bar | segment strip                                       │
+│ progress bar | segment slider                                      │
 └────────────────────────────────────────────────────────────────────┘
   status line
   links
@@ -158,7 +161,8 @@ FlowMediaCard(
 | `title`, `subtitle`, `titleMaxLines` | |
 | `stats: List<MediaStat(icon, value, label)>` | Icon tokens from `FlowIcons` |
 | `badges`, `tags`, `synopsis` | Hidden when empty |
-| `progress: Float?` / `segments: MediaSegments?` | Reading progress bar or chapter cache strip |
+| `progress: Float?` / `segments: MediaSegments?` | Reading progress bar or chapter position slider (cache strip track) |
+| `newCount` | New chapters since last opened; count badge beside the title |
 | `status`, `error` | Host text under the band |
 | `links: List<MediaLink>` | Opened with `ACTION_VIEW` unless `onLink` is passed |
 | `rail: List<MediaAction>` | Circular buttons, top-end of the cover (`Toggle` / `Icon`) |
@@ -166,12 +170,16 @@ FlowMediaCard(
 
 `MediaAction(id, label, kind, icon, on, enabled, owner, longPress)`. `owner = Plugin` actions are
 routed to the plugin (`cardAction`); `Host` actions are handled by the caller. Reserved host ids:
-`MediaActionIds.READ/OPEN/DOWNLOAD/REFRESH/DELETE/REMOVE/SHARE` and `list:{listId}`.
+`MediaActionIds.READ/OPEN/DOWNLOAD/REFRESH/DELETE/REMOVE/SHARE/NOTIFY/RENAME` and `list:{listId}`.
 
-Long presses (optional, generic hooks on `FlowMediaCard`): footer actions with `longPress = true`
-also go to `onLongAction` (via `FlowSecondaryButton(onLongClick)`, which keeps the outlined button
-look); a hold on the segment strip goes to `onSegmentsLongPress` (`segmentsLongPressLabel` is its
-accessibility label). The plugin story card uses them for Partial download and the position slider.
+Footer actions with `longPress = true` also go to `onLongAction` (via
+`FlowSecondaryButton(onLongClick)`, which keeps the outlined button look); the plugin story card
+uses it for Partial download. `segments` render as `MediaSegmentSlider`: an M3 `Slider` whose
+track is the cache strip (`MediaSegmentStrip`). Releasing on another segment calls `onSeek(index)`;
+the caller confirms ("Move reading position?") and sets `MediaSegments.pending` meanwhile so the
+mark stays put. Without `onSeek` the slider is read-only.
+
+`newCount` shows a `FlowCountBadge` beside the title (plugin stories with new chapters).
 
 ### Adapters (`MediaCardAdapters.kt`, pure Kotlin, unit-tested)
 

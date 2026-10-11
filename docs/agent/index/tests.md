@@ -25,12 +25,14 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `plugin/store/PluginChapterBlocksTest.kt`
 - `plugin/store/PluginMembershipStoreTest.kt`
 - `plugin/store/PluginSessionStoreTest.kt`
+- `plugin/store/TocRemapTest.kt`
 - `plugin/sync/ListReconcileTest.kt`
 - `plugin/sync/ProgressReconcileTest.kt`
 - `plugin/sync/SyncStateTest.kt`
 - `plugin/updates/UpdateDiffTest.kt`
 - `share/HiddenContentTest.kt`
 - `share/SelectorBuilderTest.kt`
+- `share/ShareInboxTest.kt`
 - `share/ShareRouterTest.kt`
 - `share/WebCrawlTest.kt`
 - `share/WebPageIngestTest.kt`
@@ -45,6 +47,9 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `tts/WordHighlightTest.kt`
 - `ui/design/card/media/MediaCardAdaptersTest.kt`
 - `ui/design/tabs/FlowTabLayoutTest.kt`
+- `ui/library/CrawlCountTest.kt`
+- `ui/library/LibraryRowTextTest.kt`
+- `ui/library/QueueChaptersTest.kt`
 - `ui/plugin/GroupedRowsTest.kt`
 - `ui/plugin/SyncTargetsTest.kt`
 - `ui/reader/QueueBookTest.kt`

@@ -21,6 +21,8 @@ internal class ReaderBook(
     private val hrefs: (Int) -> String,
     private val hrefIndex: (String) -> Int,
     val load: suspend (Int) -> Chapter,
+    /** ToC rows the account can't read (shown with a lock). */
+    val lockedRows: Set<Int> = emptySet(),
 ) {
     val chapterTitles: List<String> get() = titles
 
@@ -48,11 +50,9 @@ internal class ReaderBook(
         )
 
         fun plugin(store: PluginBookStore, story: PluginReadSession): ReaderBook {
-            val titles = story.toc.mapIndexed { i, ref ->
-                ref.title.ifBlank { "Chapter ${i + 1}" } + if (ref.locked) " (locked)" else ""
-            }
+            val titles = story.toc.mapIndexed { i, ref -> ref.title.ifBlank { "Chapter ${i + 1}" } }
             return ReaderBook(
-                title = story.title,
+                title = story.displayTitle,
                 chapterCount = story.toc.size,
                 titles = titles,
                 toc = titles.mapIndexed { i, t -> i to t },
@@ -60,6 +60,7 @@ internal class ReaderBook(
                 hrefs = { story.toc[it].url },
                 hrefIndex = { href -> story.toc.indexOfFirst { it.url == href } },
                 load = { store.chapter(story, it) },
+                lockedRows = story.toc.indices.filterTo(HashSet()) { story.toc[it].locked },
             )
         }
     }

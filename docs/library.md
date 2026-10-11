@@ -13,7 +13,7 @@ Home screen: tabs for **Files**, **Queue**, optional custom shelves and plugins,
 | Title “Flow Reader” | Brand |
 | List view / Shelf view | Toggle `library_view` (list rows vs cover grid) |
 | Settings gear | Opens Settings overlay |
-| Tabs: Files, Queue, …, **+** | Select tab; **+** opens “Add a tab” |
+| Tabs: Files, Queue, …, **+** | Select tab; **+** opens “Add a tab”. Files (books) and Queue (video stack) are icons; plugins show their packaged `icon.png` silhouette in the same tint (name when the plugin ships none); shelves stay text. Long-press an icon for its name. A plugin tab shows an accent dot while any of its stories has new chapters |
 
 Tabs are a `Primary` `FlowTabBar`; **+** is its trailing action tab. The screen is a
 `FlowScreen(Library)`: FAB per tab, snackbar above the FAB, cards stack in the window overlay.
@@ -42,7 +42,7 @@ Lists pad by the dock height, so the card never covers the last row.
 | Book card tap | Open `reader/{id}` |
 | Long-press | Files splash: Open / Share / Remove |
 | FAB **+** “Add file” | “Add a book” → Import a copy / Reference in place → system picker |
-| Subtitle | Source label · relative time |
+| Subtitle | "{Author} · chapter {last read}/{total}" (EPUB spine entries, TXT segments), or "{Author} · N chapters" before reading; read from the file's metadata at import and stored on the row (`library_books.author` / `chapterCount`, `LibraryRowText.kt`). Source label · relative time when neither is known |
 | Link badge | Linked (in-place) files |
 | Progress bar | Reading progress |
 
@@ -57,6 +57,7 @@ Lists pad by the dock height, so the card never covers the last row.
 | Empty copy | Paste or share text into Flow Reader |
 | Row tap | Open the Queue stream (all rows as one document) at that row; Contents lists rows with their chapters nested, updates live, and has the same hold-to-edit (see [reader.md](reader.md#toc)) |
 | Done label | Finished while listening |
+| Expand chevron | Multi-chapter items (crawled pages, EPUBs, plugin stories) list their chapters under the row, read from local metadata. Tap a chapter to open the Queue stream at its start; chapters before the item's saved chapter (all, once Done) are dimmed. `QueueChapters.kt` |
 | Hold a row | Edit mode (shared `EditableRuleList`, same as filter and Import lists): drag handles reorder (`sortOrder` rewritten on drop), checkboxes select, All/None, Delete with confirmation; Done or Back leaves |
 | FAB paste | Clipboard → Import router |
 

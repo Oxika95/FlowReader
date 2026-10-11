@@ -11,6 +11,9 @@ interface ChapterSource {
     val title: String
     val chapterCount: Int
 
+    /** Book author from metadata; blank when the format has none. */
+    val author: String get() = ""
+
     /** Best label known without parsing (nav/NCX label, TXT heading); [load] may refine it. */
     fun chapterTitle(index: Int): String
 

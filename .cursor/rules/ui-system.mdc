@@ -15,7 +15,10 @@ Full reference: `docs/ui-system/` (README, tokens, layers, cards, elements, reci
 - Item metadata → `FlowMediaCard(model = XMediaCardAdapter.model(...))`, route `MediaAction.id`
 - List/grid item → `FlowDisplayCard` in `FlowDisplayList` / `FlowDisplayGrid`
 - Floating over content → `FlowFloatingCard` / `FlowFloatingChip` inside `FlowDock { Item(visible) { } }`
-- Tabs → `FlowTabBar(tabs = listOf(FlowTab.text/icon/action(...)), level = Primary|Secondary)`
+- Tabs → `FlowTabBar(tabs = listOf(FlowTab.text/icon/image/action(...)), level = Primary|Secondary)`.
+  Icon-first: fixed destinations with an obvious icon use `icon` (`image` for a plugin's `icon.png`);
+  user-named things and Settings sections stay `text`. Icon tabs always pass `contentDescription`
+  (shown as the long-press tooltip). Rule 8 in `docs/ui-system/README.md`.
 - Screen shell → `FlowScreen(kind, topDock, bottomDock, fab, snackbar) { docks -> }`
 - Controls → `FlowToggleRow`, `FlowSliderRow`, `FlowTextField`, `FlowDropdownRow`, `FlowChoiceChips`,
   `FlowPrimaryButton`, `FlowSecondaryButton`, `FlowTextAction`, `FlowCircleButton`, `FlowFab`

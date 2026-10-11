@@ -28,13 +28,16 @@ data class InstalledPlugin(
 ) {
     val id: String get() = manifest.id
     val name: String get() = manifest.name
+
+    /** The plugin's packaged `icon.png`, when it ships one. */
+    val iconFile: File? get() = File(dir, PluginManager.ICON_FILE).takeIf { it.isFile }
 }
 
 /**
  * Installed JS plugins: disk layout, bundled seeding, runtimes, and per-plugin settings.
  *
  * Layout under `filesDir/plugins/`:
- * - `installed/{id}/plugin.json`, `installed/{id}/index.js`
+ * - `installed/{id}/plugin.json`, `installed/{id}/index.js`, optional `installed/{id}/icon.png`
  * - `data/{id}/` app-owned story cache, lists, settings, and key-value store
  */
 class PluginManager(private val context: Context) {
@@ -135,7 +138,7 @@ class PluginManager(private val context: Context) {
     }
 
     /** Atomic install/update: write to a temp dir, then swap. Restarts the plugin runtime. */
-    fun install(manifestJson: String, code: String): InstalledPlugin {
+    fun install(manifestJson: String, code: String, icon: ByteArray? = null): InstalledPlugin {
         val manifest = PluginManifest.parse(manifestJson)
         if (manifest.apiVersion > PLUGIN_HOST_API_VERSION) {
             throw PluginException(
@@ -164,6 +167,7 @@ class PluginManager(private val context: Context) {
         tmp.mkdirs()
         File(tmp, MANIFEST_FILE).writeText(manifestJson)
         File(tmp, CODE_FILE).writeText(code)
+        icon?.let { File(tmp, ICON_FILE).writeBytes(it) }
         val dest = File(installedRoot, manifest.id)
         val old = File(installedRoot, ".old-${manifest.id}")
         old.deleteRecursively()
@@ -241,6 +245,7 @@ class PluginManager(private val context: Context) {
             runCatching {
                 val manifestJson = assets.open("$BUNDLED_DIR/$name/$MANIFEST_FILE").bufferedReader().use { it.readText() }
                 val code = assets.open("$BUNDLED_DIR/$name/$CODE_FILE").bufferedReader().use { it.readText() }
+                val icon = runCatching { assets.open("$BUNDLED_DIR/$name/$ICON_FILE").use { it.readBytes() } }.getOrNull()
                 val manifest = PluginManifest.parse(manifestJson)
                 val installedDir = File(installedRoot, manifest.id)
                 val current = File(installedDir, MANIFEST_FILE)
@@ -251,10 +256,11 @@ class PluginManager(private val context: Context) {
                     installedVersion == null -> !seededBefore
                     compareVersions(manifest.version, installedVersion) > 0 -> true
                     debuggable -> current.readText() != manifestJson ||
-                        File(installedDir, CODE_FILE).let { !it.exists() || it.readText() != code }
+                        File(installedDir, CODE_FILE).let { !it.exists() || it.readText() != code } ||
+                        !File(installedDir, ICON_FILE).let { if (it.isFile) it.readBytes().contentEquals(icon) else icon == null }
                     else -> false
                 }
-                if (shouldInstall) install(manifestJson, code)
+                if (shouldInstall) install(manifestJson, code, icon)
                 File(installedRoot, ".seeded-${manifest.id}").writeText(manifest.version)
             }.onFailure { Log.w(TAG, "Bundled plugin $name failed", it) }
         }
@@ -264,6 +270,7 @@ class PluginManager(private val context: Context) {
         private const val TAG = "PluginManager"
         const val MANIFEST_FILE = "plugin.json"
         const val CODE_FILE = "index.js"
+        const val ICON_FILE = "icon.png"
         private const val SETTINGS_FILE = "_settings.json"
         private const val BUNDLED_DIR = "plugins"
 

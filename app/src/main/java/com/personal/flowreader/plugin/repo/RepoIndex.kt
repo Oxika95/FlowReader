@@ -12,11 +12,13 @@ data class RepoPlugin(
     val version: String,
     val apiVersion: Int,
     val lang: String,
-    val iconUrl: String,
     val manifestUrl: String,
     val pluginUrl: String,
     val manifestSha256: String,
     val sha256: String,
+    /** Optional `icon.png`; installed only when [iconSha256] is present. */
+    val iconUrl: String = "",
+    val iconSha256: String = "",
     val repoUrl: String,
 )
 
@@ -48,11 +50,12 @@ data class RepoIndex(
                     version = o.optString("version").ifBlank { "0" },
                     apiVersion = o.optInt("apiVersion", 1),
                     lang = o.optString("lang"),
-                    iconUrl = o.optString("iconUrl").takeIf { it.isNotBlank() }?.let { resolve(indexUrl, it) }.orEmpty(),
                     manifestUrl = resolve(indexUrl, manifestUrl),
                     pluginUrl = resolve(indexUrl, pluginUrl),
                     manifestSha256 = o.optString("manifestSha256").trim().lowercase().takeIf { HEX64.matches(it) }.orEmpty(),
                     sha256 = sha.lowercase(),
+                    iconUrl = o.optString("iconUrl").takeIf { it.isNotBlank() }?.let { resolve(indexUrl, it) }.orEmpty(),
+                    iconSha256 = o.optString("iconSha256").trim().lowercase().takeIf { HEX64.matches(it) }.orEmpty(),
                     repoUrl = indexUrl,
                 )
             }

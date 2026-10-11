@@ -37,8 +37,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -50,7 +52,10 @@ data class PluginStory(
     val bookId: String,
     val workId: String,
     val workUrl: String,
+    /** Shown title: the user's rename, else [pluginTitle]. */
     val title: String,
+    /** The plugin's title (what list files and library rows store). */
+    val pluginTitle: String,
     val author: String,
     val synopsis: String,
     val tags: List<String>,
@@ -60,7 +65,7 @@ data class PluginStory(
     /** Absolute ToC indices with bodies on disk. */
     val cachedIndices: Set<Int>,
     val readingProgress: Float,
-    /** Saved reading position (absolute ToC index); the cache bar locus and download start. */
+    /** Saved reading position (absolute ToC index); the position slider mark and download start. */
     val chapterIndex: Int,
     /** A position past the start of chapter 1 is saved. */
     val hasSavedPosition: Boolean = false,
@@ -74,6 +79,8 @@ data class PluginStory(
     val notify: Boolean = false,
     /** Reading chapters (app, site) when both moved since the last sync; the user picks one. */
     val positionConflict: Pair<Int, Int>? = null,
+    /** Chapters added since the story was last opened in the reader. */
+    val newChapters: Int = 0,
 ) {
     val chapterCount: Int get() = toc.size
 }
@@ -88,6 +95,10 @@ data class PluginTabUi(
     val manifest: PluginManifest,
     val books: List<BookItem> = emptyList(),
     val libraryMeta: Map<String, PluginLibraryMeta> = emptyMap(),
+    /** Book id → chapters added since the story was last opened (library badges). */
+    val newCounts: Map<String, Int> = emptyMap(),
+    /** Story list id → book ids on it. */
+    val listMembers: Map<String, Set<String>> = emptyMap(),
     val section: PluginSection = manifest.lists.firstOrNull()?.let { PluginSection.Library(it.id) }
         ?: PluginSection.Search,
     /** Book ids in the selected list. */
@@ -104,8 +115,11 @@ data class PluginTabUi(
     val confirmDownloadAll: Boolean = false,
     /** Partial download card (long-press Download) is showing. */
     val showPartial: Boolean = false,
-    /** Position slider (long-press the cache bar) is showing. */
+    /** Fine-tune position card (−/+ steps) is showing. */
     val showPosition: Boolean = false,
+    /** Chapter picked on the card's position slider, awaiting "Move reading position?". */
+    val positionDraft: Int? = null,
+    val showRename: Boolean = false,
     /** Chapters kept ahead of the reading position; may be blank while editing. */
     val cacheLevelDraft: String = PluginCachePolicy.DEFAULT_LEVEL.toString(),
     /** Non-null while a download runs. */
@@ -133,6 +147,10 @@ data class PluginTabUi(
 ) {
     val visibleBooks: List<BookItem>
         get() = if (listBookIds.isEmpty()) emptyList() else books.filter { it.bookId in listBookIds }
+
+    /** List id → new chapters across its stories (sub-tab dots). */
+    val listNewCounts: Map<String, Int>
+        get() = listMembers.mapValues { (_, ids) -> ids.sumOf { newCounts[it] ?: 0 } }
 
     val anyOverlay: Boolean
         get() = showLogin || showAdd || showAccount || showSettings || syncListId != null || story != null ||
@@ -176,6 +194,9 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         viewModelScope.launch {
             manager.sessionChanges.filter { it == pluginId }.collect { refreshSession() }
         }
+        viewModelScope.launch {
+            books.newChapterCounts(pluginId).collect { counts -> _ui.update { it.copy(newCounts = counts) } }
+        }
     }
 
     fun refreshLocal() {
@@ -184,15 +205,28 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             val (ids, listRows) = withContext(Dispatchers.IO) { membership(_ui.value.section) }
             val meta = withContext(Dispatchers.IO) { books.libraryMetas(rows.map { it.bookId }) }
             val storyLists = withContext(Dispatchers.IO) { storyLists() }
+            val members = withContext(Dispatchers.IO) { listMembers() }
             val posts = withContext(Dispatchers.IO) {
                 browser.postsBookIds().mapNotNull { runCatching { loadStory(it) }.getOrNull() }
             }
             _ui.update {
-                it.copy(books = rows, libraryMeta = meta, listBookIds = ids, listRows = listRows, storyLists = storyLists)
+                it.copy(
+                    books = rows,
+                    libraryMeta = meta,
+                    listMembers = members,
+                    listBookIds = ids,
+                    listRows = listRows,
+                    storyLists = storyLists,
+                )
             }
             posts.forEach(browser::updatePosts)
         }
     }
+
+    private fun listMembers(): Map<String, Set<String>> =
+        manifest.lists.filterNot { it.isBrowse }.associate { list ->
+            list.id to PluginMembershipStore.workIds(dataDir, list.id).mapTo(HashSet()) { manager.bookIdFor(pluginId, it) }
+        }
 
     private fun storyLists(): Map<String, String> {
         val out = HashMap<String, String>()
@@ -477,7 +511,15 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         chapterFocus = null
         val closed = _ui.value.story
         _ui.update {
-            it.copy(story = null, confirmDownloadAll = false, showPartial = false, showPosition = false, conflictDismissedFor = null)
+            it.copy(
+                story = null,
+                confirmDownloadAll = false,
+                showPartial = false,
+                showPosition = false,
+                positionDraft = null,
+                showRename = false,
+                conflictDismissedFor = null,
+            )
         }
         if (closed != null && closed.bookId in browser.postsBookIds()) refreshLocal()
     }
@@ -498,14 +540,15 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             bookId = bookId,
             workId = session.workId,
             workUrl = session.workUrl,
-            title = session.title,
+            title = session.displayTitle,
+            pluginTitle = session.title,
             author = session.author,
             synopsis = splash?.synopsis.orEmpty(),
             tags = splash?.tags.orEmpty(),
             cover = splash?.cover.orEmpty(),
             toc = session.toc,
-            downloadedCount = PluginSessionStore.cachedChapterCount(dir, session.toc.size),
-            cachedIndices = PluginSessionStore.cachedChapterIndices(dir, session.toc.size),
+            downloadedCount = PluginSessionStore.cachedChapterCount(dir, session.toc),
+            cachedIndices = PluginSessionStore.cachedChapterIndices(dir, session.toc),
             readingProgress = progress?.fraction ?: 0f,
             chapterIndex = PluginSessionStore.savedChapter(session.toc, progress?.chapterHref.orEmpty(), progress?.chapterIndex ?: 0),
             hasSavedPosition = progress?.hasProgress == true,
@@ -515,6 +558,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             card = splash?.card,
             notify = UpdateDiff.notifyOn(session.notify, listedIn, UpdateDiff.notifyLists(manifest.lists)),
             positionConflict = conflict,
+            newChapters = session.newChapters,
         ).let { s ->
             chapterFocus?.takeIf { it.first == bookId && it.second in s.toc.indices }
                 ?.let { s.copy(chapterIndex = it.second) } ?: s
@@ -534,6 +578,31 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                     message = if (on) "New-chapter alerts on for ${story.title}" else "New-chapter alerts off for ${story.title}",
                 )
             }
+        }
+    }
+
+    fun openRename() = _ui.update { it.copy(showRename = it.story != null, error = null) }
+
+    fun closeRename() = _ui.update { it.copy(showRename = false) }
+
+    /** Rename the open story on this device; blank restores the plugin's title. */
+    fun renameStory(title: String) {
+        val story = _ui.value.story ?: return
+        viewModelScope.launch {
+            val shown = withContext(Dispatchers.IO) {
+                runCatching { books.setTitleOverride(story.bookId, title) }.getOrNull()
+            }
+            if (shown == null) {
+                _ui.update { it.copy(error = "Open the story once before renaming it") }
+                return@launch
+            }
+            _ui.update { ui ->
+                ui.copy(
+                    showRename = false,
+                    story = ui.story?.takeIf { it.bookId == story.bookId }?.copy(title = shown) ?: ui.story,
+                )
+            }
+            refreshLocal()
         }
     }
 
@@ -581,7 +650,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                             listId,
                             PluginWork(
                                 id = story.workId,
-                                title = story.title,
+                                title = story.pluginTitle,
                                 url = story.workUrl,
                                 author = story.author,
                                 cover = story.cover,
@@ -850,10 +919,15 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
 
     // --- Position ---------------------------------------------------------------------------
 
-    /** Long-press the cache bar: the position slider. */
+    /** Released the card's position slider on [chapterIndex]: ask before moving there. */
+    fun proposePosition(chapterIndex: Int) = _ui.update { it.copy(positionDraft = chapterIndex.takeIf { _ -> it.story != null }) }
+
+    fun cancelPositionDraft() = _ui.update { it.copy(positionDraft = null) }
+
+    /** "Fine-tune" on the move card: the −/+ position card, starting at the slider's chapter. */
     fun openPosition() = _ui.update { it.copy(showPosition = it.story != null, error = null) }
 
-    fun closePosition() = _ui.update { it.copy(showPosition = false) }
+    fun closePosition() = _ui.update { it.copy(showPosition = false, positionDraft = null) }
 
     /**
      * Save chapter [chapterIndex] as the reading position (start of the chapter). Goes through
@@ -870,7 +944,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                         upsertWork(
                             PluginWork(
                                 id = story.workId,
-                                title = story.title,
+                                title = story.pluginTitle,
                                 url = story.workUrl,
                                 author = story.author,
                                 cover = story.cover,
@@ -900,6 +974,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                     it.copy(
                         busy = false,
                         showPosition = false,
+                        positionDraft = null,
                         story = refreshed,
                         message = "Position saved: chapter ${index + 1}",
                     )

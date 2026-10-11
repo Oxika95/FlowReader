@@ -8,10 +8,12 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Schedule
@@ -33,7 +35,7 @@ object FlowIcons {
     val tokens: List<String> = listOf(
         "add", "favorite", "schedule", "bookmark", "star", "check", "visibility", "list", "flag",
         "download", "eye", "pages", "clock", "user", "heart", "followers", "comment", "like", "link", "share",
-        "notifications", "bell",
+        "notifications", "bell", "lock", "edit",
     )
 
     fun forToken(token: String?): ImageVector = when (token?.lowercase()) {
@@ -54,6 +56,8 @@ object FlowIcons {
         "link" -> Icons.Filled.Link
         "share" -> Icons.Filled.Share
         "notifications", "bell" -> Icons.Filled.Notifications
+        "lock" -> Icons.Filled.Lock
+        "edit" -> Icons.Filled.Edit
         else -> Icons.Filled.Bookmark
     }
 }

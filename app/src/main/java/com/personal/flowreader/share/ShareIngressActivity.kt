@@ -84,7 +84,7 @@ class ShareIngressActivity : ComponentActivity() {
     }
 
     private fun dispatch(action: ShareAction) {
-        startActivity(ShareDispatch.intentFor(this, action))
+        ShareDispatch.dispatch(this, action)
     }
 
     override fun onDestroy() {

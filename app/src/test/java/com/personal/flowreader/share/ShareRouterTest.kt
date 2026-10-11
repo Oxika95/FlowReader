@@ -180,6 +180,7 @@ class ParseRulesJsonTest {
             prevCss = "a.prev",
             nextCss = "a[rel=\"next\"]",
             coverCss = "meta[property=og:image]",
+            crawl = true,
             crawlLimit = 25,
             desktop = true,
             stripHidden = false,
@@ -196,14 +197,22 @@ class ParseRulesJsonTest {
         assertFalse(rule.desktop)
         assertTrue(rule.stripHidden)
         assertEquals(ParseRule.DEFAULT_CRAWL_LIMIT, rule.crawlLimit)
+        assertFalse(rule.crawl)
     }
 
     @Test
-    fun crawlOfferedOnlyForCustomWithNext() {
-        val custom = ParseRule(hostPattern = "a", parseMode = ShareParseMode.Custom, contentCss = "p", nextCss = "a.n")
+    fun crawlDefaultsOffWhenUnset() {
+        val json = """[{"id":"r","hostPattern":"a.com","parseMode":"Custom","contentCss":"div","nextCss":"a.n","order":0}]"""
+        assertFalse(ParseRules.decode(json).single().crawl)
+    }
+
+    @Test
+    fun crawlOfferedOnlyForCustomWithNextAndToggle() {
+        val custom = ParseRule(hostPattern = "a", parseMode = ShareParseMode.Custom, contentCss = "p", nextCss = "a.n", crawl = true)
         assertTrue(ParseRules.canCrawl(custom))
-        assertTrue(!ParseRules.canCrawl(custom.copy(parseMode = ShareParseMode.Default)))
-        assertTrue(!ParseRules.canCrawl(custom.copy(nextCss = " ")))
+        assertFalse(ParseRules.canCrawl(custom.copy(crawl = false)))
+        assertFalse(ParseRules.canCrawl(custom.copy(parseMode = ShareParseMode.Default)))
+        assertFalse(ParseRules.canCrawl(custom.copy(nextCss = " ")))
     }
 }
 

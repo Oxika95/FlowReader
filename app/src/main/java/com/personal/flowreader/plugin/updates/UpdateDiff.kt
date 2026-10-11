@@ -21,9 +21,12 @@ object UpdateDiff {
     fun notifyOn(stored: Boolean?, listedIn: Set<String>, notifyLists: Set<String>): Boolean =
         stored ?: listedIn.any { it in notifyLists }
 
-    /** Lists whose stories notify by default: syncable story lists and lists marked `notifyDefault`. */
+    /** Checked for new chapters (library badge): on any story list, or the bell is on. */
+    fun monitored(notify: Boolean, listedIn: Set<String>): Boolean = notify || listedIn.isNotEmpty()
+
+    /** Lists whose stories notify by default: story lists marked `notifyDefault`. */
     fun notifyLists(lists: List<PluginList>): Set<String> =
-        lists.filter { !it.isBrowse && (it.syncable || it.notifyDefault) }.map { it.id }.toSet()
+        lists.filter { !it.isBrowse && it.notifyDefault }.map { it.id }.toSet()
 
     /** Notification title: "3 new chapters" / "New chapter". */
     fun headline(count: Int): String = if (count == 1) "New chapter" else "$count new chapters"

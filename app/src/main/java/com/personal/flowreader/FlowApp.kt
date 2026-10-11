@@ -9,7 +9,9 @@ import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.PositionDomain
 import com.personal.flowreader.data.PositionLog
 import com.personal.flowreader.data.PositionSource
+import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.data.ProgressWriter
+import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.plugin.PluginManager
 import com.personal.flowreader.plugin.PluginShareRequest
@@ -18,10 +20,14 @@ import com.personal.flowreader.plugin.repo.RepoManager
 import com.personal.flowreader.plugin.store.PluginBookStore
 import com.personal.flowreader.plugin.store.PluginCatalog
 import com.personal.flowreader.plugin.store.PluginDatabases
+import com.personal.flowreader.plugin.store.PluginReadSession
+import com.personal.flowreader.plugin.store.TocRemap
 import com.personal.flowreader.plugin.store.PluginStorageMigrator
 import com.personal.flowreader.plugin.sync.TwoWaySync
 import com.personal.flowreader.plugin.updates.UpdateScheduler
 import com.personal.flowreader.share.RouterRules
+import com.personal.flowreader.share.ShareAction
+import com.personal.flowreader.share.ShareInbox
 import com.personal.flowreader.tts.TtsController
 import com.personal.flowreader.ui.reader.QueuePlayback
 import java.io.File
@@ -63,6 +69,9 @@ class FlowApp : Application() {
     internal lateinit var queue: QueuePlayback
         private set
 
+    /** Routed shares waiting for the Library to ingest them, in arrival order. */
+    val shareInbox = ShareInbox<ShareAction>()
+
     /** Book a share opened for Auto Play on Share; the reader starts TTS once it loads this book. */
     @Volatile
     var pendingSharePlay: String? = null
@@ -74,7 +83,7 @@ class FlowApp : Application() {
         super.onCreate()
         positionLog = PositionLog(File(filesDir, "logs/positions.log"))
         db = Room.databaseBuilder(this, AppDatabase::class.java, "flow.db")
-            .addMigrations(LegacyMigration.MIGRATION_9_10)
+            .addMigrations(LegacyMigration.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
             .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5, 6, 7, 8)
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
@@ -91,15 +100,19 @@ class FlowApp : Application() {
                 .onFailure { positionLog.event("MIGRATE_FAILED", "error" to it.message) }
             pluginCatalog.markMigrated()
         }
-        pluginBooks = PluginBookStore(pluginManager, appScope) { settings.pluginCacheDefaultsOnce() }
+        pluginBooks = PluginBookStore(pluginManager, pluginDbs, appScope) { settings.pluginCacheDefaultsOnce() }
         pluginSync = TwoWaySync(this)
         pluginBooks.positionChanged = pluginSync::localPositionChanged
-        pluginBooks.tocStored = pluginSync::tocStored
+        pluginBooks.tocStored = { session, siteChapterUrl ->
+            pluginCatalog.setTitle(session.bookId, session.title)
+            pluginSync.tocStored(session, siteChapterUrl)
+        }
+        pluginBooks.tocRemapped = ::remapSavedPosition
         pluginRepos = RepoManager(settings)
         pluginInstaller = PluginInstaller(pluginManager, pluginRepos)
         progress = ProgressWriter(AppPositionStore(this), appScope, log = positionLog::position) { update ->
             if (update.domain == PositionDomain.Plugin) {
-                pluginBooks.scheduleMaintain(update.rowKey, update.chapterIndex)
+                pluginBooks.scheduleMaintain(update.rowKey, update.chapterHref)
             }
         }
         persistSpokenPosition()
@@ -109,6 +122,7 @@ class FlowApp : Application() {
             UpdateScheduler.applyVersionCheck(this@FlowApp, settings.pluginVersionCheckPrefsOnce())
         }
         appScope.launch { sweepStaleCache() }
+        appScope.launch { catalog.fillMissingRowMeta() }
         appScope.launch {
             pluginManager.installed.collect { list ->
                 val current = settings.shareRouterRulesOnce()
@@ -146,6 +160,38 @@ class FlowApp : Application() {
         }
     }
 
+
+    /**
+     * [session]'s ToC replaced [oldUrls] (e.g. chapters removed from the site): move its saved
+     * position to the same chapter, or the next one that survived.
+     */
+    private suspend fun remapSavedPosition(session: PluginReadSession, oldUrls: List<String>) {
+        val position = pluginCatalog.get(session.bookId)?.position?.takeIf { it.hasProgress } ?: return
+        val newUrls = session.toc.map { it.url }
+        val moved = TocRemap.position(position.chapterHref, position.chapterIndex, oldUrls, newUrls) ?: return
+        positionLog.event(
+            "TOC_REMAP",
+            "book" to session.bookId,
+            "from" to position.chapterIndex,
+            "to" to moved.chapterIndex,
+            "same" to moved.sameChapter,
+        )
+        progress.submit(
+            ProgressUpdate(
+                session = ReadingSessionId(PositionDomain.Plugin, session.bookId),
+                rowKey = session.bookId,
+                chapterIndex = moved.chapterIndex,
+                blockIndex = if (moved.sameChapter) position.blockIndex else 0,
+                charOffset = if (moved.sameChapter) position.charOffset else 0,
+                fraction = moved.chapterIndex.toFloat() / newUrls.size,
+                at = maxOf(System.currentTimeMillis(), position.positionAt + 1),
+                anchorText = if (moved.sameChapter) position.anchorText else "",
+                chapterHref = moved.chapterHref,
+                source = PositionSource.Sync,
+            ),
+        )
+        progress.drain()
+    }
 
     /** Drop crashed import temps and leftover filter preview clips. */
     private fun sweepStaleCache() {

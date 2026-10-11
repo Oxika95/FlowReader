@@ -79,7 +79,7 @@ internal fun PartialDownloadCard(
         val title = story.toc.getOrNull(story.chapterIndex)?.title.orEmpty()
         FlowHint(
             "From chapter ${story.chapterIndex + 1}" + (if (title.isNotBlank()) " — $title" else "") +
-                " (saved position). Hold the cache bar on the card to change it.",
+                " (saved position). Drag the position slider on the card to change it.",
         )
         OutlinedFieldWithInfo(
             value = ui.cacheLevelDraft,
@@ -107,21 +107,45 @@ internal fun PartialDownloadCard(
     }
 }
 
+/** "Move reading position?" after releasing the card's position slider on chapter [draft]. */
+@Composable
+internal fun MovePositionCard(
+    draft: Int?,
+    story: PluginStory?,
+    onMove: (chapterIndex: Int) -> Unit,
+    onFineTune: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val index = draft ?: 0
+    val title = story?.toc?.getOrNull(index)?.title.orEmpty().ifBlank { "Chapter ${index + 1}" }
+    FlowConfirmCard(
+        visible = draft != null && story != null,
+        title = "Move reading position?",
+        message = "To the start of chapter ${index + 1}: $title. Saving downloads ahead from there.",
+        confirmLabel = "Move",
+        onConfirm = { onMove(index) },
+        onDismiss = onDismiss,
+        extraActions = { FlowTextAction("Fine-tune", onFineTune) },
+    )
+}
+
 /**
- * Reading position slider (long-press the cache bar). Save replaces the saved position with the
- * start of the chosen chapter, after a confirm when a position is already saved.
+ * Reading position with −/+ steps ("Fine-tune" on the move card), starting at [initial] or the
+ * saved chapter. Save replaces the saved position with the start of the chosen chapter, after a
+ * confirm when a position is already saved.
  */
 @Composable
 internal fun PositionSliderCard(
     visible: Boolean,
     story: PluginStory?,
+    initial: Int?,
     busy: Boolean,
     onDismiss: () -> Unit,
     onSave: (chapterIndex: Int) -> Unit,
 ) {
     val count = story?.chapterCount ?: 0
     var draft by remember(visible, story?.bookId, story?.chapterIndex) {
-        mutableIntStateOf(story?.chapterIndex ?: 0)
+        mutableIntStateOf(initial ?: story?.chapterIndex ?: 0)
     }
     var confirm by remember(visible) { mutableStateOf(false) }
     FlowFullscreenCard(

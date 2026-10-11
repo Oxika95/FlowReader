@@ -74,10 +74,14 @@ data class PluginMediaInfo(
     val hasPosition: Boolean = false,
     /** Title of chapter [locus]. */
     val locusTitle: String = "",
+    /** Chapters added since the story was last opened. */
+    val newChapters: Int = 0,
+    /** Chapter picked on the position slider, awaiting confirmation. */
+    val pendingLocus: Int? = null,
 )
 
 /**
- * Plugin story: merges host-owned actions (list toggles, Share, Download, Refresh, Delete, Read —
+ * Plugin story: merges host-owned actions (list toggles, Share, Rename, Download, Refresh, Delete, Read —
  * always present, fixed order) with plugin-declared slots (stats, badges, links, capped actions).
  */
 object PluginMediaCardAdapter {
@@ -128,6 +132,7 @@ object PluginMediaCardAdapter {
                     enabled = info.workUrl.isNotBlank(),
                 ),
             )
+            add(MediaAction(MediaActionIds.RENAME, "Rename", MediaActionKind.Icon, icon = "edit", enabled = !busy))
             card?.actions?.filter { it.placement == PluginActionPlacement.Rail }?.forEach { a ->
                 add(
                     MediaAction(
@@ -193,13 +198,13 @@ object PluginMediaCardAdapter {
             badges = badges,
             tags = info.tags,
             synopsis = info.synopsis,
-            segments = MediaSegments(info.chapterCount, info.locus, info.cachedIndices),
-            segmentsLongPressLabel = "Change reading position",
+            segments = MediaSegments(info.chapterCount, info.locus, info.cachedIndices, info.pendingLocus),
             status = status,
             error = error.orEmpty(),
             links = card?.links?.map { MediaLink(it.label, it.url) }.orEmpty(),
             rail = rail,
             footer = footer,
+            newCount = info.newChapters,
         )
     }
 }

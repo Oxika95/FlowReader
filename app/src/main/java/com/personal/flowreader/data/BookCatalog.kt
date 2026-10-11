@@ -325,6 +325,7 @@ class BookCatalog(private val app: FlowApp) {
                     shelf.ifEmpty { existing.shelfId },
                 )
             }
+            storeRowMeta(id, dest, shownTitle)
         }
         val queItem = if (enqueue) {
             insertQueue(
@@ -385,9 +386,23 @@ class BookCatalog(private val app: FlowApp) {
             } else {
                 library.updateFile(id, title, dest.absolutePath, sourceUri, kind.name, shelf.ifEmpty { existing.shelfId })
             }
+            storeRowMeta(id, dest, title)
             return library.get(id) ?: throw IllegalStateException("Could not store book")
         } finally {
             tmp.delete()
+        }
+    }
+
+    /** Author and chapter count from [file]'s metadata onto the row (Files row subtitle). */
+    private suspend fun storeRowMeta(id: String, file: File, title: String) {
+        val source = runCatching { ChapterSource.open(file, title) }.getOrNull() ?: return
+        library.setRowMeta(id, source.author, source.chapterCount)
+    }
+
+    /** Rows imported before author and chapter count were stored (database version 10). */
+    suspend fun fillMissingRowMeta() {
+        library.withoutRowMeta().forEach { row ->
+            runCatching { storeRowMeta(row.bookId, materialize(row), row.title) }
         }
     }
 

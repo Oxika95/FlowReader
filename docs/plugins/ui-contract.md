@@ -50,7 +50,7 @@ cover band ─ title ............................. host (WorkDetail.title)
              stats ............................. card.stats
                                                  + host chapter count (pages), always last
              tags, synopsis .................... host (WorkDetail.tags / synopsis)
-             chapter cache strip ............... host
+             position slider (cache strip) ..... host
 rail ─────── list toggles (membershipToggle) ... host, manifest order
              New-chapter bell .................. host (toggle; see plugins.md)
              Share ............................. host
@@ -105,5 +105,7 @@ Unknown tokens fall back to `bookmark`.
 | `link` | | Links |
 | `share` | | Share |
 | `notifications` | `bell` | Alerts (host new-chapter bell) |
+| `lock` | | Locked chapter (host) |
+| `edit` | | Rename (host) |
 
 Source of truth: `FlowIcons.tokens` in `ui/design/FlowIcons.kt`. Tokens are only ever added.

@@ -3,9 +3,11 @@ package com.personal.flowreader.ui.design.controls
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
@@ -15,6 +17,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.personal.flowreader.ui.design.FlowIcons
 import com.personal.flowreader.ui.design.card.media.MediaStat
@@ -60,6 +65,41 @@ fun FlowBadge(
             .padding(horizontal = FlowTokens.Space.S, vertical = FlowTokens.Space.Hair),
     )
 }
+
+/** "+N" new-item count in the accent colour; hidden at 0, "+99" above 99. */
+@Composable
+fun FlowCountBadge(count: Int, modifier: Modifier = Modifier) {
+    if (count <= 0) return
+    val label = "+" + count.coerceAtMost(MAX_COUNT)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .defaultMinSize(minWidth = FlowTokens.Comp.CountBadge, minHeight = FlowTokens.Comp.CountBadge)
+            .background(MaterialTheme.colorScheme.primary, FlowTokens.Shape.Pill)
+            .padding(horizontal = FlowTokens.Space.XS)
+            .semantics { contentDescription = if (count == 1) "1 new chapter" else "$count new chapters" },
+    ) {
+        Text(
+            label,
+            style = FlowType.label,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimary,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Number-less accent dot (a tab with new items). */
+@Composable
+fun FlowDot(modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(FlowTokens.Comp.TabDot)
+            .background(MaterialTheme.colorScheme.primary, FlowTokens.Shape.Pill),
+    )
+}
+
+private const val MAX_COUNT = 99
 
 /** Icon + value stat. Label is used as the icon's content description. */
 @Composable

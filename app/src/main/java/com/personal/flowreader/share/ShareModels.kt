@@ -141,7 +141,9 @@ data class ParseRule(
     val removeCss: String? = null,
     val prevCss: String? = null,
     val nextCss: String? = null,
-    /** Most pages one crawl follows through Next. */
+    /** Offer to follow Next into one book on import (needs [nextCss]). */
+    val crawl: Boolean = false,
+    /** Default page count in the crawl prompt. */
     val crawlLimit: Int = DEFAULT_CRAWL_LIMIT,
     /** Fetch pages (imports, Test, picker) as a desktop browser instead of mobile. */
     val desktop: Boolean = false,
@@ -151,7 +153,7 @@ data class ParseRule(
     val order: Int = 0,
 ) {
     companion object {
-        const val DEFAULT_CRAWL_LIMIT = 100
+        const val DEFAULT_CRAWL_LIMIT = 10
         const val MAX_CRAWL_LIMIT = 2000
     }
 }

@@ -39,12 +39,14 @@ import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.api.PluginCapability
 import androidx.compose.ui.unit.Dp
+import com.personal.flowreader.ui.design.FlowIcons
 import com.personal.flowreader.ui.design.controls.FlowBadgeTone
 import com.personal.flowreader.ui.design.controls.FlowFab
 import com.personal.flowreader.ui.design.tabs.FlowTab
 import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.design.tabs.FlowTabLevel
 import com.personal.flowreader.ui.library.LibraryBooksPane
+import com.personal.flowreader.ui.library.LibraryRowText
 import com.personal.flowreader.ui.theme.FlowTokens
 
 /** One view model per installed plugin version, shared by the tab body and its overlays. */
@@ -131,17 +133,15 @@ fun PluginTabContent(
                         val meta = ui.libraryMeta[book.bookId]
                         val row = ui.listRows[book.bookId]
                         val author = meta?.author?.ifBlank { null } ?: row?.author.orEmpty()
-                        val chapters = meta?.chapterCount ?: 0
                         val lastRead = ui.sync.pendingTitles[book.bookId]?.let { "Last read: $it" }
                         when {
                             author.isNotBlank() && lastRead != null -> "$author · $lastRead"
                             lastRead != null -> lastRead
-                            author.isNotBlank() && chapters > 0 -> "$author · $chapters chapters"
-                            chapters > 0 -> "$chapters chapters"
-                            author.isNotBlank() -> author
-                            else -> ui.manifest.name
+                            else -> LibraryRowText.subtitle(author, meta?.chapterCount ?: 0, book.chapterIndex)
+                                ?: ui.manifest.name
                         }
                     },
+                    newCountFor = { book -> ui.newCounts[book.bookId] ?: 0 },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -185,7 +185,15 @@ private fun PluginSubTabs(
     val tabs = buildList {
         manifest.lists.forEach { list ->
             val section = PluginSection.Library(list.id)
-            add(FlowTab.text(list.title, selected = !ui.showAccount && ui.section == section, onClick = { onSection(section) }, key = list.id))
+            val selected = !ui.showAccount && ui.section == section
+            val badge = ui.listNewCounts[list.id]
+            add(
+                if (list.icon.isBlank()) {
+                    FlowTab.text(list.title, selected = selected, onClick = { onSection(section) }, key = list.id, badge = badge)
+                } else {
+                    FlowTab.icon(FlowIcons.forToken(list.icon), list.title, selected, { onSection(section) }, key = list.id, badge = badge)
+                },
+            )
         }
         if (manifest.has(PluginCapability.Search)) {
             add(
@@ -287,11 +295,12 @@ fun PluginStoryOverlays(
         onRead = onRead,
         onDownload = vm::onDownloadTap,
         onDownloadOptions = vm::openPartial,
-        onPosition = vm::openPosition,
+        onSeek = vm::proposePosition,
         onRefreshToc = vm::refreshStoryToc,
         onDelete = vm::deleteStory,
         onToggleList = vm::toggleList,
         onToggleNotify = vm::toggleNotify,
+        onRename = vm::openRename,
         onPluginAction = vm::runCardAction,
         hiddenActions = hiddenActions,
     )
@@ -309,12 +318,27 @@ fun PluginStoryOverlays(
         onCleanup = vm::setCleanup,
         onDownload = vm::downloadAhead,
     )
+    MovePositionCard(
+        draft = ui.positionDraft.takeIf { !ui.showPosition },
+        story = ui.story,
+        onMove = vm::savePosition,
+        onFineTune = vm::openPosition,
+        onDismiss = vm::cancelPositionDraft,
+    )
     PositionSliderCard(
         visible = ui.showPosition,
         story = ui.story,
+        initial = ui.positionDraft,
         busy = ui.busy,
         onDismiss = vm::closePosition,
         onSave = vm::savePosition,
+    )
+    RenameStoryCard(
+        visible = ui.showRename,
+        story = ui.story,
+        error = ui.error,
+        onDismiss = vm::closeRename,
+        onSave = vm::renameStory,
     )
     PositionConflictCard(
         ui = ui,

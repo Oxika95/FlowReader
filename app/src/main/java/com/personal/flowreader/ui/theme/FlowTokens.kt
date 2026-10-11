@@ -72,6 +72,10 @@ object FlowTokens {
         val AccentTrack = 22.dp
         val GridMinCell = 140.dp
         val SegmentStrip = Space.M
+        /** New-chapter count circle; display rows hang half of it past their trailing edge. */
+        val CountBadge = Icon.L
+        /** Number-less tab dot. */
+        val TabDot = Space.S
         /** Lazy list bottom padding so content clears the FAB. */
         val FabClearance = Fab + Space.L + Space.XS
         val DismissTarget = Fab

@@ -41,11 +41,11 @@ over either screen the same way.
 | Element | Component | Notes |
 | --- | --- | --- |
 | Tab bar | `FlowTabBar(tabs, level)` | `Primary` = screen tabs (library, settings sections); `Secondary` = sub-tabs (plugin lists, settings sub-sections) |
-| Tab | `FlowTab.text` / `.icon` / `.action` | A tab is data, not a composable |
+| Tab | `FlowTab.text` / `.icon` / `.image` / `.action` | A tab is data, not a composable. Icon-first (rule 8) |
 | Buttons | `FlowPrimaryButton`, `FlowSecondaryButton`, `FlowTextAction`, `FlowIconButton`, `FlowCircleButton`, `FlowFab` | |
 | Settings rows | `FlowToggleRow`, `FlowSliderRow`, `FlowDropdownRow`, `FlowTextField`, `FlowChoiceChips`, `FlowCollapsible` | |
 | Text | `FlowSection`, `FlowLabel`, `FlowHint` | |
-| Meta | `FlowBadge`, `FlowStat`, `FlowMetaRow` | |
+| Meta | `FlowBadge`, `FlowStat`, `FlowMetaRow`, `FlowCountBadge`, `FlowDot` | Count badge / dot: new chapters |
 | Icons | `FlowIcons.forToken` | Shared with plugins |
 
 ### Layers (back to front)
@@ -67,3 +67,9 @@ Details: [layers.md](layers.md).
 5. **Tabs are lists.** New tab = new `FlowTab` entry, never a new bar.
 6. **Nested fullscreen cards stack.** Open the child while the parent stays `visible`; Back pops one.
 7. **Content pads by dock height** (`FlowScreenPadding`), never by guessed constants.
+8. **Icon-first tabs.** A fixed, recurring destination with an obvious icon is a `FlowTab.icon`
+   (Files, Queue, plugin Search, plugin lists via manifest `lists[].icon`); a plugin tab whose
+   package ships `icon.png` is a `FlowTab.image` (a silhouette, tinted like icon tabs). User-named things stay text (custom shelves, plugin names
+   without an icon, plugin lists without `icon`). Settings sections and their sub-tabs stay text:
+   they are visited rarely and the word is the lookup key. Every icon/image tab passes a
+   `contentDescription`; long-press shows it as a tooltip.

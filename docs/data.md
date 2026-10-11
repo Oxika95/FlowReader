@@ -26,14 +26,17 @@ and downgrades are destructive. Each domain owns its rows and positions; nothing
 
 | Table | Contents |
 |-------|----------|
-| `library_books` | Files / shelf books: `bookId` (SHA-256), `title`, `storedPath`, `sourceUri`, `sourceKind` (`Imported` / `Linked`), `shelfId`, `addedAt`, `localFilters`, position |
+| `library_books` | Files / shelf books: `bookId` (SHA-256), `title`, `storedPath`, `sourceUri`, `sourceKind` (`Imported` / `Linked`), `shelfId`, `addedAt`, `localFilters`, position, `author` and `chapterCount` (read from the file at import; row subtitle) |
 | `queue_items` | One row per Queue entry, keyed by `queId`: its own copy of the file reference (`bookId`, `storedPath`, `sourceUri`, `sourceKind`), `sourceUrl` (web imports), `origin` (`Text` / `Web` / `File` / `Library` / `Plugin`), `sortOrder`, `done`, `doneAt`, `localFilters`, position |
 | `queue_state` | Single row: `currentQueId` (last entry the Queue stream wrote a position for) |
 
 Plugin stories live in one Room database per plugin, `plugin_<id>.db`
 ([`PluginDb.kt`](../app/src/main/java/com/personal/flowreader/plugin/store/PluginDb.kt), table
-`plugin_books`: `bookId`, `workId`, `title`, `storedPath`, `workUrl`, `addedAt`, `localFilters`,
-position). Columns are app-defined. Erasing a plugin's data deletes its database.
+`plugin_books`: library membership, `bookId`, `workId`, `title` (the plugin's), `storedPath`,
+`workUrl`, `addedAt`, `localFilters`, position; table `plugin_stories`: the user's settings for
+every stored story, library member or not: `titleOverride`, `newChapters`, `notify`, `cacheLevel`,
+`cleanup`, `keepAll`, each updated by its own single-column query). Columns are app-defined.
+Erasing a plugin's data deletes its database.
 
 Every table embeds the same position columns
 ([`ReadingPosition.kt`](../app/src/main/java/com/personal/flowreader/data/ReadingPosition.kt)):
@@ -45,7 +48,9 @@ Migration 9 → 10 ([`LegacyMigration.kt`](../app/src/main/java/com/personal/flo
 pure mapper JVM-tested): library rows move to `library_books`; each old Queue row gets its own
 `queue_items` row with a copy of the book's position; plugin rows go to a staging table that
 `PluginStorageMigrator` drains into each installed plugin's database at startup (plugin reads wait
-for it).
+for it). Migration 10 → 11 adds `library_books.author` / `chapterCount`; rows from before are
+filled from their files at startup (`BookCatalog.fillMissingRowMeta`). Plugin database 1 → 2 adds
+`plugin_stories` (settings kept in `meta.txt` before are not carried over).
 
 ### Reading position writes
 
@@ -109,8 +114,8 @@ sizes (`BookMeter`), so no full parse is needed.
 | Linked cache | Under cache when referencing in place |
 | `filesDir/plugins/installed/{id}/` | Installed plugin `plugin.json` + `index.js` |
 | `filesDir/plugins/data/{id}/` | Plugin story sessions, ToC, chapter cache, lists, settings, key-value store |
-| `…/data/{id}/{work}/meta.txt` | Story session: `bookId`, `pluginId`, `workId`, `cacheLevel` (chapters ahead), `cleanup`, `pinnedRanges` (Download all only), `notify`. A file without `bookId` / `pluginId` is ignored |
-| `…/data/{id}/{work}/c/{i}.txt` | Cached chapter body (title, blank line, text) |
+| `…/data/{id}/{work}/meta.txt`, `toc.txt` | The plugin's data for a story: `bookId`, `pluginId`, `workId`, `workUrl`, `title`, `author`, and the ToC. Written only when a ToC is stored. A file without `bookId` / `pluginId` is ignored |
+| `…/data/{id}/{work}/c/{sha1(url)}.txt` | Cached chapter body (title, blank line, text), keyed by chapter URL |
 | `shared_prefs/plugin_secret_{id}.xml` | Encrypted plugin secrets and cookies (excluded from backup) |
 
 Book ids are SHA-256 of file bytes ([`BookCatalog.kt`](../app/src/main/java/com/personal/flowreader/data/BookCatalog.kt)).

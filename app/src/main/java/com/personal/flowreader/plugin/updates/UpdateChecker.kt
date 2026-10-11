@@ -21,13 +21,16 @@ data class ChapterUpdate(
     val bookId: String,
     val title: String,
     val newChapters: List<PluginChapterRef>,
+    /** The story's bell is on: post a system notification. */
+    val notify: Boolean = true,
 )
 
 /**
- * Background new-chapter check over every installed plugin's monitored stories (bell on).
- * Plugins with the `updates` capability are asked cheaply first and only changed stories are
- * re-fetched; others get one `loadWork` per story. New ToCs are stored, and chapters within the
- * story's cache level ahead of the saved position are downloaded.
+ * Background new-chapter check over every installed plugin's monitored stories: those on a story
+ * list plus bell-on library stories. Plugins with the `updates` capability are asked cheaply first
+ * and only changed stories are re-fetched; others get one `loadWork` per story. New ToCs are
+ * stored, the story's new-chapter count grows (library badge), and chapters within the story's
+ * cache level ahead of the saved position are downloaded. Only bell-on stories notify.
  */
 class UpdateChecker(private val app: FlowApp) {
     suspend fun run(): List<ChapterUpdate> = TwoWaySync.lock.withLock {
@@ -57,11 +60,14 @@ class UpdateChecker(private val app: FlowApp) {
 
         val monitored = ArrayList<PluginReadSession>()
         val baseline = ArrayList<String>()
+        val notifying = HashSet<String>()
         for (workId in workIds) {
             val bookId = app.pluginManager.bookIdFor(plugin.id, workId)
             val session = app.pluginBooks.session(bookId)?.takeIf { it.toc.isNotEmpty() }
             val listedIn = members.filterValues { workId in it }.keys
-            if (!UpdateDiff.notifyOn(session?.notify, listedIn, notifyLists)) continue
+            val notify = UpdateDiff.notifyOn(session?.notify, listedIn, notifyLists)
+            if (!UpdateDiff.monitored(notify, listedIn)) continue
+            if (notify) notifying += workId
             if (session == null) baseline += workId else monitored += session
         }
 
@@ -101,7 +107,8 @@ class UpdateChecker(private val app: FlowApp) {
                 val fresh = app.pluginBooks.fetchAndStoreWork(plugin.id, old.workId)
                 val added = UpdateDiff.newChapters(old.toc.map { it.url }, fresh.toc)
                 if (added.isEmpty()) continue
-                out += ChapterUpdate(plugin.id, fresh.bookId, fresh.title, added)
+                app.pluginBooks.addNewChapters(fresh.bookId, added.size)
+                out += ChapterUpdate(plugin.id, fresh.bookId, fresh.displayTitle, added, notify = old.workId in notifying)
                 downloadAhead(fresh)
             } catch (e: CancellationException) {
                 throw e

@@ -52,8 +52,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (isIncomingIntent(intent)) {
-            logIncoming("onCreate", intent, recreated = savedInstanceState != null)
-            pendingIncoming.value = Intent(intent)
+            val recreated = savedInstanceState != null
+            logIncoming("onCreate", intent, recreated = recreated)
+            // Recreation and Recents relaunch redeliver the launch intent; it was handled already.
+            val replay = recreated || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+            if (!replay) pendingIncoming.value = Intent(intent)
         }
         val asker: (onDone: () -> Unit) -> Unit = asker@{ onDone ->
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -159,8 +162,8 @@ class MainActivity : ComponentActivity() {
                                     appearance = AppearanceSettingsState(openUi),
                                     appearanceCallbacks = AppearanceSettingsCallbacks(openVm),
                                     onOpenBook = { id -> nav.navigate("reader/$id") },
-                                    onOpenQue = { bookId, queId ->
-                                        nav.navigate("reader/$bookId/que/$queId")
+                                    onOpenQue = { bookId, queId, chapter ->
+                                        nav.navigate("reader/$bookId/que/$queId" + (chapter?.let { "?chapter=$it" } ?: ""))
                                     },
                                 )
                             }
@@ -177,10 +180,14 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             composable(
-                                route = "reader/{bookId}/que/{queId}",
+                                route = "reader/{bookId}/que/{queId}?chapter={chapter}",
                                 arguments = listOf(
                                     navArgument("bookId") { type = NavType.StringType },
                                     navArgument("queId") { type = NavType.StringType },
+                                    navArgument("chapter") {
+                                        type = NavType.IntType
+                                        defaultValue = -1
+                                    },
                                 ),
                             ) {
                                 ReaderRoute(
@@ -218,7 +225,6 @@ class MainActivity : ComponentActivity() {
             "INTENT",
             "from" to from,
             "action" to intent.action,
-            "kind" to intent.getStringExtra(com.personal.flowreader.share.ShareDispatch.EXTRA_KIND),
             "recreated" to recreated,
             "fromHistory" to (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0),
             "extras" to Integer.toHexString(digest.hashCode()),
@@ -228,7 +234,6 @@ class MainActivity : ComponentActivity() {
     private fun isIncomingIntent(intent: Intent?): Boolean =
         intent?.action == Intent.ACTION_SEND ||
             intent?.action == Intent.ACTION_VIEW ||
-            intent?.action == com.personal.flowreader.share.ShareDispatch.ACTION_EXECUTE ||
             intent?.action == com.personal.flowreader.plugin.updates.UpdateNotifier.ACTION_OPEN_STORY
 }
 

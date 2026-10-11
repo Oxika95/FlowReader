@@ -13,7 +13,8 @@ class RepoIndexTest {
             {"name":"Official","apiVersion":1,"plugins":[
               {"id":"royalroad","name":"Royal Road","version":"1.2.0","apiVersion":3,
                "manifestUrl":"plugins/royalroad/plugin.json","pluginUrl":"plugins/royalroad/index.js",
-               "sha256":"$sha","manifestSha256":"${"B".repeat(64)}"},
+               "sha256":"$sha","manifestSha256":"${"B".repeat(64)}",
+               "iconUrl":"plugins/royalroad/icon.png","iconSha256":"${"C".repeat(64)}"},
               {"id":"Bad Id","manifestUrl":"x","pluginUrl":"y","sha256":"$sha"},
               {"id":"nosha","manifestUrl":"x","pluginUrl":"y"}
             ]}
@@ -25,6 +26,8 @@ class RepoIndexTest {
         assertEquals("https://example.github.io/repo/plugins/royalroad/index.js", p.pluginUrl)
         assertEquals("https://example.github.io/repo/plugins/royalroad/plugin.json", p.manifestUrl)
         assertEquals("b".repeat(64), p.manifestSha256)
+        assertEquals("https://example.github.io/repo/plugins/royalroad/icon.png", p.iconUrl)
+        assertEquals("c".repeat(64), p.iconSha256)
     }
 
     @Test

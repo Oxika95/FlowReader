@@ -75,19 +75,20 @@ class MediaCardAdaptersTest {
             ),
         )
         val m = model(info(card = card, listedIn = setOf("favorite")))
-        assertEquals(listOf("list:follow", "list:favorite", "share", "rate", "later"), m.rail.map { it.id })
+        assertEquals(listOf("list:follow", "list:favorite", "share", "rename", "rate", "later"), m.rail.map { it.id })
         assertFalse(m.rail[0].on)
         assertTrue(m.rail[1].on)
         assertEquals(MediaActionOwner.Host, m.rail[2].owner)
-        assertEquals(MediaActionOwner.Plugin, m.rail[3].owner)
-        assertEquals(MediaActionKind.Toggle, m.rail[3].kind)
-        assertEquals(MediaActionKind.Icon, m.rail[4].kind)
+        assertEquals(MediaActionOwner.Host, m.rail[3].owner)
+        assertEquals(MediaActionOwner.Plugin, m.rail[4].owner)
+        assertEquals(MediaActionKind.Toggle, m.rail[4].kind)
+        assertEquals(MediaActionKind.Icon, m.rail[5].kind)
     }
 
     @Test
     fun rail_notifyBellAfterListToggles_onlyWhenGiven() {
         val on = model(info().copy(notify = true))
-        assertEquals(listOf("list:follow", "list:favorite", "notify", "share"), on.rail.map { it.id })
+        assertEquals(listOf("list:follow", "list:favorite", "notify", "share", "rename"), on.rail.map { it.id })
         assertTrue(on.rail[2].on)
         assertEquals(MediaActionKind.Toggle, on.rail[2].kind)
         assertFalse(model(info().copy(notify = false)).rail[2].on)
@@ -183,7 +184,7 @@ class MediaCardAdaptersTest {
             setOf(MediaActionIds.READ, MediaActionIds.DELETE, "later"),
         )
         assertEquals(listOf("download", "refresh", "comments"), m.footer.map { it.id })
-        assertEquals(listOf("list:follow", "list:favorite", "share", "later"), m.rail.map { it.id })
+        assertEquals(listOf("list:follow", "list:favorite", "share", "rename", "later"), m.rail.map { it.id })
     }
 
     @Test

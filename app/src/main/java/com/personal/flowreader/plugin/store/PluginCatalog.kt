@@ -6,6 +6,7 @@ import com.personal.flowreader.data.PositionSource
 import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.PositionDomain
+import com.personal.flowreader.data.savedChapterOrNone
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 
@@ -17,6 +18,7 @@ fun PluginBookEntity.toItem(pluginId: String) = BookItem(
     sourceKind = pluginId,
     readingProgress = position.fraction,
     lastReadAt = maxOf(addedAt, position.positionAt),
+    chapterIndex = position.savedChapterOrNone,
 )
 
 /** Plugin library rows, each plugin in its own database ([PluginDatabases]). */
@@ -38,12 +40,19 @@ class PluginCatalog(private val app: FlowApp) {
 
     private fun workIdFor(bookId: String): String = bookId.substringAfter(':')
 
+    /** Library row; [PluginBookEntity.title] is the user's name for the story when renamed. */
     suspend fun get(bookId: String): PluginBookEntity? {
         val pluginId = pluginIdFor(bookId) ?: return null
-        return dao(pluginId).get(bookId)
+        val row = dao(pluginId).get(bookId) ?: return null
+        val rename = app.pluginDbs.stories(pluginId).get(bookId)?.titleOverride.orEmpty()
+        return if (rename.isBlank()) row else row.copy(title = rename)
     }
 
-    suspend fun list(pluginId: String): List<PluginBookEntity> = dao(pluginId).all()
+    /** Library rows; titles as in [get]. */
+    suspend fun list(pluginId: String): List<PluginBookEntity> {
+        val renames = app.pluginDbs.stories(pluginId).renamed().associate { it.bookId to it.titleOverride }
+        return dao(pluginId).all().map { row -> renames[row.bookId]?.let { row.copy(title = it) } ?: row }
+    }
 
     /** Library row for a story, without downloading chapters. Keeps position, filters, cover. */
     suspend fun upsertCatalogEntry(
@@ -92,6 +101,15 @@ class PluginCatalog(private val app: FlowApp) {
             return dao(pluginId).get(bookId) ?: row
         }
         return row
+    }
+
+    /** The plugin's [title] for an existing row (after a ToC refresh). */
+    suspend fun setTitle(bookId: String, title: String) {
+        val pluginId = pluginIdFor(bookId) ?: return
+        val dao = dao(pluginId)
+        val existing = dao.get(bookId) ?: return
+        if (title.isBlank() || title == existing.title) return
+        dao.updateCatalog(bookId, title, existing.workUrl, existing.storedPath)
     }
 
     private suspend fun ensureRow(pluginId: String, bookId: String, title: String, sourceUri: String, dest: File): PluginBookEntity {

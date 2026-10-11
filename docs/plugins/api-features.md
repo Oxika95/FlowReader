@@ -110,7 +110,8 @@ the browser cookies. The plugin never sees a password.
 
 ## ToC refresh
 
-Every `loadWork` result replaces the stored ToC. The host matches chapters by `url`: cached bodies,
-Download all / partial pins, and the saved position move with their URL, so inserting chapters
-before ones already read is safe. Keep each chapter's `url` stable; a removed URL deletes its body.
+Every `loadWork` result replaces the stored ToC. The host identifies chapters by `url`: cached
+bodies are stored per URL and the saved position records its chapter's URL, so inserting chapters
+before ones already read is safe. Keep each chapter's `url` stable; a removed URL deletes its body,
+and a saved position on it moves to the next surviving chapter. Removed chapters never count as new.
 

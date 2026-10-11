@@ -11,7 +11,10 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.personal.flowreader.data.ReadingPosition
+import kotlinx.coroutines.flow.Flow
 
 /** A story in one plugin's library (its own database, `plugin_<id>.db`). */
 @Entity(tableName = "plugin_books")
@@ -69,9 +72,78 @@ interface PluginBookDao {
     suspend fun delete(bookId: String)
 }
 
-@Database(entities = [PluginBookEntity::class], version = 1, exportSchema = true)
+/**
+ * The user's settings for one stored story, library member or not. Each setter updates one
+ * column, so writers never hold a copy of the others.
+ */
+@Entity(tableName = "plugin_stories")
+data class PluginStoryEntity(
+    @PrimaryKey val bookId: String,
+    val titleOverride: String = "",
+    val newChapters: Int = 0,
+    val notify: Boolean? = null,
+    val cacheLevel: Int,
+    val cleanup: Boolean,
+    val keepAll: Boolean = false,
+)
+
+data class StoryCount(val bookId: String, val newChapters: Int)
+
+data class StoryTitle(val bookId: String, val titleOverride: String)
+
+@Dao
+interface PluginStoryDao {
+    @Query("SELECT * FROM plugin_stories WHERE bookId = :bookId")
+    suspend fun get(bookId: String): PluginStoryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(row: PluginStoryEntity): Long
+
+    @Query("UPDATE plugin_stories SET titleOverride = :title WHERE bookId = :bookId")
+    suspend fun setTitleOverride(bookId: String, title: String)
+
+    @Query("UPDATE plugin_stories SET notify = :on WHERE bookId = :bookId")
+    suspend fun setNotify(bookId: String, on: Boolean)
+
+    @Query("UPDATE plugin_stories SET cacheLevel = :cacheLevel, cleanup = :cleanup WHERE bookId = :bookId")
+    suspend fun setCachePolicy(bookId: String, cacheLevel: Int, cleanup: Boolean)
+
+    @Query("UPDATE plugin_stories SET keepAll = :on WHERE bookId = :bookId")
+    suspend fun setKeepAll(bookId: String, on: Boolean)
+
+    @Query("UPDATE plugin_stories SET newChapters = newChapters + :count WHERE bookId = :bookId")
+    suspend fun addNewChapters(bookId: String, count: Int)
+
+    @Query("UPDATE plugin_stories SET newChapters = 0 WHERE bookId = :bookId")
+    suspend fun clearNewChapters(bookId: String)
+
+    @Query("SELECT bookId, newChapters FROM plugin_stories WHERE newChapters > 0")
+    fun newChapterCounts(): Flow<List<StoryCount>>
+
+    @Query("SELECT bookId, titleOverride FROM plugin_stories WHERE titleOverride != ''")
+    suspend fun renamed(): List<StoryTitle>
+
+    @Query("DELETE FROM plugin_stories WHERE bookId = :bookId")
+    suspend fun delete(bookId: String)
+}
+
+@Database(entities = [PluginBookEntity::class, PluginStoryEntity::class], version = 2, exportSchema = true)
 abstract class PluginDatabase : RoomDatabase() {
     abstract fun books(): PluginBookDao
+    abstract fun stories(): PluginStoryDao
+
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `plugin_stories` (`bookId` TEXT NOT NULL, " +
+                        "`titleOverride` TEXT NOT NULL, `newChapters` INTEGER NOT NULL, `notify` INTEGER, " +
+                        "`cacheLevel` INTEGER NOT NULL, `cleanup` INTEGER NOT NULL, `keepAll` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`bookId`))",
+                )
+            }
+        }
+    }
 }
 
 /** One open [PluginDatabase] per plugin id, created on first use. */
@@ -80,11 +152,15 @@ class PluginDatabases(private val context: Context) {
 
     fun get(pluginId: String): PluginDatabase = synchronized(open) {
         open.getOrPut(pluginId) {
-            Room.databaseBuilder(context, PluginDatabase::class.java, fileName(pluginId)).build()
+            Room.databaseBuilder(context, PluginDatabase::class.java, fileName(pluginId))
+                .addMigrations(PluginDatabase.MIGRATION_1_2)
+                .build()
         }
     }
 
     fun books(pluginId: String): PluginBookDao = get(pluginId).books()
+
+    fun stories(pluginId: String): PluginStoryDao = get(pluginId).stories()
 
     /** Close and delete [pluginId]'s database (uninstall, Delete plugin data). */
     fun delete(pluginId: String) {

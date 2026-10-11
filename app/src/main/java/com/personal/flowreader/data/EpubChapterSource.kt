@@ -13,6 +13,7 @@ class EpubChapterSource private constructor(
     private val paths: List<String>,
     private val sizes: LongArray,
     private val navTitles: Map<Int, String>,
+    override val author: String = "",
 ) : ChapterSource {
     override val chapterCount: Int get() = paths.size
 
@@ -72,7 +73,7 @@ class EpubChapterSource private constructor(
             }
             val tocId = opfDoc.selectFirst("spine")?.attr("toc").orEmpty()
             val navTitles = runCatching { readNav(zip, items, tocId, paths) }.getOrDefault(emptyMap())
-            EpubChapterSource(file, title, paths, sizes, navTitles)
+            EpubChapterSource(file, title, paths, sizes, navTitles, EpubIngest.authorOf(opfDoc).orEmpty())
         }
 
         private data class ManifestItem(val path: String, val mediaType: String, val properties: String)

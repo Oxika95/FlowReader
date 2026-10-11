@@ -39,9 +39,11 @@ fun LibraryBooksPane(
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
     bottomInset: Dp = FlowTokens.Space.None,
-    subtitleFor: (BookItem) -> String = { libraryBookSubtitle(it) },
+    /** Row subtitle; null = Files rows ("{author} · chapter x/y" from the file's metadata). */
+    subtitleFor: ((BookItem) -> String)? = null,
     onLongOpen: ((String) -> Unit)? = null,
     badgesFor: (BookItem) -> List<Pair<String, FlowBadgeTone>> = { emptyList() },
+    newCountFor: (BookItem) -> Int = { 0 },
 ) {
     Box(modifier.fillMaxSize()) {
         if (books.isEmpty() && !busy) {
@@ -52,17 +54,21 @@ fun LibraryBooksPane(
         when (viewMode) {
             LibraryViewMode.List -> FlowDisplayList(contentPadding = padding) {
                 items(books, key = { it.bookId }) { book ->
-                    BookCard(book, FlowDisplayLayout.Row, subtitleFor(book), onOpen, onLongOpen, badgesFor(book))
+                    val subtitle = subtitleFor?.invoke(book) ?: filesRowSubtitle(book)
+                    BookCard(book, FlowDisplayLayout.Row, subtitle, onOpen, onLongOpen, badgesFor(book), newCountFor(book))
                 }
             }
             LibraryViewMode.Shelf -> FlowDisplayGrid(contentPadding = padding) {
                 items(books, key = { it.bookId }) { book ->
-                    BookCard(book, FlowDisplayLayout.Tile, "", onOpen, onLongOpen, badgesFor(book))
+                    BookCard(book, FlowDisplayLayout.Tile, "", onOpen, onLongOpen, badgesFor(book), newCountFor(book))
                 }
             }
         }
     }
 }
+
+private fun filesRowSubtitle(book: BookItem): String =
+    LibraryRowText.subtitle(book.author, book.chapterCount, book.chapterIndex) ?: libraryBookSubtitle(book)
 
 @Composable
 private fun BookCard(
@@ -72,6 +78,7 @@ private fun BookCard(
     onOpen: (String) -> Unit,
     onLongOpen: ((String) -> Unit)?,
     badges: List<Pair<String, FlowBadgeTone>>,
+    newCount: Int,
 ) {
     val edge = if (layout == FlowDisplayLayout.Row) FlowTokens.CoverEdge.Row else FlowTokens.CoverEdge.Tile
     val cover by rememberBookCover(book, maxEdge = edge)
@@ -86,6 +93,7 @@ private fun BookCard(
         progress = book.readingProgress,
         corner = LinkedCorner.takeIf { book.sourceKind == BookSource.Linked.name },
         onLongClick = onLongOpen?.let { handler -> { handler(book.bookId) } },
+        newCount = newCount,
     )
 }
 

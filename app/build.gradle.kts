@@ -106,7 +106,7 @@ val devPluginsDir: File = file(
 )
 val bundleDevPlugins = tasks.register<BundleDevPluginsTask>("bundleDevPlugins") {
     pluginsDir.set(devPluginsDir)
-    pluginFiles.from(fileTree(devPluginsDir) { include("*/plugin.json", "*/index.js") })
+    pluginFiles.from(fileTree(devPluginsDir) { include("*/plugin.json", "*/index.js", "*/icon.png") })
 }
 
 androidComponents {

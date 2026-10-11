@@ -111,6 +111,7 @@ private suspend fun PointerInputScope.detectRailHold(
 @Composable
 internal fun LocusRail(
     modifier: Modifier,
+    blockId: String,
     sentences: List<BlockSentence>,
     textLayout: TextLayoutResult?,
     currentSentenceIndex: Int,
@@ -211,7 +212,7 @@ internal fun LocusRail(
             if (sentenceIndex != currentSentenceIndex) return this
             return onGloballyPositioned { coords ->
                 val top = coords.positionInRoot().y
-                reportCurrent.value(SentenceSpan(sentenceIndex, top, top + coords.size.height))
+                reportCurrent.value(SentenceSpan(blockId, sentenceIndex, top, top + coords.size.height))
             }
         }
         // Farthest from current drawn first; current gets zIndex 0 (top) when bars lap.

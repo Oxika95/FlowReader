@@ -2,23 +2,29 @@ package com.personal.flowreader.ui.reader
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import com.personal.flowreader.ui.design.FlowIcons
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.FlowType
@@ -33,6 +39,7 @@ internal fun TocOverlay(
     visible: Boolean,
     chapters: List<String>,
     levels: List<Int> = emptyList(),
+    locked: Set<Int> = emptySet(),
     chapterIndex: Int,
     onChapter: (Int) -> Unit,
     onDismiss: () -> Unit,
@@ -70,17 +77,10 @@ internal fun TocOverlay(
             itemsIndexed(chapters, key = { index, _ -> index }) { index, name ->
                 val current = index == safeIndex
                 val nested = levels.getOrElse(index) { 0 } > 0
-                Text(
-                    name,
-                    style = if (nested) FlowType.label else FlowType.body,
-                    fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                    color = when {
-                        current -> MaterialTheme.colorScheme.primary
-                        nested -> MaterialTheme.colorScheme.onSurfaceVariant
-                        else -> MaterialTheme.colorScheme.onBackground
-                    },
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                val isLocked = index in locked
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
                     modifier = Modifier
                         .fillMaxWidth()
                         .semantics { selected = current }
@@ -91,7 +91,29 @@ internal fun TocOverlay(
                             top = if (nested) FlowTokens.Space.M else FlowTokens.Space.L,
                             bottom = if (nested) FlowTokens.Space.M else FlowTokens.Space.L,
                         ),
-                )
+                ) {
+                    Text(
+                        name,
+                        style = if (nested) FlowType.label else FlowType.body,
+                        fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                        color = when {
+                            current -> MaterialTheme.colorScheme.primary
+                            nested || isLocked -> MaterialTheme.colorScheme.onSurfaceVariant
+                            else -> MaterialTheme.colorScheme.onBackground
+                        },
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (isLocked) {
+                        Icon(
+                            FlowIcons.forToken("lock"),
+                            contentDescription = "Locked",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(FlowTokens.Icon.S),
+                        )
+                    }
+                }
                 if (index < chapters.lastIndex) {
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = FlowTokens.Space.M),

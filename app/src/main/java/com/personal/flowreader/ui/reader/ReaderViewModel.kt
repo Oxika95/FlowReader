@@ -51,6 +51,8 @@ data class ReaderUi(
     val filtersLocal: List<FilterRule> = emptyList(),
     /** ToC row labels. */
     val tocTitles: List<String> = emptyList(),
+    /** ToC rows shown with a lock (plugin chapters the account can't read). */
+    val tocLocked: Set<Int> = emptySet(),
     /** ToC row for the current locus highlight. */
     val tocIndex: Int = 0,
     /** Whole-book progress 0â€“1 at [locus]. */
@@ -87,7 +89,10 @@ class ReaderViewModel(
     private val _ui = MutableStateFlow(ReaderUi(queue = isQueue, currentBookId = bookId))
     val ui: StateFlow<ReaderUi> = _ui
 
-    private val queue: ReaderQueueMode? = if (isQueue) ReaderQueueMode(flow, queId, _ui) else null
+    /** Chapter tapped under a Library Queue row (the item's own index); consumed so a restore reopens at the saved position. */
+    private val queChapter: Int? = savedStateHandle.remove<Int>("chapter")?.takeIf { it >= 0 }
+
+    private val queue: ReaderQueueMode? = if (isQueue) ReaderQueueMode(flow, queId, _ui, queChapter) else null
     private var book: ReaderBook? = null
     private var session: ReadingSession? = null
 
@@ -133,6 +138,7 @@ class ReaderViewModel(
                     filtersGroups = groups,
                     filtersLocal = local,
                     tocTitles = opened.toc.map { (_, label) -> label },
+                    tocLocked = opened.lockedRows,
                 )
             }
             val rules = TextFilters.merge(global, groups, local)
@@ -228,6 +234,7 @@ class ReaderViewModel(
     private suspend fun openBook(row: ReaderRow): ReaderBook =
         if (row.session.domain == PositionDomain.Plugin) {
             val story = flow.pluginBooks.openStory(bookId)
+            withContext(Dispatchers.IO) { flow.pluginBooks.clearNewChapters(bookId) }
             ReaderBook.plugin(flow.pluginBooks, story)
         } else {
             ReaderBook.local(ChapterSource.open(flow.catalog.materialize(row), row.title))

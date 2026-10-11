@@ -135,7 +135,7 @@ internal class QueuePlayback(private val flow: FlowApp) {
         val spoken = flow.tts.state.value.sentence
             ?.takeIf { flow.tts.state.value.bookId == QueueBook.ID }
             ?.let { Locus(it.chapterIndex, it.blockIndex, it.start) }
-        val target = spoken?.let { fresh.remap(it, old) } ?: Locus(0, 0, 0)
+        val target = spoken?.let { fresh.remap(it, old) } ?: Locus(fresh.baseOf(fresh.firstUnfinished()), 0, 0)
         val session = QueueStreams.open(flow, ref, target.chapterIndex)
         withContext(Dispatchers.Main) {
             flow.tts.setSpeechFilters(ref.global, ref.groups, fresh.segmentAt(target.chapterIndex)?.local.orEmpty())

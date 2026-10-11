@@ -26,8 +26,12 @@ FlowTabBar(flowTextTabs(listOf("About", "Audio"), selectedIndex) { idx -> tab = 
 | Kind | Meaning |
 | --- | --- |
 | `FlowTab.text` | Destination with a label |
-| `FlowTab.icon` | Destination shown as an icon (`contentDescription` required) |
+| `FlowTab.icon` | Destination shown as an icon (`contentDescription` required; long-press shows it as a tooltip) |
+| `FlowTab.image` | Destination shown as a plugin's packaged `icon.png` silhouette, tinted with the tab colour like `FlowTab.icon`; same tooltip |
 | `FlowTab.action` | Trailing button that opens something (Add tab, Account); `open` shows the selected state while its card is open |
+
+`text` and `icon` take `badge: Int?`: above 0 draws an accent `FlowDot` at the label's or icon's
+top-end (plugin Library tab and list sub-tabs with new chapters).
 
 | Level | Use | Type | Indicator |
 | --- | --- | --- | --- |
@@ -74,13 +78,20 @@ selected tab in view.
 `FlowBadge(label, onCover)`, `FlowStat(stat, color)`, `FlowMetaRow(badges, stats, onCover)`:
 wrapping row of pills then icon+value stats. Used by display and media cards.
 
+**New items:** `FlowCountBadge(count)` is a `colorScheme.primary` (accent) circle with a bold
+"+N" in `onPrimary`; "+99" above 99, nothing at 0; size `Comp.CountBadge`. It marks new chapters
+on plugin stories only (never Files): display rows (trailing edge, centred, half past the border),
+tiles (cover top-right), and the media card title. `FlowDot()` (`Comp.TabDot`) is the number-less
+version; tabs show it through `FlowTab(badge = n)` when `n > 0`.
+
 ## Icons (`FlowIcons`)
 
 `FlowIcons.forToken(token)` maps string tokens (manifest `lists[].icon`, plugin card stats and
 actions, adapters) to Material icons. Unknown → `bookmark`.
 
 `add`, `favorite`/`heart`, `schedule`/`clock`, `bookmark`, `star`, `check`, `visibility`/`eye`,
-`list`, `flag`, `download`, `pages`, `user`, `followers`, `comment`, `like`, `link`, `share`.
+`list`, `flag`, `download`, `pages`, `user`, `followers`, `comment`, `like`, `link`, `share`,
+`notifications`/`bell`, `lock`, `edit`.
 
 The token list is plugin API: add tokens freely, never rename or remove one.
 

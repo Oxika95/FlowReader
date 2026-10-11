@@ -8,7 +8,10 @@ import java.io.File
 import org.json.JSONObject
 import java.security.MessageDigest
 
-/** On-disk ToC + cached chapter bodies for one plugin story, plus the in-memory stream window. */
+/**
+ * One plugin story: the plugin's data from disk ([title] is the plugin's title) plus the user's
+ * settings from [PluginStoryEntity], and the chapters [startIndex]..[loadedThrough] opened in memory.
+ */
 data class PluginReadSession(
     val bookId: String,
     val pluginId: String,
@@ -17,32 +20,33 @@ data class PluginReadSession(
     val title: String,
     val author: String,
     val toc: List<PluginChapterRef>,
-    val startIndex: Int,
-    var loadedThrough: Int,
-    var chapters: List<Chapter>,
+    val startIndex: Int = 0,
+    var loadedThrough: Int = -1,
+    var chapters: List<Chapter> = emptyList(),
     /** Chapters kept ahead of the reading position (and behind it when [cleanup] is on). */
     val cacheLevel: Int = PluginCachePolicy.DEFAULT_LEVEL,
     /** Delete chapters more than [cacheLevel] behind the reading position. */
     val cleanup: Boolean = false,
-    /** Inclusive chapter-index ranges (Download all) that cleanup never deletes. */
-    val pinnedRanges: List<IntRange> = emptyList(),
-    /** New-chapter notifications; null = default (on while the story is on a syncable list). */
+    /** Download all: every chapter is kept and fetched. */
+    val keepAll: Boolean = false,
+    /** New-chapter notifications; null = default (on while the story is on a `notifyDefault` list). */
     val notify: Boolean? = null,
+    /** User's name for the story; blank = [title]. */
+    val titleOverride: String = "",
+    /** Chapters added by update checks since the story was last opened in the reader. */
+    val newChapters: Int = 0,
 ) {
-    fun nextIndex(): Int? {
-        val next = loadedThrough + 1
-        return next.takeIf { it in toc.indices }
-    }
+    val displayTitle: String get() = titleOverride.ifBlank { title }
 
     val cachePolicy: PluginCachePolicy
-        get() = PluginCachePolicy(cacheLevel, cleanup, pinnedRanges)
+        get() = PluginCachePolicy(cacheLevel, cleanup, keepAll)
 }
 
 /** Stream / offline retention policy for chapter bodies on disk. */
 data class PluginCachePolicy(
     val cacheLevel: Int = DEFAULT_LEVEL,
     val cleanup: Boolean = false,
-    val pinnedRanges: List<IntRange> = emptyList(),
+    val keepAll: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_LEVEL = 1
@@ -64,36 +68,39 @@ data class PluginLibraryMeta(
     val downloadedCount: Int,
 )
 
-/** Plain-text file format for `{dataDir}/{workDir}/meta.txt`, `toc.txt`, `splash.txt`, `c/{i}.txt`. */
+/**
+ * Plain-text files under `{dataDir}/{workDir}/`: `meta.txt` and `toc.txt` (plugin data, written
+ * only when a ToC is stored), `splash.txt`, `card.json`, and `c/{chapterKey(url)}.txt` bodies.
+ */
 object PluginSessionStore {
     private val SAFE_DIR = Regex("^[A-Za-z0-9._-]{1,80}$")
 
     /** Filesystem-safe folder for a work id (ids with other characters are hashed). */
     fun workDirName(workId: String): String {
         if (SAFE_DIR.matches(workId) && !workId.startsWith("_") && !workId.startsWith(".")) return workId
-        val digest = MessageDigest.getInstance("SHA-1").digest(workId.toByteArray())
-        return "w_" + digest.joinToString("") { "%02x".format(it) }
+        return "w_" + sha1(workId)
     }
 
     fun dir(root: File, workId: String): File = File(root, workDirName(workId))
 
+    /** File name (without `.txt`) of the body of the chapter at [url]. */
+    fun chapterKey(url: String): String = sha1(url)
+
+    private fun sha1(value: String): String =
+        MessageDigest.getInstance("SHA-1").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
+
+    /** Write `meta.txt` and `toc.txt` (the plugin's data only; user settings live in the plugin DB). */
     fun writeMeta(dir: File, session: PluginReadSession) {
         dir.mkdirs()
         File(dir, "meta.txt").writeText(
             buildString {
-                appendLine("v2")
+                appendLine("v3")
                 appendLine("bookId=${session.bookId}")
                 appendLine("pluginId=${session.pluginId}")
                 appendLine("workId=${escape(session.workId)}")
                 appendLine("workUrl=${escape(session.workUrl)}")
                 appendLine("title=${escape(session.title)}")
                 appendLine("author=${escape(session.author)}")
-                appendLine("startIndex=${session.startIndex}")
-                appendLine("loadedThrough=${session.loadedThrough}")
-                appendLine("cacheLevel=${session.cacheLevel.coerceAtLeast(0)}")
-                appendLine("cleanup=${session.cleanup}")
-                appendLine("pinnedRanges=${encodeRanges(session.pinnedRanges)}")
-                session.notify?.let { appendLine("notify=$it") }
             },
         )
         File(dir, "toc.txt").writeText(
@@ -145,7 +152,7 @@ object PluginSessionStore {
         )
     }
 
-    /** Reads meta + ToC; null when either file is missing or meta lacks its ids. */
+    /** Reads meta + ToC (user settings at their defaults); null when either file is missing or meta lacks its ids. */
     fun read(root: File, workId: String): PluginReadSession? {
         val dir = dir(root, workId)
         val meta = File(dir, "meta.txt")
@@ -172,185 +179,75 @@ object PluginSessionStore {
             title = fields["title"] ?: workId,
             author = fields["author"].orEmpty(),
             toc = toc,
-            startIndex = fields["startIndex"]?.toIntOrNull() ?: 0,
-            loadedThrough = fields["loadedThrough"]?.toIntOrNull() ?: -1,
-            chapters = emptyList(),
-            cacheLevel = fields["cacheLevel"]?.toIntOrNull() ?: PluginCachePolicy.DEFAULT_LEVEL,
-            cleanup = fields["cleanup"]?.toBooleanStrictOrNull() ?: false,
-            pinnedRanges = decodeRanges(fields["pinnedRanges"].orEmpty()),
-            notify = fields["notify"]?.toBooleanStrictOrNull(),
         )
     }
 
-    fun writeChapter(dir: File, index: Int, title: String, text: String) {
-        val folder = File(dir, "c").apply { mkdirs() }
-        File(folder, "$index.txt").writeText("$title\n\n$text")
+    private fun chapterFile(dir: File, url: String): File = File(dir, "c/${chapterKey(url)}.txt")
+
+    fun writeChapter(dir: File, url: String, title: String, text: String) {
+        File(dir, "c").mkdirs()
+        chapterFile(dir, url).writeText("$title\n\n$text")
     }
 
-    fun readChapterText(dir: File, index: Int): Pair<String, String>? {
-        val file = File(dir, "c/$index.txt")
+    fun readChapterText(dir: File, url: String): Pair<String, String>? {
+        val file = chapterFile(dir, url)
         if (!file.exists()) return null
         val raw = file.readText()
         val split = raw.indexOf("\n\n")
-        if (split < 0) return file.nameWithoutExtension to raw.trim()
+        if (split < 0) return "" to raw.trim()
         return raw.substring(0, split).trim() to raw.substring(split + 2).trim()
     }
 
-    fun hasChapter(dir: File, index: Int): Boolean = File(dir, "c/$index.txt").exists()
+    fun hasChapter(dir: File, url: String): Boolean = chapterFile(dir, url).exists()
 
-    fun cachedChapterCount(dir: File, tocSize: Int): Int = cachedChapterIndices(dir, tocSize).size
+    fun cachedChapterCount(dir: File, toc: List<PluginChapterRef>): Int = cachedChapterIndices(dir, toc).size
 
-    fun cachedChapterIndices(dir: File, tocSize: Int): Set<Int> {
-        if (tocSize <= 0) return emptySet()
-        val out = LinkedHashSet<Int>()
-        for (i in 0 until tocSize) {
-            if (hasChapter(dir, i)) out += i
-        }
-        return out
+    /** ToC indices whose body is on disk. */
+    fun cachedChapterIndices(dir: File, toc: List<PluginChapterRef>): Set<Int> {
+        val stored = storedKeys(dir)
+        if (stored.isEmpty()) return emptySet()
+        return toc.indices.filterTo(LinkedHashSet()) { chapterKey(toc[it].url) in stored }
     }
 
-    fun deleteChapter(dir: File, index: Int) {
-        File(dir, "c/$index.txt").delete()
-    }
+    private fun storedKeys(dir: File): Set<String> =
+        File(dir, "c").listFiles()?.mapTo(HashSet()) { it.nameWithoutExtension }.orEmpty()
 
-    /** Delete the chapter bodies in [indices]. Returns how many files were removed. */
-    fun deleteChapters(dir: File, indices: Collection<Int>): Int =
-        indices.count { File(dir, "c/$it.txt").delete() }
+    /** Delete the bodies of [indices] in [toc] and any body whose chapter left [toc]. Returns how many files were removed. */
+    fun deleteChapters(dir: File, toc: List<PluginChapterRef>, indices: Collection<Int>): Int {
+        val keep = toc.indices.filterNot { it in indices }.mapTo(HashSet()) { chapterKey(toc[it].url) }
+        return File(dir, "c").listFiles()?.count { it.nameWithoutExtension !in keep && it.delete() } ?: 0
+    }
 
     fun deleteSession(root: File, workId: String) {
         dir(root, workId).deleteRecursively()
     }
 
-    /** Chapters to have on disk: [locus] through [PluginCachePolicy.cacheLevel] ahead, plus pins. */
+    /** Chapters to have on disk: [locus] through [PluginCachePolicy.cacheLevel] ahead, or all of them with keep-all. */
     fun fetchIndices(locus: Int, tocSize: Int, policy: PluginCachePolicy): Set<Int> {
         if (tocSize <= 0) return emptySet()
         val l = locus.coerceIn(0, tocSize - 1)
         val end = (l + policy.cacheLevel.coerceAtLeast(0)).coerceAtMost(tocSize - 1)
         val desired = LinkedHashSet<Int>()
         for (i in l..end) desired += i
-        for (range in policy.pinnedRanges) {
-            val from = range.first.coerceAtLeast(0)
-            val to = range.last.coerceAtMost(tocSize - 1)
-            if (from > to) continue
-            for (i in from..to) desired += i
-        }
+        if (policy.keepAll) for (i in 0 until tocSize) desired += i
         return desired
     }
 
     /**
-     * Cached chapters cleanup deletes: more than [PluginCachePolicy.cacheLevel] behind [locus]
-     * and not pinned, or past the ToC. Nothing when cleanup is off (except past-ToC files).
+     * Cached chapters cleanup deletes: more than [PluginCachePolicy.cacheLevel] behind [locus].
+     * Nothing when cleanup is off or keep-all is on.
      */
-    fun pruneIndices(cached: Collection<Int>, locus: Int, tocSize: Int, policy: PluginCachePolicy): Set<Int> {
+    fun pruneIndices(cached: Collection<Int>, locus: Int, policy: PluginCachePolicy): Set<Int> {
+        if (!policy.cleanup || policy.keepAll) return emptySet()
         val keepFrom = locus - policy.cacheLevel.coerceAtLeast(0)
-        return cached.filterTo(LinkedHashSet()) { i ->
-            when {
-                i < 0 || i >= tocSize -> true
-                !policy.cleanup -> false
-                policy.pinnedRanges.any { i in it } -> false
-                else -> i < keepFrom
-            }
-        }
+        return cached.filterTo(LinkedHashSet()) { it < keepFrom }
     }
 
-    /**
-     * Where each old ToC index lands after a ToC refresh, matched by chapter URL (duplicate URLs
-     * pair up in order). Null = the URL left the ToC. Indices without an old URL keep their place.
-     */
-    fun chapterMoves(oldUrls: List<String>, newUrls: List<String>): Map<Int, Int?> {
-        val slots = HashMap<String, ArrayDeque<Int>>()
-        newUrls.forEachIndexed { i, url -> slots.getOrPut(url) { ArrayDeque() }.addLast(i) }
-        val out = LinkedHashMap<Int, Int?>()
-        oldUrls.forEachIndexed { i, url -> out[i] = slots[url]?.removeFirstOrNull() }
-        return out
-    }
-
-    /** New index for old index [i]: its URL's new place, unchanged without an old URL, null if gone. */
-    fun movedIndex(moves: Map<Int, Int?>, i: Int, newSize: Int): Int? =
-        if (moves.containsKey(i)) moves[i] else i.takeIf { it in 0 until newSize }
-
-    /** [ranges] after [moves]; indices whose chapter left the ToC drop out. */
-    fun remapRanges(ranges: List<IntRange>, moves: Map<Int, Int?>, newSize: Int): List<IntRange> {
-        val indices = ranges.flatMap { it.toList() }.mapNotNull { movedIndex(moves, it, newSize) }.sorted()
-        return mergePinnedRanges(indices.map { it..it })
-    }
-
-    /** Move cached bodies to their chapter's new index; delete bodies whose chapter left the ToC. */
-    fun reconcileChapterFiles(dir: File, oldUrls: List<String>, newUrls: List<String>) {
-        val folder = File(dir, "c")
-        val moves = chapterMoves(oldUrls, newUrls)
-        val staged = ArrayList<Pair<File, Int>>()
-        for (i in chapterFileIndices(dir)) {
-            val target = movedIndex(moves, i, newUrls.size)
-            val file = File(folder, "$i.txt")
-            when (target) {
-                i -> Unit
-                null -> file.delete()
-                else -> {
-                    val tmp = File(folder, "m$i.tmp")
-                    if (file.renameTo(tmp)) staged += tmp to target
-                }
-            }
-        }
-        for ((tmp, target) in staged) {
-            val dest = File(folder, "$target.txt")
-            dest.delete()
-            tmp.renameTo(dest)
-        }
-    }
-
-    /** Saved chapter of a progress row in [toc]: the stored chapter URL wins over a drifted index. */
+    /** Saved chapter of a progress row in [toc]: the stored chapter URL, else the index (rows without one). */
     fun savedChapter(toc: List<PluginChapterRef>, chapterHref: String, chapterIndex: Int): Int {
         val byHref = if (chapterHref.isBlank()) -1 else toc.indexOfFirst { it.url == chapterHref }
         val i = if (byHref >= 0) byHref else chapterIndex
         return i.coerceIn(0, (toc.size - 1).coerceAtLeast(0))
-    }
-
-    /** Every chapter body file index in [dir], including any past the ToC. */
-    fun chapterFileIndices(dir: File): Set<Int> =
-        File(dir, "c").listFiles()?.mapNotNullTo(LinkedHashSet()) { it.nameWithoutExtension.toIntOrNull() }.orEmpty()
-
-    fun mergePinnedRanges(ranges: List<IntRange>): List<IntRange> {
-        val sorted = ranges.filter { !it.isEmpty() }.sortedBy { it.first }
-        if (sorted.isEmpty()) return emptyList()
-        val out = ArrayList<IntRange>()
-        var cur = sorted.first()
-        for (r in sorted.drop(1)) {
-            if (r.first <= cur.last + 1) {
-                cur = cur.first..maxOf(cur.last, r.last)
-            } else {
-                out += cur
-                cur = r
-            }
-        }
-        out += cur
-        return out
-    }
-
-    fun clipPinnedRanges(ranges: List<IntRange>, tocSize: Int): List<IntRange> {
-        if (tocSize <= 0) return emptyList()
-        return mergePinnedRanges(
-            ranges.mapNotNull { range ->
-                val from = range.first.coerceAtLeast(0)
-                val to = range.last.coerceAtMost(tocSize - 1)
-                if (from > to) null else from..to
-            },
-        )
-    }
-
-    fun encodeRanges(ranges: List<IntRange>): String =
-        mergePinnedRanges(ranges).joinToString(",") { "${it.first}-${it.last}" }
-
-    fun decodeRanges(raw: String): List<IntRange> {
-        if (raw.isBlank()) return emptyList()
-        return mergePinnedRanges(
-            raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { token ->
-                val parts = token.split('-', limit = 2)
-                val start = parts.getOrNull(0)?.toIntOrNull() ?: return@mapNotNull null
-                val end = parts.getOrNull(1)?.toIntOrNull() ?: start
-                if (end < start) null else start..end
-            },
-        )
     }
 
     private fun readFields(file: File): Map<String, String> =

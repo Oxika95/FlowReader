@@ -33,8 +33,10 @@ Paths are relative to `app/src/main/java/com/personal/flowreader/`. Line numbers
 | Change | Files | Also update |
 | --- | --- | --- |
 | EPUB/TXT ingest, covers | `data/Ingest.kt`, `EpubCover.kt`, `BookCatalog.kt` | `IngestTest` |
-| Library tabs, shelves, view mode | `ui/library/LibraryViewModel.kt` (large), `LibraryScreen.kt`, `data/Models.kt` (`LibraryTabId`) | `docs/library.md` |
-| Queue | `BookCatalog` (`listQue`, `reorderQue`, `markQueDone`), `ProgressDb` (`queue_items`, `queue_state`); list UI `QueTab` in `LibraryScreen.kt` (on `EditableRuleList`) | `docs/library.md` |
+| Library tabs, shelves, view mode | `ui/library/LibraryViewModel.kt` (large), `LibraryScreen.kt`, `LibraryTopBar.kt` (icon tabs, Add a tab; plugin favicons `PluginTabIcons.kt`; new-chapter dots `PluginNewChapters.kt`), `data/Models.kt` (`LibraryTabId`) | `docs/library.md` |
+| Library row subtitle ("Author · chapter x/y") | `ui/library/LibraryRowText.kt` (pure), Files `library_books.author` / `chapterCount` (filled in `BookCatalog.storeRowMeta`), `LibraryBookCards.kt`; plugin rows `ui/plugin/PluginTab.kt` | `LibraryRowTextTest`, `docs/library.md` |
+| Share ingest de-dupe | `share/ShareInbox.kt` (pure) | `ShareInboxTest`, `docs/import-share.md` |
+| Queue | `BookCatalog` (`listQue`, `reorderQue`, `markQueDone`), `ProgressDb` (`queue_items`, `queue_state`); list UI `ui/library/LibraryQueueTab.kt` (`QueTab` on `EditableRuleList`), expandable chapters `QueueChapters.kt` (opens `reader/{id}/que/{queId}?chapter=`, `ReaderQueueMode.startChapter`) | `QueueChaptersTest`, `docs/library.md` |
 | Queue stream (one document in reader + TTS) | `ui/reader/QueueBook.kt` (pure composite book, locator, `QueueChange`, `remap`, `tocItems`), `QueueStreams.kt` (build/open, `QueueStreamRef`), `QueuePlayback.kt` (live owner: `queue_items` Flow, in-place append or rebuild, done marking), `ReaderQueueMode.kt` | `QueueBookTest`, `docs/tts.md` |
 | Position writes (session id, per-domain row, log) | `data/ProgressWriter.kt`, `ReadingPosition.kt` (`ReadingSessionId`), `AppPositionStore.kt` (routes to Library / Queue / plugin tables), `PositionLog.kt` | `ProgressWriterTest`, `PositionLogFormatTest`, `docs/data.md` |
 
@@ -44,14 +46,15 @@ Paths are relative to `app/src/main/java/com/personal/flowreader/`. Line numbers
 | --- | --- | --- |
 | Runtime / `flow.*` host API | `plugin/runtime/*` | [cross-repo.md](cross-repo.md) |
 | Models, caps, versions | `plugin/api/PluginModels.kt`, `PluginManifest.kt` | [cross-repo.md](cross-repo.md) |
-| Tab UI, story card, downloads, position slider, sign-in | `ui/plugin/PluginTabViewModel.kt` (large), `PluginTab.kt`, `StoryMediaCard.kt`, `StoryCacheCards.kt`, `AccountSheets.kt`, `WebLoginOverlay.kt` (`auth.web`; cookies `plugin/runtime/WebLoginCookies.kt`), `PluginBrowse.kt` (`PluginBrowseController`), `CreatorPage.kt` (`BrowseListPane`, `CreatorPageOverlay`) | `docs/plugins.md` |
-| Chapter cache policy (cache ahead, cleanup, pins, URL-keyed ToC refresh) | `plugin/store/PluginSessionStore.kt` (`fetchIndices`, `pruneIndices`, `chapterMoves`, `savedChapter`, pure), `PluginBookStore.kt` (`maintainChapterCache`, `scheduleMaintain`) | `PluginSessionStoreTest`, `docs/plugins.md` |
+| Tab UI, story card, downloads, position slider, rename, sign-in | `ui/plugin/PluginTabViewModel.kt` (large), `PluginTab.kt`, `StoryMediaCard.kt`, `StoryCacheCards.kt` (`MovePositionCard`, `PositionSliderCard`), `StoryRenameCard.kt`, `AccountSheets.kt`, `WebLoginOverlay.kt` (`auth.web`; cookies `plugin/runtime/WebLoginCookies.kt`), `PluginBrowse.kt` (`PluginBrowseController`), `CreatorPage.kt` (`BrowseListPane`, `CreatorPageOverlay`) | `docs/plugins.md` |
+| Chapter cache policy (cache ahead, cleanup, keep all, URL-keyed bodies) | `plugin/store/PluginSessionStore.kt` (`chapterKey`, `fetchIndices`, `pruneIndices`, `savedChapter`, pure), `TocRemap.kt` (removed-chapter fallback, `chapterMoves`, pure), `PluginBookStore.kt` (`maintainChapterCache`, `scheduleMaintain(bookId, href)`) | `PluginSessionStoreTest`, `TocRemapTest`, `docs/plugins.md` |
+| Per-story user settings (rename, new-chapter count, bell, cache policy, keep all) | `plugin/store/PluginDb.kt` (`plugin_stories`, `PluginStoryDao`, migration 1 → 2), `PluginBookStore.read` (merges them into the session), `PluginCatalog.list` / `get` (rename over the plugin's title) | `docs/data.md`, `docs/plugins.md` |
 | Two-way sync (lists, positions, outbox, conflicts) | `plugin/sync/` (`ListReconcile`, `ProgressReconcile` pure, `SyncState`, `TwoWaySync`); list writes `plugin/store/PluginListWriter.kt`; UI `ui/plugin/PluginSyncController.kt`, `PositionConflictCard.kt`, `AccountSheets.kt`; plugin side `readPositions`, `setMembership`, `syncProgress`, `WorkDetail.readChapterUrl` | `ListReconcileTest`, `ProgressReconcileTest`, `SyncStateTest`, `docs/plugins.md` |
 | Delete plugin data | `plugin/store/PluginDataEraser.kt`, `PluginManager.eraseData`; UI `ui/plugin/PluginDataSettings.kt`, uninstall card in `ui/settings/PluginsSettingsTab.kt` | `docs/plugins.md` |
-| New-chapter notifications | `plugin/updates/` (`UpdateChecker`, `UpdateDiff` pure, `UpdateNotifier`, `UpdateScheduler`, `ChapterUpdateWorker`); bell in `MediaCardAdapters.kt` + `PluginTabViewModel.toggleNotify`; settings `ui/settings/NotificationSettings.kt`; plugin side `checkUpdates` (capability `updates`) | `UpdateDiffTest`, `docs/plugins.md` |
+| New-chapter count + notifications | count `plugin_stories.newChapters` via `PluginBookStore.addNewChapters`/`clearNewChapters`, observed with `newChapterCounts`; `plugin/updates/` (`UpdateChecker`, `UpdateDiff` pure, `UpdateNotifier`, `UpdateScheduler`, `ChapterUpdateWorker`); bell in `MediaCardAdapters.kt` + `PluginTabViewModel.toggleNotify`; settings `ui/settings/NotificationSettings.kt`; plugin side `checkUpdates` (capability `updates`) | `UpdateDiffTest`, `docs/plugins.md` |
 | Plugin version updates | `plugin/updates/PluginVersionWorker.kt`, `UpdateScheduler.applyVersionCheck`, `UpdateNotifier.postPluginUpdates`; pure `plugin/repo/PluginVersionUpdates.kt`; settings `PluginVersionCheckSection`, `SettingsStore.PluginVersionCheckPrefs` | `PluginVersionUpdatesTest`, `docs/plugins.md` |
 | Repos / install, per-plugin settings | `plugin/repo/*`, `ui/settings/PluginsSettingsTab.kt` (`PluginAccountSettings`, `PluginSettingsForm`); sign-in sync `PluginManager.sessionChanges`; download defaults `ui/settings/DataSettings.kt` | `RepoIndexTest`, `docs/settings.md` |
-| Media card content | `ui/design/card/media/MediaCardAdapters.kt` (pure) | `MediaCardAdaptersTest` |
+| Media card content | `ui/design/card/media/MediaCardAdapters.kt` (pure); position slider `MediaSegmentSlider.kt` | `MediaCardAdaptersTest` |
 
 ## import-share
 
@@ -98,6 +101,7 @@ Paths are relative to `app/src/main/java/com/personal/flowreader/`. Line numbers
 ## Large files
 
 Read by offset from [index.md](index.md), never whole: `TtsController.kt` 2240,
-`ReaderScreen.kt` 1153 (one composable), `PluginTabViewModel.kt` 997, `LibraryViewModel.kt` 882.
+`ReaderScreen.kt` 1160 (one composable), `PluginTabViewModel.kt` 1072, `LibraryViewModel.kt` 882,
+`BookCatalog.kt` 517.
 Single-class files can't be split by moving code; they need helper-class extraction (separate,
 tested refactors).

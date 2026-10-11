@@ -41,7 +41,9 @@ type Work = {
 };
 type Badge = string | { label: string; tone?: 'positive' | 'negative' };  // green / red pill
 type Page = { items: Work[]; hasMore?: boolean };
-type ChapterRef = { title: string; url: string; id?: string; locked?: boolean };  // locked: no access (paywall)
+// locked: the account can't read it (paywall). The host shows a lock icon, skips it in Download all,
+// and opens it as its heading alone instead of calling loadChapter unless the body is already cached.
+type ChapterRef = { title: string; url: string; id?: string; locked?: boolean };
 type WorkDetail = {
   id: string; title: string; url?: string; author?: string; cover?: string;
   synopsis?: string; tags?: string[];
@@ -98,7 +100,7 @@ The `work` argument to `loadChapter` is `{ id, url }` of the owning work.
 | `actions` (`footer`) | 2 | Between Delete and Read |
 
 Reserved action ids (dropped if used): `read`, `download`, `refresh`, `delete`, `share`, `open`,
-`remove`, `notify`, and anything starting with `list:`. Duplicate ids keep the first.
+`remove`, `notify`, `rename`, and anything starting with `list:`. Duplicate ids keep the first.
 
 An empty card (all slots empty after filtering) counts as no card: the media card shows only the
 host's chapter count stat.

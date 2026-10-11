@@ -249,9 +249,9 @@ fun ReaderScreen(
                     scrollLocked || (tts.following && tts.autoScrollWithTts)
                 )
             ) {
-                blockIndexOf[s.chapterIndex to s.blockIndex] ?: 0
+                blockIndexOf[s.chapterIndex to s.blockIndex] ?: -1
             } else {
-                blockIndexOf[ui.locus.chapterIndex to ui.locus.blockIndex] ?: 0
+                blockIndexOf[ui.locus.chapterIndex to ui.locus.blockIndex] ?: -1
             }
         }
     }
@@ -294,7 +294,7 @@ fun ReaderScreen(
             if (visible.isEmpty()) return@derivedStateOf null
             val placed = visible.firstOrNull { it.index == idx }
                 ?: return@derivedStateOf ReaderHome.edgeOfItem(idx, visible.first().index, visible.last().index)
-            val span = trackedSpan?.takeIf { it.sentenceIndex == si }
+            val span = trackedSpan?.takeIf { it.sentenceIndex == si && it.blockId == items.getOrNull(idx)?.block?.id }
             if (span != null) {
                 ReaderHome.edgeOf(span.top, span.bottom, listTopY, listTopY + listHeight)
             } else {
@@ -309,33 +309,35 @@ fun ReaderScreen(
     fun trackedSentenceIndex(): Int =
         if (tts.playing && tts.sentence != null) tts.sentenceIndex else locusSentenceIndex.value
 
-    val homeLookup = rememberUpdatedState(allSentences to blockIndexOf)
+    val homeLookup = rememberUpdatedState(Triple(allSentences, blockIndexOf, items))
 
     /**
      * Scroll so [sentenceIndex] sits on the home line. Every jump (follow, pin, jump-back,
      * double-tap, scroll lock, ToC, book open) goes through here.
      */
     suspend fun scrollToHome(sentenceIndex: Int, animated: Boolean = true) {
-        val (sentences, blocks) = homeLookup.value
+        val (sentences, blocks, listItems) = homeLookup.value
         val s = sentences.getOrNull(sentenceIndex) ?: return
-        val itemIndex = blocks[s.chapterIndex to s.blockIndex] ?: return
+        // Chapters prepended mid-scroll shift list indices; the block id is the stable target.
+        val key = blocks[s.chapterIndex to s.blockIndex]?.let { listItems.getOrNull(it)?.block?.id } ?: return
+        fun placed() = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }
+        fun currentIndex() = homeLookup.value.third.indexOfFirst { it.block.id == key }
         programmatic = true
         try {
-            if (listState.layoutInfo.visibleItemsInfo.none { it.index == itemIndex }) {
-                // A span left over from the paragraph's previous composition is stale.
-                trackedSpan = null
-                listState.scrollToItem(itemIndex)
+            if (placed() == null) {
+                val index = currentIndex().takeIf { it >= 0 } ?: return
+                listState.scrollToItem(index)
             }
             val span = withTimeoutOrNull(HomeSpanTimeoutMs) {
-                snapshotFlow { trackedSpan }.first { it != null && it.sentenceIndex == sentenceIndex }
+                snapshotFlow { trackedSpan }.first { it != null && it.blockId == key && it.sentenceIndex == sentenceIndex }
             }
+            val info = listState.layoutInfo
+            val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
             val delta = if (span != null) {
                 ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
             } else {
-                val info = listState.layoutInfo
-                val item = info.visibleItemsInfo.firstOrNull { it.index == itemIndex } ?: return
+                val item = placed() ?: return
                 val top = (item.offset - info.viewportStartOffset).toFloat()
-                val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
                 ReaderHome.scrollDelta(top, top + item.size, 0f, viewport, homePosition)
             }
             if (abs(delta) > 2f) {
@@ -395,19 +397,18 @@ fun ReaderScreen(
     }
 
     val ttsForScroll = rememberUpdatedState(tts)
-    val programmaticForScroll = rememberUpdatedState(programmatic)
     val scrollLockedForScroll = rememberUpdatedState(scrollLocked)
 
     // Only real user gestures break follow. Do not watch isScrollInProgress —
     // follow animations and their cancellation settling look identical and were
-    // permanently clearing [following] mid-playback.
+    // permanently clearing [following] mid-playback. A drag during a follow scroll still
+    // counts: programmatic scrolls never arrive as UserInput.
     val stopFollowOnUserScroll = remember(vm) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (scrollLockedForScroll.value) return Offset.Zero
                 if (source == NestedScrollSource.UserInput &&
                     available != Offset.Zero &&
-                    !programmaticForScroll.value &&
                     ttsForScroll.value.playing &&
                     ttsForScroll.value.following
                 ) {
@@ -633,6 +634,10 @@ fun ReaderScreen(
                                     var textLayout by remember(item.block.id, justifyText) {
                                         mutableStateOf<TextLayoutResult?>(null)
                                     }
+                                    // A span is only current while the paragraph that measured it is composed.
+                                    DisposableEffect(item.block.id) {
+                                        onDispose { if (trackedSpan?.blockId == item.block.id) trackedSpan = null }
+                                    }
                                     val replacedRanges = ui.replacedRangesByBlockId[item.block.id].orEmpty()
                                     val sentenceHighlightColor = colors.secondary.copy(alpha = 0.40f)
                                     val wordHighlightColor = colors.primary.copy(alpha = 0.40f)
@@ -678,6 +683,7 @@ fun ReaderScreen(
                                                 modifier = Modifier
                                                     .width(RailGutterWidth)
                                                     .fillMaxHeight(),
+                                                blockId = item.block.id,
                                                 sentences = blockSentences,
                                                 textLayout = textLayout,
                                                 currentSentenceIndex = currentSentenceIndex,
@@ -1067,6 +1073,7 @@ fun ReaderScreen(
                 visible = overlay == ReaderOverlay.Toc,
                 chapters = chapters,
                 levels = ui.tocLevels,
+                locked = ui.tocLocked,
                 chapterIndex = chapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0)),
                 onChapter = onTocRow,
                 onDismiss = { overlay = ReaderOverlay.Hidden },

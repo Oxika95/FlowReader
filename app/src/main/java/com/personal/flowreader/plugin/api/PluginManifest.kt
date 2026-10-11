@@ -52,7 +52,7 @@ data class PluginList(
     val membershipToggle: Boolean = true,
     /** Account sync can page through `list(id, page)` to import remote membership. */
     val syncable: Boolean = false,
-    /** New-chapter notifications default on for stories on this list (syncable lists always do). */
+    /** New-chapter notifications default on for stories on this list (the only lists that do). */
     val notifyDefault: Boolean = false,
     val kind: PluginListKind = PluginListKind.Stories,
 ) {
@@ -114,7 +114,6 @@ data class PluginManifest(
     val apiVersion: kotlin.Int,
     val description: String = "",
     val site: String = "",
-    val iconUrl: String = "",
     val lang: String = "",
     /** Book id prefix (`{prefix}:{workId}`); defaults to [id]. */
     val bookIdPrefix: String = id,
@@ -148,7 +147,6 @@ data class PluginManifest(
                 apiVersion = obj.optInt("apiVersion", 1),
                 description = obj.optString("description"),
                 site = obj.optString("site"),
-                iconUrl = obj.optString("iconUrl"),
                 lang = obj.optString("lang"),
                 bookIdPrefix = prefix,
                 allowedHosts = obj.optJSONArray("allowedHosts").strings().map { it.lowercase() },

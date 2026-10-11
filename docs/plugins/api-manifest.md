@@ -4,12 +4,13 @@ Part of the [Plugin API](api.md) (apiVersion 4).
 
 ## Package
 
-A plugin is two files, installed to `filesDir/plugins/installed/{id}/`:
+A plugin is two files plus an optional icon, installed to `filesDir/plugins/installed/{id}/`:
 
 | File | Purpose |
 | --- | --- |
 | `plugin.json` | Manifest: identity, capabilities, lists, auth fields, settings, hosts |
 | `index.js` | Code. CommonJS: assign your functions to `module.exports` |
+| `icon.png` | Optional library tab icon. Only its shape is used, tinted like the other tab icons: a single-colour silhouette on a transparent background (an opaque image becomes a solid square). Without it the tab shows the plugin name |
 
 ### `plugin.json`
 
@@ -21,7 +22,6 @@ A plugin is two files, installed to `filesDir/plugins/installed/{id}/`:
   "version": "1.3.0",
   "apiVersion": 4,
   "site": "https://www.royalroad.com",
-  "iconUrl": "https://www.royalroad.com/favicon.ico",
   "lang": "en",
   "bookIdPrefix": "rr",
   "allowedHosts": ["royalroad.com", "royalroadl.com"],
@@ -53,7 +53,7 @@ A plugin is two files, installed to `filesDir/plugins/installed/{id}/`:
 | `allowedHosts` | `flow.fetch` rejects any other host. A listed host also allows its subdomains. |
 | `minRequestIntervalMs` | The host spaces this plugin's requests at least this far apart (0 to 10000). |
 | `capabilities` | Any of `search`, `lists`, `auth`, `membership`, `progressSync`, `resolveUrl`, `updates`, `browse`. |
-| `lists[]` | `id`, `title`, `icon` ([icon tokens](ui-contract.md#icon-tokens)), `membershipToggle`, `syncable`, `notifyDefault` (new-chapter bell defaults on for stories on this list; syncable story lists always do), `kind` (`stories` default, or `browse`: see [Browse lists](api-features.md#browse-lists)). |
+| `lists[]` | `id`, `title`, `icon` ([icon tokens](ui-contract.md#icon-tokens)), `membershipToggle`, `syncable`, `notifyDefault` (new-chapter bell defaults on for stories on this list; no other list notifies by default), `kind` (`stories` default, or `browse`: see [Browse lists](api-features.md#browse-lists)). |
 | `auth.fields[]` | `key`, `label`, `secret`, `type` (`text`/`email`/`password`). |
 | `auth.web` | `{ url, doneCookie }`: sign in on the site itself (see [Web sign-in](api-features.md#web-sign-in)). Replaces `fields`. |
 | `settings[]` | `key`, `type` (`toggle`/`int`/`choice`/`text`), `label`, `description`, `default`, `options[]` (`choice`), `min`/`max` (`int`). |

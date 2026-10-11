@@ -9,8 +9,8 @@ package com.personal.flowreader.ui.reader
 /** Which viewport edge the tracked sentence is beyond. */
 internal enum class PlaybackPinEdge { Top, Bottom }
 
-/** Vertical extent of the tracked sentence's lines. */
-internal data class SentenceSpan(val sentenceIndex: Int, val top: Float, val bottom: Float)
+/** Vertical extent of the tracked sentence's lines, measured on the paragraph with [blockId]. */
+internal data class SentenceSpan(val blockId: String, val sentenceIndex: Int, val top: Float, val bottom: Float)
 
 internal object ReaderHome {
     /** Visible overlap (px) below which a sentence counts as off-screen. */

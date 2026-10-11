@@ -53,7 +53,7 @@
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
-          "not": { "enum": ["read", "download", "refresh", "delete", "share", "open", "remove", "notify"] }
+          "not": { "enum": ["read", "download", "refresh", "delete", "share", "open", "remove", "notify", "rename"] }
         },
         "label": { "type": "string", "minLength": 1 },
         "icon": { "type": "string" },

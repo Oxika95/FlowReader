@@ -16,10 +16,8 @@ data class MediaCardModel(
     val synopsis: String = "",
     /** Reading progress 0..1 as a bar on the band; null hides it. */
     val progress: Float? = null,
-    /** Per-segment strip (chapters cached / locus); null hides it. */
+    /** Per-segment position slider (chapters cached / locus); null hides it. */
     val segments: MediaSegments? = null,
-    /** Accessibility label for a long press on [segments]; blank when it has none. */
-    val segmentsLongPressLabel: String = "",
     /** Host-owned status line under the band ("Last read: Chapter 12 · 12 / 40"). */
     val status: String = "",
     val error: String = "",
@@ -29,6 +27,8 @@ data class MediaCardModel(
     /** Footer actions; [MediaActionKind.Primary] renders as the full-width main button. */
     val footer: List<MediaAction> = emptyList(),
     val titleMaxLines: Int = 2,
+    /** New chapters since last opened; a count badge beside the title when above 0. */
+    val newCount: Int = 0,
 )
 
 /** Icon token (see FlowIcons) + value, e.g. `star` / `4.61`. */
@@ -40,7 +40,13 @@ data class MediaLink(val label: String, val url: String)
  * Segment strip: [count] segments, [locus] marked in the saturated accent, [filled] drawn
  * gray behind the locus and desaturated accent ahead of it; others are empty track.
  */
-data class MediaSegments(val count: Int, val locus: Int, val filled: Set<Int>)
+data class MediaSegments(
+    val count: Int,
+    val locus: Int,
+    val filled: Set<Int>,
+    /** Segment picked on the slider and awaiting confirmation; the mark stays there meanwhile. */
+    val pending: Int? = null,
+)
 
 enum class MediaActionKind {
     /** The single full-width footer button. */
@@ -83,6 +89,7 @@ object MediaActionIds {
     const val REMOVE = "remove"
     const val SHARE = "share"
     const val NOTIFY = "notify"
+    const val RENAME = "rename"
     const val LIST_PREFIX = "list:"
 
     fun list(listId: String): String = LIST_PREFIX + listId

@@ -20,6 +20,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,12 +32,13 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 
 /**
- * App-owned story cache for every plugin: ToC + splash on disk, chapter bodies from the reading
- * position through the cache level ahead (plus Download all pins), and the in-memory reader
- * stream. Plugins only fetch.
+ * App-owned story cache for every plugin: ToC + splash on disk, chapter bodies (keyed by chapter
+ * URL) from the reading position through the cache level ahead, or all of them after Download all.
+ * The user's per-story settings live in each plugin's `plugin_stories` table. Plugins only fetch.
  */
 class PluginBookStore(
     private val plugins: PluginManager,
+    private val dbs: PluginDatabases,
     private val scope: CoroutineScope,
     private val cacheDefaults: suspend () -> PluginCacheDefaults,
 ) {
@@ -55,35 +59,46 @@ class PluginBookStore(
 
     private fun source(r: Ref): PluginSource = plugins.source(r.plugin.id)
 
+    private fun stories(r: Ref): PluginStoryDao = dbs.stories(r.plugin.id)
+
     private val fetchLocks = HashMap<String, Mutex>()
 
     private fun fetchLock(bookId: String): Mutex = synchronized(fetchLocks) { fetchLocks.getOrPut(bookId) { Mutex() } }
 
     /**
-     * Title and text of chapter [index]: from disk, else fetched and written. Reader window, TTS
-     * and cache upkeep run concurrently; the lock makes them share one fetch per chapter.
+     * Title and text of chapter [index] of [session]'s ToC: from disk, else fetched and written.
+     * Bodies are found by chapter URL, so a session holding an older ToC still reads the right
+     * one. Reader window, TTS and cache upkeep run concurrently; the lock shares one fetch.
+     * Null for a locked chapter that was never downloaded.
      */
     private suspend fun chapterText(r: Ref, session: PluginReadSession, index: Int): Pair<String, String>? {
-        PluginSessionStore.readChapterText(r.dir, index)?.let { return it }
         val chapterRef = session.toc.getOrNull(index) ?: return null
+        val fallbackTitle = chapterRef.title.ifBlank { "Chapter ${index + 1}" }
+        fun stored() = PluginSessionStore.readChapterText(r.dir, chapterRef.url)
+            ?.let { (title, text) -> title.ifBlank { fallbackTitle } to text }
+        stored()?.let { return it }
+        if (chapterRef.locked) return null
         return fetchLock(session.bookId).withLock {
-            PluginSessionStore.readChapterText(r.dir, index)?.let { return@withLock it }
+            stored()?.let { return@withLock it }
             val fetched = source(r).loadChapter(chapterRef, session.workId, session.workUrl)
             val titled = titleAndText(fetched, chapterRef.title, r.plugin.manifest.bookIdPrefix, index)
-            PluginSessionStore.writeChapter(r.dir, index, titled.first, titled.second)
+            PluginSessionStore.writeChapter(r.dir, chapterRef.url, titled.first, titled.second)
             titled
         }
     }
 
+    /** Rewrites the saved position after a ToC change, old chapter URLs first (set by the app). */
+    var tocRemapped: (suspend (PluginReadSession, List<String>) -> Unit)? = null
+
     private val upkeepJobs = HashMap<String, Job>()
-    private val upkeepLocus = HashMap<String, Int>()
+    private val upkeepHref = HashMap<String, String>()
 
     /** Stops chapter upkeep (sync push, downloads) for [bookIds] before their data is deleted. */
     fun cancelUpkeep(bookIds: Collection<String>) {
         synchronized(upkeepJobs) {
             bookIds.forEach { id ->
                 upkeepJobs.remove(id)?.cancel()
-                upkeepLocus.remove(id)
+                upkeepHref.remove(id)
             }
         }
     }
@@ -95,31 +110,54 @@ class PluginBookStore(
     var tocStored: (suspend (PluginReadSession, String) -> Unit)? = null
 
     /**
-     * The reading position of [bookId] is now chapter [locus]: when the chapter changed, sync it
-     * to the site and fetch / clean up around it. A newer locus cancels the running upkeep.
+     * The reading position of [bookId] is now the chapter at [chapterHref]: when it changed, sync
+     * it to the site and fetch / clean up around it. A newer chapter cancels the running upkeep.
      */
-    fun scheduleMaintain(bookId: String, locus: Int) {
+    fun scheduleMaintain(bookId: String, chapterHref: String) {
+        if (chapterHref.isBlank()) return
         synchronized(upkeepJobs) {
-            if (upkeepLocus[bookId] == locus) return
-            upkeepLocus[bookId] = locus
+            if (upkeepHref[bookId] == chapterHref) return
+            upkeepHref[bookId] = chapterHref
             upkeepJobs.remove(bookId)?.cancel()
             upkeepJobs[bookId] = scope.launch(Dispatchers.IO) {
                 try {
-                    val r = ref(bookId)
-                    read(r)?.let { session -> runCatching { positionChanged?.invoke(session, locus) } }
-                    maintainChapterCache(bookId, locus)
+                    val session = read(ref(bookId)) ?: return@launch
+                    val at = session.toc.indexOfFirst { it.url == chapterHref }
+                    if (at < 0) return@launch
+                    runCatching { positionChanged?.invoke(session, at) }
+                    maintainChapterCache(bookId, at)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Throwable) {
                     // Retried on the next chapter change or download.
-                    synchronized(upkeepJobs) { if (upkeepLocus[bookId] == locus) upkeepLocus.remove(bookId) }
+                    synchronized(upkeepJobs) { if (upkeepHref[bookId] == chapterHref) upkeepHref.remove(bookId) }
                 }
             }
         }
     }
 
-    private fun read(r: Ref): PluginReadSession? =
-        PluginSessionStore.read(r.root, r.workId)
+    /** The plugin's data from disk plus the user's settings; null when the story was never stored. */
+    private suspend fun read(r: Ref): PluginReadSession? {
+        val session = PluginSessionStore.read(r.root, r.workId) ?: return null
+        val story = story(r, session.bookId)
+        return session.copy(
+            cacheLevel = story.cacheLevel,
+            cleanup = story.cleanup,
+            keepAll = story.keepAll,
+            notify = story.notify,
+            titleOverride = story.titleOverride,
+            newChapters = story.newChapters,
+        )
+    }
+
+    /** The story's settings row, created with the default cache policy on first use. */
+    private suspend fun story(r: Ref, bookId: String): PluginStoryEntity {
+        val dao = stories(r)
+        dao.get(bookId)?.let { return it }
+        val defaults = cacheDefaults()
+        dao.insert(PluginStoryEntity(bookId = bookId, cacheLevel = defaults.cacheLevel, cleanup = defaults.cleanup))
+        return dao.get(bookId) ?: error("Could not store $bookId")
+    }
 
     fun isPluginBook(bookId: String): Boolean = plugins.isPluginBook(bookId)
 
@@ -132,43 +170,29 @@ class PluginBookStore(
     }
 
     /**
-     * Persist the full ToC + splash metadata. Keeps the stream position, cache policy, pins, and
-     * cached bodies, following each chapter URL to its new index when chapters were inserted.
+     * Persist the full ToC + splash metadata. Cached bodies stay valid (they are keyed by chapter
+     * URL); bodies of chapters that left the ToC are deleted by the next cache upkeep.
      */
     suspend fun ensureSessionToc(pluginId: String, detail: PluginWorkDetail): PluginReadSession {
         if (detail.chapters.isEmpty()) {
             throw PluginException(PluginErrorCode.Parse, "This story has no chapters")
         }
-        val r = ref(plugins.bookIdFor(pluginId, detail.id))
-        val existing = read(r)
-        val policy = existing?.let { PluginCacheDefaults(it.cacheLevel, it.cleanup) } ?: cacheDefaults()
+        val bookId = plugins.bookIdFor(pluginId, detail.id)
+        val r = ref(bookId)
+        val existing = PluginSessionStore.read(r.root, r.workId)
         val oldUrls = existing?.toc?.map { it.url }.orEmpty()
-        val newUrls = detail.chapters.map { it.url }
-        val moves = PluginSessionStore.chapterMoves(oldUrls, newUrls)
-        val wasAllPinned = existing != null && existing.pinnedRanges == listOf(0..existing.toc.lastIndex)
-        val pins = when {
-            wasAllPinned -> listOf(0..detail.chapters.lastIndex)
-            existing == null -> emptyList()
-            else -> PluginSessionStore.remapRanges(existing.pinnedRanges, moves, newUrls.size)
-        }
-        val start = existing?.let { PluginSessionStore.movedIndex(moves, it.startIndex, newUrls.size) ?: it.startIndex } ?: 0
-        val session = PluginReadSession(
-            bookId = plugins.bookIdFor(pluginId, detail.id),
-            pluginId = pluginId,
-            workId = detail.id,
-            workUrl = detail.url.ifBlank { existing?.workUrl.orEmpty() },
-            title = detail.title,
-            author = detail.author,
-            toc = detail.chapters,
-            startIndex = start.coerceIn(0, detail.chapters.lastIndex),
-            loadedThrough = if (existing == null || oldUrls == newUrls) existing?.loadedThrough ?: -1 else start - 1,
-            chapters = emptyList(),
-            cacheLevel = policy.cacheLevel,
-            cleanup = policy.cleanup,
-            pinnedRanges = PluginSessionStore.clipPinnedRanges(pins, detail.chapters.size),
-            notify = existing?.notify,
+        PluginSessionStore.writeMeta(
+            r.dir,
+            PluginReadSession(
+                bookId = bookId,
+                pluginId = pluginId,
+                workId = detail.id,
+                workUrl = detail.url.ifBlank { existing?.workUrl.orEmpty() },
+                title = detail.title,
+                author = detail.author,
+                toc = detail.chapters,
+            ),
         )
-        PluginSessionStore.writeMeta(r.dir, session)
         PluginSessionStore.writeSplash(
             r.dir,
             PluginSplashMeta(
@@ -178,39 +202,36 @@ class PluginBookStore(
                 card = detail.card,
             ),
         )
-        PluginSessionStore.reconcileChapterFiles(r.dir, oldUrls, newUrls)
+        val session = read(r) ?: error("Could not store $bookId")
+        if (existing != null && oldUrls != detail.chapters.map { it.url }) {
+            runCatching { tocRemapped?.invoke(session, oldUrls) }
+        }
         runCatching { tocStored?.invoke(session, detail.readChapterUrl) }
         return session
     }
 
-    fun libraryMeta(bookId: String): PluginLibraryMeta? {
+    suspend fun libraryMeta(bookId: String): PluginLibraryMeta? {
         val r = runCatching { ref(bookId) }.getOrNull() ?: return null
-        val session = read(r) ?: return null
+        val session = PluginSessionStore.read(r.root, r.workId) ?: return null
         return PluginLibraryMeta(
             author = session.author,
             chapterCount = session.toc.size,
-            downloadedCount = PluginSessionStore.cachedChapterCount(r.dir, session.toc.size),
+            downloadedCount = PluginSessionStore.cachedChapterCount(r.dir, session.toc),
         )
     }
 
-    fun libraryMetas(bookIds: Collection<String>): Map<String, PluginLibraryMeta> =
+    suspend fun libraryMetas(bookIds: Collection<String>): Map<String, PluginLibraryMeta> =
         bookIds.mapNotNull { id -> libraryMeta(id)?.let { id to it } }.toMap()
 
-    fun readSplashBundle(bookId: String): Pair<PluginReadSession, PluginSplashMeta?>? {
+    suspend fun readSplashBundle(bookId: String): Pair<PluginReadSession, PluginSplashMeta?>? {
         val r = runCatching { ref(bookId) }.getOrNull() ?: return null
         val session = read(r) ?: return null
         return session to PluginSessionStore.readSplash(r.dir)
     }
 
-    fun cachedChapterIndices(bookId: String): Set<Int> {
-        val r = ref(bookId)
-        val session = read(r) ?: return emptySet()
-        return PluginSessionStore.cachedChapterIndices(r.dir, session.toc.size)
-    }
-
     /**
-     * Pin the whole ToC (cleanup never deletes it), then download it. A cancelled or failed run
-     * restores the earlier pins so stream upkeep doesn't keep bulk-fetching the rest.
+     * Keep every chapter (cleanup never deletes them, new ones are fetched too), then download
+     * them. A cancelled or failed run turns keep-all back off if it was off.
      */
     suspend fun downloadAllChapters(
         bookId: String,
@@ -220,11 +241,12 @@ class PluginBookStore(
         val session = ensureSessionForDownload(bookId)
         val last = session.toc.lastIndex
         if (last < 0) return 0
-        updatePinnedRanges(bookId, listOf(0..last))
+        val dao = stories(ref(bookId))
+        dao.setKeepAll(bookId, true)
         try {
             return maintainChapterCache(bookId, locusChapter.coerceIn(0, last), onProgress)
         } catch (t: Throwable) {
-            updatePinnedRanges(bookId, session.pinnedRanges)
+            if (!session.keepAll) withContext(NonCancellable) { dao.setKeepAll(bookId, false) }
             throw t
         }
     }
@@ -240,39 +262,53 @@ class PluginBookStore(
         return maintainChapterCache(bookId, locusChapter.coerceIn(0, session.toc.lastIndex), onProgress)
     }
 
-    fun setCachePolicy(bookId: String, cacheLevel: Int, cleanup: Boolean) {
+    suspend fun setCachePolicy(bookId: String, cacheLevel: Int, cleanup: Boolean) {
         val r = ref(bookId)
-        val existing = read(r) ?: return
-        PluginSessionStore.writeMeta(
-            r.dir,
-            existing.copy(cacheLevel = cacheLevel.coerceAtLeast(0), cleanup = cleanup, chapters = emptyList()),
-        )
+        story(r, bookId)
+        stories(r).setCachePolicy(bookId, cacheLevel.coerceAtLeast(0), cleanup)
     }
 
-    fun setNotify(bookId: String, on: Boolean) {
+    suspend fun setNotify(bookId: String, on: Boolean) {
         val r = ref(bookId)
-        val existing = read(r) ?: return
-        PluginSessionStore.writeMeta(r.dir, existing.copy(notify = on, chapters = emptyList()))
+        story(r, bookId)
+        stories(r).setNotify(bookId, on)
+    }
+
+    /** Rename the story locally ([title] blank = back to the plugin's title). Returns the shown title. */
+    suspend fun setTitleOverride(bookId: String, title: String): String? {
+        val r = ref(bookId)
+        val session = read(r) ?: return null
+        val override = title.trim()
+        stories(r).setTitleOverride(bookId, override)
+        return override.ifBlank { session.title }
+    }
+
+    /** Book id → new chapters, for every story of [pluginId] that has any. */
+    fun newChapterCounts(pluginId: String): Flow<Map<String, Int>> =
+        dbs.stories(pluginId).newChapterCounts().map { rows -> rows.associate { it.bookId to it.newChapters } }
+
+    /** Add [count] to the story's new-chapter count. */
+    suspend fun addNewChapters(bookId: String, count: Int) {
+        val r = runCatching { ref(bookId) }.getOrNull() ?: return
+        story(r, bookId)
+        stories(r).addNewChapters(bookId, count)
+    }
+
+    /** The story was opened in the reader: clear its new-chapter count. */
+    suspend fun clearNewChapters(bookId: String) {
+        val r = runCatching { ref(bookId) }.getOrNull() ?: return
+        stories(r).clearNewChapters(bookId)
     }
 
     /** Stored story session (ToC, policy, notify flag); null when never opened or followed. */
-    fun session(bookId: String): PluginReadSession? = runCatching { read(ref(bookId)) }.getOrNull()
-
-    private fun updatePinnedRanges(bookId: String, ranges: List<IntRange>) {
-        val r = ref(bookId)
-        val existing = read(r) ?: return
-        PluginSessionStore.writeMeta(
-            r.dir,
-            existing.copy(
-                pinnedRanges = PluginSessionStore.clipPinnedRanges(ranges, existing.toc.size),
-                chapters = emptyList(),
-            ),
-        )
+    suspend fun session(bookId: String): PluginReadSession? {
+        val r = runCatching { ref(bookId) }.getOrNull() ?: return null
+        return runCatching { read(r) }.getOrNull()
     }
 
     /**
-     * Ensure the locus, the cache level ahead of it and any pins are on disk, then delete what
-     * cleanup allows (more than the cache level behind, unpinned).
+     * Ensure the locus and the cache level ahead of it (every chapter with keep-all) are on disk,
+     * then delete what cleanup allows and bodies of chapters that left the ToC.
      */
     suspend fun maintainChapterCache(
         bookId: String,
@@ -282,29 +318,24 @@ class PluginBookStore(
         val r = ref(bookId)
         val session = read(r) ?: throw PluginException(PluginErrorCode.Error, "Story session missing")
         if (session.toc.isEmpty()) return 0
-        val policy = session.cachePolicy
-        val fetch = PluginSessionStore.fetchIndices(locusChapter, session.toc.size, policy)
-            .filterNot { session.toc[it].locked && !PluginSessionStore.hasChapter(r.dir, it) }
+        fun cached(i: Int) = PluginSessionStore.hasChapter(r.dir, session.toc[i].url)
+        val fetch = PluginSessionStore.fetchIndices(locusChapter, session.toc.size, session.cachePolicy)
+            .filterNot { session.toc[it].locked && !cached(it) }
         val total = fetch.size.coerceAtLeast(1)
-        var downloaded = fetch.count { PluginSessionStore.hasChapter(r.dir, it) }
+        var downloaded = fetch.count(::cached)
         onProgress(downloaded, total)
         for (i in fetch.sorted()) {
-            if (PluginSessionStore.hasChapter(r.dir, i)) continue
+            if (cached(i)) continue
             chapterText(r, session, i) ?: continue
-            if (i > session.loadedThrough) {
-                session.loadedThrough = i
-                // Re-read so a cache policy saved during a long download isn't overwritten.
-                read(r)?.let { PluginSessionStore.writeMeta(r.dir, it.copy(loadedThrough = i, chapters = emptyList())) }
-            }
             downloaded++
             onProgress(downloaded, total)
         }
         prune(r, session, locusChapter)
-        return PluginSessionStore.cachedChapterCount(r.dir, session.toc.size)
+        return PluginSessionStore.cachedChapterCount(r.dir, session.toc)
     }
 
     /** Delete what cleanup allows around [locusChapter] without downloading anything. */
-    fun pruneChapterCache(bookId: String, locusChapter: Int) {
+    suspend fun pruneChapterCache(bookId: String, locusChapter: Int) {
         val r = ref(bookId)
         val session = read(r) ?: return
         prune(r, session, locusChapter)
@@ -312,12 +343,11 @@ class PluginBookStore(
 
     private fun prune(r: Ref, session: PluginReadSession, locusChapter: Int) {
         val doomed = PluginSessionStore.pruneIndices(
-            PluginSessionStore.chapterFileIndices(r.dir),
+            PluginSessionStore.cachedChapterIndices(r.dir, session.toc),
             locusChapter,
-            session.toc.size,
             session.cachePolicy,
         )
-        PluginSessionStore.deleteChapters(r.dir, doomed)
+        PluginSessionStore.deleteChapters(r.dir, session.toc, doomed)
     }
 
     private suspend fun ensureSessionForDownload(bookId: String): PluginReadSession {
@@ -347,16 +377,24 @@ class PluginBookStore(
         return fetchAndStoreWork(r.plugin.id, r.workId)
     }
 
-    fun deleteLocalSession(bookId: String) {
+    suspend fun deleteLocalSession(bookId: String) {
         val r = ref(bookId)
         PluginSessionStore.deleteSession(r.root, r.workId)
+        stories(r).delete(bookId)
     }
 
-    /** Open the stream at [startIndex] (loading the work first if needed). */
+    /** Open the story at [startIndex] (loading the work first if needed), with that chapter loaded. */
     suspend fun startReading(bookId: String, startIndex: Int): PluginReadSession {
         val r = ref(bookId)
         val existing = read(r)?.takeIf { it.toc.isNotEmpty() } ?: fetchAndStoreWork(r.plugin.id, r.workId)
-        return seekToChapter(bookId, startIndex.coerceIn(0, existing.toc.lastIndex))
+        val start = startIndex.coerceIn(0, existing.toc.lastIndex)
+        val session = existing.copy(startIndex = start, loadedThrough = start - 1, chapters = emptyList())
+        chapterText(r, session, start)?.let { (title, text) ->
+            session.chapters = listOf(Chapter(title, chapterBlocks(title, text, r.plugin.manifest.bookIdPrefix, start)))
+            session.loadedThrough = start
+        }
+        scheduleMaintain(bookId, session.toc[start].url)
+        return session
     }
 
     /** Story metadata for windowed reading (work fetched once if missing); no chapters loaded. */
@@ -365,39 +403,18 @@ class PluginBookStore(
         return read(r)?.takeIf { it.toc.isNotEmpty() } ?: fetchAndStoreWork(r.plugin.id, r.workId)
     }
 
-    /** Chapter [index] (absolute ToC index): cached text, else fetched and cached. */
+    /**
+     * Chapter [index] of [session]'s ToC: cached text, else fetched and cached. A locked chapter
+     * that was never downloaded is its heading alone (the ToC marks it locked).
+     */
     suspend fun chapter(session: PluginReadSession, index: Int): Chapter {
         val r = ref(session.bookId)
-        val (title, text) = chapterText(r, session, index)
-            ?: throw PluginException(PluginErrorCode.Error, "Chapter ${index + 1} missing")
-        return Chapter(title, chapterBlocks(title, text, r.plugin.manifest.bookIdPrefix, index))
-    }
-
-    /** Re-open the stream at an absolute ToC index (reader ToC jumps, splash Read). */
-    suspend fun seekToChapter(bookId: String, absoluteIndex: Int): PluginReadSession {
-        val r = ref(bookId)
-        val existing = read(r) ?: throw PluginException(PluginErrorCode.Error, "Story session missing")
-        if (existing.toc.isEmpty()) throw PluginException(PluginErrorCode.Parse, "Story ToC missing")
-        val start = absoluteIndex.coerceIn(0, existing.toc.lastIndex)
-        val session = existing.copy(startIndex = start, loadedThrough = start - 1, chapters = emptyList())
-        PluginSessionStore.writeMeta(r.dir, session)
-        val loaded = loadThrough(r, session, start)
-        scheduleMaintain(bookId, start)
-        return loaded
-    }
-
-    private suspend fun loadThrough(r: Ref, session: PluginReadSession, through: Int): PluginReadSession {
-        val loaded = session.chapters.toMutableList()
         val prefix = r.plugin.manifest.bookIdPrefix
-        val from = session.startIndex + loaded.size
-        for (i in from..through) {
-            val (title, text) = chapterText(r, session, i) ?: break
-            loaded += Chapter(title, chapterBlocks(title, text, prefix, i))
-            session.loadedThrough = i
-            session.chapters = loaded.toList()
-            PluginSessionStore.writeMeta(r.dir, session.copy(chapters = emptyList()))
-        }
-        return session
+        val ref = session.toc.getOrNull(index)
+            ?: throw PluginException(PluginErrorCode.Error, "Chapter ${index + 1} missing")
+        val (title, text) = chapterText(r, session, index)
+            ?: return Chapter(ref.title, chapterBlocks(ref.title.ifBlank { "Chapter ${index + 1}" }, "", prefix, index))
+        return Chapter(title, chapterBlocks(title, text, prefix, index))
     }
 
     /** Download a cover once; null if blank or the book folder already has one. */
@@ -423,10 +440,10 @@ class PluginBookStore(
     companion object {
         /**
          * Chapter as the reader shows it: a heading with [title] first, as EPUB chapter files
-         * open with their own heading, then the paragraphs of [text].
+         * open with their own heading, then the paragraphs of [text] (none when blank).
          */
         fun chapterBlocks(title: String, text: String, prefix: String, chapterIndex: Int): List<Block> {
-            val body = blocksFromPlain(text, prefix, chapterIndex)
+            val body = if (text.isBlank()) emptyList() else blocksFromPlain(text, prefix, chapterIndex)
             val heading = title.trim()
             if (heading.isEmpty()) return body
             val first = body.firstOrNull()

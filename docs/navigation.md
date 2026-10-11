@@ -7,6 +7,7 @@
 | `library` (start) | Library |
 | `reader/{bookId}` | Reader for a library book |
 | `reader/{bookId}/que/{queId}` | Queue stream opened at that row's saved position (at the spoken sentence if TTS is reading that row) |
+| `reader/{bookId}/que/{queId}?chapter={n}` | Same stream, opened at the start of that row's chapter `n` (a chapter tapped under an expanded Queue row) |
 | `reader/queue` | Queue stream at the spoken sentence (now-playing card while the Queue plays) |
 
 Entry: [`MainActivity.kt`](../app/src/main/java/com/personal/flowreader/MainActivity.kt).

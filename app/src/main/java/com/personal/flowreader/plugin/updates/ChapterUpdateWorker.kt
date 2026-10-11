@@ -11,7 +11,7 @@ class ChapterUpdateWorker(context: Context, params: WorkerParameters) : Coroutin
         val app = applicationContext as FlowApp
         app.pluginSync.runAll()
         val updates = UpdateChecker(app).run()
-        UpdateNotifier.post(app, updates)
+        UpdateNotifier.post(app, updates.filter { it.notify })
         return Result.success()
     }
 }

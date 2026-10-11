@@ -40,12 +40,17 @@ class PluginInstaller(
         if (plugin.manifestSha256.isNotEmpty()) verify(manifestBytes, plugin.manifestSha256, "plugin.json")
         val codeBytes = download(plugin.pluginUrl, MAX_CODE_BYTES)
         verify(codeBytes, plugin.sha256, "index.js")
+        val iconBytes = if (plugin.iconUrl.isNotEmpty() && plugin.iconSha256.isNotEmpty()) {
+            download(plugin.iconUrl, MAX_ICON_BYTES).also { verify(it, plugin.iconSha256, "icon.png") }
+        } else {
+            null
+        }
         val manifestJson = String(manifestBytes, Charsets.UTF_8)
         val manifest = PluginManifest.parse(manifestJson)
         if (manifest.id != plugin.id) {
             throw PluginException(PluginErrorCode.Error, "Repository entry ${plugin.id} ships plugin ${manifest.id}")
         }
-        manager.install(manifestJson, String(codeBytes, Charsets.UTF_8))
+        manager.install(manifestJson, String(codeBytes, Charsets.UTF_8), iconBytes)
     }
 
     private fun verify(bytes: ByteArray, expected: String, label: String) {
@@ -58,6 +63,7 @@ class PluginInstaller(
     companion object {
         private const val MAX_MANIFEST_BYTES = 256L * 1024
         private const val MAX_CODE_BYTES = 4L * 1024 * 1024
+        private const val MAX_ICON_BYTES = 256L * 1024
 
         fun sha256Hex(bytes: ByteArray): String =
             MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

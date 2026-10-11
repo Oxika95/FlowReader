@@ -44,6 +44,11 @@ class UpdateDiffTest {
     }
 
     @Test
+    fun stubbedChaptersAreNotNewButAppendedOnesAre() {
+        assertEquals(listOf("e"), UpdateDiff.newChapters(listOf("a", "b", "c", "d"), toc("c", "d", "e")).map { it.url })
+    }
+
+    @Test
     fun noBaselineMeansNothingNew() {
         assertTrue(UpdateDiff.newChapters(emptyList(), toc("a", "b")).isEmpty())
     }
@@ -58,13 +63,29 @@ class UpdateDiffTest {
     }
 
     @Test
-    fun notifyListsAreSyncableOrNotifyDefault() {
+    fun notifyListsAreOnlyNotifyDefault() {
         val lists = listOf(
-            PluginList("memberships", "Memberships", syncable = true, membershipToggle = false),
-            PluginList("follow", "Follow", notifyDefault = true),
-            PluginList("later", "Later"),
+            PluginList("favorites", "Favorites", syncable = true),
+            PluginList("follow", "Follow", syncable = true, notifyDefault = true),
+            PluginList("later", "Later", syncable = true),
         )
-        assertEquals(setOf("memberships", "follow"), UpdateDiff.notifyLists(lists))
+        assertEquals(setOf("follow"), UpdateDiff.notifyLists(lists))
+    }
+
+    @Test
+    fun storedBellWinsOverListDefault() {
+        val notify = setOf("follow")
+        assertEquals(true, UpdateDiff.notifyOn(null, setOf("follow"), notify))
+        assertEquals(false, UpdateDiff.notifyOn(null, setOf("later"), notify))
+        assertEquals(true, UpdateDiff.notifyOn(true, setOf("later"), notify))
+        assertEquals(false, UpdateDiff.notifyOn(false, setOf("follow"), notify))
+    }
+
+    @Test
+    fun listedOrBellOnStoriesAreMonitored() {
+        assertEquals(true, UpdateDiff.monitored(notify = false, listedIn = setOf("later")))
+        assertEquals(true, UpdateDiff.monitored(notify = true, listedIn = emptySet()))
+        assertEquals(false, UpdateDiff.monitored(notify = false, listedIn = emptySet()))
     }
 
     @Test

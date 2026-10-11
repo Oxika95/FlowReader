@@ -24,13 +24,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.semantics.onLongClick
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -44,6 +37,7 @@ import com.personal.flowreader.ui.design.FlowIcons
 import com.personal.flowreader.ui.design.card.FlowCardVariant
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.controls.FlowCircleButton
+import com.personal.flowreader.ui.design.controls.FlowCountBadge
 import com.personal.flowreader.ui.design.controls.FlowMetaRow
 import com.personal.flowreader.ui.design.controls.FlowPrimaryButton
 import com.personal.flowreader.ui.design.controls.FlowSecondaryButton
@@ -66,8 +60,8 @@ private const val FooterRowMax = 3
  *
  * [onAction] receives every rail and footer tap; the caller routes by [MediaAction.id] /
  * [MediaAction.owner]. [onLongAction] receives long presses on footer actions marked
- * [MediaAction.longPress]; [onSegmentsLongPress] a long press on the segment strip. Links open
- * in the browser unless [onLink] is given.
+ * [MediaAction.longPress]; [onSeek] the segment picked on the position slider (null = read-only).
+ * Links open in the browser unless [onLink] is given.
  */
 @Composable
 fun FlowMediaCard(
@@ -78,7 +72,7 @@ fun FlowMediaCard(
     onAction: (MediaAction) -> Unit,
     onLink: ((MediaLink) -> Unit)? = null,
     onLongAction: ((MediaAction) -> Unit)? = null,
-    onSegmentsLongPress: (() -> Unit)? = null,
+    onSeek: ((Int) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     FlowFullscreenCard(
@@ -88,7 +82,7 @@ fun FlowMediaCard(
         bodySpacing = Arrangement.Top,
     ) {
         val m = model ?: return@FlowFullscreenCard
-        MediaCoverBand(m, art, onAction, onSegmentsLongPress)
+        MediaCoverBand(m, art, onAction, onSeek)
         Column(
             Modifier
                 .fillMaxWidth()
@@ -133,7 +127,7 @@ private fun MediaCoverBand(
     m: MediaCardModel,
     art: ImageBitmap?,
     onAction: (MediaAction) -> Unit,
-    onSegmentsLongPress: (() -> Unit)?,
+    onSeek: ((Int) -> Unit)?,
 ) {
     BoxWithConstraints(
         Modifier
@@ -168,7 +162,7 @@ private fun MediaCoverBand(
                         bottom = FlowTokens.Space.M,
                     ),
             ) {
-                MediaBandText(m, coverMaxHeight, onSegmentsLongPress)
+                MediaBandText(m, coverMaxHeight, onSeek)
             }
         }
         if (m.rail.isNotEmpty()) {
@@ -194,15 +188,22 @@ private fun MediaCoverBand(
 }
 
 @Composable
-private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp, onSegmentsLongPress: (() -> Unit)?) {
+private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp, onSeek: ((Int) -> Unit)?) {
     val muted = FlowTokens.CoverMutedWhite
-    Text(
-        m.title,
-        style = FlowType.mediaTitle,
-        color = MaterialTheme.colorScheme.primary,
-        maxLines = m.titleMaxLines,
-        overflow = TextOverflow.Ellipsis,
-    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
+    ) {
+        Text(
+            m.title,
+            style = FlowType.mediaTitle,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = m.titleMaxLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        FlowCountBadge(m.newCount)
+    }
     if (m.subtitle.isNotBlank()) {
         Text(
             m.subtitle,
@@ -248,43 +249,7 @@ private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp, onSegmentsLongP
             modifier = Modifier.padding(top = FlowTokens.Space.M),
         )
     }
-    m.segments?.takeIf { it.count > 0 }?.let { seg ->
-        val holdable = if (onSegmentsLongPress != null) {
-            val haptic = LocalHapticFeedback.current
-            val longPress by rememberUpdatedState(onSegmentsLongPress)
-            Modifier
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onLongPress = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            longPress()
-                        },
-                    )
-                }
-                .semantics {
-                    onLongClick(label = m.segmentsLongPressLabel.ifBlank { null }) {
-                        longPress()
-                        true
-                    }
-                }
-        } else {
-            Modifier
-        }
-        // Vertical padding inside the gesture area widens the touch target of the thin strip.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .then(holdable)
-                .padding(vertical = FlowTokens.Space.S),
-        ) {
-            MediaSegmentStrip(
-                seg,
-                Modifier
-                    .fillMaxWidth()
-                    .height(FlowTokens.Comp.SegmentStrip),
-            )
-        }
-    }
+    m.segments?.takeIf { it.count > 0 }?.let { seg -> MediaSegmentSlider(seg, onSeek) }
 }
 
 @OptIn(ExperimentalLayoutApi::class)

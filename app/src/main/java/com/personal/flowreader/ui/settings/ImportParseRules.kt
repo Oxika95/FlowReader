@@ -115,6 +115,7 @@ internal fun ParseRuleEditorOverlay(
     var removeCss by remember(initial.id) { mutableStateOf(initial.removeCss.orEmpty()) }
     var prevCss by remember(initial.id) { mutableStateOf(initial.prevCss.orEmpty()) }
     var nextCss by remember(initial.id) { mutableStateOf(initial.nextCss.orEmpty()) }
+    var crawl by remember(initial.id) { mutableStateOf(initial.crawl) }
     var crawlLimit by remember(initial.id) { mutableStateOf(initial.crawlLimit.toString()) }
     var testUrl by remember(initial.id) { mutableStateOf(initial.testUrl.orEmpty()) }
     var testBusy by remember { mutableStateOf(false) }
@@ -138,6 +139,7 @@ internal fun ParseRuleEditorOverlay(
             removeCss = removeCss.trim().ifBlank { null },
             prevCss = prevCss.trim().ifBlank { null },
             nextCss = nextCss.trim().ifBlank { null },
+            crawl = crawl,
             crawlLimit = (crawlLimit.trim().toIntOrNull() ?: ParseRule.DEFAULT_CRAWL_LIMIT)
                 .coerceIn(1, ParseRule.MAX_CRAWL_LIMIT),
             testUrl = testUrl.trim().ifBlank { null },
@@ -281,15 +283,23 @@ internal fun ParseRuleEditorOverlay(
             CssField("Next Button (optional)", nextCss, { nextCss = it }, "a.next, a[rel=next]")
             CssField("Remove (optional, comma-separated)", removeCss, { removeCss = it }, ".ads, .share, .author-note")
             if (nextCss.isNotBlank()) {
-                FlowLabel("Crawl limit (pages)")
-                OutlinedTextField(
-                    value = crawlLimit,
-                    onValueChange = { v -> crawlLimit = v.filter(Char::isDigit).take(4) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    shape = FlowTokens.Shape.Field,
-                    modifier = Modifier.fillMaxWidth(),
+                FlowToggleRow(
+                    title = "Crawl",
+                    subtitle = "On import, offer to follow Next into one book (you pick how many pages each time).",
+                    checked = crawl,
+                    onCheckedChange = { crawl = it },
                 )
+                if (crawl) {
+                    FlowLabel("Default pages to crawl")
+                    OutlinedTextField(
+                        value = crawlLimit,
+                        onValueChange = { v -> crawlLimit = v.filter(Char::isDigit).take(4) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        shape = FlowTokens.Shape.Field,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
         testError?.let { err ->

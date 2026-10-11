@@ -2,7 +2,10 @@ package com.personal.flowreader.ui.design.tabs
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,31 +13,46 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import com.personal.flowreader.ui.design.controls.FlowDot
 import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.FlowType
 
@@ -58,20 +76,37 @@ class FlowTab private constructor(
     val contentDescription: String?,
     val selected: Boolean,
     val onClick: () -> Unit,
+    /** New items inside this tab; above 0 shows an accent dot (no number). */
+    val badge: Int? = null,
+    val image: ImageBitmap? = null,
 ) {
     companion object {
         /** Text destination tab. */
-        fun text(label: String, selected: Boolean, onClick: () -> Unit, key: Any = label): FlowTab =
-            FlowTab(key, label, null, null, selected, onClick)
+        fun text(label: String, selected: Boolean, onClick: () -> Unit, key: Any = label, badge: Int? = null): FlowTab =
+            FlowTab(key, label, null, null, selected, onClick, badge)
 
-        /** Icon destination tab (e.g. plugin Search). */
+        /** Icon destination tab (e.g. Files, Queue, plugin Search, plugin lists). Long-press shows [contentDescription]. */
         fun icon(
             icon: ImageVector,
             contentDescription: String,
             selected: Boolean,
             onClick: () -> Unit,
             key: Any = contentDescription,
-        ): FlowTab = FlowTab(key, null, icon, contentDescription, selected, onClick)
+            badge: Int? = null,
+        ): FlowTab = FlowTab(key, null, icon, contentDescription, selected, onClick, badge)
+
+        /**
+         * Image destination tab (a plugin's `icon.png`). Only the image's shape is used: it is tinted like
+         * an icon tab, so it must be a silhouette on a transparent background. Long-press shows [contentDescription].
+         */
+        fun image(
+            image: ImageBitmap,
+            contentDescription: String,
+            selected: Boolean,
+            onClick: () -> Unit,
+            key: Any = contentDescription,
+            badge: Int? = null,
+        ): FlowTab = FlowTab(key, null, null, contentDescription, selected, onClick, badge, image)
 
         /**
          * Icon tab that opens a card instead of switching content (Library "+", plugin Account).
@@ -172,6 +207,7 @@ fun FlowTabBar(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun FlowTabSlot(
     tab: FlowTab,
@@ -179,17 +215,55 @@ private fun FlowTabSlot(
     indicatorHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val hint = tab.contentDescription
+    if (tab.label != null || hint == null) {
+        FlowTabContent(
+            tab,
+            style,
+            indicatorHeight,
+            modifier.selectable(selected = tab.selected, role = Role.Tab, onClick = tab.onClick),
+        )
+        return
+    }
+    val tooltip = rememberTooltipState()
+    val scope = rememberCoroutineScope()
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(hint) } },
+        state = tooltip,
+        modifier = modifier,
+        enableUserInput = false,
+    ) {
+        FlowTabContent(
+            tab,
+            style,
+            indicatorHeight,
+            Modifier
+                .fillMaxSize()
+                .combinedClickable(
+                    role = Role.Tab,
+                    onClick = tab.onClick,
+                    onLongClick = { scope.launch { tooltip.show() } },
+                )
+                .semantics { selected = tab.selected },
+        )
+    }
+}
+
+@Composable
+private fun FlowTabContent(
+    tab: FlowTab,
+    style: TextStyle,
+    indicatorHeight: Dp,
+    modifier: Modifier,
+) {
     val selectedFraction by animateFloatAsState(if (tab.selected) 1f else 0f, label = "tabIndicator")
     val contentColor by animateColorAsState(
         if (tab.selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "tabContent",
     )
     Column(
-        modifier = modifier.selectable(
-            selected = tab.selected,
-            role = Role.Tab,
-            onClick = tab.onClick,
-        ),
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -201,23 +275,41 @@ private fun FlowTabSlot(
         ) {
             val label = tab.label
             val icon = tab.icon
-            if (label != null) {
-                Text(
-                    label,
-                    style = style,
-                    fontWeight = if (tab.selected) FontWeight.SemiBold else FontWeight.Medium,
-                    color = contentColor,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Visible,
-                )
-            } else if (icon != null) {
-                Icon(
-                    icon,
-                    contentDescription = tab.contentDescription,
-                    tint = contentColor,
-                    modifier = Modifier.size(FlowTokens.Comp.TabIcon),
-                )
+            val image = tab.image
+            Box {
+                if (label != null) {
+                    Text(
+                        label,
+                        style = style,
+                        fontWeight = if (tab.selected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = contentColor,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Visible,
+                    )
+                } else if (icon != null) {
+                    Icon(
+                        icon,
+                        contentDescription = tab.contentDescription,
+                        tint = contentColor,
+                        modifier = Modifier.size(FlowTokens.Comp.TabIcon),
+                    )
+                } else if (image != null) {
+                    Image(
+                        image,
+                        contentDescription = tab.contentDescription,
+                        colorFilter = ColorFilter.tint(contentColor),
+                        modifier = Modifier.size(FlowTokens.Comp.TabIcon),
+                    )
+                }
+                if ((tab.badge ?: 0) > 0) {
+                    FlowDot(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = FlowTokens.Comp.TabDot, y = -FlowTokens.Comp.TabDot / 2)
+                            .semantics { stateDescription = "New chapters" },
+                    )
+                }
             }
         }
         Box(

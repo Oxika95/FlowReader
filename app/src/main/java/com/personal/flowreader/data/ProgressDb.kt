@@ -1,5 +1,6 @@
 package com.personal.flowreader.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Embedded
@@ -10,6 +11,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 /** A book on the Files tab or a custom shelf. */
@@ -29,6 +32,10 @@ data class LibraryBookEntity(
     /** Local filter rules (JSON); blank = none. */
     val localFilters: String = "",
     @Embedded val position: ReadingPosition = ReadingPosition(),
+    /** From the book's metadata at import (row subtitle). */
+    @ColumnInfo(defaultValue = "") val author: String = "",
+    /** 0 until read from the file at import. */
+    @ColumnInfo(defaultValue = "0") val chapterCount: Int = 0,
 )
 
 /**
@@ -106,6 +113,12 @@ interface LibraryDao {
 
     @Query("UPDATE library_books SET localFilters = :json WHERE bookId = :id")
     suspend fun setLocalFilters(id: String, json: String): Int
+
+    @Query("UPDATE library_books SET author = :author, chapterCount = :chapterCount WHERE bookId = :id")
+    suspend fun setRowMeta(id: String, author: String, chapterCount: Int)
+
+    @Query("SELECT * FROM library_books WHERE chapterCount = 0")
+    suspend fun withoutRowMeta(): List<LibraryBookEntity>
 
     @Query(
         "UPDATE library_books SET chapterIndex = :chapterIndex, chapterHref = :chapterHref, " +
@@ -193,10 +206,19 @@ interface QueueDao {
 
 @Database(
     entities = [LibraryBookEntity::class, QueueItemEntity::class, QueueStateEntity::class],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun library(): LibraryDao
     abstract fun queue(): QueueDao
+
+    companion object {
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `library_books` ADD COLUMN `author` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `library_books` ADD COLUMN `chapterCount` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+    }
 }

@@ -316,7 +316,15 @@ data class BookItem(
     val sourceKind: String,
     val readingProgress: Float,
     val lastReadAt: Long,
+    /** Saved chapter (0-based), or -1 when nothing has been read. */
+    val chapterIndex: Int = -1,
+    val author: String = "",
+    /** 0 when unknown. */
+    val chapterCount: Int = 0,
 )
+
+/** [ReadingPosition.chapterIndex] when a position is saved, else -1. */
+val ReadingPosition.savedChapterOrNone: Int get() = if (hasProgress) chapterIndex else -1
 
 fun LibraryBookEntity.toItem() = BookItem(
     bookId = bookId,
@@ -326,6 +334,9 @@ fun LibraryBookEntity.toItem() = BookItem(
     sourceKind = sourceKind,
     readingProgress = position.fraction,
     lastReadAt = maxOf(addedAt, position.positionAt),
+    chapterIndex = position.savedChapterOrNone,
+    author = author,
+    chapterCount = chapterCount,
 )
 
 fun QueueItemEntity.toItem() = BookItem(

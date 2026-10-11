@@ -45,23 +45,6 @@ object ShareOverlayPermission {
 }
 
 object ShareDispatch {
-    const val ACTION_EXECUTE = "com.personal.flowreader.action.SHARE_EXECUTE"
-    const val EXTRA_KIND = "share_kind"
-    const val EXTRA_TEXT = "share_text"
-    const val EXTRA_TITLE = "share_title"
-    const val EXTRA_URL = "share_url"
-    const val EXTRA_LANDING = "share_landing"
-    const val EXTRA_LIBRARY_TAB = "share_library_tab"
-    const val EXTRA_SELECTOR = "share_selector"
-    const val EXTRA_TITLE_CSS = "share_title_css"
-    const val EXTRA_REMOVE_CSS = "share_remove_css"
-    const val EXTRA_PARSE_RULE_ID = "share_parse_rule_id"
-
-    const val KIND_FILES = "files"
-    const val KIND_QUEUE = "queue"
-    const val KIND_CRAWL = "crawl"
-    const val KIND_PLUGIN = "plugin"
-    const val EXTRA_PLUGIN_ID = "share_plugin_id"
 
     /** The chooser's plugin option and its label (plugin display name when installed). */
     fun pluginChoice(chooser: ShareAction.ShowChooser, url: String): Pair<String, ShareAction> {
@@ -70,48 +53,17 @@ object ShareDispatch {
         return label to ShareAction.Plugin(pluginId, url)
     }
 
-    fun intentFor(context: Context, action: ShareAction): Intent {
-        val i = Intent(context, MainActivity::class.java).apply {
-            this.action = ACTION_EXECUTE
-            addFlags(
+    /** Queue [action] in the app's [ShareInbox] and bring the app forward to run it. */
+    fun dispatch(context: Context, action: ShareAction) {
+        require(action !is ShareAction.ShowChooser) { "Chooser is not executable" }
+        (context.applicationContext as com.personal.flowreader.FlowApp).shareInbox.submit(action)
+        context.startActivity(
+            Intent(context, MainActivity::class.java).addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP,
-            )
-        }
-        when (action) {
-            is ShareAction.ToFiles -> {
-                i.putExtra(EXTRA_KIND, KIND_FILES)
-                i.putExtra(EXTRA_TEXT, action.text)
-                action.titleHint?.let { i.putExtra(EXTRA_TITLE, it) }
-                if (action.libraryTabId.isNotBlank()) {
-                    i.putExtra(EXTRA_LIBRARY_TAB, action.libraryTabId)
-                }
-            }
-            is ShareAction.ToQueue -> {
-                i.putExtra(EXTRA_KIND, KIND_QUEUE)
-                i.putExtra(EXTRA_TEXT, action.text)
-                action.titleHint?.let { i.putExtra(EXTRA_TITLE, it) }
-            }
-            is ShareAction.Crawl -> {
-                i.putExtra(EXTRA_KIND, KIND_CRAWL)
-                i.putExtra(EXTRA_URL, action.url)
-                i.putExtra(EXTRA_LANDING, action.landing.id)
-                i.putExtra(EXTRA_PARSE_RULE_ID, action.rule.id)
-                ParseRules.effectiveSelectors(action.rule)?.let { sel ->
-                    sel.body?.let { i.putExtra(EXTRA_SELECTOR, it) }
-                    sel.title?.let { i.putExtra(EXTRA_TITLE_CSS, it) }
-                    sel.remove?.let { i.putExtra(EXTRA_REMOVE_CSS, it) }
-                }
-            }
-            is ShareAction.Plugin -> {
-                i.putExtra(EXTRA_KIND, KIND_PLUGIN)
-                i.putExtra(EXTRA_PLUGIN_ID, action.pluginId)
-                i.putExtra(EXTRA_URL, action.url)
-            }
-            is ShareAction.ShowChooser -> error("Chooser is not executable")
-        }
-        return i
+            ),
+        )
     }
 }
 

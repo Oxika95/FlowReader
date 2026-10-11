@@ -51,17 +51,19 @@ A repository is a static `index.json` (GitHub Pages works):
       "version": "1.3.0",
       "apiVersion": 4,
       "lang": "en",
-      "iconUrl": "https://www.royalroad.com/favicon.ico",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",
       "manifestSha256": "…",
-      "sha256": "…"
+      "sha256": "…",
+      "iconUrl": "RoyalRoad/icon.png",
+      "iconSha256": "…"
     }
   ]
 }
 ```
 
 URLs may be relative to `index.json`. `sha256` is the hex SHA-256 of `index.js` and
-`manifestSha256` of `plugin.json`; the installer refuses files that do not match. Each entry's
+`manifestSha256` of `plugin.json`; the installer refuses files that do not match. The optional
+`iconUrl` (the package's `icon.png`) is downloaded once at install, only with its `iconSha256`. Each entry's
 `apiVersion` decides compatibility; the top-level `apiVersion` is informational. The
 [flow-reader-plugins](https://github.com/Oxika95/flow-reader-plugins) repo builds this file in CI.

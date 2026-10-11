@@ -18,6 +18,8 @@ internal class ReaderQueueMode(
     private val flow: FlowApp,
     private val queId: String?,
     private val ui: MutableStateFlow<ReaderUi>,
+    /** Open [queId] at the start of this chapter (its own index) instead of its saved position. */
+    private val startChapter: Int? = null,
 ) {
     /** Where the reader opens: [locus] (re-found by [anchor]), in [reuse] when it holds it. */
     class Start(val locus: Locus, val reuse: ReadingSession?, val anchor: String = "")
@@ -47,17 +49,20 @@ internal class ReaderQueueMode(
         val spoken = spokenLocus(queue)
         val last = if (queId == null) withContext(Dispatchers.IO) { flow.db.queue().state()?.currentQueId } else null
         val tapped = (queId ?: last)?.let(queue::indexOfQue)?.takeIf { it >= 0 }
-        val useSpoken = spoken != null && (tapped == null || tapped == queue.segmentIndexOf(spoken.chapterIndex))
+        val chapter = startChapter?.takeIf { queId != null && tapped != null }
+        val useSpoken = chapter == null && spoken != null &&
+            (tapped == null || tapped == queue.segmentIndexOf(spoken.chapterIndex))
         val startSeg = when {
             useSpoken -> queue.segmentIndexOf(spoken!!.chapterIndex)
             tapped != null -> tapped
-            else -> 0
+            else -> queue.firstUnfinished()
         }
         val segment = queue.segments[startSeg]
         ui.update { it.copy(filtersGlobal = global, filtersGroups = groups, filtersLocal = segment.local) }
         refreshToc()
         applySegment(startSeg)
         if (useSpoken) return Start(spoken!!, reused?.second)
+        if (chapter != null) return Start(queue.toGlobal(startSeg, Locus(chapter, 0, 0)), reused?.second)
         val item = withContext(Dispatchers.IO) { flow.catalog.getQue(segment.queId) }
             ?: throw IllegalArgumentException("Queue item not found")
         return Start(queue.toGlobal(startSeg, savedLocus(item.position, segment.book)), reused?.second, item.position.anchorText)
