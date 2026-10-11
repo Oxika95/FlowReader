@@ -10,10 +10,9 @@ Home screen: tabs for **Files**, **Queue**, optional custom shelves and plugins,
 
 | Control | Action |
 |---------|--------|
-| Title “Flow Reader” | Brand |
-| List view / Shelf view | Toggle `library_view` (list rows vs cover grid) |
-| Settings gear | Opens Settings overlay |
-| Tabs: Files, Queue, …, **+** | Select tab; **+** opens “Add a tab”. Files (books) and Queue (video stack) are icons; plugins show their packaged `icon.png` silhouette in the same tint (name when the plugin ships none); shelves stay text. Long-press an icon for its name. A plugin tab shows an accent dot while any of its stories has new chapters |
+| Title “Flow Reader › *tab*” | Brand, then the current tab's name (muted) |
+| Settings gear | Opens Settings overlay. List rows vs cover grid is Settings › Layout › UI › Library view (`library_view`) |
+| Tabs: Files, Queue, …, **+** | Select tab; **+** opens “Add a tab”. Settings › Layout › UI › Library tabs = Text shows names instead of icons (plugin sub-tabs too). Files (books) and Queue (layer stack) are icons; plugins show their packaged `icon.png` silhouette in the same tint (name when the plugin ships none); shelves stay text. Long-press an icon for its name. A plugin tab shows an accent dot while any of its stories has new chapters |
 
 Tabs are a `Primary` `FlowTabBar`; **+** is its trailing action tab. The screen is a
 `FlowScreen(Library)`: FAB per tab, snackbar above the FAB, cards stack in the window overlay.

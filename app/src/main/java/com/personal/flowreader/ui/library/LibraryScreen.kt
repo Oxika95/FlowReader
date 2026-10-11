@@ -35,6 +35,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.BookSource
 import com.personal.flowreader.data.FileAccessAdvice
 import com.personal.flowreader.data.FilterRule
@@ -96,6 +97,7 @@ fun LibraryScreen(
     val ui by vm.ui.collectAsState()
     val installedPlugins by vm.plugins.collectAsState()
     val tts by vm.tts.state.collectAsState()
+    val chrome by (LocalContext.current.applicationContext as FlowApp).chrome.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var settingsOpen by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf(false) }
@@ -172,10 +174,9 @@ fun LibraryScreen(
                 tab = ui.tab,
                 plugins = installedPlugins.filter { it.id in ui.enabledPluginIds },
                 customTabs = ui.customTabs,
-                viewMode = ui.viewMode,
+                tabStyle = chrome.libraryTabs,
                 addTabOpen = addTabOpen,
                 onTab = vm::setTab,
-                onViewMode = vm::setViewMode,
                 onAddTab = { addTabOpen = true },
                 onSettings = { settingsOpen = true },
             )
@@ -183,7 +184,7 @@ fun LibraryScreen(
             when (val tab = ui.tab) {
                 LibraryTabId.Files -> LibraryBooksPane(
                     books = ui.books,
-                    viewMode = ui.viewMode,
+                    viewMode = chrome.libraryView,
                     busy = ui.busy,
                     emptyMessage = "No books yet.\nTap + to add an EPUB or TXT.",
                     onOpen = onOpenBook,
@@ -193,7 +194,7 @@ fun LibraryScreen(
                 )
                 is LibraryTabId.Custom -> LibraryBooksPane(
                     books = ui.books,
-                    viewMode = ui.viewMode,
+                    viewMode = chrome.libraryView,
                     busy = ui.busy,
                     emptyMessage = "Nothing on this shelf yet.\nTap + to add an EPUB or TXT.",
                     onOpen = onOpenBook,
@@ -215,7 +216,7 @@ fun LibraryScreen(
                         PluginTabContent(
                             plugin = activePlugin,
                             actions = vm.pluginActions,
-                            viewMode = ui.viewMode,
+                            viewMode = chrome.libraryView,
                             bottomInset = docks.bottom,
                             modifier = paneModifier,
                         )

@@ -13,9 +13,7 @@ import com.personal.flowreader.ui.design.card.FlowCardVariant
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.design.card.FlowConfirmCard
-import com.personal.flowreader.ui.design.tabs.FlowTabBar
-import com.personal.flowreader.ui.design.tabs.FlowTabLevel
-import com.personal.flowreader.ui.design.tabs.flowTextTabs
+import com.personal.flowreader.R
 
 
 import androidx.activity.compose.BackHandler
@@ -284,9 +282,14 @@ internal fun LayoutSettingsTab(
     onShowHomeMarker: (Boolean) -> Unit,
 ) {
     var layoutTab by remember { mutableIntStateOf(0) }
-    val layoutTabs = listOf("Theme", "UI", "Font", "Reading")
+    val layoutTabs = listOf(
+        R.drawable.ic_settings_theme to "Theme",
+        R.drawable.ic_settings_ui to "UI",
+        R.drawable.ic_settings_font to "Font",
+        R.drawable.ic_settings_reading to "Reading",
+    )
 
-    FlowTabBar(tabs = flowTextTabs(layoutTabs, layoutTab) { layoutTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
+    SettingsSubTabBar(layoutTabs, layoutTab) { layoutTab = it }
 
     Spacer(Modifier.height(FlowTokens.Space.M))
     when (layoutTab) {
@@ -316,6 +319,7 @@ internal fun LayoutSettingsTab(
                     )
                 }
             }
+            ChromeSettingsPane()
         }
         3 -> {
             FlowToggleRow(

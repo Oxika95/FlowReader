@@ -13,9 +13,7 @@ import com.personal.flowreader.ui.design.card.FlowCardVariant
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.design.card.FlowConfirmCard
-import com.personal.flowreader.ui.design.tabs.FlowTabBar
-import com.personal.flowreader.ui.design.tabs.FlowTabLevel
-import com.personal.flowreader.ui.design.tabs.flowTextTabs
+import com.personal.flowreader.R
 
 import android.content.Intent
 import android.net.Uri
@@ -56,11 +54,14 @@ internal fun AboutSettingsTab(
     onDebugEnabled: (Boolean) -> Unit,
 ) {
     var subTab by rememberSaveable { mutableIntStateOf(0) }
-    FlowTabBar(
-        tabs = flowTextTabs(listOf("Info", "Notifications", "Data"), subTab) { subTab = it },
-        level = FlowTabLevel.Secondary,
-        inset = FlowTokens.Space.None,
-    )
+    SettingsSubTabBar(
+        listOf(
+            R.drawable.ic_settings_info to "Info",
+            R.drawable.ic_settings_notifications to "Notifications",
+            R.drawable.ic_settings_data to "Data",
+        ),
+        subTab,
+    ) { subTab = it }
     Spacer(Modifier.height(FlowTokens.Space.M))
     when (subTab) {
         0 -> AboutInfoPane(debugEnabled, onDebugEnabled)

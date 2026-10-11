@@ -28,7 +28,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import com.personal.flowreader.ui.design.layer.FlowOverlaySpec
 import com.personal.flowreader.ui.design.layer.rememberFlowOverlay
 import com.personal.flowreader.ui.design.surface.FlowSurface
@@ -63,6 +67,7 @@ fun FlowFullscreenCard(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     title: String? = null,
+    titleTrail: List<String> = emptyList(),
     variant: FlowCardVariant = FlowCardVariant.Standard,
     dismissible: Boolean = true,
     onBack: (() -> Unit)? = null,
@@ -103,6 +108,7 @@ fun FlowFullscreenCard(
                         onClose = if (showClose && dismissible) onDismiss else null,
                         onBack = onBack,
                         actions = headerActions,
+                        titleTrail = titleTrail,
                     )
                 }
                 tabs?.invoke()
@@ -160,6 +166,7 @@ fun FlowCardHeader(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
+    titleTrail: List<String> = emptyList(),
 ) {
     Row(
         modifier = modifier
@@ -177,7 +184,7 @@ fun FlowCardHeader(
             }
         }
         Text(
-            title,
+            flowBreadcrumb(title, titleTrail),
             style = FlowType.cardTitle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -193,6 +200,18 @@ fun FlowCardHeader(
         } else {
             // Keep header height stable without a close button.
             Spacer(Modifier.size(FlowTokens.Comp.ButtonPrimary))
+        }
+    }
+}
+
+/** [title] followed by muted ` › segment`s naming the current view (Settings, Library header). */
+@Composable
+fun flowBreadcrumb(title: String, trail: List<String>): AnnotatedString {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    return buildAnnotatedString {
+        append(title)
+        trail.filter { it.isNotBlank() }.forEach { segment ->
+            withStyle(SpanStyle(color = muted)) { append(" › $segment") }
         }
     }
 }

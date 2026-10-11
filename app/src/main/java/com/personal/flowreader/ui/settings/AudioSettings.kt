@@ -1,8 +1,6 @@
 package com.personal.flowreader.ui.settings
 
-import com.personal.flowreader.ui.design.tabs.FlowTabBar
-import com.personal.flowreader.ui.design.tabs.FlowTabLevel
-import com.personal.flowreader.ui.design.tabs.flowTextTabs
+import com.personal.flowreader.R
 
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -61,9 +59,9 @@ internal fun AudioSettingsTab(
     onHighlightSyncMs: (Int) -> Unit = {},
 ) {
     var audioTab by remember { mutableIntStateOf(0) }
-    val audioTabs = listOf("Voice", "Playback")
+    val audioTabs = listOf(R.drawable.ic_settings_voice to "Voice", R.drawable.ic_settings_playback to "Playback")
 
-    FlowTabBar(tabs = flowTextTabs(audioTabs, audioTab) { audioTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
+    SettingsSubTabBar(audioTabs, audioTab) { audioTab = it }
 
     Spacer(Modifier.height(FlowTokens.Space.M))
     when (audioTab) {

@@ -12,7 +12,6 @@ import com.personal.flowreader.data.FilterApplyResult
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.LibraryTabId
-import com.personal.flowreader.data.LibraryViewMode
 import com.personal.flowreader.data.BookItem
 import com.personal.flowreader.data.QueueItemEntity
 import com.personal.flowreader.data.TextIngestResult
@@ -44,7 +43,6 @@ import kotlinx.coroutines.withContext
 data class LibraryUi(
     val books: List<BookItem> = emptyList(),
     val que: List<QueueItemEntity> = emptyList(),
-    val viewMode: LibraryViewMode = LibraryViewMode.List,
     val tab: LibraryTabId = LibraryTabId.Files,
     val filtersGlobal: List<FilterRule> = emptyList(),
     val filtersGroups: List<FilterRule> = emptyList(),
@@ -107,7 +105,6 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            val mode = flow.settings.libraryViewModeOnce()
             val enabled = flow.settings.enabledPluginIdsOnce()
                 .intersect(flow.pluginManager.ids())
             val customTabs = flow.settings.customLibraryTabsOnce()
@@ -117,7 +114,6 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 customTabs.map { it.id }.toSet(),
             )
             _ui.value = _ui.value.copy(
-                viewMode = mode,
                 tab = tab,
                 enabledPluginIds = enabled,
                 customTabs = customTabs,
@@ -229,11 +225,6 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             flow.settings.setEnabledPluginIds(next)
             flow.settings.setLibraryTabId(tab.persistKey)
         }
-    }
-
-    fun setViewMode(mode: LibraryViewMode) {
-        _ui.value = _ui.value.copy(viewMode = mode)
-        viewModelScope.launch { flow.settings.setLibraryViewMode(mode) }
     }
 
     /**

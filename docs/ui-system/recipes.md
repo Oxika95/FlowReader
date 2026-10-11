@@ -12,7 +12,9 @@ val tabs = buildList {
 FlowTabBar(tabs, level = FlowTabLevel.Primary)
 ```
 
-Settings sections and sub-tabs use `flowTextTabs(labels, idx, onSelect)`; add the label.
+Settings sub-tabs use `SettingsSubTabBar(listOf(R.drawable.ic_settings_x to "Label"), idx, onSelect)`
+(honours the Settings tab style and names the sub-tab in the card title); add a black silhouette PNG
+on transparency as `res/drawable-nodpi/ic_settings_<name>.png`.
 
 ## Add a fullscreen card (editor, sheet, list)
 

@@ -14,8 +14,6 @@ import com.personal.flowreader.ui.design.card.FlowCardVariant
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.design.card.FlowConfirmCard
-import com.personal.flowreader.ui.design.tabs.FlowTabBar
-import com.personal.flowreader.ui.design.tabs.FlowTabLevel
 import com.personal.flowreader.ui.design.tabs.flowTextTabs
 
 
@@ -206,7 +204,7 @@ internal fun FiltersSettingsTab(
         FilterScope.Groups -> filtersGroups
     }
 
-    FlowTabBar(tabs = flowTextTabs(visibleScopes.map { it.label }, scopeTab.coerceIn(0, visibleScopes.lastIndex)) { scopeTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
+    SettingsSubTabBar(flowTextTabs(visibleScopes.map { it.label }, scopeTab.coerceIn(0, visibleScopes.lastIndex)) { scopeTab = it }, scope.label)
 
     Spacer(Modifier.height(FlowTokens.Space.M))
     // Edit mode (selection, drag order) belongs to one scope; switching tabs leaves it.

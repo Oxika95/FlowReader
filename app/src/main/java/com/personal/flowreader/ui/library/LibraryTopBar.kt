@@ -6,15 +6,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,11 +21,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import com.personal.flowreader.data.CustomLibraryTab
 import com.personal.flowreader.data.LibraryTabId
-import com.personal.flowreader.data.LibraryViewMode
+import com.personal.flowreader.data.TabStyle
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.ui.design.card.FlowActionRow
+import com.personal.flowreader.ui.design.card.flowBreadcrumb
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.design.controls.FlowHint
@@ -40,25 +40,31 @@ import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.FlowType
 
-/** App title, view-mode and settings actions, then the primary tab bar ending in the "+" action tab. */
+/** App title naming the current tab, settings action, then the primary tab bar ending in the "+" action tab. */
 @Composable
 internal fun LibraryTopBar(
     tab: LibraryTabId,
     plugins: List<InstalledPlugin>,
     customTabs: List<CustomLibraryTab>,
-    viewMode: LibraryViewMode,
+    tabStyle: TabStyle,
     addTabOpen: Boolean,
     onTab: (LibraryTabId) -> Unit,
-    onViewMode: (LibraryViewMode) -> Unit,
     onAddTab: () -> Unit,
     onSettings: () -> Unit,
 ) {
     val newCounts by rememberPluginNewChapterTotals(plugins)
     val pluginIcons = rememberPluginTabIcons(plugins)
+    val text = tabStyle == TabStyle.Text
     fun selected(id: LibraryTabId) = !addTabOpen && tab == id
+    fun fixed(icon: ImageVector, label: String, id: LibraryTabId) =
+        if (text) {
+            FlowTab.text(label, selected = selected(id), onClick = { onTab(id) }, key = id)
+        } else {
+            FlowTab.icon(icon, label, selected(id), { onTab(id) }, key = id)
+        }
     val tabs = buildList {
-        add(FlowTab.icon(LibraryTabIcons.Files, "Files", selected(LibraryTabId.Files), { onTab(LibraryTabId.Files) }, key = LibraryTabId.Files))
-        add(FlowTab.icon(LibraryTabIcons.Queue, "Queue", selected(LibraryTabId.Que), { onTab(LibraryTabId.Que) }, key = LibraryTabId.Que))
+        add(fixed(LibraryTabIcons.Files, "Files", LibraryTabId.Files))
+        add(fixed(LibraryTabIcons.Queue, "Queue", LibraryTabId.Que))
         customTabs.sortedBy { it.order }.forEach {
             val id = LibraryTabId.Custom(it.id)
             add(FlowTab.text(it.title, selected = selected(id), onClick = { onTab(id) }, key = id))
@@ -66,7 +72,7 @@ internal fun LibraryTopBar(
         plugins.forEach { plugin ->
             val id = LibraryTabId.Plugin(plugin.id)
             val badge = newCounts[plugin.id]
-            val icon = pluginIcons[plugin.id]
+            val icon = pluginIcons[plugin.id]?.takeUnless { text }
             add(
                 if (icon != null) {
                     FlowTab.image(icon, plugin.name, selected(id), { onTab(id) }, key = id, badge = badge)
@@ -85,23 +91,19 @@ internal fun LibraryTopBar(
                 .padding(start = FlowTokens.Pad.Screen, end = FlowTokens.Space.XS),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Flow Reader", style = FlowType.cardTitle, modifier = Modifier.weight(1f))
-            if (tab != LibraryTabId.Que) {
-                val accent = MaterialTheme.colorScheme.primary
-                val muted = MaterialTheme.colorScheme.onSurfaceVariant
-                FlowIconButton(
-                    icon = Icons.AutoMirrored.Filled.ViewList,
-                    contentDescription = "List view",
-                    onClick = { onViewMode(LibraryViewMode.List) },
-                    tint = if (viewMode == LibraryViewMode.List) accent else muted,
-                )
-                FlowIconButton(
-                    icon = Icons.Filled.GridView,
-                    contentDescription = "Shelf view",
-                    onClick = { onViewMode(LibraryViewMode.Shelf) },
-                    tint = if (viewMode == LibraryViewMode.Shelf) accent else muted,
-                )
+            val current = when (tab) {
+                LibraryTabId.Files -> "Files"
+                LibraryTabId.Que -> "Queue"
+                is LibraryTabId.Custom -> customTabs.firstOrNull { it.id == tab.tabId }?.title
+                is LibraryTabId.Plugin -> plugins.firstOrNull { it.id == tab.pluginId }?.name
             }
+            Text(
+                flowBreadcrumb("Flow Reader", listOfNotNull(current)),
+                style = FlowType.cardTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
             FlowIconButton(icon = Icons.Filled.Settings, contentDescription = "Settings", onClick = onSettings)
         }
         FlowTabBar(tabs = tabs)

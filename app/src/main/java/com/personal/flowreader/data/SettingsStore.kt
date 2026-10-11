@@ -215,7 +215,7 @@ data class PluginVersionCheckPrefs(
 }
 
 class SettingsStore(context: Context) {
-    private val store = context.applicationContext.settingsDataStore
+    internal val store = context.applicationContext.settingsDataStore
 
     suspend fun readerOnce(): ReaderPrefs = store.data.first().toReaderPrefs()
     suspend fun ttsOnce(): TtsPrefs = store.data.first().toTtsPrefs()
@@ -367,17 +367,6 @@ class SettingsStore(context: Context) {
 
     suspend fun setGroupFilters(rules: List<FilterRule>) {
         store.edit { it[KEY_GROUP_FILTERS] = TextFilters.encodeRules(rules) }
-    }
-
-    suspend fun libraryViewModeOnce(): LibraryViewMode =
-        runCatching {
-            LibraryViewMode.valueOf(
-                store.data.first()[KEY_LIBRARY_VIEW] ?: LibraryViewMode.List.name,
-            )
-        }.getOrDefault(LibraryViewMode.List)
-
-    suspend fun setLibraryViewMode(mode: LibraryViewMode) {
-        store.edit { it[KEY_LIBRARY_VIEW] = mode.name }
     }
 
     suspend fun libraryTabIdOnce(): String =
@@ -551,7 +540,6 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_CLIP_FLEX_CHARS = intPreferencesKey("tts_clip_flex_chars")
         private val KEY_GLOBAL_FILTERS = stringPreferencesKey("global_filters")
         private val KEY_GROUP_FILTERS = stringPreferencesKey("group_filters")
-        private val KEY_LIBRARY_VIEW = stringPreferencesKey("library_view")
         private val KEY_LIBRARY_TAB = stringPreferencesKey("library_tab")
         private val KEY_ENABLED_PLUGINS = stringPreferencesKey("enabled_plugins")
         private val KEY_CUSTOM_TABS = stringPreferencesKey("custom_library_tabs")

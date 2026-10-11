@@ -45,9 +45,11 @@ import com.personal.flowreader.ui.design.controls.FlowIconButton
 import com.personal.flowreader.ui.design.controls.FlowListRow
 import com.personal.flowreader.ui.design.controls.FlowSectionRow
 import com.personal.flowreader.ui.design.controls.FlowTextField
-import com.personal.flowreader.ui.design.tabs.FlowTabBar
-import com.personal.flowreader.ui.design.tabs.FlowTabLevel
-import com.personal.flowreader.ui.design.tabs.flowTextTabs
+import com.personal.flowreader.ui.design.tabs.FlowTab
+import com.personal.flowreader.ui.library.rememberPluginTabIcons
+import com.personal.flowreader.R
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.imageResource
 import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.plugin.PluginAccountSettings
 import com.personal.flowreader.ui.plugin.PluginDataSettings
@@ -64,13 +66,30 @@ internal fun PluginsSettingsTab() {
     val installed by app.pluginManager.installed.collectAsState()
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     val selected = installed.firstOrNull { it.id == selectedId }
-    val tabs = listOf("Installed") + installed.map { it.name }
-    val index = if (selected == null) 0 else installed.indexOf(selected) + 1
-    FlowTabBar(
-        tabs = flowTextTabs(tabs, index) { i -> selectedId = installed.getOrNull(i - 1)?.id },
-        level = FlowTabLevel.Secondary,
-        inset = FlowTokens.Space.None,
-    )
+    val text = LocalSettingsChrome.current.textTabs
+    val pluginIcons = rememberPluginTabIcons(installed)
+    val installedIcon = ImageBitmap.imageResource(R.drawable.ic_settings_installed)
+    val tabs = buildList {
+        add(
+            if (text) {
+                FlowTab.text("Installed", selected = selected == null, onClick = { selectedId = null })
+            } else {
+                FlowTab.image(installedIcon, "Installed", selected = selected == null, onClick = { selectedId = null })
+            },
+        )
+        installed.forEach { plugin ->
+            val icon = pluginIcons[plugin.id]?.takeUnless { text }
+            val isSelected = plugin.id == selected?.id
+            add(
+                if (icon != null) {
+                    FlowTab.image(icon, plugin.name, isSelected, { selectedId = plugin.id }, key = plugin.id)
+                } else {
+                    FlowTab.text(plugin.name, isSelected, { selectedId = plugin.id }, key = plugin.id)
+                },
+            )
+        }
+    }
+    SettingsSubTabBar(tabs, selected?.name ?: "Installed")
     Spacer(Modifier.height(FlowTokens.Space.M))
     if (selected == null) {
         InstalledPluginsPane(onOpenSettings = { selectedId = it })

@@ -1,25 +1,37 @@
 package com.personal.flowreader.ui.settings
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.personal.flowreader.FlowApp
+import com.personal.flowreader.R
+import com.personal.flowreader.data.TabStyle
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.design.tabs.FlowTabLevel
-import com.personal.flowreader.ui.design.tabs.flowTextTabs
+import com.personal.flowreader.ui.design.tabs.flowImageTabs
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val SettingsSections = listOf("About", "Audio", "Filters", "Import", "Layout", "Plugins")
+private val SettingsSections = listOf(
+    R.drawable.ic_settings_about to "About",
+    R.drawable.ic_settings_audio to "Audio",
+    R.drawable.ic_settings_filters to "Filters",
+    R.drawable.ic_settings_import to "Import",
+    R.drawable.ic_settings_layout to "Layout",
+    R.drawable.ic_settings_plugins to "Plugins",
+)
 
 /**
  * App settings (shared by Library and Reader): one fullscreen card with pinned primary tabs.
@@ -43,115 +55,140 @@ internal fun SettingsOverlay(
     androidx.compose.runtime.LaunchedEffect(visible) {
         if (!visible) ruleEditor.request = null
     }
+    val prefs by (LocalContext.current.applicationContext as FlowApp).chrome.collectAsState()
+    val textTabs = prefs.settingsTabs == TabStyle.Text
+    val chrome = remember(textTabs) { SettingsChrome(textTabs) }
 
     FlowFullscreenCard(
         visible = visible,
         onDismiss = onDismiss,
         title = "Settings",
+        titleTrail = listOfNotNull(SettingsSections[tab].second, chrome.subTab),
         tabs = {
             FlowTabBar(
-                tabs = flowTextTabs(SettingsSections, tab) { tab = it },
+                tabs = flowImageTabs(SettingsSections, tab, textTabs) {
+                    if (it != tab) chrome.subTab = null
+                    tab = it
+                },
                 level = FlowTabLevel.Primary,
                 inset = FlowTokens.Pad.CardBody,
             )
         },
     ) {
-        when (tab) {
-            0 -> AboutSettingsTab(
-                debugEnabled = debugEnabled,
-                onDebugEnabled = onDebugEnabled,
-            )
-            1 -> AudioSettingsTab(
-                engineKey = tts.engineKey,
-                voiceId = tts.voiceId,
-                engines = tts.engines,
-                voices = tts.voices,
-                speed = tts.speed,
-                pitch = tts.pitch,
-                prefetchCount = tts.prefetchCount,
-                clipTargetChars = tts.clipTargetChars,
-                clipFlexChars = tts.clipFlexChars,
-                doubleTapPlay = tts.doubleTapPlay,
-                mobileDataFallback = tts.mobileDataFallback,
-                autoScrollWithTts = tts.autoScrollWithTts,
-                underlayMode = tts.underlayMode,
-                minSignal = tts.minSignal,
-                underlayBtAddress = tts.underlayBtAddress,
-                underlayBtName = tts.underlayBtName,
-                underlayBtConnected = tts.underlayBtConnected,
-                sentenceGapMs = tts.sentenceGapMs,
-                highlightSyncMs = tts.highlightSyncMs,
-                onEngine = ttsCallbacks.onEngine,
-                onVoice = ttsCallbacks.onVoice,
-                onSpeed = ttsCallbacks.onSpeed,
-                onPitch = ttsCallbacks.onPitch,
-                onPrefetchCount = ttsCallbacks.onPrefetchCount,
-                onClipTargetChars = ttsCallbacks.onClipTargetChars,
-                onClipFlexChars = ttsCallbacks.onClipFlexChars,
-                onDoubleTapPlay = ttsCallbacks.onDoubleTapPlay,
-                onMobileDataFallback = ttsCallbacks.onMobileDataFallback,
-                onAutoScrollWithTts = ttsCallbacks.onAutoScrollWithTts,
-                onUnderlayMode = ttsCallbacks.onUnderlayMode,
-                onMinSignal = ttsCallbacks.onMinSignal,
-                onUnderlayBtDevice = ttsCallbacks.onUnderlayBtDevice,
-                underlayBondedDevices = ttsCallbacks.underlayBondedDevices,
-                onSentenceGapMs = ttsCallbacks.onSentenceGapMs,
-                onHighlightSyncMs = ttsCallbacks.onHighlightSyncMs,
-            )
-            2 -> FiltersSettingsTab(
-                filtersGlobal = filters.filtersGlobal,
-                filtersGroups = filters.filtersGroups,
-                filtersLocal = filters.filtersLocal,
-                scopes = filters.filterScopes,
-                onAdd = filterCallbacks.onAddFilter,
-                onEdit = filterCallbacks.onEditFilter,
-                onSetEnabled = filterCallbacks.onSetFilterEnabled,
-                onReorder = filterCallbacks.onReorderFilters,
-                onDelete = filterCallbacks.onDeleteFilters,
-            )
-            3 -> SharingSettingsHost(
-                ruleEditor = ruleEditor,
-                autoPlayOnShare = tts.autoPlayOnShare,
-                shareInterruptsPlayback = tts.shareInterruptsPlayback,
-                onAutoPlayOnShare = ttsCallbacks.onAutoPlayOnShare,
-                onShareInterruptsPlayback = ttsCallbacks.onShareInterruptsPlayback,
-            )
-            5 -> PluginsSettingsTab()
-            else -> LayoutSettingsTab(
-                themeMode = appearance.themeMode,
-                accentHue = appearance.accentHue,
-                accentSaturation = appearance.accentSaturation,
-                accentLightness = appearance.accentLightness,
-                uiScale = appearance.uiScale,
-                fontScale = appearance.fontScale,
-                fontFamily = appearance.fontFamily,
-                lineSpacing = appearance.lineSpacing,
-                justifyText = appearance.justifyText,
-                orientation = appearance.orientation,
-                showChapterHeadingsInBody = appearance.showChapterHeadingsInBody,
-                keepScreenAwake = appearance.keepScreenAwake,
-                homePosition = appearance.homePosition,
-                showHomeMarker = appearance.showHomeMarker,
-                onTheme = appearanceCallbacks.onTheme,
-                onAccentHue = appearanceCallbacks.onAccentHue,
-                onAccentSaturation = appearanceCallbacks.onAccentSaturation,
-                onAccentLightness = appearanceCallbacks.onAccentLightness,
-                onUiScale = appearanceCallbacks.onUiScale,
-                onFontScale = appearanceCallbacks.onFontScale,
-                onFontFamily = appearanceCallbacks.onFontFamily,
-                onLineSpacing = appearanceCallbacks.onLineSpacing,
-                onJustifyText = appearanceCallbacks.onJustifyText,
-                onOrientation = appearanceCallbacks.onOrientation,
-                onShowChapterHeadingsInBody = appearanceCallbacks.onShowChapterHeadingsInBody,
-                onKeepScreenAwake = appearanceCallbacks.onKeepScreenAwake,
-                onHomePosition = appearanceCallbacks.onHomePosition,
-                onShowHomeMarker = appearanceCallbacks.onShowHomeMarker,
-            )
+        CompositionLocalProvider(LocalSettingsChrome provides chrome) {
+            SettingsSection(tab, appearance, appearanceCallbacks, tts, ttsCallbacks, filters, filterCallbacks, ruleEditor, debugEnabled, onDebugEnabled)
         }
     }
 
     if (visible) {
         DomainRuleEditorHost(ruleEditor)
+    }
+}
+
+@Composable
+private fun SettingsSection(
+    tab: Int,
+    appearance: AppearanceSettingsState,
+    appearanceCallbacks: AppearanceSettingsCallbacks,
+    tts: TtsSettingsState,
+    ttsCallbacks: TtsSettingsCallbacks,
+    filters: FilterSettingsState,
+    filterCallbacks: FilterSettingsCallbacks,
+    ruleEditor: DomainRuleEditorState,
+    debugEnabled: Boolean,
+    onDebugEnabled: (Boolean) -> Unit,
+) {
+    when (tab) {
+        0 -> AboutSettingsTab(
+            debugEnabled = debugEnabled,
+            onDebugEnabled = onDebugEnabled,
+        )
+        1 -> AudioSettingsTab(
+            engineKey = tts.engineKey,
+            voiceId = tts.voiceId,
+            engines = tts.engines,
+            voices = tts.voices,
+            speed = tts.speed,
+            pitch = tts.pitch,
+            prefetchCount = tts.prefetchCount,
+            clipTargetChars = tts.clipTargetChars,
+            clipFlexChars = tts.clipFlexChars,
+            doubleTapPlay = tts.doubleTapPlay,
+            mobileDataFallback = tts.mobileDataFallback,
+            autoScrollWithTts = tts.autoScrollWithTts,
+            underlayMode = tts.underlayMode,
+            minSignal = tts.minSignal,
+            underlayBtAddress = tts.underlayBtAddress,
+            underlayBtName = tts.underlayBtName,
+            underlayBtConnected = tts.underlayBtConnected,
+            sentenceGapMs = tts.sentenceGapMs,
+            highlightSyncMs = tts.highlightSyncMs,
+            onEngine = ttsCallbacks.onEngine,
+            onVoice = ttsCallbacks.onVoice,
+            onSpeed = ttsCallbacks.onSpeed,
+            onPitch = ttsCallbacks.onPitch,
+            onPrefetchCount = ttsCallbacks.onPrefetchCount,
+            onClipTargetChars = ttsCallbacks.onClipTargetChars,
+            onClipFlexChars = ttsCallbacks.onClipFlexChars,
+            onDoubleTapPlay = ttsCallbacks.onDoubleTapPlay,
+            onMobileDataFallback = ttsCallbacks.onMobileDataFallback,
+            onAutoScrollWithTts = ttsCallbacks.onAutoScrollWithTts,
+            onUnderlayMode = ttsCallbacks.onUnderlayMode,
+            onMinSignal = ttsCallbacks.onMinSignal,
+            onUnderlayBtDevice = ttsCallbacks.onUnderlayBtDevice,
+            underlayBondedDevices = ttsCallbacks.underlayBondedDevices,
+            onSentenceGapMs = ttsCallbacks.onSentenceGapMs,
+            onHighlightSyncMs = ttsCallbacks.onHighlightSyncMs,
+        )
+        2 -> FiltersSettingsTab(
+            filtersGlobal = filters.filtersGlobal,
+            filtersGroups = filters.filtersGroups,
+            filtersLocal = filters.filtersLocal,
+            scopes = filters.filterScopes,
+            onAdd = filterCallbacks.onAddFilter,
+            onEdit = filterCallbacks.onEditFilter,
+            onSetEnabled = filterCallbacks.onSetFilterEnabled,
+            onReorder = filterCallbacks.onReorderFilters,
+            onDelete = filterCallbacks.onDeleteFilters,
+        )
+        3 -> SharingSettingsHost(
+            ruleEditor = ruleEditor,
+            autoPlayOnShare = tts.autoPlayOnShare,
+            shareInterruptsPlayback = tts.shareInterruptsPlayback,
+            onAutoPlayOnShare = ttsCallbacks.onAutoPlayOnShare,
+            onShareInterruptsPlayback = ttsCallbacks.onShareInterruptsPlayback,
+        )
+        5 -> PluginsSettingsTab()
+        else -> LayoutSettingsTab(
+            themeMode = appearance.themeMode,
+            accentHue = appearance.accentHue,
+            accentSaturation = appearance.accentSaturation,
+            accentLightness = appearance.accentLightness,
+            uiScale = appearance.uiScale,
+            fontScale = appearance.fontScale,
+            fontFamily = appearance.fontFamily,
+            lineSpacing = appearance.lineSpacing,
+            justifyText = appearance.justifyText,
+            orientation = appearance.orientation,
+            showChapterHeadingsInBody = appearance.showChapterHeadingsInBody,
+            keepScreenAwake = appearance.keepScreenAwake,
+            homePosition = appearance.homePosition,
+            showHomeMarker = appearance.showHomeMarker,
+            onTheme = appearanceCallbacks.onTheme,
+            onAccentHue = appearanceCallbacks.onAccentHue,
+            onAccentSaturation = appearanceCallbacks.onAccentSaturation,
+            onAccentLightness = appearanceCallbacks.onAccentLightness,
+            onUiScale = appearanceCallbacks.onUiScale,
+            onFontScale = appearanceCallbacks.onFontScale,
+            onFontFamily = appearanceCallbacks.onFontFamily,
+            onLineSpacing = appearanceCallbacks.onLineSpacing,
+            onJustifyText = appearanceCallbacks.onJustifyText,
+            onOrientation = appearanceCallbacks.onOrientation,
+            onShowChapterHeadingsInBody = appearanceCallbacks.onShowChapterHeadingsInBody,
+            onKeepScreenAwake = appearanceCallbacks.onKeepScreenAwake,
+            onHomePosition = appearanceCallbacks.onHomePosition,
+            onShowHomeMarker = appearanceCallbacks.onShowHomeMarker,
+        )
     }
 }
 

@@ -2,9 +2,7 @@ package com.personal.flowreader.ui.settings
 
 import com.personal.flowreader.ui.design.controls.FlowLabel
 import com.personal.flowreader.ui.design.controls.FlowToggleRow
-import com.personal.flowreader.ui.design.tabs.FlowTabBar
-import com.personal.flowreader.ui.design.tabs.FlowTabLevel
-import com.personal.flowreader.ui.design.tabs.flowTextTabs
+import com.personal.flowreader.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
@@ -114,7 +112,7 @@ fun SharingSettingsTab(
         Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
     ) {
-        FlowTabBar(tabs = flowTextTabs(listOf("Router", "Parser"), subTab) { subTab = it }, level = FlowTabLevel.Secondary, inset = FlowTokens.Space.None)
+        SettingsSubTabBar(listOf(R.drawable.ic_settings_router to "Router", R.drawable.ic_settings_parser to "Parser"), subTab) { subTab = it }
         Spacer(Modifier.height(FlowTokens.Space.S))
 
         when (subTab) {

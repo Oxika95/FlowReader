@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.room.Room
 import com.personal.flowreader.data.AppDatabase
 import com.personal.flowreader.data.BookCatalog
+import com.personal.flowreader.data.ChromePrefs
+import com.personal.flowreader.data.chrome
 import com.personal.flowreader.data.LegacyMigration
 import com.personal.flowreader.data.Locus
 import com.personal.flowreader.data.PositionDomain
@@ -35,12 +37,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class FlowApp : Application() {
     lateinit var db: AppDatabase
         private set
     lateinit var settings: SettingsStore
+        private set
+    lateinit var chrome: StateFlow<ChromePrefs>
         private set
     lateinit var tts: TtsController
         private set
@@ -88,6 +95,7 @@ class FlowApp : Application() {
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
         settings = SettingsStore(this)
+        chrome = settings.chrome.stateIn(appScope, SharingStarted.Eagerly, ChromePrefs())
         tts = TtsController(this, settings)
         booksDir = File(filesDir, "books").apply { mkdirs() }
         catalog = BookCatalog(this)

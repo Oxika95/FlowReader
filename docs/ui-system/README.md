@@ -70,6 +70,8 @@ Details: [layers.md](layers.md).
 8. **Icon-first tabs.** A fixed, recurring destination with an obvious icon is a `FlowTab.icon`
    (Files, Queue, plugin Search, plugin lists via manifest `lists[].icon`); a plugin tab whose
    package ships `icon.png` is a `FlowTab.image` (a silhouette, tinted like icon tabs). User-named things stay text (custom shelves, plugin names
-   without an icon, plugin lists without `icon`). Settings sections and their sub-tabs stay text:
-   they are visited rarely and the word is the lookup key. Every icon/image tab passes a
+   without an icon, plugin lists without `icon`). Settings sections and sub-tabs are image tabs from
+   `res/drawable-nodpi/ic_settings_*.png` via `flowImageTabs`; Settings > Plugins reuses each plugin's
+   `icon.png`; Filters scopes stay text. Settings › Layout › UI switches Library or Settings bars to
+   text (`ChromePrefs`, `FlowApp.chrome`); action tabs stay icons. Every icon/image tab passes a
    `contentDescription`; long-press shows it as a tooltip.

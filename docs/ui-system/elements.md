@@ -21,6 +21,9 @@ FlowTabBar(
 
 // Text-only shorthand:
 FlowTabBar(flowTextTabs(listOf("About", "Audio"), selectedIndex) { idx -> tab = idx })
+
+// Silhouette drawable shorthand (Settings):
+FlowTabBar(flowImageTabs(listOf(R.drawable.ic_settings_about to "About"), selectedIndex) { idx -> tab = idx })
 ```
 
 | Kind | Meaning |

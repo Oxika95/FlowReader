@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -125,6 +126,25 @@ class FlowTab private constructor(
 /** Text tabs from [labels], selecting by index. */
 fun flowTextTabs(labels: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit): List<FlowTab> =
     labels.mapIndexed { i, label -> FlowTab.text(label, selected = i == selectedIndex, onClick = { onSelect(i) }) }
+
+/**
+ * Image tabs from silhouette drawables paired with their long-press labels, selecting by index.
+ * [text] draws the labels instead (user tab-style preference).
+ */
+@Composable
+fun flowImageTabs(
+    tabs: List<Pair<Int, String>>,
+    selectedIndex: Int,
+    text: Boolean = false,
+    onSelect: (Int) -> Unit,
+): List<FlowTab> =
+    if (text) {
+        flowTextTabs(tabs.map { it.second }, selectedIndex, onSelect)
+    } else {
+        tabs.mapIndexed { i, (res, label) ->
+            FlowTab.image(ImageBitmap.imageResource(res), label, selected = i == selectedIndex, onClick = { onSelect(i) })
+        }
+    }
 
 /**
  * The one tab bar. Slots are measured to fit their labels and share leftover width;

@@ -3,6 +3,8 @@ package com.personal.flowreader.ui.library
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
@@ -25,17 +27,34 @@ internal object LibraryTabIcons {
         }
     }
 
-    /** Stacked video card with a cut-out play triangle. */
+    /** Layer stack: rounded diamond over two chevron bands. */
     val Queue: ImageVector by lazy {
-        glyph("Queue") {
-            roundRect(5.8f, 2.6f, 18.2f, 3.8f, 0.6f)
-            roundRect(4.2f, 5.2f, 19.8f, 6.4f, 0.6f)
-            roundRect(2.4f, 8.0f, 21.6f, 22.4f, 2.0f)
-            moveTo(10.4f, 11.6f)
-            lineTo(15.8f, 15.2f)
-            lineTo(10.4f, 18.8f)
-            close()
-        }
+        ImageVector.Builder("Queue", FlowTokens.Comp.TabIcon, FlowTokens.Comp.TabIcon, 24f, 24f)
+            .path(
+                fill = SolidColor(Color.Black),
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 2f,
+                strokeLineJoin = StrokeJoin.Round,
+            ) {
+                moveTo(12f, 3f)
+                lineTo(21f, 8f)
+                lineTo(12f, 13f)
+                lineTo(3f, 8f)
+                close()
+            }
+            .path(
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+            ) {
+                listOf(12f, 16f).forEach { y ->
+                    moveTo(3f, y)
+                    lineTo(12f, y + 5f)
+                    lineTo(21f, y)
+                }
+            }
+            .build()
     }
 
     private fun glyph(name: String, shapes: PathBuilder.() -> Unit): ImageVector =

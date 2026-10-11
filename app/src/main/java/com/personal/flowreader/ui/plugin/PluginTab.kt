@@ -35,6 +35,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.LibraryViewMode
+import com.personal.flowreader.data.TabStyle
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.api.PluginCapability
@@ -73,6 +74,7 @@ fun PluginTabContent(
     val app = LocalContext.current.applicationContext as FlowApp
     val lifecycleOwner = LocalLifecycleOwner.current
     val pendingShare by app.pendingPluginShare.collectAsState()
+    val chrome by app.chrome.collectAsState()
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.refreshLocal() }
     }
@@ -98,6 +100,7 @@ fun PluginTabContent(
         if (ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         PluginSubTabs(
             ui = ui,
+            text = chrome.libraryTabs == TabStyle.Text,
             onSection = vm::setSection,
             onAccount = {
                 if (ui.manifest.auth != null) vm.setShowAccount(true) else vm.setShowSettings(true)
@@ -173,6 +176,7 @@ fun PluginTabFab(plugin: InstalledPlugin) {
 @Composable
 private fun PluginSubTabs(
     ui: PluginTabUi,
+    text: Boolean,
     onSection: (PluginSection) -> Unit,
     onAccount: () -> Unit,
 ) {
@@ -188,7 +192,7 @@ private fun PluginSubTabs(
             val selected = !ui.showAccount && ui.section == section
             val badge = ui.listNewCounts[list.id]
             add(
-                if (list.icon.isBlank()) {
+                if (text || list.icon.isBlank()) {
                     FlowTab.text(list.title, selected = selected, onClick = { onSection(section) }, key = list.id, badge = badge)
                 } else {
                     FlowTab.icon(FlowIcons.forToken(list.icon), list.title, selected, { onSection(section) }, key = list.id, badge = badge)
@@ -196,13 +200,14 @@ private fun PluginSubTabs(
             )
         }
         if (manifest.has(PluginCapability.Search)) {
+            val selected = !ui.showAccount && ui.section == PluginSection.Search
+            val onClick = { onSection(PluginSection.Search) }
             add(
-                FlowTab.icon(
-                    Icons.Filled.Search,
-                    "Search",
-                    selected = !ui.showAccount && ui.section == PluginSection.Search,
-                    onClick = { onSection(PluginSection.Search) },
-                ),
+                if (text) {
+                    FlowTab.text("Search", selected = selected, onClick = onClick)
+                } else {
+                    FlowTab.icon(Icons.Filled.Search, "Search", selected = selected, onClick = onClick)
+                },
             )
         }
         if (trailing != null) {
