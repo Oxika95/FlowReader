@@ -14,7 +14,7 @@ Hand-written guide: [map.md](map.md).
 | `plugin/api` | [index/plugin-api.md](index/plugin-api.md) | 2 | 761 |
 | `plugin/repo` | [index/plugin-repo.md](index/plugin-repo.md) | 4 | 290 |
 | `plugin/runtime` | [index/plugin-runtime.md](index/plugin-runtime.md) | 6 | 709 |
-| `plugin/store` | [index/plugin-store.md](index/plugin-store.md) | 9 | 1488 |
+| `plugin/store` | [index/plugin-store.md](index/plugin-store.md) | 9 | 1563 |
 | `plugin/sync` | [index/plugin-sync.md](index/plugin-sync.md) | 4 | 787 |
 | `plugin/updates` | [index/plugin-updates.md](index/plugin-updates.md) | 6 | 418 |
 | `share` | [index/share.md](index/share.md) | 13 | 2009 |
@@ -30,4 +30,4 @@ Hand-written guide: [map.md](map.md).
 | `ui/theme` | [index/ui-theme.md](index/ui-theme.md) | 5 | 517 |
 | tests | [index/tests.md](index/tests.md) | 56 | |
 
-Totals: 189 main files, 35571 lines.
+Totals: 189 main files, 35646 lines.

@@ -50,7 +50,10 @@ pure mapper JVM-tested): library rows move to `library_books`; each old Queue ro
 `PluginStorageMigrator` drains into each installed plugin's database at startup (plugin reads wait
 for it). Migration 10 → 11 adds `library_books.author` / `chapterCount`; rows from before are
 filled from their files at startup (`BookCatalog.fillMissingRowMeta`). Plugin database 1 → 2 adds
-`plugin_stories` (settings kept in `meta.txt` before are not carried over).
+`plugin_stories`; a story's first row is seeded from its 1.08 `meta.txt` settings
+(`PluginSessionStore.readLegacySettings`: a pin over the whole ToC becomes keep-all, any other pin
+turns cleanup off). 1.08 index-named bodies (`c/{i}.txt`) are renamed to URL keys on first read
+(`migrateIndexedBodies`).
 
 ### Reading position writes
 

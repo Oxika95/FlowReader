@@ -125,6 +125,51 @@ class PluginSessionStoreTest {
         assertEquals("Mine", session("1", 1).copy(titleOverride = "Mine").displayTitle)
     }
 
+    @Test
+    fun readRenamesIndexNamedBodiesToUrlKeys() {
+        withRoot { root ->
+            val dir = PluginSessionStore.dir(root, "L")
+            val s = session("L", tocSize = 3)
+            PluginSessionStore.writeMeta(dir, s)
+            File(dir, "c").mkdirs()
+            File(dir, "c/0.txt").writeText("Ch 1\n\nfirst")
+            File(dir, "c/2.txt").writeText("Ch 3\n\nthird")
+            File(dir, "c/9.txt").writeText("gone\n\nout of toc")
+            val loaded = PluginSessionStore.read(root, "L")!!
+            assertEquals(setOf(0, 2), PluginSessionStore.cachedChapterIndices(dir, loaded.toc))
+            assertEquals("Ch 3" to "third", PluginSessionStore.readChapterText(dir, s.toc[2].url))
+            assertFalse(File(dir, "c/0.txt").exists())
+            assertEquals(1, PluginSessionStore.deleteChapters(dir, loaded.toc, emptySet()))
+            assertEquals(setOf(0, 2), PluginSessionStore.cachedChapterIndices(dir, loaded.toc))
+        }
+    }
+
+    @Test
+    fun legacySettingsMapPinsToKeepAllOrNoCleanup() {
+        assertNull(PluginSessionStore.legacySettings(mapOf("bookId" to "d:1"), 5))
+        val plain = PluginSessionStore.legacySettings(
+            mapOf("cacheLevel" to "3", "cleanup" to "true", "pinnedRanges" to "", "notify" to "false"),
+            5,
+        )!!
+        assertEquals(LegacyStorySettings(3, cleanup = true, keepAll = false, notify = false), plain)
+        val all = PluginSessionStore.legacySettings(mapOf("cacheLevel" to "1", "cleanup" to "true", "pinnedRanges" to "0-4"), 5)!!
+        assertTrue(all.keepAll)
+        assertFalse(all.cleanup)
+        val some = PluginSessionStore.legacySettings(mapOf("cacheLevel" to "1", "cleanup" to "true", "pinnedRanges" to "1-2"), 5)!!
+        assertFalse(some.keepAll)
+        assertFalse(some.cleanup)
+        assertNull(some.notify)
+    }
+
+    @Test
+    fun currentMetaHasNoLegacySettings() {
+        withRoot { root ->
+            val dir = PluginSessionStore.dir(root, "n")
+            PluginSessionStore.writeMeta(dir, session("n", tocSize = 2))
+            assertNull(PluginSessionStore.readLegacySettings(dir))
+        }
+    }
+
     private fun ref(id: String) = PluginChapterRef(id.uppercase(), "https://example.com/$id")
 
     private fun session(workId: String, tocSize: Int) = PluginReadSession(

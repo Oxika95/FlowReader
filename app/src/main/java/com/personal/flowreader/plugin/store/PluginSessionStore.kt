@@ -62,6 +62,14 @@ data class PluginSplashMeta(
     val card: PluginCard? = null,
 )
 
+/** Story settings read from a 1.08 `meta.txt`, used once to seed [PluginStoryEntity]. */
+data class LegacyStorySettings(
+    val cacheLevel: Int,
+    val cleanup: Boolean,
+    val keepAll: Boolean,
+    val notify: Boolean?,
+)
+
 data class PluginLibraryMeta(
     val author: String,
     val chapterCount: Int,
@@ -171,6 +179,7 @@ object PluginSessionStore {
             )
         }
         if (toc.isEmpty()) return null
+        migrateIndexedBodies(dir, toc)
         return PluginReadSession(
             bookId = bookId,
             pluginId = pluginId,
@@ -183,6 +192,55 @@ object PluginSessionStore {
     }
 
     private fun chapterFile(dir: File, url: String): File = File(dir, "c/${chapterKey(url)}.txt")
+
+    /**
+     * Rename 1.08 index-named bodies (`c/{i}.txt`) to the URL key of [toc]`[i]`. [toc] must be the
+     * ToC those files were written against (the `toc.txt` on disk before it is rewritten).
+     */
+    fun migrateIndexedBodies(dir: File, toc: List<PluginChapterRef>) {
+        val files = File(dir, "c").listFiles() ?: return
+        for (file in files) {
+            val name = file.nameWithoutExtension
+            if (!LEGACY_BODY.matches(name)) continue
+            val url = name.toIntOrNull()?.let { toc.getOrNull(it) }?.url ?: continue
+            val target = chapterFile(dir, url)
+            if (target.exists()) file.delete() else file.renameTo(target)
+        }
+    }
+
+    /** Per-story settings 1.08 kept in `meta.txt`; null once the file is in the current format. */
+    fun readLegacySettings(dir: File): LegacyStorySettings? {
+        val meta = File(dir, "meta.txt")
+        if (!meta.exists()) return null
+        val tocSize = File(dir, "toc.txt").takeIf { it.exists() }?.readLines()?.count { it.contains('\t') } ?: 0
+        return legacySettings(readFields(meta), tocSize)
+    }
+
+    /**
+     * Pinned ranges are gone: a pin over the whole ToC becomes keep-all; any other pin turns
+     * cleanup off so the pinned bodies survive.
+     */
+    internal fun legacySettings(fields: Map<String, String>, tocSize: Int): LegacyStorySettings? {
+        val level = fields["cacheLevel"]?.toIntOrNull() ?: return null
+        val pinned = parseLegacyRanges(fields["pinnedRanges"].orEmpty())
+        val keepAll = tocSize > 0 && (0 until tocSize).all { i -> pinned.any { i in it } }
+        return LegacyStorySettings(
+            cacheLevel = level.coerceAtLeast(0),
+            cleanup = (fields["cleanup"]?.toBooleanStrictOrNull() ?: false) && pinned.isEmpty(),
+            keepAll = keepAll,
+            notify = fields["notify"]?.toBooleanStrictOrNull(),
+        )
+    }
+
+    private fun parseLegacyRanges(raw: String): List<IntRange> =
+        raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { token ->
+            val parts = token.split('-', limit = 2)
+            val start = parts.getOrNull(0)?.toIntOrNull() ?: return@mapNotNull null
+            val end = parts.getOrNull(1)?.toIntOrNull() ?: start
+            minOf(start, end)..maxOf(start, end)
+        }
+
+    private val LEGACY_BODY = Regex("^\\d{1,9}$")
 
     fun writeChapter(dir: File, url: String, title: String, text: String) {
         File(dir, "c").mkdirs()

@@ -150,12 +150,27 @@ class PluginBookStore(
         )
     }
 
-    /** The story's settings row, created with the default cache policy on first use. */
+    /**
+     * The story's settings row, created on first use from a 1.08 `meta.txt` when present, else
+     * with the default cache policy.
+     */
     private suspend fun story(r: Ref, bookId: String): PluginStoryEntity {
         val dao = stories(r)
         dao.get(bookId)?.let { return it }
-        val defaults = cacheDefaults()
-        dao.insert(PluginStoryEntity(bookId = bookId, cacheLevel = defaults.cacheLevel, cleanup = defaults.cleanup))
+        val legacy = PluginSessionStore.readLegacySettings(r.dir)
+        val row = if (legacy != null) {
+            PluginStoryEntity(
+                bookId = bookId,
+                notify = legacy.notify,
+                cacheLevel = legacy.cacheLevel,
+                cleanup = legacy.cleanup,
+                keepAll = legacy.keepAll,
+            )
+        } else {
+            val defaults = cacheDefaults()
+            PluginStoryEntity(bookId = bookId, cacheLevel = defaults.cacheLevel, cleanup = defaults.cleanup)
+        }
+        dao.insert(row)
         return dao.get(bookId) ?: error("Could not store $bookId")
     }
 
@@ -181,6 +196,8 @@ class PluginBookStore(
         val r = ref(bookId)
         val existing = PluginSessionStore.read(r.root, r.workId)
         val oldUrls = existing?.toc?.map { it.url }.orEmpty()
+        // writeMeta drops 1.08 settings from meta.txt; seed the row first.
+        if (existing != null) story(r, bookId)
         PluginSessionStore.writeMeta(
             r.dir,
             PluginReadSession(
