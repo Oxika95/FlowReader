@@ -1,5 +1,6 @@
 package com.personal.flowreader.ui.settings
 
+import com.personal.flowreader.ui.design.controls.FlowSegmentedRow
 import com.personal.flowreader.ui.design.controls.FlowToggleRow
 
 import androidx.compose.animation.AnimatedVisibility
@@ -41,7 +42,9 @@ import androidx.compose.ui.platform.LocalContext
 import com.personal.flowreader.tts.PairedBtDevice
 import com.personal.flowreader.tts.UnderlayBluetoothMonitor
 import kotlinx.coroutines.launch
+import com.personal.flowreader.data.TonalUnderlay
 import com.personal.flowreader.data.TtsPrefs
+import com.personal.flowreader.data.UnderlayMode
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlin.math.roundToInt
 
@@ -51,7 +54,8 @@ internal fun PlaybackSettingsTab(
     doubleTapPlay: Boolean = false,
     mobileDataFallback: Boolean = true,
     autoScrollWithTts: Boolean = false,
-    minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
+    underlayMode: UnderlayMode = UnderlayMode.Off,
+    minSignal: Float = TonalUnderlay.DEFAULT_LEVEL,
     underlayBtAddress: String = "",
     underlayBtName: String = "",
     underlayBtConnected: Boolean = false,
@@ -60,6 +64,7 @@ internal fun PlaybackSettingsTab(
     onDoubleTapPlay: (Boolean) -> Unit = {},
     onMobileDataFallback: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
+    onUnderlayMode: (UnderlayMode) -> Unit = {},
     onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
     onUnderlayBtDevice: (String, String) -> Unit = { _, _ -> },
     underlayBondedDevices: () -> List<PairedBtDevice> = { emptyList() },
@@ -84,12 +89,6 @@ internal fun PlaybackSettingsTab(
     var signalDragging by remember { mutableStateOf(false) }
     var localSignal by remember { mutableFloatStateOf(minSignal) }
     val shownSignal = if (signalDragging) localSignal else minSignal
-    val underlayOn = TtsPrefs.isUnderlayEnabled(shownSignal)
-    var lastUnderlayLevel by remember {
-        mutableFloatStateOf(
-            if (TtsPrefs.isUnderlayEnabled(minSignal)) minSignal else DEFAULT_UNDERLAY_ON_LEVEL,
-        )
-    }
     var gaplessOpen by remember { mutableStateOf(false) }
     var btPickerOpen by remember { mutableStateOf(false) }
     var bondedDevices by remember { mutableStateOf<List<PairedBtDevice>>(emptyList()) }
@@ -144,34 +143,25 @@ internal fun PlaybackSettingsTab(
     )
 
     Spacer(Modifier.height(FlowTokens.Space.L))
-    FlowToggleRow(
+    FlowSegmentedRow(
         title = "Tonal underlay",
         subtitle = underlaySubtitle(
-            underlayOn = underlayOn,
+            mode = underlayMode,
             address = underlayBtAddress,
             name = underlayBtName,
             connected = underlayBtConnected,
         ),
-        checked = underlayOn,
-        onCheckedChange = { enabled ->
-            if (enabled) {
-                val level = TtsPrefs.coerceMinSignal(lastUnderlayLevel).let {
-                    if (TtsPrefs.isUnderlayEnabled(it)) it else DEFAULT_UNDERLAY_ON_LEVEL
-                }
-                localSignal = level
-                onMinSignal(level, true)
-            } else {
-                if (TtsPrefs.isUnderlayEnabled(shownSignal)) {
-                    lastUnderlayLevel = shownSignal
-                }
-                localSignal = TtsPrefs.DEFAULT_MIN_SIGNAL
-                onMinSignal(TtsPrefs.DEFAULT_MIN_SIGNAL, true)
-            }
-            signalDragging = false
+        options = UnderlayMode.entries,
+        selected = underlayMode,
+        optionLabel = { it.label },
+        onSelect = { mode ->
+            onUnderlayMode(mode)
+            if (mode == UnderlayMode.Device && underlayBtAddress.isBlank()) openBtPicker()
         },
     )
-    AnimatedVisibility(visible = underlayOn) {
+    AnimatedVisibility(visible = underlayMode != UnderlayMode.Off) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.height(FlowTokens.Space.S))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -189,27 +179,27 @@ internal fun PlaybackSettingsTab(
                 )
             }
             Slider(
-                value = underlayLevelSliderIndex(shownSignal).toFloat(),
+                value = TonalUnderlay.levelIndex(shownSignal).toFloat(),
                 onValueChange = {
-                    val level = UNDERLAY_LEVEL_STEPS[
-                        it.roundToInt().coerceIn(UNDERLAY_LEVEL_STEPS.indices),
+                    val level = TonalUnderlay.LEVEL_STEPS[
+                        it.roundToInt().coerceIn(TonalUnderlay.LEVEL_STEPS.indices),
                     ]
                     signalDragging = true
                     localSignal = level
-                    lastUnderlayLevel = level
                     onMinSignal(level, false)
                 },
                 onValueChangeFinished = {
-                    val level = TtsPrefs.coerceMinSignal(localSignal)
-                    lastUnderlayLevel = level
-                    onMinSignal(level, true)
+                    onMinSignal(TonalUnderlay.coerceLevel(localSignal), true)
                     signalDragging = false
                 },
-                valueRange = 0f..UNDERLAY_LEVEL_STEPS.lastIndex.toFloat(),
-                steps = (UNDERLAY_LEVEL_STEPS.size - 2).coerceAtLeast(0),
+                valueRange = 0f..TonalUnderlay.LEVEL_STEPS.lastIndex.toFloat(),
+                steps = (TonalUnderlay.LEVEL_STEPS.size - 2).coerceAtLeast(0),
                 modifier = Modifier.fillMaxWidth(),
             )
-
+        }
+    }
+    AnimatedVisibility(visible = underlayMode == UnderlayMode.Device) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Spacer(Modifier.height(FlowTokens.Space.S))
             ExposedDropdownMenuBox(
                 expanded = btPickerOpen,
@@ -243,13 +233,6 @@ internal fun PlaybackSettingsTab(
                     expanded = btPickerOpen,
                     onDismissRequest = { btPickerOpen = false },
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("None (always on)") },
-                        onClick = {
-                            onUnderlayBtDevice("", "")
-                            btPickerOpen = false
-                        },
-                    )
                     if (bondedDevices.isEmpty()) {
                         DropdownMenuItem(
                             text = {
@@ -369,28 +352,22 @@ internal fun PlaybackSettingsTab(
 }
 
 private fun underlaySubtitle(
-    underlayOn: Boolean,
+    mode: UnderlayMode,
     address: String,
     name: String,
     connected: Boolean,
 ): String {
-    if (!underlayOn) {
+    if (mode != UnderlayMode.Device) {
         return "Prevents audio drop out on some hardware at low tones."
     }
-    if (address.isBlank()) {
-        return "Prevents audio drop out on some hardware at low tones."
-    }
+    if (address.isBlank()) return "Pick a Bluetooth device below"
     val label = name.ifBlank { address }
-    return if (connected) {
-        "Active on $label"
-    } else {
-        "Standby — waiting for $label"
-    }
+    return if (connected) "Active on $label" else "Standby — waiting for $label"
 }
 
 private fun underlayBtDeviceFieldValue(address: String, name: String): String =
     when {
-        address.isBlank() -> "None (always on)"
+        address.isBlank() -> "None"
         name.isNotBlank() -> name
         else -> address
     }
@@ -400,26 +377,7 @@ private fun underlayBtDeviceSupportingText(
     name: String,
     connected: Boolean,
 ): String = when {
-    address.isBlank() -> "Underlay plays whenever playback is on"
-    connected -> "Connected — underlay active"
-    else -> "Standby until ${name.ifBlank { address }} connects"
-}
-
-/** Enabled underlay amplitudes only (`0` / Off is handled by the toggle). */
-private val UNDERLAY_LEVEL_STEPS: FloatArray =
-    TtsPrefs.TONAL_UNDERLAY_STEPS.filter { it < 0f }.toFloatArray()
-
-private const val DEFAULT_UNDERLAY_ON_LEVEL = -60f
-
-private fun underlayLevelSliderIndex(level: Float): Int {
-    var best = 0
-    var bestDist = Float.MAX_VALUE
-    for (i in UNDERLAY_LEVEL_STEPS.indices) {
-        val dist = kotlin.math.abs(UNDERLAY_LEVEL_STEPS[i] - level)
-        if (dist < bestDist) {
-            best = i
-            bestDist = dist
-        }
-    }
-    return best
+    address.isBlank() -> "Underlay stays silent until a device is picked"
+    connected -> "Connected — underlay plays with playback"
+    else -> "Plays with playback once ${name.ifBlank { address }} connects"
 }

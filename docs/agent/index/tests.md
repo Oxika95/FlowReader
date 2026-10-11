@@ -16,6 +16,7 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `data/SentenceTableTest.kt`
 - `data/SharedTextTitleTest.kt`
 - `data/TextFiltersTest.kt`
+- `data/TonalUnderlayTest.kt`
 - `data/UiScaleTest.kt`
 - `plugin/api/PluginApiVersionTest.kt`
 - `plugin/api/PluginCardTest.kt`

@@ -10,7 +10,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -288,6 +297,82 @@ fun <T> FlowChoiceChips(
     FlowChipRow(modifier) {
         options.forEach { option ->
             FlowChip(optionLabel(option), option == selected, { onSelect(option) }, enabled)
+        }
+    }
+}
+
+/**
+ * Title + optional subtitle + a compact multi-position pill toggle in the switch slot of
+ * [FlowToggleRow]. For 2–3 short options; longer lists use [FlowChoiceChips].
+ */
+@Composable
+fun <T> FlowSegmentedRow(
+    title: String,
+    subtitle: String,
+    options: List<T>,
+    selected: T,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val alpha = if (enabled) 1f else FlowTokens.Alpha.Disabled
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = FlowTokens.Space.XS),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = FlowTokens.Space.M)) {
+            Text(title, style = FlowType.rowTitle, color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
+            if (subtitle.isNotBlank()) {
+                Text(
+                    subtitle,
+                    style = FlowType.hint,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                )
+            }
+        }
+        val outline = MaterialTheme.colorScheme.outline.copy(alpha = alpha)
+        Row(
+            modifier = Modifier
+                .height(FlowTokens.Comp.ChipHeight)
+                .clip(FlowTokens.Shape.Pill)
+                .border(FlowTokens.Stroke.Hairline, outline, FlowTokens.Shape.Pill)
+                .selectableGroup(),
+        ) {
+            options.forEachIndexed { index, option ->
+                if (index > 0) {
+                    Box(Modifier.fillMaxHeight().width(FlowTokens.Stroke.Hairline).background(outline))
+                }
+                val isSelected = option == selected
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                        )
+                        .selectable(
+                            selected = isSelected,
+                            enabled = enabled,
+                            role = Role.RadioButton,
+                            onClick = { onSelect(option) },
+                        )
+                        .padding(horizontal = FlowTokens.Space.S),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        optionLabel(option),
+                        style = FlowType.label,
+                        maxLines = 1,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }.copy(alpha = alpha),
+                    )
+                }
+            }
         }
     }
 }

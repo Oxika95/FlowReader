@@ -20,7 +20,7 @@ Full reference: `docs/ui-system/` (README, tokens, layers, cards, elements, reci
   user-named things and Settings sections stay `text`. Icon tabs always pass `contentDescription`
   (shown as the long-press tooltip). Rule 8 in `docs/ui-system/README.md`.
 - Screen shell → `FlowScreen(kind, topDock, bottomDock, fab, snackbar) { docks -> }`
-- Controls → `FlowToggleRow`, `FlowSliderRow`, `FlowTextField`, `FlowDropdownRow`, `FlowChoiceChips`,
+- Controls → `FlowToggleRow`, `FlowSegmentedRow`, `FlowSliderRow`, `FlowTextField`, `FlowDropdownRow`, `FlowChoiceChips`,
   `FlowPrimaryButton`, `FlowSecondaryButton`, `FlowTextAction`, `FlowCircleButton`, `FlowFab`
 
 ## Forbidden in feature code

@@ -57,6 +57,9 @@ class UnderlayBluetoothMonitor(context: Context) {
     private var started = false
 
     @Volatile
+    private var profilesBound = false
+
+    @Volatile
     private var a2dpProxy: BluetoothA2dp? = null
 
     @Volatile
@@ -178,6 +181,8 @@ class UnderlayBluetoothMonitor(context: Context) {
     }
 
     fun refresh() {
+        // BLUETOOTH_CONNECT may be granted after start() (first picker open).
+        if (started && !profilesBound) bindAudioProfiles()
         val target = targetAddressNorm
         if (target.isEmpty()) {
             _targetConnected.value = false
@@ -206,11 +211,13 @@ class UnderlayBluetoothMonitor(context: Context) {
     private fun bindAudioProfiles() {
         if (!hasConnectPermission(app)) return
         val adapter = bluetoothAdapter() ?: return
+        profilesBound = true
         runCatching { adapter.getProfileProxy(app, profileListener, BluetoothProfile.A2DP) }
         runCatching { adapter.getProfileProxy(app, profileListener, BluetoothProfile.HEADSET) }
     }
 
     private fun unbindAudioProfiles() {
+        profilesBound = false
         val adapter = bluetoothAdapter() ?: return
         a2dpProxy?.let { runCatching { adapter.closeProfileProxy(BluetoothProfile.A2DP, it) } }
         headsetProxy?.let { runCatching { adapter.closeProfileProxy(BluetoothProfile.HEADSET, it) } }

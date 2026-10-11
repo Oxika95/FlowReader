@@ -59,6 +59,7 @@ selected tab in view.
 | --- | --- |
 | `FlowSection(title)` / `FlowLabel(text)` / `FlowHint(text, error)` | Headings and helper text |
 | `FlowToggleRow(title, subtitle, checked, onCheckedChange)` | Whole row toggles; the switch is visual |
+| `FlowSegmentedRow(title, subtitle, options, selected, optionLabel, onSelect)` | Compact multi-position pill toggle (chip height, `Space.S` segment padding) in the switch slot; 2–3 short options, else `FlowChoiceChips` |
 | `FlowSliderRow(label, value, onValueChange, valueRange, steps, valueLabel, startCaption, endCaption)` | |
 | `FlowTextField(value, onValueChange, label, placeholder, supportingText, isError, trailingIcon, …)` | `Shape.Field` |
 | `FlowDropdownRow(selected, options, optionLabel, onSelect, label)` | |

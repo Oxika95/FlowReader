@@ -14,9 +14,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.personal.flowreader.tts.PairedBtDevice
+import com.personal.flowreader.data.TonalUnderlay
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
+import com.personal.flowreader.data.UnderlayMode
 import com.personal.flowreader.ui.theme.FlowTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,7 +36,8 @@ internal fun AudioSettingsTab(
     doubleTapPlay: Boolean = false,
     mobileDataFallback: Boolean = true,
     autoScrollWithTts: Boolean = false,
-    minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
+    underlayMode: UnderlayMode = UnderlayMode.Off,
+    minSignal: Float = TonalUnderlay.DEFAULT_LEVEL,
     underlayBtAddress: String = "",
     underlayBtName: String = "",
     underlayBtConnected: Boolean = false,
@@ -50,6 +53,7 @@ internal fun AudioSettingsTab(
     onDoubleTapPlay: (Boolean) -> Unit = {},
     onMobileDataFallback: (Boolean) -> Unit = {},
     onAutoScrollWithTts: (Boolean) -> Unit = {},
+    onUnderlayMode: (UnderlayMode) -> Unit = {},
     onMinSignal: (Float, Boolean) -> Unit = { _, _ -> },
     onUnderlayBtDevice: (String, String) -> Unit = { _, _ -> },
     underlayBondedDevices: () -> List<PairedBtDevice> = { emptyList() },
@@ -85,6 +89,7 @@ internal fun AudioSettingsTab(
             doubleTapPlay = doubleTapPlay,
             mobileDataFallback = mobileDataFallback,
             autoScrollWithTts = autoScrollWithTts,
+            underlayMode = underlayMode,
             minSignal = minSignal,
             underlayBtAddress = underlayBtAddress,
             underlayBtName = underlayBtName,
@@ -94,6 +99,7 @@ internal fun AudioSettingsTab(
             onDoubleTapPlay = onDoubleTapPlay,
             onMobileDataFallback = onMobileDataFallback,
             onAutoScrollWithTts = onAutoScrollWithTts,
+            onUnderlayMode = onUnderlayMode,
             onMinSignal = onMinSignal,
             onUnderlayBtDevice = onUnderlayBtDevice,
             underlayBondedDevices = underlayBondedDevices,

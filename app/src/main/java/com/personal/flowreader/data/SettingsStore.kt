@@ -65,16 +65,15 @@ data class TtsPrefs(
     val shareInterruptsPlayback: Boolean = false,
     /** When true, the list keeps the spoken block centered until the user scrolls away. */
     val autoScrollWithTts: Boolean = true,
+    /** When the tonal underlay sounds during playback. */
+    val underlayMode: UnderlayMode = UnderlayMode.Off,
     /**
-     * Tonal underlay while playing. `0` = off; otherwise dB below full-scale PCM
-     * (negative). Snaps to [TONAL_UNDERLAY_STEPS]. Keeps a faint signal on the
-     * output so some car head units stay awake.
+     * Tonal underlay level: dB below full-scale PCM (negative), snapped to
+     * [TonalUnderlay.LEVEL_STEPS]. Keeps a faint signal on the output so some
+     * car head units stay awake.
      */
-    val minSignal: Float = DEFAULT_MIN_SIGNAL,
-    /**
-     * When non-empty, underlay stays armed at [minSignal] but only sounds while
-     * this paired Bluetooth device is connected (otherwise standby).
-     */
+    val minSignal: Float = TonalUnderlay.DEFAULT_LEVEL,
+    /** Paired Bluetooth device that gates [UnderlayMode.Device]. */
     val underlayBtAddress: String = "",
     /** Display name cache for [underlayBtAddress]. */
     val underlayBtName: String = "",
@@ -124,22 +123,6 @@ data class TtsPrefs(
         )
 
         fun isUnderlayEnabled(level: Float): Boolean = level < 0f
-
-        /**
-         * Level fed to the keep-alive oscillator. Prefs keep [minSignal] armed;
-         * when a BT address is set and that device is disconnected, returns 0
-         * (standby) without clearing the stored Level.
-         */
-        fun effectiveMinSignal(
-            minSignal: Float,
-            underlayBtAddress: String,
-            targetConnected: Boolean,
-        ): Float = when {
-            !isUnderlayEnabled(minSignal) -> DEFAULT_MIN_SIGNAL
-            underlayBtAddress.isBlank() -> coerceMinSignal(minSignal)
-            targetConnected -> coerceMinSignal(minSignal)
-            else -> DEFAULT_MIN_SIGNAL
-        }
 
         /** Linear PCM amplitude for [level] (`0` → silence, `-20` → ~0.1). */
         fun underlayLinearGain(level: Float): Float {
@@ -342,7 +325,11 @@ class SettingsStore(context: Context) {
     }
 
     suspend fun setMinSignal(level: Float) {
-        store.edit { it[KEY_TTS_TONAL_UNDERLAY] = TtsPrefs.coerceMinSignal(level) }
+        store.edit { it[KEY_TTS_TONAL_UNDERLAY] = TonalUnderlay.coerceLevel(level) }
+    }
+
+    suspend fun setUnderlayMode(mode: UnderlayMode) {
+        store.edit { it[KEY_TTS_UNDERLAY_MODE] = mode.key }
     }
 
     suspend fun setUnderlayBtDevice(address: String, name: String) {
@@ -555,6 +542,7 @@ class SettingsStore(context: Context) {
         private val KEY_TTS_SHARE_INTERRUPTS = booleanPreferencesKey("tts_share_interrupts")
         private val KEY_TTS_AUTO_SCROLL = booleanPreferencesKey("tts_auto_scroll")
         private val KEY_TTS_TONAL_UNDERLAY = floatPreferencesKey("tts_tonal_underlay")
+        private val KEY_TTS_UNDERLAY_MODE = stringPreferencesKey("tts_underlay_mode")
         private val KEY_TTS_UNDERLAY_BT_ADDRESS = stringPreferencesKey("tts_underlay_bt_address")
         private val KEY_TTS_UNDERLAY_BT_NAME = stringPreferencesKey("tts_underlay_bt_name")
         private val KEY_TTS_SENTENCE_GAP_MS = intPreferencesKey("tts_sentence_gap_ms")
@@ -623,7 +611,12 @@ class SettingsStore(context: Context) {
             autoPlayOnShare = this[KEY_TTS_AUTO_PLAY_ON_SHARE] ?: false,
             shareInterruptsPlayback = this[KEY_TTS_SHARE_INTERRUPTS] ?: false,
             autoScrollWithTts = this[KEY_TTS_AUTO_SCROLL] ?: true,
-            minSignal = TtsPrefs.coerceMinSignal(this[KEY_TTS_TONAL_UNDERLAY] ?: TtsPrefs.DEFAULT_MIN_SIGNAL),
+            underlayMode = UnderlayMode.fromKey(this[KEY_TTS_UNDERLAY_MODE])
+                ?: UnderlayMode.legacy(
+                    this[KEY_TTS_TONAL_UNDERLAY],
+                    this[KEY_TTS_UNDERLAY_BT_ADDRESS].orEmpty(),
+                ),
+            minSignal = TonalUnderlay.storedLevel(this[KEY_TTS_TONAL_UNDERLAY]),
             underlayBtAddress = this[KEY_TTS_UNDERLAY_BT_ADDRESS].orEmpty(),
             underlayBtName = this[KEY_TTS_UNDERLAY_BT_NAME].orEmpty(),
             sentenceGapMs = TtsPrefs.coerceSentenceGapMs(

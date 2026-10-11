@@ -29,7 +29,7 @@ Priority goals: stability → latency → footprint.
 | Pin card | When playhead leaves the viewport |
 | Margin rail | Cache / loading indicators for Edge clips |
 | Media session | Notification + background keep-alive via `TtsPlaybackService` |
-| Tonal underlay | Quiet noise while playing; optional standby until a paired A2DP device connects |
+| Tonal underlay | Quiet noise while playing. Mode toggle Off / Auto / On; Auto sounds only while the picked paired device is connected (A2DP/Headset), independent of any other switch |
 | Auto Play on Share | Settings → Import → Router. Off by default. Text, file and web-page shares (`LibraryViewModel.executeShareIntent`) open the saved book in the reader and call `play()` once it loads (`FlowApp.pendingSharePlay`), only when nothing is playing unless **Interrupt Playback** is on. Plugin links, clipboard paste and "Open with" are unchanged |
 
 ## Chapters and documents

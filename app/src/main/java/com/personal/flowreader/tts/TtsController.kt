@@ -26,10 +26,12 @@ import com.personal.flowreader.data.Sentence
 import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.data.TextFilters
+import com.personal.flowreader.data.TonalUnderlay
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsEngines
 import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
+import com.personal.flowreader.data.UnderlayMode
 import java.io.File
 import java.util.Locale
 import java.util.UUID
@@ -83,8 +85,9 @@ data class TtsUiState(
     val autoPlayOnShare: Boolean = false,
     val shareInterruptsPlayback: Boolean = false,
     val autoScrollWithTts: Boolean = true,
-    val minSignal: Float = TtsPrefs.DEFAULT_MIN_SIGNAL,
-    /** Paired BT MAC for underlay standby; empty = always on when armed. */
+    val underlayMode: UnderlayMode = UnderlayMode.Off,
+    val minSignal: Float = TonalUnderlay.DEFAULT_LEVEL,
+    /** Paired BT MAC that gates [UnderlayMode.Device]. */
     val underlayBtAddress: String = "",
     val underlayBtName: String = "",
     /** True when [underlayBtAddress] is currently connected (audio/ACL). */
@@ -278,6 +281,7 @@ class TtsController(
                     autoPlayOnShare = prefs.autoPlayOnShare,
                     shareInterruptsPlayback = prefs.shareInterruptsPlayback,
                     autoScrollWithTts = prefs.autoScrollWithTts,
+                    underlayMode = prefs.underlayMode,
                     minSignal = prefs.minSignal,
                     underlayBtAddress = prefs.underlayBtAddress,
                     underlayBtName = prefs.underlayBtName,
@@ -697,10 +701,18 @@ class TtsController(
     }
 
     fun setMinSignal(level: Float, persist: Boolean = true) {
-        val value = TtsPrefs.coerceMinSignal(level)
+        val value = TonalUnderlay.coerceLevel(level)
         _state.update { it.copy(minSignal = value) }
         syncKeepAlive()
         if (persist) scope.launch { settings.setMinSignal(value) }
+    }
+
+    fun setUnderlayMode(mode: UnderlayMode) {
+        if (mode == _state.value.underlayMode) return
+        _state.update { it.copy(underlayMode = mode) }
+        if (mode == UnderlayMode.Device) underlayBt.refresh()
+        syncKeepAlive()
+        scope.launch { settings.setUnderlayMode(mode) }
     }
 
     fun setUnderlayBtDevice(address: String, name: String) {
@@ -1730,9 +1742,10 @@ class TtsController(
 
     private fun syncKeepAlive() {
         val st = _state.value
-        val effective = TtsPrefs.effectiveMinSignal(
-            minSignal = st.minSignal,
-            underlayBtAddress = st.underlayBtAddress,
+        val effective = TonalUnderlay.effectiveLevel(
+            mode = st.underlayMode,
+            level = st.minSignal,
+            btAddress = st.underlayBtAddress,
             targetConnected = st.underlayBtConnected,
         )
         if (st.playing && TtsPrefs.isUnderlayEnabled(effective)) {

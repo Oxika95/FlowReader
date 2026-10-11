@@ -7,6 +7,7 @@ import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsVoiceOption
+import com.personal.flowreader.data.UnderlayMode
 import com.personal.flowreader.tts.PairedBtDevice
 import com.personal.flowreader.ui.open.OpenBookViewModel
 import com.personal.flowreader.ui.open.OpenUi
@@ -99,6 +100,7 @@ data class TtsSettingsState(
     val autoPlayOnShare: Boolean,
     val shareInterruptsPlayback: Boolean,
     val autoScrollWithTts: Boolean,
+    val underlayMode: UnderlayMode,
     val minSignal: Float,
     val underlayBtAddress: String,
     val underlayBtName: String,
@@ -120,6 +122,7 @@ data class TtsSettingsCallbacks(
     val onAutoPlayOnShare: (Boolean) -> Unit,
     val onShareInterruptsPlayback: (Boolean) -> Unit,
     val onAutoScrollWithTts: (Boolean) -> Unit,
+    val onUnderlayMode: (UnderlayMode) -> Unit,
     val onMinSignal: (Float, Boolean) -> Unit,
     val onUnderlayBtDevice: (address: String, name: String) -> Unit,
     val underlayBondedDevices: () -> List<PairedBtDevice>,
