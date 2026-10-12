@@ -29,7 +29,7 @@ Priority goals: stability → latency → footprint.
 | Pin card | When playhead leaves the viewport |
 | Margin rail | Cache / loading indicators for Edge clips |
 | Media session | Notification + background keep-alive via `TtsPlaybackService` |
-| Tonal underlay | Quiet noise while playing. Mode toggle Off / Auto / On; Auto sounds only while playback is routed to the picked paired device (media output route: `getAudioDevicesForAttributes` on API 33+, else the playing track's routed device), not merely connected; re-checked on route changes, device add/remove, Bluetooth broadcasts and every 2 s while playing. Synth log: `underlay route=… target=… active=…` |
+| Tonal underlay | Quiet noise while playing. Mode toggle Off / Auto / On; Auto sounds only while playback is routed to the picked paired device (media output route: `getAudioDevicesForAttributes` on API 33+, else the playing track's routed device), not merely connected; re-checked on play, track route changes, device add/remove and Bluetooth broadcasts. |
 | Auto Play on Share | Settings → Import → Router. Off by default. Text, file and web-page shares (`LibraryViewModel.executeShareIntent`) open the saved book in the reader and call `play()` once it loads (`FlowApp.pendingSharePlay`), only when nothing is playing unless **Interrupt Playback** is on. Plugin links, clipboard paste and "Open with" are unchanged |
 
 ## Chapters and documents

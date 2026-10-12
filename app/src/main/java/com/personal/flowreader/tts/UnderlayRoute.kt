@@ -12,12 +12,4 @@ object UnderlayRoute {
         if (target.isEmpty()) return false
         return outputs.any { it.isBluetooth && normalizeAddress(it.address) == target }
     }
-
-    /** Short form for the synth log: `bt:AA:BB…` / `other`. */
-    fun describe(outputs: List<RouteOutput>): String =
-        if (outputs.isEmpty()) {
-            "none"
-        } else {
-            outputs.joinToString(",") { if (it.isBluetooth) "bt:${normalizeAddress(it.address)}" else "other" }
-        }
 }

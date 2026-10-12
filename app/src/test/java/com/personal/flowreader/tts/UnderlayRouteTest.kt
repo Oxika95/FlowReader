@@ -1,6 +1,5 @@
 package com.personal.flowreader.tts
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,11 +40,5 @@ class UnderlayRouteTest {
     fun ignoresCaseAndWhitespace() {
         assertTrue(UnderlayRoute.routedToTarget(listOf(RouteOutput(true, " aa:bb:cc:dd:ee:ff ")), "AA:BB:CC:DD:EE:FF"))
         assertTrue(UnderlayRoute.routedToTarget(listOf(car), " aa:bb:cc:dd:ee:ff"))
-    }
-
-    @Test
-    fun describeListsOutputs() {
-        assertEquals("none", UnderlayRoute.describe(emptyList()))
-        assertEquals("bt:AA:BB:CC:DD:EE:FF,other", UnderlayRoute.describe(listOf(car, speaker)))
     }
 }

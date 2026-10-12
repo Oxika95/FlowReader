@@ -18,7 +18,7 @@ Hand-written guide: [map.md](map.md).
 | `plugin/sync` | [index/plugin-sync.md](index/plugin-sync.md) | 4 | 787 |
 | `plugin/updates` | [index/plugin-updates.md](index/plugin-updates.md) | 6 | 418 |
 | `share` | [index/share.md](index/share.md) | 13 | 2009 |
-| `tts` | [index/tts.md](index/tts.md) | 18 | 4858 |
+| `tts` | [index/tts.md](index/tts.md) | 18 | 4818 |
 | `ui/common` | [index/ui-common.md](index/ui-common.md) | 1 | 117 |
 | `ui/debug` | [index/ui-debug.md](index/ui-debug.md) | 1 | 352 |
 | `ui/design` | [index/ui-design.md](index/ui-design.md) | 21 | 3420 |
@@ -30,4 +30,4 @@ Hand-written guide: [map.md](map.md).
 | `ui/theme` | [index/ui-theme.md](index/ui-theme.md) | 5 | 517 |
 | tests | [index/tests.md](index/tests.md) | 57 | |
 
-Totals: 192 main files, 35896 lines.
+Totals: 192 main files, 35856 lines.

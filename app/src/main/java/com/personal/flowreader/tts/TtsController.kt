@@ -144,9 +144,6 @@ class TtsController(
         audioEngine.onRouteChanged = bt.routingListener
         keepAlive.onRouteChanged = bt.routingListener
     }
-    private var underlayRouteJob: Job? = null
-    @Volatile
-    private var lastUnderlayRouteLog = ""
     /** Edge word boundaries keyed by sentence index for the attached book/voice. */
     private val wordBoundariesBySentence = ConcurrentHashMap<Int, List<EdgeWordBoundary>>()
     /** Cached TimedCues per sentence (built from Edge boundaries). */
@@ -1766,25 +1763,11 @@ class TtsController(
     }
 
     private fun syncKeepAlive() {
-        val active = _state.value.playing && underlayBt.targetActive.value
+        val playing = _state.value.playing
+        if (playing && _state.value.underlayMode == UnderlayMode.Device) underlayBt.refresh()
+        val active = playing && underlayBt.targetActive.value
         if (active != _state.value.underlayBtActive) _state.update { it.copy(underlayBtActive = active) }
         val st = _state.value
-        val watchRoute = st.playing && st.underlayMode == UnderlayMode.Device && st.underlayBtAddress.isNotBlank()
-        if (watchRoute) {
-            logUnderlayRoute(st.underlayBtAddress, active)
-            if (underlayRouteJob?.isActive != true) {
-                underlayBt.refresh()
-                underlayRouteJob = scope.launch {
-                    while (isActive) {
-                        delay(UNDERLAY_ROUTE_POLL_MS)
-                        underlayBt.refresh()
-                    }
-                }
-            }
-        } else {
-            underlayRouteJob?.cancel()
-            underlayRouteJob = null
-        }
         val effective = TonalUnderlay.effectiveLevel(
             mode = st.underlayMode,
             level = st.minSignal,
@@ -1797,14 +1780,6 @@ class TtsController(
         } else {
             keepAlive.stop()
         }
-    }
-
-    private fun logUnderlayRoute(target: String, active: Boolean) {
-        val line = "underlay route=${underlayBt.routeSummary.value} " +
-            "target=${UnderlayRoute.normalizeAddress(target)} active=$active"
-        if (line == lastUnderlayRouteLog) return
-        lastUnderlayRouteLog = line
-        SynthDebugLog.append(line)
     }
 
     private fun pushWordSegment(sentenceIndex: Int, startWriteFrame: Long, seedSec: Double) {
@@ -2281,7 +2256,6 @@ class TtsController(
         private const val MAX_EMPTY_PULL = 8
 
         /** Playhead network retry backoff: 1 s, 2 s, 4 s, then 8 s per attempt. */
-        private const val UNDERLAY_ROUTE_POLL_MS = 2_000L
         private const val NETWORK_RETRY_BASE_MS = 1_000L
         private const val NETWORK_RETRY_MAX_MS = 8_000L
 

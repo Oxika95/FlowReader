@@ -50,10 +50,6 @@ class UnderlayBluetoothMonitor(
     /** True while media audio is routed to the target device. */
     val targetActive: StateFlow<Boolean> = _targetActive.asStateFlow()
 
-    private val _routeSummary = MutableStateFlow("none")
-    /** Current media outputs for the synth log ([UnderlayRoute.describe]). */
-    val routeSummary: StateFlow<String> = _routeSummary.asStateFlow()
-
     @Volatile
     private var targetAddress: String = ""
 
@@ -110,9 +106,7 @@ class UnderlayBluetoothMonitor(
     }
 
     fun refresh() {
-        val outputs = currentOutputs()
-        _routeSummary.value = UnderlayRoute.describe(outputs)
-        _targetActive.value = UnderlayRoute.routedToTarget(outputs, targetAddress)
+        _targetActive.value = UnderlayRoute.routedToTarget(currentOutputs(), targetAddress)
     }
 
     private fun currentOutputs(): List<RouteOutput> {
