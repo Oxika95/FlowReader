@@ -1,7 +1,9 @@
 package com.personal.flowreader.tts
 
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioRouting
 import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaExtractor
@@ -46,6 +48,13 @@ class TtsAudioEngine {
     }
 
     fun writtenFrames(): Long = framesWritten
+
+    /** Attached to each new track; fires when its output device changes. */
+    @Volatile
+    var onRouteChanged: AudioRouting.OnRoutingChangedListener? = null
+
+    /** Output device the current track plays to, or null without a track. */
+    fun routedDevice(): AudioDeviceInfo? = runCatching { track?.routedDevice }.getOrNull()
 
     fun sampleRateHz(): Int = trackSampleRate
 
@@ -514,6 +523,7 @@ class TtsAudioEngine {
             .setBufferSizeInBytes(bufBytes)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+        onRouteChanged?.let { t.addOnRoutingChangedListener(it, null) }
         track = t
         trackSampleRate = sampleRate
         trackChannels = if (channelCount >= 2) 2 else 1

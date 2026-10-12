@@ -58,7 +58,7 @@ internal fun PlaybackSettingsTab(
     minSignal: Float = TonalUnderlay.DEFAULT_LEVEL,
     underlayBtAddress: String = "",
     underlayBtName: String = "",
-    underlayBtConnected: Boolean = false,
+    underlayBtActive: Boolean = false,
     sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
     onDoubleTapPlay: (Boolean) -> Unit = {},
@@ -149,7 +149,7 @@ internal fun PlaybackSettingsTab(
             mode = underlayMode,
             address = underlayBtAddress,
             name = underlayBtName,
-            connected = underlayBtConnected,
+            active = underlayBtActive,
         ),
         options = UnderlayMode.entries,
         selected = underlayMode,
@@ -217,7 +217,7 @@ internal fun PlaybackSettingsTab(
                             underlayBtDeviceSupportingText(
                                 address = underlayBtAddress,
                                 name = underlayBtName,
-                                connected = underlayBtConnected,
+                                active = underlayBtActive,
                             ),
                         )
                     },
@@ -355,14 +355,14 @@ private fun underlaySubtitle(
     mode: UnderlayMode,
     address: String,
     name: String,
-    connected: Boolean,
+    active: Boolean,
 ): String {
     if (mode != UnderlayMode.Device) {
         return "Prevents audio drop out on some hardware at low tones."
     }
     if (address.isBlank()) return "Pick a Bluetooth device below"
     val label = name.ifBlank { address }
-    return if (connected) "Active on $label" else "Standby — waiting for $label"
+    return if (active) "Playing to $label" else "Standby until playback goes to $label"
 }
 
 private fun underlayBtDeviceFieldValue(address: String, name: String): String =
@@ -375,9 +375,9 @@ private fun underlayBtDeviceFieldValue(address: String, name: String): String =
 private fun underlayBtDeviceSupportingText(
     address: String,
     name: String,
-    connected: Boolean,
+    active: Boolean,
 ): String = when {
     address.isBlank() -> "Underlay stays silent until a device is picked"
-    connected -> "Connected — underlay plays with playback"
-    else -> "Plays with playback once ${name.ifBlank { address }} connects"
+    active -> "Playing to this device — underlay on"
+    else -> "Plays when audio goes to ${name.ifBlank { address }}"
 }

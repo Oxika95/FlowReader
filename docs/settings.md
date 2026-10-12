@@ -72,7 +72,7 @@ Sub-tabs: **Voice | Playback**.
 | Use mobile data when Wi-Fi is weak | `tts_mobile_data_fallback` — default On; Edge overlap / cellular-first lanes ([tts.md](tts.md#edge-requests-and-networks)) |
 | Tonal underlay mode | `tts_underlay_mode` — `off` / `always` / `device` (`UnderlayMode`). Missing key: derived from legacy level (`0` = Off) and device address |
 | Underlay level | `tts_tonal_underlay` — float dB, snapped to `TonalUnderlay.LEVEL_STEPS` (−100…−20); default −60. Kept while Off |
-| Underlay Bluetooth device | `tts_underlay_bt_address` / `tts_underlay_bt_name` — `device` mode: silent until A2DP/Headset connected |
+| Underlay Bluetooth device | `tts_underlay_bt_address` / `tts_underlay_bt_name` — `device` mode: plays only while playback is routed to that device |
 | Sentence offset (−500…+500 ms) | `tts_sentence_gap_ms` |
 | Word highlight sync | `tts_highlight_sync_ms` |
 

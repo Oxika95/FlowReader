@@ -6,17 +6,17 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHeadset
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.AudioRouting
 import android.os.Build
-import android.os.Parcelable
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,122 +28,57 @@ data class PairedBtDevice(
 )
 
 /**
- * Tracks whether a chosen paired Bluetooth **audio** device is connected so
- * tonal underlay can stay armed (prefs Level) while silent in standby.
+ * Tracks whether the app's media audio is currently routed to a chosen paired Bluetooth device,
+ * so tonal underlay Auto plays only while playback actually goes there (being connected is not
+ * enough: devices auto-connect by proximity, and multipoint output can switch to another device).
  *
- * Connection signal priority (inspired by [android-a2dpnostandby](https://github.com/tylerwhall/android-a2dpnostandby)):
- * 1. `BluetoothA2dp` / `BluetoothHeadset` profile state for the target MAC
- * 2. `AudioDeviceCallback` address match (A2DP/SCO routing)
- * 3. ACL connect/disconnect as a weak fallback
+ * Route source: API 33+ `getAudioDevicesForAttributes` for media; older APIs the routed device
+ * of the playing track ([routedDevice]). Connection broadcasts, device add/remove and track
+ * routing changes only trigger a re-check.
  */
-class UnderlayBluetoothMonitor(context: Context) {
+class UnderlayBluetoothMonitor(
+    context: Context,
+    /** Routed output of the app's playing track (API < 33), or null when nothing plays. */
+    private val routedDevice: () -> AudioDeviceInfo? = { null },
+) {
     private val app = context.applicationContext
     private val audioManager = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val bluetoothManager =
         app.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
 
-    private val _targetConnected = MutableStateFlow(false)
-    val targetConnected: StateFlow<Boolean> = _targetConnected.asStateFlow()
+    private val _targetActive = MutableStateFlow(false)
+    /** True while media audio is routed to the target device. */
+    val targetActive: StateFlow<Boolean> = _targetActive.asStateFlow()
 
-    /** Addresses with A2DP or Headset profile STATE_CONNECTED. */
-    private val audioProfileConnected = LinkedHashSet<String>()
-    private val aclConnected = LinkedHashSet<String>()
-    private val lock = Any()
+    private val _routeSummary = MutableStateFlow("none")
+    /** Current media outputs for the synth log ([UnderlayRoute.describe]). */
+    val routeSummary: StateFlow<String> = _routeSummary.asStateFlow()
 
     @Volatile
-    private var targetAddressNorm: String = ""
+    private var targetAddress: String = ""
 
     @Volatile
     private var started = false
 
-    @Volatile
-    private var profilesBound = false
-
-    @Volatile
-    private var a2dpProxy: BluetoothA2dp? = null
-
-    @Volatile
-    private var headsetProxy: BluetoothHeadset? = null
+    private val mediaAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
 
     private val audioDeviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
-            refresh()
-        }
-
-        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
-            refresh()
-        }
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = refresh()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) = refresh()
     }
 
     private val connectionReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val action = intent?.action ?: return
-            when (action) {
-                BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED,
-                BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED,
-                -> {
-                    val device = intent.bluetoothDeviceExtra() ?: return
-                    val addr = normalizeAddress(device.address.orEmpty())
-                    if (addr.isEmpty()) return
-                    val state = intent.getIntExtra(
-                        BluetoothProfile.EXTRA_STATE,
-                        BluetoothProfile.STATE_DISCONNECTED,
-                    )
-                    synchronized(lock) {
-                        if (state == BluetoothProfile.STATE_CONNECTED) {
-                            audioProfileConnected.add(addr)
-                        } else if (state == BluetoothProfile.STATE_DISCONNECTED ||
-                            state == BluetoothProfile.STATE_DISCONNECTING
-                        ) {
-                            audioProfileConnected.remove(addr)
-                        }
-                    }
-                    refresh()
-                }
-                BluetoothDevice.ACTION_ACL_CONNECTED,
-                BluetoothDevice.ACTION_ACL_DISCONNECTED,
-                -> {
-                    val device = intent.bluetoothDeviceExtra() ?: return
-                    val addr = normalizeAddress(device.address.orEmpty())
-                    if (addr.isEmpty()) return
-                    synchronized(lock) {
-                        when (action) {
-                            BluetoothDevice.ACTION_ACL_CONNECTED -> aclConnected.add(addr)
-                            BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
-                                aclConnected.remove(addr)
-                                // ACL drop implies audio profiles are gone too.
-                                audioProfileConnected.remove(addr)
-                            }
-                        }
-                    }
-                    refresh()
-                }
-            }
-        }
+        override fun onReceive(context: Context?, intent: Intent?) = refresh()
     }
 
-    private val profileListener = object : BluetoothProfile.ServiceListener {
-        override fun onServiceConnected(profile: Int, proxy: BluetoothProfile?) {
-            if (proxy == null || !hasConnectPermission(app)) return
-            when (profile) {
-                BluetoothProfile.A2DP -> a2dpProxy = proxy as? BluetoothA2dp
-                BluetoothProfile.HEADSET -> headsetProxy = proxy as? BluetoothHeadset
-            }
-            ingestConnectedDevices(proxy)
-            refresh()
-        }
-
-        override fun onServiceDisconnected(profile: Int) {
-            when (profile) {
-                BluetoothProfile.A2DP -> a2dpProxy = null
-                BluetoothProfile.HEADSET -> headsetProxy = null
-            }
-            refresh()
-        }
-    }
+    /** Attach to the app's AudioTracks so output switches re-check at once. */
+    val routingListener = AudioRouting.OnRoutingChangedListener { refresh() }
 
     fun setTargetAddress(address: String) {
-        targetAddressNorm = normalizeAddress(address)
+        targetAddress = UnderlayRoute.normalizeAddress(address)
         refresh()
     }
 
@@ -163,7 +98,6 @@ class UnderlayBluetoothMonitor(context: Context) {
             filter,
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        bindAudioProfiles()
         refresh()
     }
 
@@ -172,25 +106,22 @@ class UnderlayBluetoothMonitor(context: Context) {
         started = false
         runCatching { audioManager.unregisterAudioDeviceCallback(audioDeviceCallback) }
         runCatching { app.unregisterReceiver(connectionReceiver) }
-        unbindAudioProfiles()
-        synchronized(lock) {
-            audioProfileConnected.clear()
-            aclConnected.clear()
-        }
-        _targetConnected.value = false
+        _targetActive.value = false
     }
 
     fun refresh() {
-        // BLUETOOTH_CONNECT may be granted after start() (first picker open).
-        if (started && !profilesBound) bindAudioProfiles()
-        val target = targetAddressNorm
-        if (target.isEmpty()) {
-            _targetConnected.value = false
-            return
+        val outputs = currentOutputs()
+        _routeSummary.value = UnderlayRoute.describe(outputs)
+        _targetActive.value = UnderlayRoute.routedToTarget(outputs, targetAddress)
+    }
+
+    private fun currentOutputs(): List<RouteOutput> {
+        val devices = if (Build.VERSION.SDK_INT >= 33) {
+            runCatching { audioManager.getAudioDevicesForAttributes(mediaAttributes) }.getOrNull().orEmpty()
+        } else {
+            listOfNotNull(runCatching { routedDevice() }.getOrNull())
         }
-        // Re-sync from live proxies before deciding (sticky connection).
-        snapshotProxies()
-        _targetConnected.value = isAddressConnected(target)
+        return devices.map { RouteOutput(isBluetoothAudioType(it.type), it.address.orEmpty()) }
     }
 
     /** Bonded (paired) devices for the settings picker. Empty if permission denied. */
@@ -208,69 +139,6 @@ class UnderlayBluetoothMonitor(context: Context) {
         }.sortedBy { it.name.lowercase() }
     }
 
-    private fun bindAudioProfiles() {
-        if (!hasConnectPermission(app)) return
-        val adapter = bluetoothAdapter() ?: return
-        profilesBound = true
-        runCatching { adapter.getProfileProxy(app, profileListener, BluetoothProfile.A2DP) }
-        runCatching { adapter.getProfileProxy(app, profileListener, BluetoothProfile.HEADSET) }
-    }
-
-    private fun unbindAudioProfiles() {
-        profilesBound = false
-        val adapter = bluetoothAdapter() ?: return
-        a2dpProxy?.let { runCatching { adapter.closeProfileProxy(BluetoothProfile.A2DP, it) } }
-        headsetProxy?.let { runCatching { adapter.closeProfileProxy(BluetoothProfile.HEADSET, it) } }
-        a2dpProxy = null
-        headsetProxy = null
-    }
-
-    private fun snapshotProxies() {
-        a2dpProxy?.let { ingestConnectedDevices(it) }
-        headsetProxy?.let { ingestConnectedDevices(it) }
-    }
-
-    private fun ingestConnectedDevices(proxy: BluetoothProfile) {
-        if (!hasConnectPermission(app)) return
-        val connected = runCatching { proxy.connectedDevices }.getOrNull().orEmpty()
-        synchronized(lock) {
-            for (device in connected) {
-                val addr = normalizeAddress(device.address.orEmpty())
-                if (addr.isNotEmpty()) audioProfileConnected.add(addr)
-            }
-        }
-    }
-
-    private fun isAddressConnected(targetNorm: String): Boolean {
-        synchronized(lock) {
-            if (targetNorm in audioProfileConnected) return true
-        }
-        if (isConnectedViaAudioDevices(targetNorm)) return true
-        // ACL alone can mean a watch/HID — only use when no audio routing exists yet
-        // but profile broadcasts haven't landed (cold start race).
-        synchronized(lock) {
-            if (targetNorm in aclConnected && isAnyBluetoothAudioOutputPresent()) {
-                return true
-            }
-        }
-        return false
-    }
-
-    private fun isConnectedViaAudioDevices(targetNorm: String): Boolean {
-        val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        for (device in devices) {
-            if (!isBluetoothAudioType(device.type)) continue
-            val addr = device.address?.let { normalizeAddress(it) }.orEmpty()
-            if (addr.isNotEmpty() && addr == targetNorm) return true
-        }
-        return false
-    }
-
-    private fun isAnyBluetoothAudioOutputPresent(): Boolean {
-        val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        return devices.any { isBluetoothAudioType(it.type) }
-    }
-
     private fun bluetoothAdapter(): BluetoothAdapter? =
         bluetoothManager?.adapter ?: @Suppress("DEPRECATION") BluetoothAdapter.getDefaultAdapter()
 
@@ -283,9 +151,6 @@ class UnderlayBluetoothMonitor(context: Context) {
             ) == PackageManager.PERMISSION_GRANTED
         }
 
-        fun normalizeAddress(address: String): String =
-            address.trim().uppercase()
-
         private fun isBluetoothAudioType(type: Int): Boolean = when (type) {
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
@@ -297,15 +162,6 @@ class UnderlayBluetoothMonitor(context: Context) {
                 } else {
                     false
                 }
-            }
-        }
-
-        @Suppress("DEPRECATION")
-        private fun Intent.bluetoothDeviceExtra(): BluetoothDevice? {
-            return if (Build.VERSION.SDK_INT >= 33) {
-                getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-            } else {
-                getParcelableExtra<Parcelable>(BluetoothDevice.EXTRA_DEVICE) as? BluetoothDevice
             }
         }
     }

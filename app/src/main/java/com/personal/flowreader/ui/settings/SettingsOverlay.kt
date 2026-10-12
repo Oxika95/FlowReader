@@ -120,7 +120,7 @@ private fun SettingsSection(
             minSignal = tts.minSignal,
             underlayBtAddress = tts.underlayBtAddress,
             underlayBtName = tts.underlayBtName,
-            underlayBtConnected = tts.underlayBtConnected,
+            underlayBtActive = tts.underlayBtActive,
             sentenceGapMs = tts.sentenceGapMs,
             highlightSyncMs = tts.highlightSyncMs,
             onEngine = ttsCallbacks.onEngine,

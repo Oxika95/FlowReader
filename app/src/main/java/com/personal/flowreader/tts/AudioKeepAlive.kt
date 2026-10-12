@@ -1,7 +1,9 @@
 package com.personal.flowreader.tts
 
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioRouting
 import android.media.AudioTrack
 import com.personal.flowreader.data.TtsPrefs
 import java.util.concurrent.atomic.AtomicBoolean
@@ -23,6 +25,13 @@ class AudioKeepAlive {
 
     @Volatile
     private var linearGain = 0f
+
+    /** Attached to each new track; fires when its output device changes. */
+    @Volatile
+    var onRouteChanged: AudioRouting.OnRoutingChangedListener? = null
+
+    /** Output device the keep-alive track plays to, or null when stopped. */
+    fun routedDevice(): AudioDeviceInfo? = runCatching { track?.routedDevice }.getOrNull()
 
     /** Underlay level: `0` off, otherwise negative dB vs full scale. */
     fun setLevel(levelDb: Float) {
@@ -54,6 +63,7 @@ class AudioKeepAlive {
             .setBufferSizeInBytes(minBuf * 2)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+        onRouteChanged?.let { t.addOnRoutingChangedListener(it, null) }
         track = t
         t.setVolume(1f)
         t.play()

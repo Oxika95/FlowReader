@@ -49,11 +49,11 @@ object TonalUnderlay {
         mode: UnderlayMode,
         level: Float,
         btAddress: String,
-        targetConnected: Boolean,
+        targetActive: Boolean,
     ): Float = when (mode) {
         UnderlayMode.Off -> 0f
         UnderlayMode.Always -> coerceLevel(level)
         UnderlayMode.Device ->
-            if (btAddress.isNotBlank() && targetConnected) coerceLevel(level) else 0f
+            if (btAddress.isNotBlank() && targetActive) coerceLevel(level) else 0f
     }
 }

@@ -104,7 +104,7 @@ data class TtsSettingsState(
     val minSignal: Float,
     val underlayBtAddress: String,
     val underlayBtName: String,
-    val underlayBtConnected: Boolean,
+    val underlayBtActive: Boolean,
     val sentenceGapMs: Int,
     val highlightSyncMs: Int,
     val clipTargetChars: Int,

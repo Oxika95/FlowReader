@@ -90,8 +90,8 @@ data class TtsUiState(
     /** Paired BT MAC that gates [UnderlayMode.Device]. */
     val underlayBtAddress: String = "",
     val underlayBtName: String = "",
-    /** True when [underlayBtAddress] is currently connected (audio/ACL). */
-    val underlayBtConnected: Boolean = false,
+    /** True while playing and media audio is routed to [underlayBtAddress]. */
+    val underlayBtActive: Boolean = false,
     val sentenceGapMs: Int = TtsPrefs.DEFAULT_SENTENCE_GAP_MS,
     /** Added to heard media time when resolving Edge word cues (ms). */
     val highlightSyncMs: Int = TtsPrefs.DEFAULT_HIGHLIGHT_SYNC_MS,
@@ -137,8 +137,16 @@ class TtsController(
     private var serviceFailures = 0
     private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
     private val keepAlive = AudioKeepAlive()
-    private val underlayBt = UnderlayBluetoothMonitor(context)
     private val audioEngine = TtsAudioEngine()
+    private val underlayBt = UnderlayBluetoothMonitor(context) {
+        audioEngine.routedDevice() ?: keepAlive.routedDevice()
+    }.also { bt ->
+        audioEngine.onRouteChanged = bt.routingListener
+        keepAlive.onRouteChanged = bt.routingListener
+    }
+    private var underlayRouteJob: Job? = null
+    @Volatile
+    private var lastUnderlayRouteLog = ""
     /** Edge word boundaries keyed by sentence index for the attached book/voice. */
     private val wordBoundariesBySentence = ConcurrentHashMap<Int, List<EdgeWordBoundary>>()
     /** Cached TimedCues per sentence (built from Edge boundaries). */
@@ -287,7 +295,6 @@ class TtsController(
                     minSignal = prefs.minSignal,
                     underlayBtAddress = prefs.underlayBtAddress,
                     underlayBtName = prefs.underlayBtName,
-                    underlayBtConnected = underlayBt.targetConnected.value,
                     sentenceGapMs = prefs.sentenceGapMs,
                     highlightSyncMs = prefs.highlightSyncMs,
                     clipTargetChars = prefs.clipTargetChars,
@@ -305,10 +312,7 @@ class TtsController(
             }
         }
         scope.launch {
-            underlayBt.targetConnected.collect { connected ->
-                _state.update { it.copy(underlayBtConnected = connected) }
-                syncKeepAlive()
-            }
+            underlayBt.targetActive.collect { syncKeepAlive() }
         }
     }
 
@@ -728,7 +732,6 @@ class TtsController(
             it.copy(
                 underlayBtAddress = addr,
                 underlayBtName = label,
-                underlayBtConnected = if (addr.isEmpty()) false else underlayBt.targetConnected.value,
             )
         }
         syncKeepAlive()
@@ -738,7 +741,7 @@ class TtsController(
     /** Paired devices for the underlay Bluetooth picker (needs BLUETOOTH_CONNECT on API 31+). */
     fun underlayBondedDevices(): List<PairedBtDevice> = underlayBt.bondedDevices()
 
-    fun refreshUnderlayBtConnection() {
+    fun refreshUnderlayRoute() {
         underlayBt.refresh()
     }
 
@@ -1763,12 +1766,30 @@ class TtsController(
     }
 
     private fun syncKeepAlive() {
+        val active = _state.value.playing && underlayBt.targetActive.value
+        if (active != _state.value.underlayBtActive) _state.update { it.copy(underlayBtActive = active) }
         val st = _state.value
+        val watchRoute = st.playing && st.underlayMode == UnderlayMode.Device && st.underlayBtAddress.isNotBlank()
+        if (watchRoute) {
+            logUnderlayRoute(st.underlayBtAddress, active)
+            if (underlayRouteJob?.isActive != true) {
+                underlayBt.refresh()
+                underlayRouteJob = scope.launch {
+                    while (isActive) {
+                        delay(UNDERLAY_ROUTE_POLL_MS)
+                        underlayBt.refresh()
+                    }
+                }
+            }
+        } else {
+            underlayRouteJob?.cancel()
+            underlayRouteJob = null
+        }
         val effective = TonalUnderlay.effectiveLevel(
             mode = st.underlayMode,
             level = st.minSignal,
             btAddress = st.underlayBtAddress,
-            targetConnected = st.underlayBtConnected,
+            targetActive = active,
         )
         if (st.playing && TtsPrefs.isUnderlayEnabled(effective)) {
             keepAlive.setLevel(effective)
@@ -1776,6 +1797,14 @@ class TtsController(
         } else {
             keepAlive.stop()
         }
+    }
+
+    private fun logUnderlayRoute(target: String, active: Boolean) {
+        val line = "underlay route=${underlayBt.routeSummary.value} " +
+            "target=${UnderlayRoute.normalizeAddress(target)} active=$active"
+        if (line == lastUnderlayRouteLog) return
+        lastUnderlayRouteLog = line
+        SynthDebugLog.append(line)
     }
 
     private fun pushWordSegment(sentenceIndex: Int, startWriteFrame: Long, seedSec: Double) {
@@ -2252,6 +2281,7 @@ class TtsController(
         private const val MAX_EMPTY_PULL = 8
 
         /** Playhead network retry backoff: 1 s, 2 s, 4 s, then 8 s per attempt. */
+        private const val UNDERLAY_ROUTE_POLL_MS = 2_000L
         private const val NETWORK_RETRY_BASE_MS = 1_000L
         private const val NETWORK_RETRY_MAX_MS = 8_000L
 
