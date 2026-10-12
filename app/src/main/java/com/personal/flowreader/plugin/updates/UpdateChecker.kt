@@ -126,8 +126,8 @@ class UpdateChecker(private val app: FlowApp) {
     }
 
     /**
-     * Debug mode: one random opened library story per plugin with its last 1..3 chapters (random) posed
-     * as new, for previewing notifications. Fetches and stores nothing.
+     * Debug mode: one random opened library story per plugin with its last 1..3 chapters (random)
+     * posed as new, for previewing notifications. Fetches and stores nothing.
      */
     suspend fun sample(): List<ChapterUpdate> =
         app.pluginManager.installed.value.mapNotNull { plugin ->
@@ -161,5 +161,6 @@ class UpdateChecker(private val app: FlowApp) {
     companion object {
         private const val TAG = "FlowUpdates"
         private const val MAX_BASELINE_PER_RUN = 10
-        private const val MAX_LOAD_WORK_PER_RUN = 100    }
+        private const val MAX_LOAD_WORK_PER_RUN = 100
+    }
 }
