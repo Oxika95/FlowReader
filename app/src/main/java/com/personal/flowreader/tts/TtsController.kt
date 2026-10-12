@@ -133,6 +133,8 @@ class TtsController(
     private var edgeVoiceOptions: List<TtsVoiceOption> = EdgeVoices
     /** Consecutive playhead network failures; drives the retry backoff. */
     private var networkFailures = 0
+    /** Consecutive playhead handshake rejections (403); drives [awaitServiceRetry]. */
+    private var serviceFailures = 0
     private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
     private val keepAlive = AudioKeepAlive()
     private val underlayBt = UnderlayBluetoothMonitor(context)
@@ -1330,10 +1332,15 @@ class TtsController(
                     SynthDebugLog.append("skip i=$index nothing to say text=\"${s.text}\"")
                 }
                 networkFailures = 0
+                serviceFailures = 0
             } catch (e: CancellationException) {
                 throw e
             } catch (e: EdgeContentException) {
                 reportSkippedSentence(index, s.text, e.message ?: "Edge rejected text")
+            } catch (e: EdgeServiceException) {
+                awaitServiceRetry(e)
+                if (generation != playGeneration) return
+                continue
             } catch (e: EdgeNetworkException) {
                 awaitNetworkRetry(e)
                 if (generation != playGeneration) return
@@ -1401,6 +1408,21 @@ class TtsController(
                 SynthDebugLog.append("net usable again i=$index")
             }
         }
+        delay(backoffMs)
+        prefetchFailed.clear()
+    }
+
+    /**
+     * Edge refused the handshake on both hosts (service change or clock skew). The network is fine,
+     * so back off on a fixed ladder instead of waiting for connectivity; the log opens on the first.
+     */
+    private suspend fun awaitServiceRetry(e: EdgeServiceException) {
+        serviceFailures++
+        val backoffMs = SERVICE_RETRY_MS[(serviceFailures - 1).coerceAtMost(SERVICE_RETRY_MS.lastIndex)]
+        reportMediaError(
+            "edge rejected i=$index status=${e.status} failures=$serviceFailures backoffMs=$backoffMs: ${e.message}",
+        )
+        if (serviceFailures == 1) SynthDebugLog.requestOpen()
         delay(backoffMs)
         prefetchFailed.clear()
     }
@@ -2232,6 +2254,9 @@ class TtsController(
         /** Playhead network retry backoff: 1 s, 2 s, 4 s, then 8 s per attempt. */
         private const val NETWORK_RETRY_BASE_MS = 1_000L
         private const val NETWORK_RETRY_MAX_MS = 8_000L
+
+        /** Playhead retry after Edge rejected the handshake; the last value repeats. */
+        private val SERVICE_RETRY_MS = longArrayOf(2_000L, 5_000L, 15_000L, 30_000L, 60_000L)
 
         /** `b<bookKey>_s<sentenceIndex>_<voiceKey>.mp3` */
         private val SENTENCE_CACHE_NAME = Regex("""^b([A-Za-z0-9.-]*)_s(\d+)_.*\.mp3$""")

@@ -72,6 +72,19 @@ of an item in the stream synthesizes fresh clips (cache key is the stream, not t
 
 ## Edge requests and networks
 
+- **Host** (`EdgeHandshake`): the service is unofficial (reverse-engineered from Edge Read Aloud)
+  and Microsoft changes it without notice. Synthesis and the voice list use
+  `api.msedgeservices.com/tts/cognitiveservices` (`websocket/v1`, `voices/list`) with
+  `Ocp-Apim-Subscription-Key` = the Edge client token, v1 `Sec-MS-GEC`, and
+  `Sec-MS-GEC-Version=1-143.0.3650.75`. The old `speech.platform.bing.com` host 403s every
+  handshake since 2026-10-12 and is not used. Requests send Edge-like headers and a random `muid`
+  cookie. Upstream reference: [rany2/edge-tts#490](https://github.com/rany2/edge-tts/issues/490).
+- **Rejected handshake** (401/403 → `EdgeServiceException`): the server's `Date` header sets
+  `EdgeHandshake.skewSeconds`, because the token is only valid in the server's 5-minute window.
+  Rejections are not network stalls (`RaceReport.nonNetworkError`). At the playhead, a race with
+  only rejections logs `ERROR edge rejected …`, opens the log once, and retries after
+  2/5/15/30/60 s (then every 60 s) without waiting on connectivity. Persistent 403s with a correct
+  clock mean Microsoft changed the protocol again (likely the v2 `Sec-MS-GEC` token).
 - **Staggered race** (`EdgeTtsClient`, `RaceSchedule`): one WebSocket per clip at t = 0. Backups
   start at +d and +2d only while no attempt has received audio; an attempt that errors starts the
   next one at once. First success wins, the rest are cancelled; 6 s wall (`RACE_TIMEOUT_MS`).

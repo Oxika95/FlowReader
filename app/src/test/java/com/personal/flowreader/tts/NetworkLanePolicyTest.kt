@@ -154,9 +154,9 @@ class NetworkLanePolicyTest {
     }
 
     @Test
-    fun contentErrorsAreIgnored() {
+    fun nonNetworkErrorsAreIgnored() {
         val p = policy()
-        val content = failed.copy(contentError = true)
+        val content = failed.copy(nonNetworkError = true)
         p.onRaceResult(content)
         p.onRaceResult(content)
         assertEquals(NetMode.NORMAL, p.mode)

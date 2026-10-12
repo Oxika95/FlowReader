@@ -38,6 +38,9 @@ data class EdgeAudio(
 /** Edge refused this text (empty, too long, or no audio for it); retrying won't help. */
 class EdgeContentException(message: String) : IllegalArgumentException(message)
 
+/** Edge refused the handshake ([status] 401/403): service or token change, not the network. */
+class EdgeServiceException(message: String, val status: Int) : IllegalStateException(message)
+
 /** Every race attempt failed or hung on the network; retry once a network is usable. */
 class EdgeNetworkException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
@@ -119,7 +122,7 @@ class EdgeTtsClient(
 
         fun audioInFlight(): Boolean = (0 until started).any { !finished[it] && audioAt[it] >= 0L }
 
-        fun report(winner: Int, contentError: Boolean = false): RaceReport {
+        fun report(winner: Int, nonNetworkError: Boolean = false): RaceReport {
             val first = audioAt.getOrNull(winner)?.takeIf { it >= 0L }
             val start = lanes.getOrNull(winner)?.startMs
             return RaceReport(
@@ -130,7 +133,7 @@ class EdgeTtsClient(
                 totalMs = elapsedMs(),
                 started = started,
                 failed = failed.toList(),
-                contentError = contentError,
+                nonNetworkError = nonNetworkError,
             )
         }
     }
@@ -205,7 +208,8 @@ class EdgeTtsClient(
                                 "started=${race.started}",
                         )
                         cancelAll()
-                        onReport(race.report(winner = event.idx))
+                        val rejected = race.errors.any { it is EdgeServiceException }
+                        onReport(race.report(winner = event.idx, nonNetworkError = rejected))
                         return@coroutineScope audio
                     }
                     val t = event.result.exceptionOrNull() ?: IllegalStateException("Edge attempt failed.")
@@ -217,7 +221,7 @@ class EdgeTtsClient(
                     )
                     if (t is EdgeContentException) {
                         cancelAll()
-                        onReport(race.report(winner = -1, contentError = true))
+                        onReport(race.report(winner = -1, nonNetworkError = true))
                         throw t
                     }
                 }
@@ -226,7 +230,8 @@ class EdgeTtsClient(
             startDue()
         }
         SynthDebugLog.append("${race.label()} all failed n=${race.errors.size} totalMs=${race.elapsedMs()}")
-        onReport(race.report(winner = -1))
+        val rejected = race.errors.isNotEmpty() && race.errors.all { it is EdgeServiceException }
+        onReport(race.report(winner = -1, nonNetworkError = rejected))
         race.errors.firstOrNull { it !is IOException }?.let { throw it }
         val last = race.errors.lastOrNull()
         throw EdgeNetworkException(last?.message ?: "All Edge race attempts failed.", last)
@@ -242,11 +247,10 @@ class EdgeTtsClient(
         onFirstAudio: () -> Unit,
     ): EdgeAudio = suspendCancellableCoroutine { cont ->
         val id = UUID.randomUUID().toString().replace("-", "")
-        val url = EdgeHandshake.url(id, System.currentTimeMillis() / 1000)
+        val url = EdgeHandshake.url(id, EdgeHandshake.nowEpochSeconds())
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", EdgeHandshake.USER_AGENT)
-            .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
+            .apply { EdgeHandshake.headers(EdgeHandshake.newMuid()).forEach { (k, v) -> header(k, v) } }
             .build()
 
         val audio = ByteArrayOutputStream(16 * 1024)
@@ -327,7 +331,14 @@ class EdgeTtsClient(
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    if (cont.isActive) cont.resumeWithException(t)
+                    val code = response?.code
+                    val error = if (code == 401 || code == 403) {
+                        onRejected(response.header("Date"))
+                        EdgeServiceException("Edge rejected handshake status=$code", code)
+                    } else {
+                        t
+                    }
+                    if (cont.isActive) cont.resumeWithException(error)
                 }
             },
         )
@@ -346,6 +357,17 @@ class EdgeTtsClient(
         const val HEDGE_DELAY_MS = 2_000L
         /** Wall clock for the whole race (all attempts hang → fail). */
         const val RACE_TIMEOUT_MS = 6_000L
+
+        /** A rejected handshake may be clock skew: align the token clock with the server's `Date`. */
+        private fun onRejected(serverDate: String?) {
+            val skew = EdgeHandshake.skewFromDate(serverDate, System.currentTimeMillis() / 1000) ?: return
+            if (kotlin.math.abs(skew - EdgeHandshake.skewSeconds) > CLOCK_SKEW_LOG_S) {
+                SynthDebugLog.append("edge clock skew=${skew}s (was ${EdgeHandshake.skewSeconds}s)")
+            }
+            EdgeHandshake.skewSeconds = skew
+        }
+
+        private const val CLOCK_SKEW_LOG_S = 5L
 
         private fun NetLane.label(): String = name.lowercase()
 

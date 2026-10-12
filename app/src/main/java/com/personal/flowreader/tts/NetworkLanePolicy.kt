@@ -23,8 +23,8 @@ data class RaceReport(
     val started: Int,
     /** Lanes of attempts that errored (not cancelled losers). */
     val failed: List<NetLane>,
-    /** Edge refused the text; says nothing about the network. */
-    val contentError: Boolean = false,
+    /** Edge refused the text or the handshake (403); says nothing about the network. */
+    val nonNetworkError: Boolean = false,
 )
 
 data class NetSnapshot(
@@ -124,7 +124,7 @@ class NetworkLanePolicy(private val t: Thresholds = Thresholds()) {
     }
 
     fun onRaceResult(r: RaceReport) {
-        if (r.contentError) return
+        if (r.nonNetworkError) return
         r.winnerLatencyMs?.let {
             latencies.addLast(it)
             while (latencies.size > t.hedgeWindow) latencies.removeFirst()

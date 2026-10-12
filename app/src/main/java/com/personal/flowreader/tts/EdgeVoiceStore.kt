@@ -22,8 +22,8 @@ class EdgeVoiceStore(
     fun refreshIfStale(nowMs: Long = System.currentTimeMillis()): List<EdgeVoice>? {
         if (cacheFile.isFile && nowMs - cacheFile.lastModified() < MAX_AGE_MS) return null
         val request = Request.Builder()
-            .url(EdgeHandshake.voicesUrl(nowMs / 1000))
-            .header("User-Agent", EdgeHandshake.USER_AGENT)
+            .url(EdgeHandshake.voicesUrl(EdgeHandshake.nowEpochSeconds()))
+            .apply { EdgeHandshake.headers(EdgeHandshake.newMuid(), websocket = false).forEach { (k, v) -> header(k, v) } }
             .build()
         val body = runCatching {
             http.newCall(request).execute().use { if (it.isSuccessful) it.body?.string() else null }
