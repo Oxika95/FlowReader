@@ -23,6 +23,8 @@ data class ChapterUpdate(
     val newChapters: List<PluginChapterRef>,
     /** The story's bell is on: post a system notification. */
     val notify: Boolean = true,
+    /** Local cover image (sidecar beside the catalog entry); null when the story has none. */
+    val coverPath: String? = null,
 )
 
 /**
@@ -108,7 +110,11 @@ class UpdateChecker(private val app: FlowApp) {
                 val added = UpdateDiff.newChapters(old.toc.map { it.url }, fresh.toc)
                 if (added.isEmpty()) continue
                 app.pluginBooks.addNewChapters(fresh.bookId, added.size)
-                out += ChapterUpdate(plugin.id, fresh.bookId, fresh.displayTitle, added, notify = old.workId in notifying)
+                out += ChapterUpdate(
+                    plugin.id, fresh.bookId, fresh.displayTitle, added,
+                    notify = old.workId in notifying,
+                    coverPath = coverPath(fresh.bookId),
+                )
                 downloadAhead(fresh)
             } catch (e: CancellationException) {
                 throw e
@@ -118,6 +124,25 @@ class UpdateChecker(private val app: FlowApp) {
         }
         return out
     }
+
+    /**
+     * Debug mode: one random opened library story per plugin with its last 1..3 chapters (random) posed
+     * as new, for previewing notifications. Fetches and stores nothing.
+     */
+    suspend fun sample(): List<ChapterUpdate> =
+        app.pluginManager.installed.value.mapNotNull { plugin ->
+            val session = app.pluginCatalog.list(plugin.id).shuffled().firstNotNullOfOrNull { row ->
+                app.pluginBooks.session(row.bookId)?.takeIf { it.toc.isNotEmpty() }
+            } ?: return@mapNotNull null
+            ChapterUpdate(
+                plugin.id, session.bookId, session.displayTitle,
+                session.toc.takeLast((1..3).random()),
+                coverPath = coverPath(session.bookId),
+            )
+        }
+
+    private suspend fun coverPath(bookId: String): String? =
+        app.pluginCatalog.get(bookId)?.let { app.pluginCatalog.coverFile(it.storedPath) }?.absolutePath
 
     /** Fill the cache level ahead of the saved position; stories never read are left alone. */
     private suspend fun downloadAhead(session: PluginReadSession) {
@@ -136,6 +161,5 @@ class UpdateChecker(private val app: FlowApp) {
     companion object {
         private const val TAG = "FlowUpdates"
         private const val MAX_BASELINE_PER_RUN = 10
-        private const val MAX_LOAD_WORK_PER_RUN = 100
-    }
+        private const val MAX_LOAD_WORK_PER_RUN = 100    }
 }

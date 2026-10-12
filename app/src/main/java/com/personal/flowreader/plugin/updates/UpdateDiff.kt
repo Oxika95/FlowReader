@@ -28,6 +28,6 @@ object UpdateDiff {
     fun notifyLists(lists: List<PluginList>): Set<String> =
         lists.filter { !it.isBrowse && it.notifyDefault }.map { it.id }.toSet()
 
-    /** Notification title: "3 new chapters" / "New chapter". */
+    /** Group summary header: "3 new chapters" / "New chapter". */
     fun headline(count: Int): String = if (count == 1) "New chapter" else "$count new chapters"
 }

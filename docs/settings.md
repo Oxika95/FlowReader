@@ -28,6 +28,7 @@ Off or 1–24 h (`CheckInterval`).
 | New chapters › Check every | `plugin_update_interval`, default 12 h; stories with the bell on |
 | New chapters › Wi-Fi only | `plugin_update_wifi_only`, default off |
 | New chapters › Check now | One run when the network allows |
+| New chapters › Send test notification | Shown only while Debug mode is on: notifies for one random library story per plugin, its last 1–3 chapters posed as new; nothing fetched or stored |
 | Plugin updates › Check every | `plugin_version_interval`, default 24 h; refreshes repositories |
 | Plugin updates › Notify about updates | `plugin_version_notify`, default on; once per version (`plugin_version_notified`) |
 

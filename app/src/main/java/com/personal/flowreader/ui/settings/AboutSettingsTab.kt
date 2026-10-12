@@ -65,7 +65,7 @@ internal fun AboutSettingsTab(
     Spacer(Modifier.height(FlowTokens.Space.M))
     when (subTab) {
         0 -> AboutInfoPane(debugEnabled, onDebugEnabled)
-        1 -> NotificationSettingsPane()
+        1 -> NotificationSettingsPane(debugEnabled)
         else -> DataSettingsPane()
     }
 }

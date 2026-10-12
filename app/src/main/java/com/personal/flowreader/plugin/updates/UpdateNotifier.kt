@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -32,13 +34,15 @@ object UpdateNotifier {
         if (updates.isEmpty() || !canPost(context)) return
         ensureChannel(context)
         val manager = NotificationManagerCompat.from(context)
-        val system = context.getSystemService(NotificationManager::class.java)
+        // Stories notified earlier and not yet opened keep counting up.
+        val counts = context.getSystemService(NotificationManager::class.java)?.activeNotifications.orEmpty()
+            .filter { it.notification.group == GROUP && it.id != SUMMARY_ID }
+            .associate { it.id to it.notification.extras.getInt(EXTRA_COUNT, 0) }
+            .toMutableMap()
         for (update in updates) {
             val id = notificationId(update.bookId)
-            // A story notified earlier and not yet opened keeps counting up.
-            val shown = system?.activeNotifications?.firstOrNull { it.id == id }
-                ?.notification?.extras?.getInt(EXTRA_COUNT, 0) ?: 0
-            val count = shown + update.newChapters.size
+            val count = (counts[id] ?: 0) + update.newChapters.size
+            counts[id] = count
             val titles = update.newChapters.map { it.title.ifBlank { "Untitled chapter" } }
             val style = NotificationCompat.InboxStyle().also { s ->
                 titles.takeLast(MAX_LINES).forEach { s.addLine(it) }
@@ -46,7 +50,8 @@ object UpdateNotifier {
             }
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_flow)
-                .setContentTitle("${UpdateDiff.headline(count)} · ${update.title}")
+                .setLargeIcon(update.coverPath?.let { coverBitmap(context, it) })
+                .setContentTitle(update.title)
                 .setContentText(titles.last())
                 .setStyle(style)
                 .setContentIntent(openStoryIntent(context, update))
@@ -57,9 +62,11 @@ object UpdateNotifier {
                 .build()
             notifySafely(manager, id, notification)
         }
+        val headline = UpdateDiff.headline(counts.values.sum())
         val summary = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_flow)
-            .setContentTitle("New chapters")
+            .setContentTitle(headline)
+            .setSubText(headline)
             .setStyle(NotificationCompat.InboxStyle().also { s -> updates.take(MAX_LINES).forEach { s.addLine(it.title) } })
             .setGroup(GROUP)
             .setGroupSummary(true)
@@ -99,6 +106,17 @@ object UpdateNotifier {
             // Permission revoked between the check and the post.
             false
         }
+
+    /** Cover decoded at about large-icon size; null when missing or unreadable. */
+    private fun coverBitmap(context: Context, path: String): Bitmap? = runCatching {
+        val maxEdge = context.resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_height) * 2
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxEdge) sample *= 2
+        BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+    }.getOrNull()
 
     private fun notificationId(bookId: String): Int = 7_000_000 + (bookId.hashCode() and 0xFFFFF)
 

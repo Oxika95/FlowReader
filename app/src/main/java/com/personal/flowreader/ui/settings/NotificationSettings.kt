@@ -16,20 +16,23 @@ import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.CheckInterval
 import com.personal.flowreader.data.PluginUpdatePrefs
 import com.personal.flowreader.data.PluginVersionCheckPrefs
+import com.personal.flowreader.plugin.updates.UpdateChecker
+import com.personal.flowreader.plugin.updates.UpdateNotifier
 import com.personal.flowreader.plugin.updates.UpdateScheduler
 import com.personal.flowreader.ui.design.controls.FlowHint
 import com.personal.flowreader.ui.design.controls.FlowSection
 import com.personal.flowreader.ui.design.controls.FlowSliderRow
 import com.personal.flowreader.ui.design.controls.FlowToggleRow
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /** Settings > About > Notifications: background checks that notify (new chapters, plugin updates). */
 @Composable
-internal fun NotificationSettingsPane() {
+internal fun NotificationSettingsPane(debugEnabled: Boolean) {
     val app = LocalContext.current.applicationContext as FlowApp
     FlowSection("New chapters")
-    ChapterCheckSection(app)
+    ChapterCheckSection(app, debugEnabled)
     HorizontalDivider()
     FlowSection("Plugin updates")
     PluginVersionCheckSection(app)
@@ -37,7 +40,7 @@ internal fun NotificationSettingsPane() {
 
 /** How often stories with the bell on are checked for new chapters; reschedules on every change. */
 @Composable
-private fun ChapterCheckSection(app: FlowApp) {
+private fun ChapterCheckSection(app: FlowApp, debugEnabled: Boolean) {
     val scope = rememberCoroutineScope()
     var prefs by remember { mutableStateOf<PluginUpdatePrefs?>(null) }
     var checking by remember { mutableStateOf(false) }
@@ -71,6 +74,14 @@ private fun ChapterCheckSection(app: FlowApp) {
             UpdateScheduler.checkNow(app, current.wifiOnly)
         },
     ) { Text(if (checking) "Checking in the background" else "Check now") }
+    if (debugEnabled) {
+        TextButton(
+            onClick = {
+                app.requestNotificationPermission()
+                scope.launch(Dispatchers.IO) { UpdateNotifier.post(app, UpdateChecker(app).sample()) }
+            },
+        ) { Text("Send test notification") }
+    }
 }
 
 /** How often repositories are checked for newer plugin versions, and whether that notifies. */

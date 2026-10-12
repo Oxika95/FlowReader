@@ -170,9 +170,9 @@ Sites can't push to the app, so a background job (WorkManager) checks for new ch
   get a `loadWork`. Other plugins get one `loadWork` per monitored story (max 100 per run). Followed
   stories never opened are fetched once (max 10 per run) as a baseline, without notifying.
 - **Then:** the new ToC is stored; chapters new by URL (not re-titled or reordered ones) produce one
-  notification per story, grouped, counting up until opened. Stories with a saved position
-  download the cache level ahead of it. Tapping a notification opens the story's media card.
-- Code: [`plugin/updates/`](../app/src/main/java/com/personal/flowreader/plugin/updates/)
+  notification per story (cover, title, newest chapter; tap opens its media card) under a summary
+  totalling "N new chapters", counting up until opened. Stories with a saved position download
+  the cache level ahead of it. Code: [`plugin/updates/`](../app/src/main/java/com/personal/flowreader/plugin/updates/)
   (`UpdateChecker`, `UpdateDiff` (pure), `UpdateNotifier`, `UpdateScheduler`, `ChapterUpdateWorker`).
 
 ## Import routing
