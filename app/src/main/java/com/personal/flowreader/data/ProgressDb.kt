@@ -123,8 +123,8 @@ interface LibraryDao {
     @Query(
         "UPDATE library_books SET chapterIndex = :chapterIndex, chapterHref = :chapterHref, " +
             "blockIndex = :blockIndex, charOffset = :charOffset, anchorText = :anchorText, fraction = :fraction, " +
-            "positionAt = :positionAt, positionSessionAt = :positionSessionAt, positionSource = :positionSource " +
-            "WHERE bookId = :id",
+            "positionAt = :positionAt, positionSessionAt = :positionSessionAt, positionSource = :positionSource, " +
+            "chapterFinished = :chapterFinished WHERE bookId = :id",
     )
     suspend fun writePosition(
         id: String,
@@ -137,6 +137,7 @@ interface LibraryDao {
         positionAt: Long,
         positionSessionAt: Long,
         positionSource: String,
+        chapterFinished: Boolean,
     ): Int
 
     @Query("DELETE FROM library_books WHERE bookId = :id")
@@ -181,8 +182,8 @@ interface QueueDao {
     @Query(
         "UPDATE queue_items SET chapterIndex = :chapterIndex, chapterHref = :chapterHref, " +
             "blockIndex = :blockIndex, charOffset = :charOffset, anchorText = :anchorText, fraction = :fraction, " +
-            "positionAt = :positionAt, positionSessionAt = :positionSessionAt, positionSource = :positionSource " +
-            "WHERE queId = :queId",
+            "positionAt = :positionAt, positionSessionAt = :positionSessionAt, positionSource = :positionSource, " +
+            "chapterFinished = :chapterFinished WHERE queId = :queId",
     )
     suspend fun writePosition(
         queId: String,
@@ -195,6 +196,7 @@ interface QueueDao {
         positionAt: Long,
         positionSessionAt: Long,
         positionSource: String,
+        chapterFinished: Boolean,
     ): Int
 
     @Query("SELECT * FROM queue_state WHERE id = 0")
@@ -206,7 +208,7 @@ interface QueueDao {
 
 @Database(
     entities = [LibraryBookEntity::class, QueueItemEntity::class, QueueStateEntity::class],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -214,6 +216,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun queue(): QueueDao
 
     companion object {
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `library_books` ADD COLUMN `chapterFinished` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `queue_items` ADD COLUMN `chapterFinished` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `library_books` ADD COLUMN `author` TEXT NOT NULL DEFAULT ''")

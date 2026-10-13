@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,7 +34,8 @@ import kotlinx.coroutines.flow.first
 
 /**
  * Table of contents: a fullscreen card with the current chapter centered. [levels] indents rows
- * (Queue: level 1 = a chapter inside a Queue item).
+ * (Queue: level 1 = a chapter inside a Queue item). [locked] rows can't be opened; [downloaded]
+ * rows are saved on the device.
  */
 @Composable
 internal fun TocOverlay(
@@ -40,6 +43,7 @@ internal fun TocOverlay(
     chapters: List<String>,
     levels: List<Int> = emptyList(),
     locked: Set<Int> = emptySet(),
+    downloaded: Set<Int> = emptySet(),
     chapterIndex: Int,
     onChapter: (Int) -> Unit,
     onDismiss: () -> Unit,
@@ -84,7 +88,7 @@ internal fun TocOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .semantics { selected = current }
-                        .clickable { onChapter(index) }
+                        .clickable(enabled = !isLocked) { onChapter(index) }
                         .padding(
                             start = if (nested) FlowTokens.Space.XXL else FlowTokens.Space.L,
                             end = FlowTokens.Space.L,
@@ -110,6 +114,13 @@ internal fun TocOverlay(
                             FlowIcons.forToken("lock"),
                             contentDescription = "Locked",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(FlowTokens.Icon.S),
+                        )
+                    } else if (index in downloaded) {
+                        Icon(
+                            Icons.Default.DownloadDone,
+                            contentDescription = "Downloaded",
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(FlowTokens.Icon.S),
                         )
                     }

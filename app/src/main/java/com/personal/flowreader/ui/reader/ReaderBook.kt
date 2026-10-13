@@ -20,9 +20,14 @@ internal class ReaderBook(
     val meter: BookMeter,
     private val hrefs: (Int) -> String,
     private val hrefIndex: (String) -> Int,
-    val load: suspend (Int) -> Chapter,
-    /** ToC rows the account can't read (shown with a lock). */
+    /** Null for a chapter that can't be read (locked plugin chapter); the window stops before it. */
+    val load: suspend (Int) -> Chapter?,
+    /** Whether [load] can return chapter i; a position never resumes on one that can't. */
+    val readable: (Int) -> Boolean = { true },
+    /** ToC rows the account can't read (shown with a lock, not tappable). */
     val lockedRows: Set<Int> = emptySet(),
+    /** ToC rows whose chapter is saved on the device. */
+    val downloadedRows: Set<Int> = emptySet(),
 ) {
     val chapterTitles: List<String> get() = titles
 
@@ -60,7 +65,9 @@ internal class ReaderBook(
                 hrefs = { story.toc[it].url },
                 hrefIndex = { href -> story.toc.indexOfFirst { it.url == href } },
                 load = { store.chapter(story, it) },
-                lockedRows = story.toc.indices.filterTo(HashSet()) { story.toc[it].locked },
+                readable = story::readable,
+                lockedRows = story.toc.indices.filterNotTo(HashSet(), story::readable),
+                downloadedRows = story.cached,
             )
         }
     }

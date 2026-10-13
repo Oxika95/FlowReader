@@ -921,7 +921,7 @@ fun ReaderScreen(
                             onPrev = { vm.tts.skipPrev() },
                             onNext = { vm.tts.skipNext() },
                             onToc = {
-                                if (ui.queue) vm.refreshQueue()
+                                if (ui.queue) vm.refreshQueue() else vm.refreshContents()
                                 overlay = ReaderOverlay.Toc
                             },
                             onScrollLock = { enableScrollLock() },
@@ -1076,6 +1076,7 @@ fun ReaderScreen(
                 chapters = chapters,
                 levels = ui.tocLevels,
                 locked = ui.tocLocked,
+                downloaded = ui.tocDownloaded,
                 chapterIndex = chapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0)),
                 onChapter = onTocRow,
                 onDismiss = { overlay = ReaderOverlay.Hidden },

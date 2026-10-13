@@ -41,8 +41,9 @@ type Work = {
 };
 type Badge = string | { label: string; tone?: 'positive' | 'negative' };  // green / red pill
 type Page = { items: Work[]; hasMore?: boolean };
-// locked: the account can't read it (paywall). The host shows a lock icon, skips it in Download all,
-// and opens it as its heading alone instead of calling loadChapter unless the body is already cached.
+// locked: the account can't read it (paywall). Unless its body is already cached, the host lists it in
+// the ToC only (lock icon, not tappable), never calls loadChapter for it, skips it in Download all,
+// and stops reading and TTS before it.
 type ChapterRef = { title: string; url: string; id?: string; locked?: boolean };
 type WorkDetail = {
   id: string; title: string; url?: string; author?: string; cover?: string;

@@ -63,13 +63,13 @@ class QueueBookTest {
 
     @Test
     fun loadPrefixesBlockIdsAndTitlesEachItemStart() = runBlocking {
-        val first = queue.reader.load(0)
-        val inB = queue.reader.load(2)
+        val first = queue.reader.load(0)!!
+        val inB = queue.reader.load(2)!!
         assertEquals("Item a", first.title)
         assertEquals("q0-t0-0", first.blocks[0].id)
         assertEquals("Part 2", inB.title)
         assertEquals("q1-t1-0", inB.blocks[0].id)
-        assertEquals("Item b", queue.reader.load(1).title)
+        assertEquals("Item b", queue.reader.load(1)!!.title)
         assertEquals("Item c", queue.reader.chapterTitles[4])
     }
 
@@ -83,7 +83,7 @@ class QueueBookTest {
 
     @Test
     fun locatorWritesTheItemsOwnPosition() = runBlocking {
-        val prepared = PreparedChapter.of(3, queue.reader.load(3), emptyList(), 75, 25)
+        val prepared = PreparedChapter.of(3, queue.reader.load(3)!!, emptyList(), 75, 25)
         val session = ReadingSession(
             bookId = QueueBook.ID,
             contentKey = 0,

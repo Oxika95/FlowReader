@@ -31,6 +31,7 @@ import com.personal.flowreader.plugin.store.PluginSessionStore
 import com.personal.flowreader.plugin.store.SyncMode
 import com.personal.flowreader.plugin.sync.ProgressReconcile
 import com.personal.flowreader.plugin.sync.PushResult
+import com.personal.flowreader.plugin.updates.UpdateChecker
 import com.personal.flowreader.plugin.updates.UpdateDiff
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -142,6 +143,8 @@ data class PluginTabUi(
     /** Book id whose position conflict card was put off ("Later") while its story card is open. */
     val conflictDismissedFor: String? = null,
     val busy: Boolean = false,
+    /** Pull to refresh running on the list. */
+    val refreshing: Boolean = false,
     val message: String? = null,
     val error: String? = null,
 ) {
@@ -342,16 +345,46 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     /** Signed-in browse lists re-import silently (rows only) when shown, at most every [BROWSE_REFRESH_MS]. */
     private fun maybeRefreshBrowse(section: PluginSection, force: Boolean = false) {
         val listId = (section as? PluginSection.Library)?.listId ?: return
-        val list = manifest.list(listId)?.takeIf { it.isBrowse && it.syncable } ?: return
-        if (!_ui.value.session.loggedIn) return
-        val now = SystemClock.elapsedRealtime()
+        if (manifest.list(listId)?.takeIf { it.isBrowse && it.syncable } == null || !_ui.value.session.loggedIn) return
         val last = browseRefreshedAt[listId]
-        if (!force && last != null && now - last < BROWSE_REFRESH_MS) return
-        browseRefreshedAt[listId] = now
+        if (!force && last != null && SystemClock.elapsedRealtime() - last < BROWSE_REFRESH_MS) return
         viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) { lists.applyLists(pluginId, mapOf(list.id to lists.fetchList(pluginId, list.id)), SyncMode.Merge) }
-            }.onSuccess { refreshLocal() }
+            runCatching { withContext(Dispatchers.IO) { reimportBrowse(listId) } }.onSuccess { refreshLocal() }
+        }
+    }
+
+    private suspend fun reimportBrowse(listId: String) {
+        browseRefreshedAt[listId] = SystemClock.elapsedRealtime()
+        lists.applyLists(pluginId, mapOf(listId to lists.fetchList(pluginId, listId)), SyncMode.Merge)
+    }
+
+    /**
+     * Pull to refresh on a list: re-import it from the site (browse list) or run two-way sync,
+     * then check this plugin's stories for new chapters (badges; no notification).
+     */
+    fun refresh() {
+        if (_ui.value.refreshing || _ui.value.sync.running) return
+        val listId = (_ui.value.section as? PluginSection.Library)?.listId ?: return
+        val list = manifest.list(listId) ?: return
+        val loggedIn = _ui.value.session.loggedIn
+        _ui.update { it.copy(refreshing = true, error = null) }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    when {
+                        !loggedIn && manifest.auth != null -> Unit
+                        list.isBrowse -> if (list.syncable) reimportBrowse(listId)
+                        flow.pluginSync.supports(manifest) -> flow.pluginSync.run(pluginId)
+                    }
+                    UpdateChecker(flow).run(pluginId)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                fail(t, "Could not refresh ${list.title}")
+            }
+            _ui.update { it.copy(refreshing = false) }
+            refreshLocal()
         }
     }
 
@@ -528,7 +561,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         val (session, splash) = books.readSplashBundle(bookId)
             ?: throw PluginException(PluginErrorCode.Error, "Story is not cached")
         val progress = flow.pluginCatalog.get(bookId)?.position
-        val dir = PluginSessionStore.dir(dataDir, session.workId)
         val listedIn = PluginMembershipStore.listsContaining(dataDir, listIds, session.workId)
         val tocUrls = session.toc.map { it.url }
         val conflict = flow.pluginSync.state(pluginId).conflicts[session.workId]?.let { c ->
@@ -547,10 +579,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             tags = splash?.tags.orEmpty(),
             cover = splash?.cover.orEmpty(),
             toc = session.toc,
-            downloadedCount = PluginSessionStore.cachedChapterCount(dir, session.toc),
-            cachedIndices = PluginSessionStore.cachedChapterIndices(dir, session.toc),
+            downloadedCount = session.cached.size,
+            cachedIndices = session.cached,
             readingProgress = progress?.fraction ?: 0f,
-            chapterIndex = PluginSessionStore.savedChapter(session.toc, progress?.chapterHref.orEmpty(), progress?.chapterIndex ?: 0),
+            chapterIndex = session.resumeChapter(progress),
             hasSavedPosition = progress?.hasProgress == true,
             cacheLevel = session.cacheLevel,
             cleanup = session.cleanup,
@@ -696,10 +728,8 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             try {
                 withContext(Dispatchers.IO) {
                     // ToC first: storing it applies a site position waiting for it.
-                    val toc = books.openStory(bookId).toc
-                    val row = flow.pluginCatalog.get(bookId)?.position
-                    val start = if (row == null) 0 else PluginSessionStore.savedChapter(toc, row.chapterHref, row.chapterIndex)
-                    startAndSnapshot(bookId, start)
+                    val story = books.openStory(bookId)
+                    startAndSnapshot(bookId, story.resumeChapter(flow.pluginCatalog.get(bookId)?.position))
                 }
                 refreshLocal()
                 _ui.update { it.copy(busy = false) }

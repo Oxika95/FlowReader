@@ -4,11 +4,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,6 +37,7 @@ import com.personal.flowreader.plugin.api.PluginWork
 import com.personal.flowreader.ui.common.rememberRemoteCover
 import com.personal.flowreader.ui.design.card.FlowDisplayCard
 import com.personal.flowreader.ui.design.card.FlowDisplayList
+import com.personal.flowreader.ui.design.card.FlowEmptyState
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.design.card.flowDisplayListPadding
@@ -68,7 +67,7 @@ internal fun BrowseListPane(
             ui.manifest.auth != null && !ui.session.loggedIn -> "Sign in to import $title."
             else -> "Nothing in $title yet. Sync it from the account card."
         }
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FlowHint(hint) }
+        FlowEmptyState(hint, modifier)
         return
     }
     FlowDisplayList(modifier = modifier, contentPadding = flowDisplayListPadding(bottomExtra = bottomInset)) {

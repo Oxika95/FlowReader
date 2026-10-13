@@ -22,6 +22,7 @@ data class ProgressUpdate(
     val anchorText: String = "",
     val chapterHref: String = "",
     val source: PositionSource = PositionSource.Reader,
+    val chapterFinished: Boolean = false,
 ) {
     val domain: PositionDomain get() = session.domain
 
@@ -35,6 +36,7 @@ data class ProgressUpdate(
         positionAt = at,
         positionSessionAt = session.openedAt,
         positionSource = source.name,
+        chapterFinished = chapterFinished,
     )
 }
 

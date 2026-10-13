@@ -142,7 +142,7 @@ class PluginCatalog(private val app: FlowApp) {
         val p = update.toPosition()
         return dao(pluginId).writePosition(
             update.rowKey, p.chapterIndex, p.chapterHref, p.blockIndex, p.charOffset, p.anchorText,
-            p.fraction, p.positionAt, p.positionSessionAt, p.positionSource,
+            p.fraction, p.positionAt, p.positionSessionAt, p.positionSource, p.chapterFinished,
         ) > 0
     }
 

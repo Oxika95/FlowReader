@@ -8,7 +8,6 @@ import com.personal.flowreader.plugin.api.PluginChapterRef
 import com.personal.flowreader.plugin.api.PluginUpdateQuery
 import com.personal.flowreader.plugin.store.PluginMembershipStore
 import com.personal.flowreader.plugin.store.PluginReadSession
-import com.personal.flowreader.plugin.store.PluginSessionStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -35,9 +34,11 @@ data class ChapterUpdate(
  * cache level ahead of the saved position are downloaded. Only bell-on stories notify.
  */
 class UpdateChecker(private val app: FlowApp) {
-    suspend fun run(): List<ChapterUpdate> = TwoWaySync.lock.withLock {
+    /** Check every installed plugin, or only [pluginId]. */
+    suspend fun run(pluginId: String? = null): List<ChapterUpdate> = TwoWaySync.lock.withLock {
         val out = ArrayList<ChapterUpdate>()
         for (plugin in app.pluginManager.installed.value) {
+            if (pluginId != null && plugin.id != pluginId) continue
             currentCoroutineContext().ensureActive()
             try {
                 out += checkPlugin(plugin)
@@ -149,8 +150,7 @@ class UpdateChecker(private val app: FlowApp) {
         val bookId = session.bookId
         val row = app.pluginCatalog.get(bookId)?.takeIf { it.position.hasProgress } ?: return
         try {
-            val locus = PluginSessionStore.savedChapter(session.toc, row.position.chapterHref, row.position.chapterIndex)
-            app.pluginBooks.maintainChapterCache(bookId, locus)
+            app.pluginBooks.maintainChapterCache(bookId, session.resumeChapter(row.position))
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {

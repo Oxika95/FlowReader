@@ -24,13 +24,14 @@ internal object ReaderSessions {
     /** Identity of the displayed text: visual filters (speech-only rules don't change it). */
     fun contentKey(rules: List<FilterRule>): Int = rules.filterNot { it.ttsOnly }.hashCode()
 
+    /** Null when [book] can't read chapter [index] (locked); the window never grows over it. */
     suspend fun prepare(
         book: ReaderBook,
         index: Int,
         rules: List<FilterRule>,
         targetChars: Int,
         flexChars: Int,
-    ): PreparedChapter {
+    ): PreparedChapter? {
         val raw = withContext(Dispatchers.IO) {
             try {
                 book.load(index)
@@ -39,7 +40,7 @@ internal object ReaderSessions {
             } catch (e: Exception) {
                 unreadable(book, index, e)
             }
-        }
+        } ?: return null
         return withContext(Dispatchers.Default) {
             PreparedChapter.of(index, raw, rules, targetChars, flexChars)
         }
@@ -64,6 +65,7 @@ internal object ReaderSessions {
         locator: (ReadingSession) -> ProgressLocator = { s -> locator(sessionId, book, s) },
     ): ReadingSession {
         val first = prepare(book, center, rulesFor(center), targetChars, flexChars)
+            ?: throw IllegalStateException("Chapter ${center + 1} is locked")
         val session = ReadingSession(
             bookId = bookId,
             contentKey = contentKey,

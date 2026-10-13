@@ -51,8 +51,14 @@ and queue; refresh and sync never touch it; **Reset** goes back to the plugin's 
 counts, the bell, and cache settings are backed up with the plugin's database.
 
 **Locked chapters** (`ChapterRef.locked`, Patreon posts above your tier, shown by default) carry a
-lock icon in the reader's Contents and the creator page. One that was never downloaded opens as its
-heading alone (nothing is fetched, and TTS reads only the title).
+lock icon in the reader's Contents and the creator page. One that was never downloaded is a
+Contents entry only: its row can't be tapped, nothing is fetched or shown, and reading, TTS and the
+saved position stop at the chapter before it. A readable chapter after it can still be opened from
+Contents. Downloaded chapters show a download icon in Contents (refreshed each time it opens).
+
+**Pull to refresh** on a list (not Search) re-imports a browse list from the site, or runs two-way
+sync for story lists, then checks the plugin's stories for new chapters (badges only, no
+notification). Signed-out plugins with sign-in only run the new-chapter check.
 
 Patreon's **All posts** story (what Follow adds for a creator) is named after the creator's
 largest collection, else their most used tag, else the creator.
@@ -109,6 +115,10 @@ opened) and the newest post date. Sync never adds or deletes stories for a brows
   removes the saved chapter ("stubbing" on Royal Road), the position moves to the next chapter that
   survived (log `TOC_REMAP`). An open reader or TTS session keeps the ToC it opened with and still
   reads the right text; new chapters show the next time the story opens
+- **Caught up:** when TTS reaches the end of the last chapter, the position is saved with
+  `chapterFinished`. Once an update adds the next chapter, opening the story (reader, card, Read)
+  starts there, and the update check downloads ahead of it. The site's position is not moved
+  until that chapter is actually opened
 
 ## Sign-in
 

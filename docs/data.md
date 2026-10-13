@@ -20,7 +20,7 @@ Theme, TTS, filters JSON, share router/parse rules — see [settings.md](setting
 
 ## Room (`flow.db`)
 
-[`ProgressDb.kt`](../app/src/main/java/com/personal/flowreader/data/ProgressDb.kt), schema version 10,
+[`ProgressDb.kt`](../app/src/main/java/com/personal/flowreader/data/ProgressDb.kt), schema version 12,
 schemas exported to `app/schemas/`. Schema changes ship a `Migration` (data is kept); versions 1–8
 and downgrades are destructive. Each domain owns its rows and positions; nothing is shared.
 
@@ -40,17 +40,23 @@ Erasing a plugin's data deletes its database.
 
 Every table embeds the same position columns
 ([`ReadingPosition.kt`](../app/src/main/java/com/personal/flowreader/data/ReadingPosition.kt)):
-`chapterIndex`, `chapterHref`, `blockIndex`, `charOffset`, `anchorText`, `fraction`, plus provenance:
+`chapterIndex`, `chapterHref`, `blockIndex`, `charOffset`, `anchorText`, `fraction`,
+`chapterFinished` (TTS reached the end of the book in that chapter), plus provenance:
 `positionAt` (write time), `positionSessionAt` (reading session start), `positionSource`
-(`Reader` / `Tts` / `PluginSeek` / `Sync` / `Migration`).
+(`Reader` / `Tts` / `PluginSeek` / `Sync` / `Migration`). Every write sets all of them, so the next
+write clears `chapterFinished`. Reading resumes through
+[`ResumeLocus`](../app/src/main/java/com/personal/flowreader/data/ResumeLocus.kt): the saved chapter
+by href (else index); a finished chapter resumes at the start of the next one once it exists and is
+readable; an unreadable (locked) saved chapter falls back to the nearest readable one before it.
 
 Migration 9 → 10 ([`LegacyMigration.kt`](../app/src/main/java/com/personal/flowreader/data/LegacyMigration.kt),
 pure mapper JVM-tested): library rows move to `library_books`; each old Queue row gets its own
 `queue_items` row with a copy of the book's position; plugin rows go to a staging table that
 `PluginStorageMigrator` drains into each installed plugin's database at startup (plugin reads wait
 for it). Migration 10 → 11 adds `library_books.author` / `chapterCount`; rows from before are
-filled from their files at startup (`BookCatalog.fillMissingRowMeta`). Plugin database 1 → 2 adds
-`plugin_stories`; a story's first row is seeded from its 1.08 `meta.txt` settings
+filled from their files at startup (`BookCatalog.fillMissingRowMeta`). Migration 11 → 12 adds
+`chapterFinished` to `library_books` and `queue_items`; plugin database 2 → 3 adds it to
+`plugin_books`. Plugin database 1 → 2 adds `plugin_stories`; a story's first row is seeded from its 1.08 `meta.txt` settings
 (`PluginSessionStore.readLegacySettings`: a pin over the whole ToC becomes keep-all, any other pin
 turns cleanup off). 1.08 index-named bodies (`c/{i}.txt`) are renamed to URL keys on first read
 (`migrateIndexedBodies`).

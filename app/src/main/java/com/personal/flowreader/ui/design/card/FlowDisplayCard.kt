@@ -1,8 +1,11 @@
 package com.personal.flowreader.ui.design.card
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -259,15 +262,19 @@ fun FlowDisplayGrid(
     )
 }
 
-/** Centered empty-state message for a list area. */
+/** Centered empty-state message for a list area; scrolls so a `FlowPullRefresh` around it still pulls. */
 @Composable
 fun FlowEmptyState(message: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .fillMaxSize()
-            .padding(horizontal = FlowTokens.Pad.Screen),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(message, style = FlowType.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .verticalScroll(rememberScrollState())
+                .fillMaxWidth()
+                .heightIn(min = maxHeight)
+                .padding(horizontal = FlowTokens.Pad.Screen),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(message, style = FlowType.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }

@@ -18,6 +18,7 @@ import com.personal.flowreader.data.ReaderRow
 import com.personal.flowreader.data.ReadingPosition
 import com.personal.flowreader.data.ReadingSession
 import com.personal.flowreader.data.ReadingSessionId
+import com.personal.flowreader.data.ResumeLocus
 import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.tts.SynthDebugLog
@@ -53,6 +54,8 @@ data class ReaderUi(
     val tocTitles: List<String> = emptyList(),
     /** ToC rows shown with a lock (plugin chapters the account can't read). */
     val tocLocked: Set<Int> = emptySet(),
+    /** ToC rows shown as downloaded (plugin chapters saved on the device). */
+    val tocDownloaded: Set<Int> = emptySet(),
     /** ToC row for the current locus highlight. */
     val tocIndex: Int = 0,
     /** Whole-book progress 0â€“1 at [locus]. */
@@ -121,8 +124,10 @@ class ReaderViewModel(
             return
         }
         try {
-            val row = withContext(Dispatchers.IO) { flow.catalog.readerRow(bookId) }
-                ?: throw IllegalArgumentException("Book not found")
+            val row = withContext(Dispatchers.IO) {
+                flow.progress.drain()
+                flow.catalog.readerRow(bookId)
+            } ?: throw IllegalArgumentException("Book not found")
             val opened = withContext(Dispatchers.IO) { openBook(row) }
             if (opened.chapterCount == 0) throw IllegalStateException("No readable chapters")
             book = opened
@@ -139,17 +144,13 @@ class ReaderViewModel(
                     filtersLocal = local,
                     tocTitles = opened.toc.map { (_, label) -> label },
                     tocLocked = opened.lockedRows,
+                    tocDownloaded = opened.downloadedRows,
                 )
             }
             val rules = TextFilters.merge(global, groups, local)
             val reuse = tts.attachedSession()
                 ?.takeIf { it.bookId == bookId && it.contentKey == ReaderSessions.contentKey(rules) }
-            // Playback may have continued after the reader closed; it is newer than the saved row.
-            val spoken = tts.state.value.takeIf { it.bookId == bookId }?.sentence
-            when {
-                spoken != null -> show(Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start), rules, reuse)
-                else -> show(savedLocus(row.position, opened), rules, reuse, anchor = row.position.anchorText)
-            }
+            show(savedLocus(row.position, opened), rules, reuse, anchor = row.position.anchorText)
             if (flow.pendingSharePlay == bookId) {
                 flow.pendingSharePlay = null
                 tts.play()
@@ -181,6 +182,17 @@ class ReaderViewModel(
     /** The Queue table changed under the open stream: refresh in place or follow the rebuild. */
     private suspend fun onQueueUpdate(mode: ReaderQueueMode, update: QueueUpdate) {
         applyQueueAction(mode, mode.onUpdate(update, _ui.value.locus))
+    }
+
+    /** Contents opened on a plugin story: chapters downloaded since it opened get their icon. */
+    fun refreshContents() {
+        if (bookSessionId?.domain != PositionDomain.Plugin) return
+        viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) {
+                runCatching { flow.pluginBooks.openStory(bookId).cached }.getOrNull()
+            } ?: return@launch
+            _ui.update { it.copy(tocDownloaded = cached) }
+        }
     }
 
     /** Contents opened: pick up Queue rows added, done or edited since the stream was built. */
@@ -240,12 +252,9 @@ class ReaderViewModel(
             ReaderBook.local(ChapterSource.open(flow.catalog.materialize(row), row.title))
         }
 
-    /** Saved position in current chapter indices (the stored href wins over a drifted index). */
-    private fun savedLocus(position: ReadingPosition, book: ReaderBook): Locus {
-        val byHref = book.indexOfHref(position.chapterHref)
-        val chapter = if (byHref >= 0) byHref else position.chapterIndex
-        return Locus(chapter.coerceIn(0, book.chapterCount - 1), position.blockIndex, position.charOffset)
-    }
+    /** Saved position in current chapter indices (see [ResumeLocus]). */
+    private fun savedLocus(position: ReadingPosition, book: ReaderBook): Locus =
+        ResumeLocus.of(position, book.chapterCount, book::indexOfHref, book.readable)
 
     /**
      * Show [start]: reuse [reuse] when it already holds that chapter, else open a session around

@@ -1,6 +1,8 @@
 package com.personal.flowreader.plugin.store
 
 import com.personal.flowreader.data.Chapter
+import com.personal.flowreader.data.ReadingPosition
+import com.personal.flowreader.data.ResumeLocus
 import com.personal.flowreader.plugin.api.PluginCard
 import com.personal.flowreader.plugin.api.PluginChapterRef
 import com.personal.flowreader.plugin.api.PluginJson
@@ -35,8 +37,18 @@ data class PluginReadSession(
     val titleOverride: String = "",
     /** Chapters added by update checks since the story was last opened in the reader. */
     val newChapters: Int = 0,
+    /** ToC indices whose body was on disk when the story was read. */
+    val cached: Set<Int> = emptySet(),
 ) {
     val displayTitle: String get() = titleOverride.ifBlank { title }
+
+    /** A locked chapter is readable only when its body was downloaded before it locked. */
+    fun readable(index: Int): Boolean = toc.getOrNull(index)?.let { !it.locked || index in cached } ?: false
+
+    /** ToC index reading resumes at for [position] (see [ResumeLocus]). */
+    fun resumeChapter(position: ReadingPosition?): Int =
+        ResumeLocus.of(position ?: ReadingPosition(), toc.size, { href -> toc.indexOfFirst { it.url == href } }, ::readable)
+            .chapterIndex
 
     val cachePolicy: PluginCachePolicy
         get() = PluginCachePolicy(cacheLevel, cleanup, keepAll)
@@ -188,6 +200,7 @@ object PluginSessionStore {
             title = fields["title"] ?: workId,
             author = fields["author"].orEmpty(),
             toc = toc,
+            cached = cachedChapterIndices(dir, toc),
         )
     }
 

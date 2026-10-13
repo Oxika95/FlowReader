@@ -1,5 +1,7 @@
 package com.personal.flowreader.data
 
+import androidx.room.ColumnInfo
+
 /**
  * A stored reading position, embedded in every table that owns one (Library, Queue, plugin
  * books). A position save writes these columns and nothing else.
@@ -21,6 +23,8 @@ data class ReadingPosition(
     val positionSessionAt: Long = 0L,
     /** [PositionSource] name of the writer. */
     val positionSource: String = "",
+    /** The chapter at [chapterHref] was read to its end: resume at the next one once it exists. */
+    @ColumnInfo(defaultValue = "0") val chapterFinished: Boolean = false,
 ) {
     val hasProgress: Boolean get() = chapterIndex > 0 || blockIndex > 0 || charOffset > 0
 }

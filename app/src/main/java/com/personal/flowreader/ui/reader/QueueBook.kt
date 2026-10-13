@@ -97,6 +97,10 @@ internal class QueueBook(val segments: List<QueueSegment>) {
             }
         },
         load = { i -> loadChapter(i) },
+        readable = { i ->
+            val seg = segmentIndexOf(i)
+            seg >= 0 && segments[seg].book.readable(i - bases[seg])
+        },
     )
 
     fun segmentIndexOf(chapter: Int): Int {
@@ -188,10 +192,10 @@ internal class QueueBook(val segments: List<QueueSegment>) {
 
     fun locator(session: ReadingSession) = ProgressLocator { locus, at -> locate(session, locus, at) }
 
-    private suspend fun loadChapter(index: Int): Chapter {
+    private suspend fun loadChapter(index: Int): Chapter? {
         val seg = segmentIndexOf(index)
         val local = index - bases[seg]
-        val raw = segments[seg].book.load(local)
+        val raw = segments[seg].book.load(local) ?: return null
         return Chapter(
             title = chapterTitle(seg, local, raw.title),
             blocks = raw.blocks.map { it.copy(id = "q$seg-${it.id}") },

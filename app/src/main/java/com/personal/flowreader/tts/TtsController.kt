@@ -264,9 +264,9 @@ class TtsController(
     private val _state = MutableStateFlow(TtsUiState())
     val state: StateFlow<TtsUiState> = _state
 
-    private val _bookFinished = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    /** Emits when playback reaches the last sentence and stops (Que auto-advance listens). */
-    val bookFinished: SharedFlow<Unit> = _bookFinished
+    private val _bookFinished = MutableSharedFlow<SpokenPosition>(extraBufferCapacity = 1)
+    /** Emits the last sentence when playback reaches it and stops (finished position, Que auto-advance). */
+    val bookFinished: SharedFlow<SpokenPosition> = _bookFinished
 
     fun setNotificationPermissionAsker(asker: ((onDone: () -> Unit) -> Unit)?) {
         notificationPermissionAsker = asker
@@ -1414,7 +1414,7 @@ class TtsController(
                 abandonAudioFocus()
                 unregisterNoisyReceiver()
                 TtsPlaybackService.stop()
-                _bookFinished.tryEmit(Unit)
+                reading?.let { _bookFinished.tryEmit(SpokenPosition(it, s)) }
                 return
             }
             index++

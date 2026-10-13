@@ -1,5 +1,6 @@
 package com.personal.flowreader.plugin.store
 
+import com.personal.flowreader.data.ReadingPosition
 import com.personal.flowreader.plugin.api.PluginChapterRef
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -43,6 +44,20 @@ class PluginSessionStoreTest {
             PluginSessionStore.writeMeta(dir, session("4", tocSize = 1).copy(toc = toc))
             val loaded = PluginSessionStore.read(root, "4")!!.toc
             assertEquals(listOf("A\tB" to true, "C" to false), loaded.map { it.title to it.locked })
+        }
+    }
+
+    @Test
+    fun lockedChapterIsReadableOnlyWhenDownloaded() {
+        withRoot { root ->
+            val dir = PluginSessionStore.dir(root, "k")
+            val toc = listOf(ref("a"), PluginChapterRef("B", "https://example.com/b", locked = true), PluginChapterRef("C", "https://example.com/c", locked = true))
+            PluginSessionStore.writeMeta(dir, session("k", tocSize = 1).copy(toc = toc))
+            PluginSessionStore.writeChapter(dir, toc[2].url, "C", "body")
+            val loaded = PluginSessionStore.read(root, "k")!!
+            assertEquals(setOf(2), loaded.cached)
+            assertEquals(listOf(true, false, true), toc.indices.map(loaded::readable))
+            assertEquals(0, loaded.resumeChapter(ReadingPosition(chapterIndex = 1, chapterHref = toc[1].url)))
         }
     }
 

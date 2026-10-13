@@ -233,7 +233,7 @@ class PluginBookStore(
         return PluginLibraryMeta(
             author = session.author,
             chapterCount = session.toc.size,
-            downloadedCount = PluginSessionStore.cachedChapterCount(r.dir, session.toc),
+            downloadedCount = session.cached.size,
         )
     }
 
@@ -421,17 +421,14 @@ class PluginBookStore(
     }
 
     /**
-     * Chapter [index] of [session]'s ToC: cached text, else fetched and cached. A locked chapter
-     * that was never downloaded is its heading alone (the ToC marks it locked).
+     * Chapter [index] of [session]'s ToC: cached text, else fetched and cached. Null for a locked
+     * chapter that was never downloaded (a ToC entry only).
      */
-    suspend fun chapter(session: PluginReadSession, index: Int): Chapter {
+    suspend fun chapter(session: PluginReadSession, index: Int): Chapter? {
         val r = ref(session.bookId)
-        val prefix = r.plugin.manifest.bookIdPrefix
-        val ref = session.toc.getOrNull(index)
-            ?: throw PluginException(PluginErrorCode.Error, "Chapter ${index + 1} missing")
-        val (title, text) = chapterText(r, session, index)
-            ?: return Chapter(ref.title, chapterBlocks(ref.title.ifBlank { "Chapter ${index + 1}" }, "", prefix, index))
-        return Chapter(title, chapterBlocks(title, text, prefix, index))
+        if (index !in session.toc.indices) throw PluginException(PluginErrorCode.Error, "Chapter ${index + 1} missing")
+        val (title, text) = chapterText(r, session, index) ?: return null
+        return Chapter(title, chapterBlocks(title, text, r.plugin.manifest.bookIdPrefix, index))
     }
 
     /** Download a cover once; null if blank or the book folder already has one. */

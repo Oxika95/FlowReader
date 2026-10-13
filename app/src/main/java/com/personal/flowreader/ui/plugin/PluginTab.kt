@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.Dp
 import com.personal.flowreader.ui.design.FlowIcons
 import com.personal.flowreader.ui.design.controls.FlowBadgeTone
 import com.personal.flowreader.ui.design.controls.FlowFab
+import com.personal.flowreader.ui.design.layer.FlowPullRefresh
 import com.personal.flowreader.ui.design.tabs.FlowTab
 import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.design.tabs.FlowTabLevel
@@ -107,46 +108,50 @@ fun PluginTabContent(
             },
         )
         when (val section = ui.section) {
-            is PluginSection.Library -> if (ui.manifest.list(section.listId)?.isBrowse == true) {
-                BrowseListPane(
-                    ui = ui,
-                    listId = section.listId,
-                    onOpen = { row -> vm.openBrowse(section.listId, row) },
-                    modifier = Modifier.weight(1f),
-                    bottomInset = bottomInset,
-                )
-            } else {
-                val listTitle = ui.manifest.list(section.listId)?.title ?: section.listId
-                LibraryBooksPane(
-                    books = ui.visibleBooks,
-                    viewMode = viewMode,
-                    busy = ui.busy,
-                    emptyMessage = when {
-                        ui.books.isEmpty() -> "No stories yet.\nTap + to add one" +
-                            if (ui.manifest.auth != null) ", or sign in to import a list." else "."
-                        else -> "No stories in $listTitle."
-                    },
-                    onOpen = { bookId -> vm.readBook(actions, bookId) },
-                    onLongOpen = vm::openStory,
-                    badgesFor = { book ->
-                        if (book.bookId in ui.sync.conflictBookIds) listOf(POSITION_CONFLICT_BADGE to FlowBadgeTone.Negative) else emptyList()
-                    },
-                    bottomInset = bottomInset,
-                    subtitleFor = { book ->
-                        val meta = ui.libraryMeta[book.bookId]
-                        val row = ui.listRows[book.bookId]
-                        val author = meta?.author?.ifBlank { null } ?: row?.author.orEmpty()
-                        val lastRead = ui.sync.pendingTitles[book.bookId]?.let { "Last read: $it" }
-                        when {
-                            author.isNotBlank() && lastRead != null -> "$author · $lastRead"
-                            lastRead != null -> lastRead
-                            else -> LibraryRowText.subtitle(author, meta?.chapterCount ?: 0, book.chapterIndex)
-                                ?: ui.manifest.name
-                        }
-                    },
-                    newCountFor = { book -> ui.newCounts[book.bookId] ?: 0 },
-                    modifier = Modifier.weight(1f),
-                )
+            is PluginSection.Library -> FlowPullRefresh(
+                refreshing = ui.refreshing,
+                onRefresh = vm::refresh,
+                modifier = Modifier.weight(1f),
+            ) {
+                if (ui.manifest.list(section.listId)?.isBrowse == true) {
+                    BrowseListPane(
+                        ui = ui,
+                        listId = section.listId,
+                        onOpen = { row -> vm.openBrowse(section.listId, row) },
+                        bottomInset = bottomInset,
+                    )
+                } else {
+                    val listTitle = ui.manifest.list(section.listId)?.title ?: section.listId
+                    LibraryBooksPane(
+                        books = ui.visibleBooks,
+                        viewMode = viewMode,
+                        busy = ui.busy,
+                        emptyMessage = when {
+                            ui.books.isEmpty() -> "No stories yet.\nTap + to add one" +
+                                if (ui.manifest.auth != null) ", or sign in to import a list." else "."
+                            else -> "No stories in $listTitle."
+                        },
+                        onOpen = { bookId -> vm.readBook(actions, bookId) },
+                        onLongOpen = vm::openStory,
+                        badgesFor = { book ->
+                            if (book.bookId in ui.sync.conflictBookIds) listOf(POSITION_CONFLICT_BADGE to FlowBadgeTone.Negative) else emptyList()
+                        },
+                        bottomInset = bottomInset,
+                        subtitleFor = { book ->
+                            val meta = ui.libraryMeta[book.bookId]
+                            val row = ui.listRows[book.bookId]
+                            val author = meta?.author?.ifBlank { null } ?: row?.author.orEmpty()
+                            val lastRead = ui.sync.pendingTitles[book.bookId]?.let { "Last read: $it" }
+                            when {
+                                author.isNotBlank() && lastRead != null -> "$author · $lastRead"
+                                lastRead != null -> lastRead
+                                else -> LibraryRowText.subtitle(author, meta?.chapterCount ?: 0, book.chapterIndex)
+                                    ?: ui.manifest.name
+                            }
+                        },
+                        newCountFor = { book -> ui.newCounts[book.bookId] ?: 0 },
+                    )
+                }
             }
             PluginSection.Search -> PluginSearchPane(
                 ui = ui,

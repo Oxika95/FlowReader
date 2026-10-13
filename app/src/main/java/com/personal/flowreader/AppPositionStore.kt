@@ -12,12 +12,12 @@ internal class AppPositionStore(private val app: FlowApp) : PositionStore {
         return when (update.domain) {
             PositionDomain.Library -> app.db.library().writePosition(
                 update.rowKey, p.chapterIndex, p.chapterHref, p.blockIndex, p.charOffset, p.anchorText,
-                p.fraction, p.positionAt, p.positionSessionAt, p.positionSource,
+                p.fraction, p.positionAt, p.positionSessionAt, p.positionSource, p.chapterFinished,
             ) > 0
             PositionDomain.Queue -> {
                 val written = app.db.queue().writePosition(
                     update.rowKey, p.chapterIndex, p.chapterHref, p.blockIndex, p.charOffset, p.anchorText,
-                    p.fraction, p.positionAt, p.positionSessionAt, p.positionSource,
+                    p.fraction, p.positionAt, p.positionSessionAt, p.positionSource, p.chapterFinished,
                 ) > 0
                 if (written) app.db.queue().setState(QueueStateEntity(currentQueId = update.rowKey, updatedAt = update.at))
                 written

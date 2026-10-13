@@ -12,6 +12,7 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `data/PositionLogFormatTest.kt`
 - `data/ProgressWriterTest.kt`
 - `data/ReadingSessionTest.kt`
+- `data/ResumeLocusTest.kt`
 - `data/SentenceSplitterTest.kt`
 - `data/SentenceTableTest.kt`
 - `data/SharedTextTitleTest.kt`

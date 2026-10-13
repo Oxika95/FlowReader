@@ -90,7 +90,7 @@ class FlowApp : Application() {
         super.onCreate()
         positionLog = PositionLog(File(filesDir, "logs/positions.log"))
         db = Room.databaseBuilder(this, AppDatabase::class.java, "flow.db")
-            .addMigrations(LegacyMigration.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
+            .addMigrations(LegacyMigration.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12)
             .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5, 6, 7, 8)
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
@@ -156,7 +156,7 @@ class FlowApp : Application() {
 
     /**
      * Playback keeps going with the reader closed; every spoken sentence is the new position,
-     * stored through the session it was read from.
+     * stored through the session it was read from. Reaching the end marks its chapter finished.
      */
     private fun persistSpokenPosition() {
         appScope.launch {
@@ -164,6 +164,13 @@ class FlowApp : Application() {
                 val s = spoken.sentence
                 spoken.session.position(Locus(s.chapterIndex, s.blockIndex, s.start), PositionSource.Tts)
                     ?.let(progress::submit)
+            }
+        }
+        appScope.launch {
+            tts.bookFinished.collect { spoken ->
+                val s = spoken.sentence
+                spoken.session.position(Locus(s.chapterIndex, s.blockIndex, s.start), PositionSource.Tts)
+                    ?.let { progress.submit(it.copy(chapterFinished = true), flush = true) }
             }
         }
     }

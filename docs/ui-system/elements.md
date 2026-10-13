@@ -77,6 +77,12 @@ selected tab in view.
 | `FlowSectionRow(title, info) { actions }` | Section heading with trailing icon actions (e.g. `+`) on the same line |
 | `FlowInfoButton(expanded, onClick, contentDescription)` | The info icon itself (outlined, filled while open) |
 
+## Pull to refresh (`ui/design/layer/FlowPullRefresh.kt`)
+
+`FlowPullRefresh(refreshing, onRefresh, modifier) { list }` wraps a list area (M3
+`PullToRefreshBox`). The content must scroll vertically: `FlowDisplayList` / `FlowDisplayGrid`, or
+`FlowEmptyState`, which scrolls so an empty list still pulls. Used by the plugin tab's lists.
+
 ## Meta (`FlowBadge.kt`)
 
 `FlowBadge(label, onCover)`, `FlowStat(stat, color)`, `FlowMetaRow(badges, stats, onCover)`:

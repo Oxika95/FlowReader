@@ -52,8 +52,8 @@ interface PluginBookDao {
     @Query(
         "UPDATE plugin_books SET chapterIndex = :chapterIndex, chapterHref = :chapterHref, " +
             "blockIndex = :blockIndex, charOffset = :charOffset, anchorText = :anchorText, fraction = :fraction, " +
-            "positionAt = :positionAt, positionSessionAt = :positionSessionAt, positionSource = :positionSource " +
-            "WHERE bookId = :bookId",
+            "positionAt = :positionAt, positionSessionAt = :positionSessionAt, positionSource = :positionSource, " +
+            "chapterFinished = :chapterFinished WHERE bookId = :bookId",
     )
     suspend fun writePosition(
         bookId: String,
@@ -66,6 +66,7 @@ interface PluginBookDao {
         positionAt: Long,
         positionSessionAt: Long,
         positionSource: String,
+        chapterFinished: Boolean,
     ): Int
 
     @Query("DELETE FROM plugin_books WHERE bookId = :bookId")
@@ -127,7 +128,7 @@ interface PluginStoryDao {
     suspend fun delete(bookId: String)
 }
 
-@Database(entities = [PluginBookEntity::class, PluginStoryEntity::class], version = 2, exportSchema = true)
+@Database(entities = [PluginBookEntity::class, PluginStoryEntity::class], version = 3, exportSchema = true)
 abstract class PluginDatabase : RoomDatabase() {
     abstract fun books(): PluginBookDao
     abstract fun stories(): PluginStoryDao
@@ -143,6 +144,11 @@ abstract class PluginDatabase : RoomDatabase() {
                 )
             }
         }
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `plugin_books` ADD COLUMN `chapterFinished` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
     }
 }
 
@@ -153,7 +159,7 @@ class PluginDatabases(private val context: Context) {
     fun get(pluginId: String): PluginDatabase = synchronized(open) {
         open.getOrPut(pluginId) {
             Room.databaseBuilder(context, PluginDatabase::class.java, fileName(pluginId))
-                .addMigrations(PluginDatabase.MIGRATION_1_2)
+                .addMigrations(PluginDatabase.MIGRATION_1_2, PluginDatabase.MIGRATION_2_3)
                 .build()
         }
     }
