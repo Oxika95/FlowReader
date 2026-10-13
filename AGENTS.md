@@ -15,7 +15,7 @@ Single module: `app/`.
 | `app/` | All app code and tests |
 | `docs/` | Feature docs ([hub](docs/README.md)), `agent/` (map, index), `plugins/` (contract), `ui-system/` |
 | `.cursor/rules/` | Glob-scoped rules, auto-loaded when matching files are touched |
-| `.cursor/commands/` | `/start`, `/handoff`, `/review`, `/release`, `/status` (stage triggers) |
+| `.cursor/commands/` | `/start`, `/handoff`, `/review`, `/release`, `/status` (stage triggers); `start-*` generated |
 | `scripts/` | Emulator setup, agent index generator |
 | `brand/` | Icon sources and build |
 
@@ -30,6 +30,7 @@ Sibling repos: `../flow-reader-plugins` (public plugins), `../flow-reader-chats`
 .\scripts\setup-emulator.ps1 # boot windowed AVD flowreader_api36 + push Gutenberg test books
 .\scripts\setup-emulator.ps1 -Recreate -Install -Import # fresh AVD, app installed, books in library
 .\scripts\gen-agent-index.ps1 # after adding, moving, or splitting files
+.\scripts\gen-start-commands.ps1 # after changing areas, sub-areas, or map.md sub: tags
 ```
 
 If the Kotlin compiler crashes with `NotImplementedError: Unknown file` after deleting files, remove
