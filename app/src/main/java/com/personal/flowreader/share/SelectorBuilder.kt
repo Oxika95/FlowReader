@@ -27,21 +27,38 @@ data class PickedSelector(
 object SelectorBuilder {
     private val IDENT = Regex("^-?[A-Za-z_][A-Za-z0-9_-]*$")
 
+    /** The best of [options]. */
+    fun build(path: List<PathNode>, raw: Document?, similar: Boolean): PickedSelector? =
+        options(path, raw, similar).firstOrNull()
+
     /**
-     * [similar] = Remove: a selector may match every element like the picked one.
-     * Otherwise it must match exactly one element of the same tag.
+     * Every selector for the picked element that works on [raw], best first (the picker cycles
+     * through them). [similar] = Remove: a selector may match every element like the picked one;
+     * class-only selectors come first, fewest matches first, then single classes before pairs,
+     * then longer (more descriptive) names: `portlet solid author-note-portlet` gives
+     * `div.author-note-portlet` before `div.solid` or `div.portlet`.
+     * Otherwise each must match exactly one element of the same tag.
      */
-    fun build(path: List<PathNode>, raw: Document?, similar: Boolean): PickedSelector? {
-        val target = path.lastOrNull() ?: return null
+    fun options(path: List<PathNode>, raw: Document?, similar: Boolean): List<PickedSelector> {
+        val target = path.lastOrNull() ?: return emptyList()
         val candidates = candidates(path, similar)
-        if (raw == null) return PickedSelector(candidates.first(), 0, inRaw = false)
-        for (css in candidates) {
-            val hits = runCatching { raw.select(css) }.getOrNull() ?: continue
-            if (hits.isEmpty() || hits.any { it.normalName() != target.tag }) continue
-            if (!similar && hits.size != 1) continue
-            return PickedSelector(css, hits.size, inRaw = true)
+        if (raw == null) return candidates.map { PickedSelector(it, 0, inRaw = false) }
+        val valid = candidates.mapNotNull { css ->
+            val found = runCatching { raw.select(css) }.getOrNull() ?: return@mapNotNull null
+            if (found.isEmpty() || found.any { it.normalName() != target.tag }) return@mapNotNull null
+            if (!similar && found.size != 1) return@mapNotNull null
+            PickedSelector(css, found.size, inRaw = true)
         }
-        return PickedSelector(candidates.first(), countIn(raw, candidates.first()), inRaw = false)
+        if (valid.isEmpty()) {
+            return listOf(PickedSelector(candidates.first(), countIn(raw, candidates.first()), inRaw = false))
+        }
+        if (!similar) return valid
+        val (classOnly, rest) = valid.partition { ' ' !in it.selector }
+        return classOnly.sortedWith(
+            compareBy<PickedSelector> { it.rawMatches }
+                .thenBy { it.selector.count { c -> c == '.' } }
+                .thenByDescending { it.selector.length },
+        ) + rest
     }
 
     fun countIn(raw: Document?, css: String): Int =

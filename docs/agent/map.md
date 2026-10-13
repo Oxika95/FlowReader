@@ -62,7 +62,7 @@ Paths are relative to `app/src/main/java/com/personal/flowreader/`. Line numbers
 | --- | --- | --- |
 | Share routing / parse rules | `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`), `ShareRouter.kt`; UI `ui/settings/SharingSettingsTab.kt`, `ImportRouterRules.kt`, `ImportParseRules.kt`, `ImportRuleControls.kt` | `ShareRouterTest`, `docs/import-share.md` |
 | Web page parse, Next-link crawl to EPUB | `share/WebPageIngest.kt` (`ParseSelectors`, `CssList`), `HiddenContent.kt`, `WebCrawl.kt`, `EpubWriter.kt`, `HtmlParagraphs.kt` (also plugin chapters); crawl prompt `ui/library/WebCrawlCards.kt` + `LibraryViewModel.startWebImport` | `WebPageIngestTest`, `WebCrawlTest`, `HtmlParagraphsTest` |
-| On-page picker | `ui/settings/PagePickerOverlay.kt` (WebView), `assets/picker/picker.js`, `share/SelectorBuilder.kt` (pure) | `SelectorBuilderTest`, `docs/import-share.md` |
+| On-page picker | `ui/settings/PagePickerOverlay.kt` (WebView), `PickerFields.kt`, `PickPanels.kt` (inspector, parse result), `assets/picker/picker.js`, `share/SelectorBuilder.kt` (pure) | `SelectorBuilderTest`, `docs/import-share.md` |
 
 ## settings
 

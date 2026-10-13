@@ -51,6 +51,46 @@ class SelectorBuilderTest {
     }
 
     @Test
+    fun removePrefersTheMostSpecificClass() {
+        val page = Jsoup.parse(
+            """
+            <div class="portlet solid"><p>sidebar</p></div>
+            <div class="portlet solid author-note-portlet"><p>before</p></div>
+            <div class="chapter-inner"><p>text</p></div>
+            <div class="portlet solid author-note-portlet"><p>after</p></div>
+            <div class="portlet"><p>comments</p></div>
+            """.trimIndent(),
+        )
+        val path = SelectorBuilder.pathOf(page.selectFirst("div.author-note-portlet")!!)
+        val p = SelectorBuilder.build(path, page, similar = true)!!
+        assertEquals("div.author-note-portlet", p.selector)
+        assertEquals(2, p.rawMatches)
+    }
+
+    @Test
+    fun removeTieGoesToTheMostDescriptiveClass() {
+        val page = Jsoup.parse(
+            """
+            <div class="portlet solid author-note-portlet"><p>note</p></div>
+            <div class="chapter-inner"><p>text</p></div>
+            """.trimIndent(),
+        )
+        val path = SelectorBuilder.pathOf(page.selectFirst("div.author-note-portlet")!!)
+        val options = SelectorBuilder.options(path, page, similar = true).map { it.selector }
+        assertEquals("div.author-note-portlet", options.first())
+        assertTrue(options.containsAll(listOf("div.portlet", "div.solid")))
+    }
+
+    @Test
+    fun singleOptionsAllMatchExactlyOne() {
+        val path = SelectorBuilder.pathOf(doc.selectFirst("h1")!!)
+        val options = SelectorBuilder.options(path, doc, similar = false)
+        assertEquals("h1.title", options.first().selector)
+        assertTrue(options.size > 1)
+        assertTrue(options.all { doc.select(it.selector).size == 1 })
+    }
+
+    @Test
     fun flagsElementMissingFromDownloadedHtml() {
         val live = SelectorBuilder.pathOf(doc.selectFirst("h1")!!).let { path ->
             path.dropLast(1) + PathNode("h2", classes = listOf("injected"))

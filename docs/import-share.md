@@ -94,22 +94,30 @@ rule (Queue or a Files tab). The same crawl produces the same bytes, so re-crawl
 with [`picker.js`](../app/src/main/assets/picker/picker.js) injected; links are disabled. The page
 runs edge to edge (pinch to zoom) under a field tab bar (Title · Cover · Body · Prev · Next · Remove).
 Tapping an element fills the active field right away (Remove: adds an entry); **Narrower** / **Wider**
-adjust that pick in place, and switching tabs starts a fresh pick. **Clear** empties the field,
-**Save** writes all fields back to the editor, and the close button discards picker changes. The line
-under the page shows the field's selector with its counts, plus the picked text or a warning. Filled
-fields are outlined on the page.
-- **Navigate** (compass, header): taps reach the page (menus, spoilers, links). Navigating away from
-  the Test URL asks **Leave the Test URL?** first; **Open** loads the page and makes it the rule's
-  Test URL right away (also if the picker is then closed). Script-only URL changes (`pushState`)
-  can't be stopped and update the Test URL as they happen.
-- **Desktop site** (header; phone icon = mobile view, monitor = desktop): toggles the rule's Desktop
-  site setting; reloads the page with
-  the desktop user agent and a 1200 px viewport, and re-downloads the import copy.
+adjust that pick in place, the **‹ ›** arrows cycle through every selector that fits the pick (Remove:
+replaces its entry), and switching tabs starts a fresh pick. **Clear** empties the field, **Save**
+writes all fields back to the editor, and the close button discards picker changes. The lines under the
+page show the field's selector (full width) and the picked text or a warning. Filled fields are
+outlined on the page.
+Header toggles (left to right; each icon shows the current state):
+- **Pick / Navigate** (eyedropper = picking, touch = navigating; hidden in the parse result): in
+  Navigate, taps reach the page (menus, spoilers, links). The tab bar becomes a URL bar with
+  **Back** / **Forward**, and the footer keeps only **Save**. Following a link away from the Test URL
+  asks **Leave the Test URL?** first; **Open** loads the page and makes it the rule's Test URL right
+  away (also if the picker is then closed). Back, Forward and script-only URL changes (`pushState`)
+  update the Test URL as they happen.
+- **Desktop site** (phone icon = mobile view, monitor = desktop; hidden in the parse result): toggles the rule's Desktop site
+  setting; reloads the page with the desktop user agent and a 1200 px viewport, and re-downloads the
+  import copy.
+- **Page / Parse result** (code icon = page, document icon = parse result): shows the title and
+  paragraphs the importer makes of the downloaded copy with the current selections (same parser as
+  **Test**, honours Remove hidden text), or the parse error.
 [`SelectorBuilder`](../app/src/main/java/com/personal/flowreader/share/SelectorBuilder.kt) builds the
-selector against the separately downloaded HTML (what imports parse): id, class, class-qualified
-ancestor, then positional path; single fields must match exactly one element, Remove may match many.
-The panel shows `Page N · Import M`; **Not in fetched HTML, won't import** means the element only
-exists after page scripts run (try Wider).
+selectors against the separately downloaded HTML (what imports parse): id, class, class-qualified
+ancestor, then positional path; single fields must match exactly one element. Remove may match many:
+class-only selectors come first, fewest matches first, then single classes before pairs, then longer
+names (`portlet solid author-note-portlet` gives `div.author-note-portlet` first).
+**Not in fetched HTML, won't import** means the element only exists after page scripts run (try Wider).
 - Text is saved paragraph by paragraph ([`HtmlParagraphs.kt`](../app/src/main/java/com/personal/flowreader/share/HtmlParagraphs.kt)):
   every block element, `<br>` and `<pre>` line ends a paragraph, so words never join across a
   break; text directly inside a `<div>` is kept and nested blocks are read once. Plugin chapter

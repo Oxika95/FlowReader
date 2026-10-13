@@ -16,8 +16,8 @@ Hand-written guide: [map.md](map.md).
 | `plugin/runtime` | [index/plugin-runtime.md](index/plugin-runtime.md) | 6 | 709 |
 | `plugin/store` | [index/plugin-store.md](index/plugin-store.md) | 9 | 1563 |
 | `plugin/sync` | [index/plugin-sync.md](index/plugin-sync.md) | 4 | 787 |
-| `plugin/updates` | [index/plugin-updates.md](index/plugin-updates.md) | 6 | 460 |
-| `share` | [index/share.md](index/share.md) | 13 | 2009 |
+| `plugin/updates` | [index/plugin-updates.md](index/plugin-updates.md) | 6 | 461 |
+| `share` | [index/share.md](index/share.md) | 13 | 2026 |
 | `tts` | [index/tts.md](index/tts.md) | 18 | 4818 |
 | `ui/common` | [index/ui-common.md](index/ui-common.md) | 1 | 117 |
 | `ui/debug` | [index/ui-debug.md](index/ui-debug.md) | 1 | 352 |
@@ -26,8 +26,8 @@ Hand-written guide: [map.md](map.md).
 | `ui/open` | [index/ui-open.md](index/ui-open.md) | 1 | 148 |
 | `ui/plugin` | [index/ui-plugin.md](index/ui-plugin.md) | 16 | 3326 |
 | `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 21 | 4221 |
-| `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 22 | 5341 |
+| `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 24 | 5510 |
 | `ui/theme` | [index/ui-theme.md](index/ui-theme.md) | 5 | 517 |
 | tests | [index/tests.md](index/tests.md) | 57 | |
 
-Totals: 192 main files, 35909 lines.
+Totals: 194 main files, 36096 lines.

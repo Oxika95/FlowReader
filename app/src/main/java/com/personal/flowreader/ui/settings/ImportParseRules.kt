@@ -345,6 +345,7 @@ internal fun ParseRuleEditorOverlay(
             desktop = desktop,
             onDesktopChange = { desktop = it },
             onUrlChange = { testUrl = it },
+            stripHidden = stripHidden,
             onDismiss = { pickerOpen = false },
             onDone = { f ->
                 titleCss = f.title
