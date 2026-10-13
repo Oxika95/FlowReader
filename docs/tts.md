@@ -29,6 +29,7 @@ Priority goals: stability → latency → footprint.
 | Pin card | When playhead leaves the viewport |
 | Margin rail | Cache / loading indicators for Edge clips |
 | Media session | Notification + background keep-alive via `TtsPlaybackService` |
+| Interruptions | Audio focus (`FocusResume`). Transient loss (alarm, call, nav prompt; duck requests too, since speech pauses rather than ducks) pauses and resumes on focus gain if the break lasted ≤ 5 min (`FOCUS_RESUME_MAX_MS`); longer breaks stay paused. Any user play/pause/stop in between cancels the resume. Permanent loss (another media app) pauses with no resume; the next Play requests focus again. Resume restarts the current sentence. Debug log: `focus loss transient`, `focus gain resume after Ns`, `focus gain no-resume …`, `focus loss permanent` |
 | Tonal underlay | Quiet noise while playing. Mode toggle Off / Auto / On; Auto sounds only while playback is routed to the picked paired device (media output route: `getAudioDevicesForAttributes` on API 33+, else the playing track's routed device), not merely connected; re-checked on play, track route changes, device add/remove and Bluetooth broadcasts. |
 | Auto Play on Share | Settings → Import → Router. Off by default. Text, file and web-page shares (`LibraryViewModel.executeShareIntent`) open the saved book in the reader and call `play()` once it loads (`FlowApp.pendingSharePlay`), only when nothing is playing unless **Interrupt Playback** is on. Plugin links, clipboard paste and "Open with" are unchanged |
 

@@ -42,6 +42,7 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `tts/EdgeSynthLengthBench.kt`
 - `tts/EdgeTtsClientTest.kt`
 - `tts/EdgeVoiceCatalogTest.kt`
+- `tts/FocusResumeTest.kt`
 - `tts/NetworkLanePolicyTest.kt`
 - `tts/RaceScheduleTest.kt`
 - `tts/SpeechTextTest.kt`

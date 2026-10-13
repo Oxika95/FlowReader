@@ -13,6 +13,7 @@ import android.media.MediaPlayer
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -215,15 +216,40 @@ class TtsController(
     private val audioManager: AudioManager =
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
+    private val focusResume = FocusResume()
+
+    /** Delivered on the main thread (no handler on the request). */
     private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        val now = SystemClock.elapsedRealtime()
         when (change) {
-            AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            -> {
-                if (_state.value.playing) pause()
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                SynthDebugLog.append("focus loss permanent")
+                focusResume.clear()
+                // The system already dropped us; next play must request focus again.
+                holdsAudioFocus = false
+                audioFocusRequest = null
+                if (_state.value.playing) scope.launch { pausePlayback(PlaybackState.STATE_PAUSED) }
             }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> Unit
-            AudioManager.AUDIOFOCUS_GAIN -> Unit
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
+            -> {
+                val playing = _state.value.playing
+                SynthDebugLog.append("focus loss transient playing=$playing")
+                focusResume.onTransientLoss(playing, now)
+                if (playing) scope.launch { pausePlayback(PlaybackState.STATE_PAUSED) }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                val gain = focusResume.onGain(now) ?: return@OnAudioFocusChangeListener
+                val secs = gain.elapsedMs / 1000
+                if (gain.resume) {
+                    SynthDebugLog.append("focus gain resume after ${secs}s")
+                    play()
+                } else {
+                    SynthDebugLog.append(
+                        "focus gain no-resume after ${secs}s (cap ${FOCUS_RESUME_MAX_MS / 1000}s)",
+                    )
+                }
+            }
         }
     }
 
@@ -388,6 +414,7 @@ class TtsController(
         stopSessionAudio()
         systemTts?.stop()
         cancelEdgeJobs()
+        focusResume.clear()
         abandonAudioFocus()
         unregisterNoisyReceiver()
         TtsPlaybackService.stop()
@@ -601,16 +628,19 @@ class TtsController(
     }
 
     fun play(follow: Boolean? = null) {
+        focusResume.clear()
         if (sentences.isEmpty()) return
         scope.launch { startPlayback(follow) }
     }
 
     fun pause() {
+        focusResume.clear()
         scope.launch { pausePlayback(PlaybackState.STATE_PAUSED) }
     }
 
     /** Tear down playback entirely and end the session (notification Stop, Library card X). */
     fun stop() {
+        focusResume.clear()
         scope.launch { pausePlayback(PlaybackState.STATE_STOPPED) }
     }
 
@@ -1151,6 +1181,7 @@ class TtsController(
                     play()
                 }
                 override fun onPause() {
+                    focusResume.clear()
                     if (_state.value.playing) pause()
                 }
                 override fun onSkipToNext() {
@@ -1160,7 +1191,7 @@ class TtsController(
                     skipPrev()
                 }
                 override fun onStop() {
-                    scope.launch { pausePlayback(PlaybackState.STATE_STOPPED) }
+                    stop()
                 }
             })
             isActive = true
