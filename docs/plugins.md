@@ -49,19 +49,13 @@ post a system notification.
 **Rename** sets a local title (`titleOverride` in `plugin_stories`) shown in the library, reader,
 and queue; refresh and sync never touch it; **Reset** goes back to the plugin's title. Renames,
 counts, the bell, and cache settings are backed up with the plugin's database.
-
-**Locked chapters** (`ChapterRef.locked`, Patreon posts above your tier, shown by default) carry a
-lock icon in the reader's Contents and the creator page. One that was never downloaded is a
-Contents entry only: its row can't be tapped, nothing is fetched or shown, and reading, TTS and the
-saved position stop at the chapter before it. A readable chapter after it can still be opened from
-Contents. Downloaded chapters show a download icon in Contents (refreshed each time it opens).
-
-**Pull to refresh** on a list (not Search) re-imports a browse list from the site, or runs two-way
-sync for story lists, then checks the plugin's stories for new chapters (badges only, no
-notification). Signed-out plugins with sign-in only run the new-chapter check.
-
-Patreon's **All posts** story (what Follow adds for a creator) is named after the creator's
-largest collection, else their most used tag, else the creator.
+**Locked chapters** (`ChapterRef.locked`, Patreon posts above your tier) show a lock in Contents and
+the creator page; never downloaded, they are an untappable Contents entry only, and reading, TTS and
+the saved position stop before them (later readable chapters open from Contents). Downloaded
+chapters show a download icon in Contents. **Pull to refresh** on a list (not Search) re-imports a
+browse list or syncs a story list, then checks for new chapters (badges only; signed out: check only).
+Patreon's **All posts** story (what Follow adds for a creator) is named after the creator's largest
+collection, else their most used tag, else the creator.
 
 **Browse lists** (`kind: "browse"`, Patreon: Memberships) list entry points instead of stories.
 Tapping a creator opens a creator page with tabs; each tab loads only when first shown and stays
@@ -83,9 +77,7 @@ loaded while the page is open:
 
 The Memberships list is split into **Paid** (green badge, active patron) and **Free** (red badge,
 free or former member) groups separated by a divider.
-
-Adding a story to Follow brings it into the reader.
-Signed in, the list re-imports itself when shown (at most every 15 minutes) and after a creator page
+Adding a story to Follow brings it into the reader. Signed in, the list re-imports itself when shown (at most every 15 minutes) and after a creator page
 closes; Patreon rows carry an "N new" badge (posts in the home feed since the creator page was last
 opened) and the newest post date. Sync never adds or deletes stories for a browse list.
 
@@ -115,10 +107,8 @@ opened) and the newest post date. Sync never adds or deletes stories for a brows
   removes the saved chapter ("stubbing" on Royal Road), the position moves to the next chapter that
   survived (log `TOC_REMAP`). An open reader or TTS session keeps the ToC it opened with and still
   reads the right text; new chapters show the next time the story opens
-- **Caught up:** when TTS reaches the end of the last chapter, the position is saved with
-  `chapterFinished`. Once an update adds the next chapter, opening the story (reader, card, Read)
-  starts there, and the update check downloads ahead of it. The site's position is not moved
-  until that chapter is actually opened
+- **Caught up:** TTS reaching the end of the last chapter saves `chapterFinished`; once an update
+  adds a chapter, the story opens and downloads ahead from it (site position moves only on open)
 
 ## Sign-in
 
