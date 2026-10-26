@@ -62,14 +62,16 @@ internal fun AboutSettingsTab(
         add(R.drawable.ic_settings_info to "Info")
         add(R.drawable.ic_settings_notifications to "Notifications")
         add(R.drawable.ic_settings_data to "Data")
-        if (debugEnabled) add(R.drawable.ic_bug to "Debug")
+        // Bitmap silhouette (drawable-nodpi); vectors crash flowImageTabs / ImageBitmap.imageResource.
+        if (debugEnabled) add(R.drawable.ic_settings_debug to "Debug")
     }
-    LaunchedEffect(debugEnabled) {
-        if (!debugEnabled && subTab >= 3) subTab = 0
+    val selected = subTab.coerceIn(0, tabs.lastIndex)
+    LaunchedEffect(debugEnabled, tabs.size) {
+        if (subTab != selected) subTab = selected
     }
-    SettingsSubTabBar(tabs, subTab) { subTab = it }
+    SettingsSubTabBar(tabs, selected) { subTab = it }
     Spacer(Modifier.height(FlowTokens.Space.M))
-    when (subTab) {
+    when (selected) {
         0 -> AboutInfoPane(debugEnabled, onDebugEnabled)
         1 -> NotificationSettingsPane(debugEnabled)
         2 -> DataSettingsPane()
