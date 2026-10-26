@@ -235,7 +235,16 @@ data class TtsVoiceOption(
     val label: String,
     /** Language the voice is listed under ("English"); blank = no language picker. */
     val language: String = "",
+    /** `"male"` / `"female"`; blank = unknown (only shown when gender filter is All). */
+    val gender: String = "",
 )
+
+/** UI filter for Settings → Audio → Voice (not persisted). */
+enum class VoiceGenderFilter(val label: String) {
+    All("All"),
+    Male("Male"),
+    Female("Female"),
+}
 
 enum class BookSource {
     Imported,

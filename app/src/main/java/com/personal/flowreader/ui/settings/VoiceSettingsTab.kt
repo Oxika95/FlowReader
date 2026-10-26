@@ -40,6 +40,8 @@ import androidx.compose.ui.text.style.TextAlign
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
+import com.personal.flowreader.data.VoiceGenderFilter
+import com.personal.flowreader.ui.design.controls.FlowSegmentedRow
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -104,7 +106,13 @@ internal fun VoiceSettingsTab(
                 ?: languages.firstOrNull().orEmpty(),
         )
     }
-    val shownVoices = if (languages.isEmpty()) voices else voices.filter { it.language == language }
+    var genderFilter by remember(engineKey) { mutableStateOf(VoiceGenderFilter.All) }
+    val afterLanguage = if (languages.isEmpty()) voices else voices.filter { it.language == language }
+    val shownVoices = when (genderFilter) {
+        VoiceGenderFilter.All -> afterLanguage
+        VoiceGenderFilter.Male -> afterLanguage.filter { it.gender.equals("male", ignoreCase = true) }
+        VoiceGenderFilter.Female -> afterLanguage.filter { it.gender.equals("female", ignoreCase = true) }
+    }
 
     FlowLabel("TTS Engine")
     ExposedDropdownMenuBox(
@@ -172,6 +180,16 @@ internal fun VoiceSettingsTab(
             }
         }
     }
+
+    Spacer(Modifier.height(FlowTokens.Space.S))
+    FlowSegmentedRow(
+        title = "Gender",
+        subtitle = "",
+        options = VoiceGenderFilter.entries,
+        selected = genderFilter,
+        optionLabel = { it.label },
+        onSelect = { genderFilter = it },
+    )
 
     Spacer(Modifier.height(FlowTokens.Space.M))
     FlowLabel("Voice")

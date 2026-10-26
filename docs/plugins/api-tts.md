@@ -35,7 +35,7 @@ Engine key in Settings: `tts:{id}` (e.g. `tts:edgetts`).
 
 | Export | Result |
 | --- | --- |
-| `listVoices()` | `{ id, label, language, langTag }[]` — `language` is the Language dropdown label. |
+| `listVoices()` | `{ id, label, language, langTag, gender? }[]` — `language` is the Language dropdown label; optional `gender` is `"male"` / `"female"`. |
 | `synthesize({ text, voice, lang, ratePercent, pitchPercent })` | `{ mp3Base64, boundaries? }` where `boundaries` is `{ offset, duration, text }[]` in 100-ns ticks. |
 
 ## Capabilities (app gating)

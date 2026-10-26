@@ -31,11 +31,18 @@ class PluginTtsProvider(
                 val o = arr.optJSONObject(i) ?: continue
                 val voiceId = o.optString("id").trim()
                 if (voiceId.isEmpty()) continue
+                val gender = o.optString("gender").trim().lowercase().let { g ->
+                    when (g) {
+                        "male", "female" -> g
+                        else -> ""
+                    }
+                }
                 add(
                     TtsVoiceOption(
                         id = voiceId,
                         label = o.optString("label").ifBlank { voiceId },
                         language = o.optString("language"),
+                        gender = gender,
                     ),
                 )
             }
