@@ -9,7 +9,7 @@ How a plugin fills the story media card, using Royal Road as the model
 {
   "id": "royalroad",
   "version": "1.3.0",
-  "apiVersion": 4,
+  "apiVersion": 5,
   "lists": [
     { "id": "follow", "title": "Follow", "icon": "add" },
     { "id": "favorite", "title": "Favorite", "icon": "favorite" },

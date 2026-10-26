@@ -1,6 +1,6 @@
 # Plugin API: functions and types
 
-Part of the [Plugin API](api.md) (apiVersion 4).
+Part of the [Plugin API](api.md) (apiVersion 5).
 
 ## Functions (`index.js`)
 
