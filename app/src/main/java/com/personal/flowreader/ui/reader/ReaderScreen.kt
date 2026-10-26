@@ -165,6 +165,14 @@ fun ReaderScreen(
     /** Skip the next TTS follow-scroll once when we center the list ourselves (double-tap / pin). */
     var suppressFollowScroll by remember { mutableStateOf(false) }
     var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
+    /**
+     * First visible block id + pixel offset. Updated only for keys already in the committed
+     * item list so a prepend that slips the list cannot overwrite the glue point.
+     */
+    var listAnchor by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    var committedItemIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    /** While true, do not let a slipped prepend overwrite [listAnchor]. */
+    var freezeAnchor by remember { mutableStateOf(false) }
     /** Root-Y lines of the tracked sentence, written from layout while its paragraph is composed. */
     var trackedSpan by remember { mutableStateOf<SentenceSpan?>(null) }
     var listTopY by remember { mutableFloatStateOf(0f) }
@@ -461,12 +469,57 @@ fun ReaderScreen(
         }
     }
 
+    // Hold place when a previous chapter is prepended (LazyColumn keeps the old index otherwise).
+    LaunchedEffect(items) {
+        val ids = items.map { it.block.id }
+        val prev = committedItemIds
+        val prepended = prev.isNotEmpty() &&
+            ids.size > prev.size &&
+            prev.firstOrNull()?.let { ids.indexOf(it) > 0 } == true
+        if (!prepended) {
+            committedItemIds = ids
+            return@LaunchedEffect
+        }
+        freezeAnchor = true
+        programmatic = true
+        try {
+            val anchor = listAnchor
+            if (anchor != null) {
+                val index = ids.indexOf(anchor.first)
+                if (index >= 0) {
+                    withFrameNanos { }
+                    if (listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key != anchor.first) {
+                        listState.scrollToItem(index, anchor.second)
+                        DebugLog.reader("reanchor key=${anchor.first} index=$index offset=${anchor.second}")
+                        snapshotFlow { listState.isScrollInProgress }.first { !it }
+                    }
+                }
+            }
+        } finally {
+            programmatic = false
+            freezeAnchor = false
+            committedItemIds = ids
+        }
+    }
+
     LaunchedEffect(listState, items) {
         val chapterByBlockId = items.associate { it.block.id to it.chapterIndex }
         snapshotFlow {
-            val keys = listState.layoutInfo.visibleItemsInfo.map { it.key }
-            ReaderHome.visibleChapterRange(keys, chapterByBlockId)
-        }.collect { range -> range?.let { vm.onViewport(it.first, it.last) } }
+            val visible = listState.layoutInfo.visibleItemsInfo
+            val first = visible.firstOrNull()
+            val key = first?.key as? String
+            val anchor = if (key != null) key to first.offset else null
+            val range = ReaderHome.visibleChapterRange(visible.map { it.key }, chapterByBlockId)
+            anchor to range
+        }.collect { (anchor, range) ->
+            if (anchor != null && !freezeAnchor) listAnchor = anchor
+            // One-shot jumps must not load chapters mid-scroll (list changes under the jump).
+            if (programmatic) {
+                DebugLog.reader("viewportSkip programmatic range=$range")
+                return@collect
+            }
+            range?.let { vm.onViewport(it.first, it.last) }
+        }
     }
 
     fun toggleChrome() {
