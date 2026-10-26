@@ -7,7 +7,7 @@ flowchart LR
   main --> rdr[ReaderScreen / ReaderViewModel]
   share[ShareIngressActivity] --> router[ShareRouter + RouterRules] --> lib
   lib --> plug[PluginTab / PluginTabViewModel] --> src[PluginSource] --> js[JsPluginRuntime QuickJS]
-  rdr --> tts[TtsController] --> eng[TtsAudioEngine / EdgeTtsClient / system TTS]
+  rdr --> tts[TtsController] --> eng[TtsAudioEngine / PluginTtsProvider / system TTS]
   lib --> data[BookCatalog, ProgressDb Room, SettingsStore DataStore]
   rdr --> data
 ```

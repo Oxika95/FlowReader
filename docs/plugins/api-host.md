@@ -1,12 +1,15 @@
 # Plugin API: host API, limits, repository index
 
-Part of the [Plugin API](api.md) (apiVersion 4).
+Part of the [Plugin API](api.md) (apiVersion 5).
 
 ## Host API (`flow` global)
 
 | Call | Result |
 | --- | --- |
 | `await flow.fetch(url, { method, headers, form, body, contentType, cookies })` | `{ status, url, headers, text }`. `url` is the final URL after redirects; header names are lower-case. Non-2xx statuses are returned, not thrown. Cookies persist per plugin; `cookies: false` sends and stores none for this request. |
+| `await flow.ws.collect({ url, headers, messages, endPath, timeoutMs })` | `{ texts, binariesBase64 }`. WebSocket session for TTS (and similar). Host must be in `allowedHosts`. See [api-tts.md](api-tts.md). |
+| `flow.crypto.sha256(inputBase64)` | Base64 SHA-256 digest of the decoded bytes (TTS tokens, etc.). |
+| `flow.crypto.sha256Hex(inputHex)` | Hex SHA-256 of even-length hex input bytes (Edge Sec-MS-GEC). |
 | `flow.html.parse(html, baseUrl?)` | `Node` (see below). Handles are valid only during the current call. |
 | `await flow.storage.get(key)` / `set(key, value)` / `remove(key)` | Per-plugin string key-value store. |
 | `await flow.secrets.get(key)` / `set` / `remove` / `clear()` | Per-plugin encrypted store. Never store passwords. |
@@ -42,14 +45,14 @@ A repository is a static `index.json` (GitHub Pages works):
 ```json
 {
   "name": "Flow Reader Official",
-  "apiVersion": 4,
+  "apiVersion": 5,
   "plugins": [
     {
       "id": "royalroad",
       "name": "Royal Road",
       "description": "Your followed and saved serials",
       "version": "1.3.0",
-      "apiVersion": 4,
+      "apiVersion": 5,
       "lang": "en",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",

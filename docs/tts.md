@@ -8,13 +8,11 @@ Listen while reading. Engines and voices live under Settings → **Audio**; the 
 
 ## Engines
 
-- **Edge TTS** — Neural voices (default `en-US-AndrewNeural`), clip prefetch and size controls.
-  Every Edge voice is offered (about 320 in 140 locales), picked by Language then Voice. The list comes
-  from Edge's `voices/list` endpoint, cached in `filesDir/edge_voices.json` and refreshed at most
-  weekly; before the first download the bundled snapshot `resources/tts/edge_voices.json` is used
-  (`EdgeVoiceCatalog`, `EdgeVoiceStore`). SSML `xml:lang` follows the voice's locale. Sentence
-  splitting is tuned for English, so clip boundaries in other languages can be rougher.
-- **System Default** / other installed engines — Android TTS
+- **Default (system TTS)** / other installed Android TTS engines — on-device speech.
+- **TTS plugins** (e.g. **Edge TTS** when the `edgetts` plugin is installed) — clip MP3 cache,
+  prefetch, and optional word boundaries. Engine key `tts:{pluginId}`. Edge uses Microsoft Read
+  Aloud (`api.msedgeservices.com`) with Sec-MS-GEC **v2**; see [plugins/api-tts.md](plugins/api-tts.md).
+  Language then Voice filters the plugin catalog. Sentence splitting is tuned for English.
 
 Priority goals: stability → latency → footprint.
 
@@ -71,62 +69,42 @@ of an item in the stream synthesizes fresh clips (cache key is the stream, not t
 - A failed lookahead clip isn't retried by prefetch; the playhead retries or skips it when it gets
   there. Characters XML forbids (control chars, lone surrogates) are stripped before Edge SSML.
 
-## Edge requests and networks
+## Clip-audio plugins and networks
 
-- **Host** (`EdgeHandshake`): the service is unofficial (reverse-engineered from Edge Read Aloud)
-  and Microsoft changes it without notice. Synthesis and the voice list use
-  `api.msedgeservices.com/tts/cognitiveservices` (`websocket/v1`, `voices/list`) with
-  `Ocp-Apim-Subscription-Key` = the Edge client token, v1 `Sec-MS-GEC`, and
-  `Sec-MS-GEC-Version=1-143.0.3650.75`. The old `speech.platform.bing.com` host 403s every
-  handshake since 2026-10-12 and is not used. Requests send Edge-like headers and a random `muid`
-  cookie. Upstream reference: [rany2/edge-tts#490](https://github.com/rany2/edge-tts/issues/490).
-- **Rejected handshake** (401/403 → `EdgeServiceException`): the server's `Date` header sets
-  `EdgeHandshake.skewSeconds`, because the token is only valid in the server's 5-minute window.
-  Rejections are not network stalls (`RaceReport.nonNetworkError`). At the playhead, a race with
-  only rejections logs `ERROR edge rejected …`, opens the log once, and retries after
-  2/5/15/30/60 s (then every 60 s) without waiting on connectivity. Persistent 403s with a correct
-  clock mean Microsoft changed the protocol again (likely the v2 `Sec-MS-GEC` token).
-- **Staggered race** (`EdgeTtsClient`, `RaceSchedule`): one WebSocket per clip at t = 0. Backups
-  start at +d and +2d only while no attempt has received audio; an attempt that errors starts the
-  next one at once. First success wins, the rest are cancelled; 6 s wall (`RACE_TIMEOUT_MS`).
-- **Backup delay d** (`NetworkLanePolicy.hedgeDelayMs`): 90th percentile of the last 20 winners'
-  first-audio latency, clamped 1–3 s; 2 s until 5 samples exist. Phones measured 1.0–2.7 s to first
-  audio (desktop ~0.4 s), so a fixed 1 s sent a backup on every clip. A healthy link costs about one
-  request per clip.
-- **Stall**: the race failed, or a delayed backup had to win. A slow first attempt that still wins
-  is not a stall.
-- **Lanes** (`EdgeNetwork` = `NetworkMonitor` + `NetworkLanePolicy`): each attempt is sent on the
-  default network, Wi-Fi, or cellular (OkHttp client bound to that `Network`). Modes:
+- **Edge TTS** lives in `flow-reader-plugins/EdgeTts` (`kind: "tts"`, engine `tts:edgetts`). The
+  plugin owns Sec-MS-GEC **v2** and opens WSS via `flow.ws.collect` (see
+  [plugins/api-tts.md](plugins/api-tts.md)). Voice catalog:
+  `api.msedgeservices.com/.../voices/list` with v2 GEC (key-only → 403); falls back to Bing
+  `voices/list` if needed. The app owns clip cache, prefetch, word highlight, and
+  `TtsAudioEngine` playback.
+- **Upstream:** [Readest `edgeTTS.ts`](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/edgeTTS.ts)
+  is the source of truth for GEC, URL, headers, and framing; host `PluginWs` follows Readest’s
+  [raw-socket upgrade](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWebSocket.ts)
+  (OkHttp’s WebSocket upgrade gets HTTP 200 from Edge). Port Readest; do not invent a parallel
+  handshake. Cursor rule: `flow-reader-plugins/.cursor/rules/edgetts.mdc`.
 
-| Mode | When | Attempts (start → network) |
-|------|------|----------------------------|
-| Normal | Signal fine, no recent stalls | 0, d, 2d → default |
-| Overlap | Wi-Fi RSSI below −75 dBm (until above −68), or weak cellular (level ≤ 1) with Wi-Fi up | 0 Wi-Fi + 0 cellular, d cellular |
-| Cell first | 2 stalls in a row on Wi-Fi, or Wi-Fi without internet | 0 cellular, d Wi-Fi, 2d cellular; every 4th race overlaps to probe Wi-Fi; 3 Wi-Fi wins → back |
-| Offline | No usable network | No sends; playback waits |
-
-- Cellular is requested (`requestNetwork`) once Wi-Fi drops below −70 dBm, stalls, or loses
-  internet, and released 30 s after Wi-Fi recovers, or on pause/stop.
-- Setting **Use mobile data when Wi-Fi is weak** (Playback tab, default On). Off: only Normal and
-  Offline; cellular is never requested.
+- **Synth path:** host calls `provider.synthesize` once per clip (single-shot). Host still keeps
+  `RaceSchedule` / `NetworkLanePolicy` / `EdgeNetwork` for offline wait and the mobile-data setting
+  when the provider advertises `networkLanes`; multi-attempt race/hedge over plugin synth is not
+  wired yet (ask before reintroducing).
+- Setting **Use mobile data when Wi-Fi is weak** (Playback tab) shows only for `networkLanes`
+  providers. Voice **Advanced** (prefetch / clip size) shows only for clip-audio / prefetch
+  providers.
 - **Network failure at the playhead** (`EdgeNetworkException`): logged as `ERROR network …`,
-  playback waits without a time limit until a network is usable, backs off 1/2/4/8 s, clears failed
-  lookahead, and retries the same sentence. Session and media card stay up; debug is not forced on.
-- Synth log (5,000-line ring, ~20+ min): `edge race[pre i=N] start … plan=default@0,…` (source
-  `pre` = lookahead, `play` = playhead, `next` = crossfade next clip, `regen`, `preview`),
-  `edge race[pre i=N #k] start lane=… t=…`, `first-audio ms=…`, `win … firstAudioMs=… totalMs=…`,
-  and `net poll|race mode=… rssi=… cellLevel=…` when the mode, cellular level, or RSSI (±3 dBm)
-  changes. RSSI thresholds are starting values; tune from walk-test logs.
+  playback waits until a network is usable, backs off 1/2/4/8 s, clears failed lookahead, and
+  retries. Session and media card stay up.
+- Synth log lines use `tts synth[…]` (source `pre` / `play` / `next` / `regen` / `preview`).
 
 ## Debug
 
-About → Debug mode shows a synth dump FAB for Edge logs.
+About → Debug mode shows a synth dump FAB for TTS logs.
 
 ## Source
 
 - [`tts/`](../app/src/main/java/com/personal/flowreader/tts/)
+- [`tts/provider/`](../app/src/main/java/com/personal/flowreader/tts/provider/)
 - [`TtsPlaybackService.kt`](../app/src/main/java/com/personal/flowreader/tts/TtsPlaybackService.kt)
-- [`EdgeTtsClient.kt`](../app/src/main/java/com/personal/flowreader/tts/EdgeTtsClient.kt)
 - [`AudioSettings.kt`](../app/src/main/java/com/personal/flowreader/ui/settings/AudioSettings.kt)
+- Plugins: `../flow-reader-plugins/EdgeTts/`
 
 [Back to hub](README.md)

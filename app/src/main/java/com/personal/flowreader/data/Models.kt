@@ -210,15 +210,18 @@ enum class ReaderOrientation {
         }
 }
 
-/** Virtual Edge engine, or an Android TTS engine package / system default. */
+/**
+ * Built-in engine keys. Clip-audio engines (e.g. Edge TTS) come from installed TTS plugins
+ * as `tts:{pluginId}` — see [com.personal.flowreader.tts.provider.TtsEngineIds].
+ */
 object TtsEngines {
+    /** @deprecated Prefer [com.personal.flowreader.tts.provider.TtsEngineIds.LEGACY_EDGE]; migrated to `tts:edgetts`. */
     const val EDGE = "edge"
     const val SYSTEM_DEFAULT = "system"
 
-    /** Always-present engine choices, ahead of any installed Android TTS engines. */
+    /** Always-present choice; TTS plugins and other system engines are appended at runtime. */
     val BUILT_IN: List<TtsEngineOption> = listOf(
-        TtsEngineOption(EDGE, "Edge TTS"),
-        TtsEngineOption(SYSTEM_DEFAULT, "System Default"),
+        TtsEngineOption(SYSTEM_DEFAULT, "Default (system TTS)"),
     )
 }
 

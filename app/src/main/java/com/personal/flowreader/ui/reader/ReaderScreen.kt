@@ -944,6 +944,7 @@ fun ReaderScreen(
             visible = overlay == ReaderOverlay.Settings,
             appearance = appearance,
             appearanceCallbacks = appearanceCallbacks,
+            onRefreshEngines = { vm.tts.refreshEngines() },
             tts = TtsSettingsState(
                 engineKey = tts.engineKey,
                 voiceId = tts.voiceId,
@@ -954,6 +955,8 @@ fun ReaderScreen(
                 prefetchCount = tts.prefetchCount,
                 clipTargetChars = tts.clipTargetChars,
                 clipFlexChars = tts.clipFlexChars,
+                showClipSettings = tts.showClipSettings,
+                showNetworkLanes = tts.showNetworkLanes,
                 doubleTapPlay = tts.doubleTapPlay,
                 mobileDataFallback = tts.mobileDataFallback,
                 autoPlayOnShare = tts.autoPlayOnShare,

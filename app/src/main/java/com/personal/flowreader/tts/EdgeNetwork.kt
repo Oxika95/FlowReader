@@ -2,13 +2,20 @@ package com.personal.flowreader.tts
 
 import android.content.Context
 import android.os.SystemClock
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import kotlin.math.abs
 
-/** Picks Edge race lanes from live network state ([NetworkMonitor]) and race history ([NetworkLanePolicy]). */
-class EdgeNetwork(context: Context, base: OkHttpClient) {
+/**
+ * Picks network race lanes from live state ([NetworkMonitor]) and race history
+ * ([NetworkLanePolicy]). Used by clip-audio providers that advertise `networkLanes`.
+ */
+class EdgeNetwork(
+    context: Context,
+    base: OkHttpClient = defaultHttp(),
+) {
     private val monitor = NetworkMonitor(context, base)
     private val policy = NetworkLanePolicy()
     private val lock = Any()
@@ -52,7 +59,7 @@ class EdgeNetwork(context: Context, base: OkHttpClient) {
         policy.mode == NetMode.OFFLINE
     }
 
-    /** Suspends until some network can carry Edge traffic; rechecks on every callback and every few seconds. */
+    /** Suspends until some network can carry clip traffic; rechecks on every callback. */
     suspend fun awaitUsable() {
         while (isOffline()) {
             val seen = monitor.changes.value
@@ -88,5 +95,11 @@ class EdgeNetwork(context: Context, base: OkHttpClient) {
     private companion object {
         const val RECHECK_MS = 5_000L
         const val RSSI_LOG_STEP = 3
+
+        fun defaultHttp(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(6, TimeUnit.SECONDS)
+            .writeTimeout(6, TimeUnit.SECONDS)
+            .build()
     }
 }

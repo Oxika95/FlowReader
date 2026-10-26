@@ -109,6 +109,10 @@ data class TtsSettingsState(
     val highlightSyncMs: Int,
     val clipTargetChars: Int,
     val clipFlexChars: Int,
+    /** Prefetch / clip size controls (clip-audio providers). */
+    val showClipSettings: Boolean = false,
+    /** Mobile-data lane toggle (providers with networkLanes). */
+    val showNetworkLanes: Boolean = false,
 )
 
 data class TtsSettingsCallbacks(

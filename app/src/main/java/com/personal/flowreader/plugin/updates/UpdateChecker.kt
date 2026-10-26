@@ -37,7 +37,7 @@ class UpdateChecker(private val app: FlowApp) {
     /** Check every installed plugin, or only [pluginId]. */
     suspend fun run(pluginId: String? = null): List<ChapterUpdate> = TwoWaySync.lock.withLock {
         val out = ArrayList<ChapterUpdate>()
-        for (plugin in app.pluginManager.installed.value) {
+        for (plugin in app.pluginManager.sourcePlugins()) {
             if (pluginId != null && plugin.id != pluginId) continue
             currentCoroutineContext().ensureActive()
             try {

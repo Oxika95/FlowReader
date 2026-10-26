@@ -8,26 +8,26 @@ Hand-written guide: [map.md](map.md).
 | Package | Index | Files | Lines |
 | --- | --- | --- | --- |
 | `root` | [index/root.md](index/root.md) | 3 | 505 |
-| `data` | [index/data.md](index/data.md) | 23 | 4036 |
+| `data` | [index/data.md](index/data.md) | 23 | 4046 |
 | `library` | [index/library.md](index/library.md) | 1 | 9 |
-| `plugin` | [index/plugin.md](index/plugin.md) | 3 | 415 |
-| `plugin/api` | [index/plugin-api.md](index/plugin-api.md) | 2 | 761 |
+| `plugin` | [index/plugin.md](index/plugin.md) | 3 | 438 |
+| `plugin/api` | [index/plugin-api.md](index/plugin-api.md) | 2 | 798 |
 | `plugin/repo` | [index/plugin-repo.md](index/plugin-repo.md) | 4 | 290 |
-| `plugin/runtime` | [index/plugin-runtime.md](index/plugin-runtime.md) | 6 | 709 |
+| `plugin/runtime` | [index/plugin-runtime.md](index/plugin-runtime.md) | 7 | 880 |
 | `plugin/store` | [index/plugin-store.md](index/plugin-store.md) | 9 | 1579 |
 | `plugin/sync` | [index/plugin-sync.md](index/plugin-sync.md) | 4 | 787 |
 | `plugin/updates` | [index/plugin-updates.md](index/plugin-updates.md) | 6 | 461 |
 | `share` | [index/share.md](index/share.md) | 13 | 2026 |
-| `tts` | [index/tts.md](index/tts.md) | 19 | 4883 |
+| `tts` | [index/tts.md](index/tts.md) | 20 | 4547 |
 | `ui/common` | [index/ui-common.md](index/ui-common.md) | 1 | 117 |
 | `ui/debug` | [index/ui-debug.md](index/ui-debug.md) | 1 | 352 |
 | `ui/design` | [index/ui-design.md](index/ui-design.md) | 22 | 3449 |
-| `ui/library` | [index/ui-library.md](index/ui-library.md) | 13 | 2154 |
+| `ui/library` | [index/ui-library.md](index/ui-library.md) | 13 | 2161 |
 | `ui/open` | [index/ui-open.md](index/ui-open.md) | 1 | 148 |
 | `ui/plugin` | [index/ui-plugin.md](index/ui-plugin.md) | 16 | 3360 |
-| `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 21 | 4255 |
-| `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 24 | 5481 |
+| `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 21 | 4257 |
+| `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 24 | 5496 |
 | `ui/theme` | [index/ui-theme.md](index/ui-theme.md) | 5 | 517 |
-| tests | [index/tests.md](index/tests.md) | 59 | |
+| tests | [index/tests.md](index/tests.md) | 55 | |
 
-Totals: 197 main files, 36294 lines.
+Totals: 199 main files, 36223 lines.

@@ -55,9 +55,9 @@ Sub-tabs: **Voice | Playback**.
 
 | Control | Key |
 |---------|-----|
-| TTS Engine | `tts_engine` (Edge TTS, System Default, installed engines) |
-| Language (Edge only; filters the Voice list; starts on the current voice's language, English by default) | not stored |
-| Voice | `tts_voice` (default `en-US-AndrewNeural`) |
+| TTS Engine | `tts_engine` — Default (system TTS), installed TTS plugins (`tts:{id}`), other system engines (via `TextToSpeech.engines`; app declares `TTS_SERVICE` package query). Legacy `edge` migrates to `tts:edgetts`. Re-probed when Settings opens. |
+| Language | not stored — filters Voice when the engine's voices expose `language` (plugins + system) |
+| Voice | `tts_voice` — full engine catalog (Edge ~300+ from Bing voices/list), filtered by Language. Default `en-US-AndrewNeural` when Edge is selected |
 | Speed 0.5–2.5× | `tts_speed` |
 | Pitch 0.5–2 | `tts_pitch` |
 | Advanced ▾ Pre-cache clips 1–10 | `tts_prefetch` |

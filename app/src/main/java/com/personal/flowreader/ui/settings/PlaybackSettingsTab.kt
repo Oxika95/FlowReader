@@ -53,6 +53,7 @@ import kotlin.math.roundToInt
 internal fun PlaybackSettingsTab(
     doubleTapPlay: Boolean = false,
     mobileDataFallback: Boolean = true,
+    showNetworkLanes: Boolean = false,
     autoScrollWithTts: Boolean = false,
     underlayMode: UnderlayMode = UnderlayMode.Off,
     minSignal: Float = TonalUnderlay.DEFAULT_LEVEL,
@@ -134,13 +135,15 @@ internal fun PlaybackSettingsTab(
         checked = doubleTapPlay,
         onCheckedChange = onDoubleTapPlay,
     )
-    Spacer(Modifier.height(FlowTokens.Space.S))
-    FlowToggleRow(
-        title = "Use mobile data when Wi-Fi is weak",
-        subtitle = "Edge voices also use mobile data while Wi-Fi is weak or failing",
-        checked = mobileDataFallback,
-        onCheckedChange = onMobileDataFallback,
-    )
+    if (showNetworkLanes) {
+        Spacer(Modifier.height(FlowTokens.Space.S))
+        FlowToggleRow(
+            title = "Use mobile data when Wi-Fi is weak",
+            subtitle = "Also use mobile data while Wi-Fi is weak or failing",
+            checked = mobileDataFallback,
+            onCheckedChange = onMobileDataFallback,
+        )
+    }
 
     Spacer(Modifier.height(FlowTokens.Space.L))
     FlowSegmentedRow(

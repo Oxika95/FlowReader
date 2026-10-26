@@ -18,6 +18,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import android.util.Base64
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -32,6 +34,7 @@ class JsPluginRuntime(
     private val secrets: PluginSecrets,
     private val kv: PluginKvStore,
     private val settingsJson: () -> String,
+    private val ws: PluginWs = PluginWs(manifest.allowedHosts),
 ) {
     private val mutex = Mutex()
     private val html = HtmlHandles()
@@ -136,6 +139,42 @@ class JsPluginRuntime(
         engine.asyncFunction("__secrets_remove") { args -> secrets.remove(args.str(0)) }
         engine.asyncFunction("__secrets_clear") { _ -> secrets.clear() }
         engine.asyncFunction("__cookies_clear") { _ -> http.cookieJar.clear() }
+        engine.asyncFunction("__ws_collect") { args ->
+            try {
+                ws.collect(args.str(0))
+            } catch (t: Throwable) {
+                val msg = t.message.orEmpty()
+                val status = Regex("""status=(\d+)""").find(msg)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                // HTTP 200/401/403 on WS upgrade = service rejection (bad token), not offline.
+                val code = when (status) {
+                    200, 401, 403 -> "AUTH_REQUIRED"
+                    else -> "NETWORK"
+                }
+                JSONObject()
+                    .put(
+                        "error",
+                        JSONObject()
+                            .put("code", code)
+                            .put("message", msg.ifBlank { "ws failed" }),
+                    )
+                    .toString()
+            }
+        }
+        engine.function("__sha256") { args ->
+            val input = Base64.decode(args.str(0), Base64.DEFAULT)
+            val digest = MessageDigest.getInstance("SHA-256").digest(input)
+            Base64.encodeToString(digest, Base64.NO_WRAP)
+        }
+        engine.function("__sha256_hex") { args ->
+            val hex = args.str(0).lowercase().replace(Regex("[^0-9a-f]"), "")
+            require(hex.length % 2 == 0) { "sha256Hex needs even-length hex" }
+            val input = ByteArray(hex.length / 2) { i ->
+                hex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+            }
+            MessageDigest.getInstance("SHA-256").digest(input).joinToString("") { b ->
+                "%02x".format(b.toInt() and 0xff)
+            }
+        }
 
         engine.function("__html_parse") { args -> html.parse(args.str(0), args.getOrNull(1) as? String) }
         engine.function("__html_select") { args -> html.select(args.int(0), args.str(1)) }
@@ -233,6 +272,21 @@ class JsPluginRuntime(
                   clear: function () { return __secrets_clear(); }
                 },
                 cookies: { clear: function () { return __cookies_clear(); } },
+                ws: {
+                  collect: async function (opts) {
+                    var r = JSON.parse(await __ws_collect(JSON.stringify(opts || {})));
+                    if (r.error) throw hostError(r.error);
+                    return r;
+                  }
+                },
+                crypto: {
+                  sha256: function (inputBase64) {
+                    return __sha256(String(inputBase64));
+                  },
+                  sha256Hex: function (inputHex) {
+                    return __sha256_hex(String(inputHex));
+                  }
+                },
                 error: function (code, message) { var e = new Error(message || code); e.code = code; return e; },
                 url: { resolve: function (base, href) { return __url_resolve(String(base), String(href)); } },
                 sleep: function (ms) { return __host_sleep(Number(ms) || 0); },

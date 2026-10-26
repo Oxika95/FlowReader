@@ -9,7 +9,8 @@
     "name": { "type": "string" },
     "description": { "type": "string" },
     "version": { "type": "string", "pattern": "^\\d+(\\.\\d+)*$" },
-    "apiVersion": { "type": "integer", "const": 4 },
+    "apiVersion": { "type": "integer", "const": 5 },
+    "kind": { "enum": ["source", "tts"], "default": "source" },
     "site": { "type": "string", "format": "uri" },
     "lang": { "type": "string" },
     "bookIdPrefix": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{1,39}$" },
@@ -18,7 +19,12 @@
     "capabilities": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "enum": ["search", "lists", "auth", "membership", "progressSync", "resolveUrl", "updates", "browse"] }
+      "items": {
+        "enum": [
+          "search", "lists", "auth", "membership", "progressSync", "resolveUrl", "updates", "browse",
+          "clipAudio", "wordBoundaries", "prefetch", "networkLanes"
+        ]
+      }
     },
     "lists": {
       "type": "array",

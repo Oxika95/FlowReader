@@ -40,7 +40,6 @@ import androidx.compose.ui.text.style.TextAlign
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
-import com.personal.flowreader.tts.EdgeVoiceCatalog
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -57,6 +56,7 @@ internal fun VoiceSettingsTab(
     prefetchCount: Int = 1,
     clipTargetChars: Int = TtsPrefs.DEFAULT_CLIP_TARGET_CHARS,
     clipFlexChars: Int = TtsPrefs.DEFAULT_CLIP_FLEX_CHARS,
+    showClipSettings: Boolean = false,
     onEngine: (String) -> Unit,
     onVoice: (String) -> Unit,
     onSpeed: (Float) -> Unit = {},
@@ -100,7 +100,7 @@ internal fun VoiceSettingsTab(
     var language by remember(voiceId, languages) {
         mutableStateOf(
             voices.firstOrNull { it.id == voiceId }?.language?.takeIf { it.isNotBlank() }
-                ?: EdgeVoiceCatalog.DEFAULT_LANGUAGE.takeIf { it in languages }
+                ?: "English".takeIf { it in languages }
                 ?: languages.firstOrNull().orEmpty(),
         )
     }
@@ -260,8 +260,9 @@ internal fun VoiceSettingsTab(
         )
     }
 
-    Spacer(Modifier.height(FlowTokens.Space.S))
     var advancedOpen by remember { mutableStateOf(false) }
+    if (showClipSettings) {
+    Spacer(Modifier.height(FlowTokens.Space.S))
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -384,5 +385,6 @@ internal fun VoiceSettingsTab(
                 )
             }
         }
+    }
     }
 }

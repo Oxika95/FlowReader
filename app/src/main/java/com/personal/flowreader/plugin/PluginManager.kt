@@ -69,8 +69,24 @@ class PluginManager(private val context: Context) {
 
     fun dataDir(pluginId: String): File = File(dataRoot, pluginId).apply { mkdirs() }
 
+    fun sourcePlugins(): List<InstalledPlugin> = _installed.value.filter { it.manifest.isSource }
+
+    fun ttsPlugins(): List<InstalledPlugin> = _installed.value.filter { it.manifest.isTts }
+
     fun source(pluginId: String): PluginSource = synchronized(sources) {
         sources[pluginId]?.first?.let { return it }
+        val plugin = get(pluginId)
+            ?: throw PluginException(PluginErrorCode.Unsupported, "Plugin $pluginId is not installed")
+        require(plugin.manifest.isSource) { "$pluginId is not a source plugin" }
+        val runtime = runtime(pluginId)
+        val source = PluginSource(plugin.manifest, runtime)
+        sources[pluginId] = source to runtime
+        source
+    }
+
+    /** Shared QuickJS runtime for source or TTS plugins. */
+    fun runtime(pluginId: String): JsPluginRuntime = synchronized(sources) {
+        sources[pluginId]?.second?.let { return it }
         val plugin = get(pluginId)
             ?: throw PluginException(PluginErrorCode.Unsupported, "Plugin $pluginId is not installed")
         val code = File(plugin.dir, CODE_FILE).readText()
@@ -88,9 +104,12 @@ class PluginManager(private val context: Context) {
             kv = PluginKvStore.forFile(File(dataDir(pluginId), "_kv.preferences_pb")),
             settingsJson = { settingsValues(pluginId).toString() },
         )
-        val source = PluginSource(plugin.manifest, runtime)
-        sources[pluginId] = source to runtime
-        source
+        if (plugin.manifest.isSource) {
+            sources[pluginId] = PluginSource(plugin.manifest, runtime) to runtime
+        } else {
+            sources[pluginId] = PluginSource(plugin.manifest, runtime) to runtime
+        }
+        runtime
     }
 
     /** The cookie jar behind this plugin's `flow.fetch`. */
@@ -152,14 +171,18 @@ class PluginManager(private val context: Context) {
                 "${manifest.name} uses plugin API ${manifest.apiVersion}, which is no longer supported",
             )
         }
-        val clash = _installed.value.firstOrNull {
-            it.id != manifest.id && it.manifest.bookIdPrefix == manifest.bookIdPrefix
-        }
-        if (clash != null) {
-            throw PluginException(
-                PluginErrorCode.Unsupported,
-                "${manifest.name} uses the same book id prefix as ${clash.name}",
-            )
+        if (manifest.isSource) {
+            val clash = _installed.value.firstOrNull {
+                it.manifest.isSource &&
+                    it.id != manifest.id &&
+                    it.manifest.bookIdPrefix == manifest.bookIdPrefix
+            }
+            if (clash != null) {
+                throw PluginException(
+                    PluginErrorCode.Unsupported,
+                    "${manifest.name} uses the same book id prefix as ${clash.name}",
+                )
+            }
         }
         installedRoot.mkdirs()
         val tmp = File(installedRoot, ".tmp-${manifest.id}")

@@ -75,7 +75,7 @@ data class TtsUiState(
     val bookId: String = "",
     val bookTitle: String = "",
     val following: Boolean = true,
-    val engineKey: String = TtsEngines.EDGE,
+    val engineKey: String = TtsEngines.SYSTEM_DEFAULT,
     val voiceId: String = TtsPrefs.DEFAULT_EDGE_VOICE,
     val speed: Float = 1.0f,
     val pitch: Float = 1.0f,
@@ -100,6 +100,10 @@ data class TtsUiState(
     val clipTargetChars: Int = TtsPrefs.DEFAULT_CLIP_TARGET_CHARS,
     /** Characters allowed above/below [clipTargetChars]. */
     val clipFlexChars: Int = TtsPrefs.DEFAULT_CLIP_FLEX_CHARS,
+    /** Current engine returns clip MP3 (prefetch / clip size UI). */
+    val showClipSettings: Boolean = false,
+    /** Current engine advertises network-lane / mobile-data policy. */
+    val showNetworkLanes: Boolean = false,
     /** When true, synth ring-log is active and the floating dump FAB is shown. */
     val debugEnabled: Boolean = false,
     val engines: List<TtsEngineOption> = TtsEngines.BUILT_IN,
@@ -122,19 +126,17 @@ data class TtsUiState(
 class TtsController(
     private val context: Context,
     private val settings: SettingsStore,
+    private val plugins: com.personal.flowreader.plugin.PluginManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val edge = EdgeTtsClient()
-    private val edgeNet = EdgeNetwork(context, edge.http)
-    private val edgeVoiceStore = EdgeVoiceStore(File(context.filesDir, "edge_voices.json"), edge.http)
-    /** Full Edge voice list; empty until loaded, then [EdgeVoices] stands in. */
+    private val providers = com.personal.flowreader.tts.provider.TtsProviderRegistry(plugins)
+    private val edgeNet = EdgeNetwork(context)
+    /** Cached voices for the current clip-audio provider (plugin). */
     @Volatile
-    private var edgeVoices: List<EdgeVoice> = emptyList()
-    @Volatile
-    private var edgeVoiceOptions: List<TtsVoiceOption> = EdgeVoices
+    private var clipVoiceOptions: List<TtsVoiceOption> = emptyList()
     /** Consecutive playhead network failures; drives the retry backoff. */
     private var networkFailures = 0
-    /** Consecutive playhead handshake rejections (403); drives [awaitServiceRetry]. */
+    /** Consecutive playhead handshake rejections (200/401/403); drives [awaitServiceRetry]. */
     private var serviceFailures = 0
     private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
     private val keepAlive = AudioKeepAlive()
@@ -151,7 +153,7 @@ class TtsController(
     private val cuesBySentence = ConcurrentHashMap<Int, List<WordHighlight.TimedCue>>()
     /** Polls AudioTrack playback head for word highlight. */
     private var wordTrackJob: Job? = null
-    /** Hearable timeline marks: playback head ≥ startWriteFrame → this sentence/seed. */
+    /** Hearable timeline marks: playback head = startWriteFrame ? this sentence/seed. */
     private val wordSegments = ArrayList<WordSegment>()
     private val wordSegmentsLock = Any()
 
@@ -290,11 +292,10 @@ class TtsController(
         scope.launch {
             val prefs = settings.ttsOnce()
             val reader = settings.readerOnce()
-            setEdgeVoices(withContext(Dispatchers.IO) { edgeVoiceStore.load() })
             val voices = voicesFor(prefs.engineKey)
             val voiceId = when {
                 voices.any { it.id == prefs.voiceId } -> prefs.voiceId
-                prefs.engineKey == TtsEngines.EDGE -> TtsPrefs.DEFAULT_EDGE_VOICE
+                usesClipAudio(prefs.engineKey) -> TtsPrefs.DEFAULT_EDGE_VOICE
                 else -> voices.firstOrNull()?.id.orEmpty()
             }
             SynthDebugLog.setEnabled(reader.debugEnabled)
@@ -302,6 +303,7 @@ class TtsController(
             underlayBt.start()
             edgeNet.start()
             withContext(Dispatchers.IO) { edgeNet.setMobileDataAllowed(prefs.mobileDataFallback) }
+            val (showClip, showLanes) = capabilityFlags(prefs.engineKey)
             _state.update {
                 it.copy(
                     engineKey = prefs.engineKey,
@@ -322,17 +324,13 @@ class TtsController(
                     highlightSyncMs = prefs.highlightSyncMs,
                     clipTargetChars = prefs.clipTargetChars,
                     clipFlexChars = prefs.clipFlexChars,
+                    showClipSettings = showClip,
+                    showNetworkLanes = showLanes,
                     debugEnabled = reader.debugEnabled,
                     voices = voices,
                 )
             }
             refreshCatalog()
-            withContext(Dispatchers.IO) { edgeVoiceStore.refreshIfStale() }?.let { fresh ->
-                setEdgeVoices(fresh)
-                if (_state.value.engineKey == TtsEngines.EDGE) {
-                    _state.update { it.copy(voices = edgeVoiceOptions) }
-                }
-            }
         }
         scope.launch {
             underlayBt.targetActive.collect { syncKeepAlive() }
@@ -546,10 +544,8 @@ class TtsController(
                 if (_state.value.playing) {
                     pausePlayback(PlaybackState.STATE_PAUSED)
                 }
-                when (_state.value.engineKey) {
-                    TtsEngines.EDGE -> previewWithEdge(snippet)
-                    else -> speakSystem(snippet, sentenceIndex = null)
-                }
+                if (usesClipAudio()) previewWithEdge(snippet)
+                else speakSystem(snippet, sentenceIndex = null)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Throwable) {
@@ -603,7 +599,7 @@ class TtsController(
         previewJob = null
         releasePreviewPlayer()
         // Stop leftover system preview utterances without tearing down the engine.
-        if (_state.value.engineKey != TtsEngines.EDGE) {
+        if (!usesClipAudio()) {
             systemTts?.stop()
         }
     }
@@ -908,7 +904,7 @@ class TtsController(
      * and fetch a fresh Edge MP3 for the sentence.
      */
     fun forceRegenerateSentence(i: Int) {
-        if (_state.value.engineKey != TtsEngines.EDGE) return
+        if (!usesClipAudio()) return
         if (sentences.getOrNull(i) == null) return
         scope.launch {
             pausePlayback(PlaybackState.STATE_PAUSED)
@@ -939,18 +935,26 @@ class TtsController(
         val preferred = _state.value.voiceId
         val voiceId = when {
             voices.any { it.id == preferred } -> preferred
-            key == TtsEngines.EDGE -> TtsPrefs.DEFAULT_EDGE_VOICE
+            usesClipAudio(key) -> TtsPrefs.DEFAULT_EDGE_VOICE
             else -> voices.firstOrNull()?.id.orEmpty()
         }
+        val (showClip, showLanes) = capabilityFlags(key)
         _state.update {
-            it.copy(engineKey = key, voiceId = voiceId, voices = voices, error = null)
+            it.copy(
+                engineKey = key,
+                voiceId = voiceId,
+                voices = voices,
+                showClipSettings = showClip,
+                showNetworkLanes = showLanes,
+                error = null,
+            )
         }
         scope.launch {
             settings.setEngine(key)
             settings.setVoice(voiceId)
             clearEdgeCache()
             // Force re-init when switching system engines.
-            if (key != TtsEngines.EDGE) {
+            if (!usesClipAudio(key)) {
                 systemTts?.shutdown()
                 systemTts = null
                 systemReady = false
@@ -1106,46 +1110,78 @@ class TtsController(
         }
     }
 
+    /** Re-probe system TTS engines and TTS plugins (e.g. after installing Neko Speak). */
+    fun refreshEngines() {
+        scope.launch { refreshCatalog() }
+    }
+
     private suspend fun refreshCatalog() {
-        val engines = TtsEngines.BUILT_IN.toMutableList()
+        val systemExtras = ArrayList<TtsEngineOption>()
         runCatching {
             val probe = ensureSystemForPackage(null)
             probe.engines
                 ?.mapNotNull { info ->
                     val pkg = info.name ?: return@mapNotNull null
                     if (pkg.isBlank()) return@mapNotNull null
+                    // "system" / default engine package is already listed as Default.
+                    if (pkg == TtsEngines.SYSTEM_DEFAULT) return@mapNotNull null
                     TtsEngineOption(pkg, info.label?.ifBlank { pkg } ?: pkg)
                 }
                 ?.distinctBy { it.key }
-                ?.forEach { engines += it }
+                ?.forEach { systemExtras += it }
         }
-        val key = _state.value.engineKey
+        val providerList = providers.refresh(systemExtras)
+        for (p in providerList) {
+            if (p.has(com.personal.flowreader.tts.provider.TtsCapability.ClipAudio)) {
+                runCatching { clipVoiceOptions = p.listVoices() }
+            }
+        }
+        val engines = providers.engineOptions()
+        var key = _state.value.engineKey
+        if (providers.get(key) == null) {
+            key = TtsEngines.SYSTEM_DEFAULT
+        }
         val voices = voicesFor(key)
         val voiceId = when {
             voices.any { it.id == _state.value.voiceId } -> _state.value.voiceId
-            key == TtsEngines.EDGE -> TtsPrefs.DEFAULT_EDGE_VOICE
+            usesClipAudio(key) -> TtsPrefs.DEFAULT_EDGE_VOICE
             else -> voices.firstOrNull()?.id.orEmpty()
         }
+        val (showClip, showLanes) = capabilityFlags(key)
         _state.update {
-            it.copy(engines = engines, voices = voices, voiceId = voiceId)
+            it.copy(
+                engineKey = key,
+                engines = engines,
+                voices = voices,
+                voiceId = voiceId,
+                showClipSettings = showClip,
+                showNetworkLanes = showLanes,
+            )
         }
     }
 
-    private fun setEdgeVoices(voices: List<EdgeVoice>) {
-        if (voices.isEmpty()) return
-        edgeVoices = voices
-        edgeVoiceOptions = EdgeVoiceCatalog.options(voices)
+    private fun usesClipAudio(engineKey: String = _state.value.engineKey): Boolean =
+        providers.get(engineKey)?.has(com.personal.flowreader.tts.provider.TtsCapability.ClipAudio) == true
+
+    private fun usesPrefetch(engineKey: String = _state.value.engineKey): Boolean =
+        providers.get(engineKey)?.has(com.personal.flowreader.tts.provider.TtsCapability.Prefetch) == true
+
+    private fun usesNetworkLanes(engineKey: String = _state.value.engineKey): Boolean =
+        providers.get(engineKey)?.has(com.personal.flowreader.tts.provider.TtsCapability.NetworkLanes) == true
+
+    private fun capabilityFlags(engineKey: String): Pair<Boolean, Boolean> {
+        val clip = usesClipAudio(engineKey) || usesPrefetch(engineKey)
+        return clip to usesNetworkLanes(engineKey)
     }
 
     private fun voicesFor(engineKey: String): List<TtsVoiceOption> {
-        return when (engineKey) {
-            TtsEngines.EDGE -> edgeVoiceOptions
-            else -> {
-                val tts = systemTts
-                if (tts != null && systemReady) systemVoices(tts)
-                else listOf(TtsVoiceOption("default", "Default"))
-            }
+        val provider = providers.get(engineKey)
+        if (provider != null && provider.has(com.personal.flowreader.tts.provider.TtsCapability.ClipAudio)) {
+            return clipVoiceOptions.ifEmpty { FALLBACK_CLIP_VOICES }
         }
+        val tts = systemTts
+        return if (tts != null && systemReady) systemVoices(tts)
+        else listOf(TtsVoiceOption("default", "Default"))
     }
 
     private fun systemVoices(tts: TextToSpeech): List<TtsVoiceOption> {
@@ -1153,19 +1189,18 @@ class TtsController(
         if (voices.isEmpty()) {
             return listOf(TtsVoiceOption("default", "Default"))
         }
-        val locale = Locale.getDefault()
         return voices
-            .filter { it.locale.language == locale.language || it.locale == Locale.US }
-            .ifEmpty { voices }
             .sortedWith(compareBy<Voice> { it.locale.toLanguageTag() }.thenBy { it.name })
             .map { v ->
+                val langTag = v.locale.toLanguageTag()
+                val language = v.locale.getDisplayLanguage(Locale.ENGLISH).ifBlank { langTag }
                 val label = buildString {
                     append(v.name.substringAfterLast(".").ifBlank { v.name })
                     append(" (")
-                    append(v.locale.toLanguageTag())
+                    append(langTag)
                     append(")")
                 }
-                TtsVoiceOption(v.name, label)
+                TtsVoiceOption(v.name, label, language = language)
             }
             .distinctBy { it.id }
     }
@@ -1175,7 +1210,7 @@ class TtsController(
         session = MediaSession(context, "flow-tts").apply {
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() {
-                    // Readest media bridge: only start when paused — never re-enter while playing.
+                    // Readest media bridge: only start when paused � never re-enter while playing.
                     if (suppressSessionPlay) return
                     if (_state.value.playing) return
                     play()
@@ -1345,8 +1380,8 @@ class TtsController(
     private suspend fun loop(generation: Int) {
         while (scope.isActive && _state.value.playing && generation == playGeneration) {
             val s = sentences.getOrNull(index) ?: break
-            // Edge UI follows heard clock; System has no PCM buffer lag — publish write index.
-            if (_state.value.engineKey == TtsEngines.EDGE) {
+            // Edge UI follows heard clock; System has no PCM buffer lag � publish write index.
+            if (usesClipAudio()) {
                 pruneCacheToWindow(index)
             } else {
                 publishSentence()
@@ -1389,7 +1424,7 @@ class TtsController(
             if (generation != playGeneration) return
             val gapMs = _state.value.sentenceGapMs
             if (gapMs > 0) {
-                if (_state.value.engineKey == TtsEngines.EDGE) {
+                if (usesClipAudio()) {
                     audioEngine.writeSilence(gapMs) { generation == playGeneration }
                 } else {
                     delay(gapMs.toLong())
@@ -1404,7 +1439,7 @@ class TtsController(
                     index++
                     continue
                 }
-                if (_state.value.engineKey == TtsEngines.EDGE) {
+                if (usesClipAudio()) {
                     awaitHeardCatchUp(generation)
                 }
                 if (generation != playGeneration) return
@@ -1459,10 +1494,8 @@ class TtsController(
     }
 
     private suspend fun speak(s: Sentence, generation: Int) {
-        when (_state.value.engineKey) {
-            TtsEngines.EDGE -> speakEdge(index, generation)
-            else -> speakSystem(speechText(s.text), sentenceIndex = index)
-        }
+        if (usesClipAudio()) speakEdge(index, generation)
+        else speakSystem(speechText(s.text), sentenceIndex = index)
     }
 
     /** Visible sentence text plus any TTS-only filter transforms. */
@@ -1504,13 +1537,13 @@ class TtsController(
      * cancel healthy in-flight jobs for sentences still ahead of [index].
      */
     private fun scheduleAheadPrefetch(center: Int = index) {
-        if (_state.value.engineKey != TtsEngines.EDGE) return
+        if (!usesClipAudio()) return
         cancelStaleEdgeJobs(center)
         pumpPrefetch(center)
     }
 
     private fun pumpPrefetch(center: Int = index) {
-        if (_state.value.engineKey != TtsEngines.EDGE) return
+        if (!usesClipAudio()) return
         if (!_state.value.playing) return
         val n = effectivePrefetchCount()
         val hi = (center + n).coerceAtMost(sentences.lastIndex)
@@ -1563,7 +1596,7 @@ class TtsController(
     }
 
     private suspend fun prefetch(i: Int) {
-        if (_state.value.engineKey != TtsEngines.EDGE) return
+        if (!usesClipAudio()) return
         // Drop work that fell behind the playhead while waiting for a slot.
         if (i < index || !inCacheWindow(i)) return
         try {
@@ -1586,7 +1619,7 @@ class TtsController(
             "speakEdge i=$i gen=$generation slack=${slackMs()} " +
                 "pending=${audioEngine.hasPendingRemainder()} underruns=${audioEngine.underrunCount()}",
         )
-        // Current sentence must be on disk before we can write — this is the only
+        // Current sentence must be on disk before we can write � this is the only
         // ensure allowed to gate play (cold start / first clip).
         ensureSentenceCached(i, generation)
         if (generation != playGeneration) return
@@ -1601,7 +1634,7 @@ class TtsController(
         // Nearest-first lookahead; keep in-flight ahead jobs.
         scheduleAheadPrefetch(i)
 
-        // Instant peek only — never join Edge synth before play while the track is live.
+        // Instant peek only � never join Edge synth before play while the track is live.
         val nextReadyNow = peekReadyCacheFile(i + 1)
         if (nextReadyNow != null) {
             audioEngine.prefetchDecode(nextReadyNow)
@@ -1609,7 +1642,7 @@ class TtsController(
         }
 
         val wantFade = overlapMs > 0 && i < sentences.lastIndex
-        // Resolve during body write inside the engine — never before play (FOSS sink rule).
+        // Resolve during body write inside the engine � never before play (FOSS sink rule).
         val resolveNext: (suspend () -> File?)? = if (wantFade && nextReadyNow == null) {
             resolve@{
                 val waitStart = System.currentTimeMillis()
@@ -1712,20 +1745,65 @@ class TtsController(
         return synthesizeToCache(i, force = false, source = source)
     }
 
-    /** Edge race over the lanes [edgeNet] picks for the current network; the outcome feeds back into it. */
+    /** Clip-audio provider synthesize (TTS plugin). Race/hedge stays host-side for capable plugins later. */
     private suspend fun synthesizeEdge(text: String, tag: String): EdgeAudio {
-        val lanes = withContext(Dispatchers.IO) { edgeNet.lanes() }
+        val provider = providers.get(_state.value.engineKey)
+            ?: throw IllegalStateException("No TTS provider for ${_state.value.engineKey}")
         val voice = edgeVoiceId()
-        return edge.synthesize(
-            text = text,
-            voice = voice,
-            lang = EdgeVoiceCatalog.langOf(voice, edgeVoices),
-            ratePercent = ratePercent(),
-            pitchPercent = pitchPercent(),
-            lanes = lanes,
-            onReport = edgeNet::report,
-            tag = tag,
-        )
+        val langTag = voice.split('-').take(2).joinToString("-").ifBlank { "en-US" }
+        SynthDebugLog.append("tts synth[$tag] provider=${provider.id} voice=$voice")
+        try {
+            val clip = provider.synthesize(
+                com.personal.flowreader.tts.provider.TtsSynthRequest(
+                    text = text,
+                    voice = voice,
+                    lang = langTag,
+                    ratePercent = ratePercent(),
+                    pitchPercent = pitchPercent(),
+                ),
+            )
+            return EdgeAudio(clip.mp3, clip.boundaries)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: com.personal.flowreader.plugin.api.PluginException) {
+            throw mapPluginSynthError(e)
+        } catch (e: EdgeContentException) {
+            throw e
+        } catch (e: EdgeServiceException) {
+            throw e
+        } catch (e: EdgeNetworkException) {
+            throw e
+        } catch (t: Throwable) {
+            throw mapSynthThrowable(t)
+        }
+    }
+
+    private fun mapPluginSynthError(e: com.personal.flowreader.plugin.api.PluginException): Throwable {
+        val msg = e.message.orEmpty()
+        return when (e.code) {
+            com.personal.flowreader.plugin.api.PluginErrorCode.Parse ->
+                EdgeContentException(msg.ifBlank { "Nothing to synthesize." })
+            com.personal.flowreader.plugin.api.PluginErrorCode.AuthRequired -> {
+                val status = Regex("""status=(\d+)""").find(msg)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 403
+                EdgeServiceException(msg.ifBlank { "TTS rejected handshake" }, status)
+            }
+            com.personal.flowreader.plugin.api.PluginErrorCode.Network,
+            com.personal.flowreader.plugin.api.PluginErrorCode.Timeout,
+            -> EdgeNetworkException(msg.ifBlank { "TTS network failure" }, e)
+            else -> mapSynthThrowable(e)
+        }
+    }
+
+    private fun mapSynthThrowable(t: Throwable): Throwable {
+        val msg = t.message.orEmpty()
+        val status = Regex("""status=(\d+)""").find(msg)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        if (status == 200 || status == 401 || status == 403) {
+            return EdgeServiceException(msg.ifBlank { "TTS rejected handshake" }, status)
+        }
+        if (t is java.io.IOException || msg.contains("WebSocket", ignoreCase = true)) {
+            return EdgeNetworkException(msg.ifBlank { "TTS network failure" }, t)
+        }
+        return t
     }
 
     /**
@@ -1734,7 +1812,7 @@ class TtsController(
      * @return true if a usable file is ready afterward.
      */
     private suspend fun synthesizeToCache(i: Int, force: Boolean, source: String): Boolean {
-        if (_state.value.engineKey != TtsEngines.EDGE) return false
+        if (!usesClipAudio()) return false
         val s = sentences.getOrNull(i) ?: return false
         val f = cacheFile(i)
         val wordsFile = wordsCacheFile(i)
@@ -2065,7 +2143,7 @@ class TtsController(
                 systemTts = engine
                 systemReady = true
                 boundEnginePackage = enginePackage
-                if (_state.value.engineKey != TtsEngines.EDGE) {
+                if (!usesClipAudio()) {
                     val voices = systemVoices(engine)
                     val voiceId = when {
                         voices.any { it.id == _state.value.voiceId } -> _state.value.voiceId
@@ -2158,7 +2236,7 @@ class TtsController(
 
     private fun edgeVoiceId(): String {
         val id = _state.value.voiceId
-        return if (id.isNotBlank() && edgeVoiceOptions.any { it.id == id }) id else TtsPrefs.DEFAULT_EDGE_VOICE
+        return if (id.isNotBlank() && clipVoiceOptions.any { it.id == id }) id else TtsPrefs.DEFAULT_EDGE_VOICE
     }
 
     private fun cacheFile(i: Int): File = File(cacheDir, "b${bookKey}_s${i}_${voiceCacheKey()}.mp3")
@@ -2193,7 +2271,7 @@ class TtsController(
 
     /** Rebuild ready set from on-disk Edge MP3s for the current engine/voice/rate/pitch. */
     private fun scanReadySentenceIndices(): Set<Int> {
-        if (_state.value.engineKey != TtsEngines.EDGE || sentences.isEmpty()) return emptySet()
+        if (!usesClipAudio() || sentences.isEmpty()) return emptySet()
         return sentences.indices.filterTo(linkedSetOf()) { i ->
             val f = cacheFile(i)
             f.exists() && f.length() > 0L
@@ -2213,6 +2291,7 @@ class TtsController(
      * so the PCM writer is not blocked on a cold Edge synthesize between clips.
      */
     private fun effectivePrefetchCount(): Int {
+        if (!usesPrefetch()) return 0
         val n = _state.value.prefetchCount.coerceIn(TtsPrefs.MIN_PREFETCH, TtsPrefs.MAX_PREFETCH)
         return if (_state.value.sentenceGapMs < 0) maxOf(n, 2) else n
     }
@@ -2224,7 +2303,7 @@ class TtsController(
      * Full-book audio retention is intentionally not supported yet.
      */
     private fun pruneCacheToWindow(center: Int = index) {
-        if (_state.value.engineKey != TtsEngines.EDGE || sentences.isEmpty()) return
+        if (!usesClipAudio() || sentences.isEmpty()) return
         val window = cacheWindow(center)
         // Rail state first so bars retire on this frame; the disk sweep follows off main.
         _state.update {
@@ -2298,16 +2377,12 @@ class TtsController(
         private val BOOK_KEY_UNSAFE = Regex("[^A-Za-z0-9.-]")
         private val VOICE_KEY_UNSAFE = Regex("[^A-Za-z0-9._-]")
 
-        /** Used only if both the downloaded list and the bundled snapshot are unreadable. */
-        val EdgeVoices = listOf(
-            TtsVoiceOption("en-US-AndrewNeural", "Andrew · United States · Male", "English"),
-            TtsVoiceOption("en-US-AriaNeural", "Aria · United States · Female", "English"),
-            TtsVoiceOption("en-US-JennyNeural", "Jenny · United States · Female", "English"),
-            TtsVoiceOption("en-US-GuyNeural", "Guy · United States · Male", "English"),
-            TtsVoiceOption("en-US-MichelleNeural", "Michelle · United States · Female", "English"),
-            TtsVoiceOption("en-GB-SoniaNeural", "Sonia · United Kingdom · Female", "English"),
-            TtsVoiceOption("en-GB-RyanNeural", "Ryan · United Kingdom · Male", "English"),
-            TtsVoiceOption("en-AU-NatashaNeural", "Natasha · Australia · Female", "English"),
+        /** Used only while a clip-audio plugin voice list is still loading. */
+        private val FALLBACK_CLIP_VOICES = listOf(
+            TtsVoiceOption("en-US-AndrewNeural", "en-US-AndrewNeural", "English"),
+            TtsVoiceOption("en-US-AriaNeural", "en-US-AriaNeural", "English"),
+            TtsVoiceOption("en-US-JennyNeural", "en-US-JennyNeural", "English"),
+            TtsVoiceOption("en-US-GuyNeural", "en-US-GuyNeural", "English"),
         )
     }
 }

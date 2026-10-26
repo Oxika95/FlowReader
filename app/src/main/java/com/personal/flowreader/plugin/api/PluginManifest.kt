@@ -7,10 +7,21 @@ import org.json.JSONObject
  * Host contract version. Alpha builds support only the current contract: plugins declaring any
  * other `apiVersion` are refused (the official repo is updated in lockstep with the app).
  */
-const val PLUGIN_HOST_API_VERSION = 4
+const val PLUGIN_HOST_API_VERSION = 5
 
 /** Oldest plugin contract this host still runs. */
-const val PLUGIN_MIN_API_VERSION = 4
+const val PLUGIN_MIN_API_VERSION = 5
+
+enum class PluginKind(val key: String) {
+    Source("source"),
+    Tts("tts"),
+    ;
+
+    companion object {
+        fun parse(raw: String): PluginKind =
+            entries.firstOrNull { it.key.equals(raw, ignoreCase = true) } ?: Source
+    }
+}
 
 enum class PluginCapability(val key: String) {
     Search("search"),
@@ -23,6 +34,14 @@ enum class PluginCapability(val key: String) {
     Updates("updates"),
     /** `browse(id, page, sort)` for rows of a [PluginListKind.Browse] list. */
     Browse("browse"),
+    /** TTS: returns clip audio (MP3). */
+    ClipAudio("clipAudio"),
+    /** TTS: word-boundary metadata with audio. */
+    WordBoundaries("wordBoundaries"),
+    /** TTS: host may prefetch clips. */
+    Prefetch("prefetch"),
+    /** TTS: host may use multi-network race / mobile-data UI. */
+    NetworkLanes("networkLanes"),
     ;
 
     companion object {
@@ -112,10 +131,11 @@ data class PluginManifest(
     val name: String,
     val version: String,
     val apiVersion: kotlin.Int,
+    val kind: PluginKind = PluginKind.Source,
     val description: String = "",
     val site: String = "",
     val lang: String = "",
-    /** Book id prefix (`{prefix}:{workId}`); defaults to [id]. */
+    /** Book id prefix (`{prefix}:{workId}`); defaults to [id]. Source plugins only. */
     val bookIdPrefix: String = id,
     val allowedHosts: List<String> = emptyList(),
     /** Host-enforced gap between requests from this plugin. */
@@ -126,6 +146,9 @@ data class PluginManifest(
     val settings: List<PluginSetting> = emptyList(),
     val shareHosts: List<String> = emptyList(),
 ) {
+    val isTts: Boolean get() = kind == PluginKind.Tts
+    val isSource: Boolean get() = kind == PluginKind.Source
+
     fun has(cap: PluginCapability): Boolean = cap in capabilities
 
     fun list(id: String): PluginList? = lists.firstOrNull { it.id == id }
@@ -138,6 +161,7 @@ data class PluginManifest(
         fun parse(obj: JSONObject): PluginManifest {
             val id = obj.getString("id").trim()
             require(ID_PATTERN.matches(id)) { "Invalid plugin id: $id" }
+            val kind = PluginKind.parse(obj.optString("kind"))
             val prefix = obj.optString("bookIdPrefix").trim().ifBlank { id }
             require(ID_PATTERN.matches(prefix)) { "Invalid bookIdPrefix: $prefix" }
             return PluginManifest(
@@ -145,6 +169,7 @@ data class PluginManifest(
                 name = obj.optString("name").ifBlank { id },
                 version = obj.optString("version").ifBlank { "0" },
                 apiVersion = obj.optInt("apiVersion", 1),
+                kind = kind,
                 description = obj.optString("description"),
                 site = obj.optString("site"),
                 lang = obj.optString("lang"),
@@ -154,38 +179,46 @@ data class PluginManifest(
                 capabilities = obj.optJSONArray("capabilities").strings()
                     .mapNotNull { PluginCapability.parse(it) }
                     .toSet(),
-                lists = obj.optJSONArray("lists").objects().map { l ->
-                    val kind = PluginListKind.parse(l.optString("kind"))
-                    PluginList(
-                        id = l.getString("id"),
-                        title = l.optString("title").ifBlank { l.getString("id") },
-                        icon = l.optString("icon").ifBlank { "bookmark" },
-                        membershipToggle = kind == PluginListKind.Stories && l.optBoolean("membershipToggle", true),
-                        syncable = l.optBoolean("syncable", false),
-                        notifyDefault = kind == PluginListKind.Stories && l.optBoolean("notifyDefault", false),
-                        kind = kind,
-                    )
+                lists = if (kind == PluginKind.Tts) {
+                    emptyList()
+                } else {
+                    obj.optJSONArray("lists").objects().map { l ->
+                        val listKind = PluginListKind.parse(l.optString("kind"))
+                        PluginList(
+                            id = l.getString("id"),
+                            title = l.optString("title").ifBlank { l.getString("id") },
+                            icon = l.optString("icon").ifBlank { "bookmark" },
+                            membershipToggle = listKind == PluginListKind.Stories && l.optBoolean("membershipToggle", true),
+                            syncable = l.optBoolean("syncable", false),
+                            notifyDefault = listKind == PluginListKind.Stories && l.optBoolean("notifyDefault", false),
+                            kind = listKind,
+                        )
+                    }
                 },
-                auth = obj.optJSONObject("auth")?.let { a ->
-                    PluginAuth(
-                        fields = a.optJSONArray("fields").objects().map { f ->
-                            val secret = f.optBoolean("secret", false)
-                            PluginAuthField(
-                                key = f.getString("key"),
-                                label = f.optString("label").ifBlank { f.getString("key") },
-                                secret = secret,
-                                type = f.optString("type").ifBlank { if (secret) "password" else "text" },
-                            )
-                        },
-                        note = a.optString("note"),
-                        web = a.optJSONObject("web")?.let { w ->
-                            val url = w.optString("url").trim()
-                            val cookie = w.optString("doneCookie").trim()
-                            PluginWebLogin(url, cookie).takeIf {
-                                url.startsWith("https://") && cookie.isNotEmpty()
-                            }
-                        },
-                    )
+                auth = if (kind == PluginKind.Tts) {
+                    null
+                } else {
+                    obj.optJSONObject("auth")?.let { a ->
+                        PluginAuth(
+                            fields = a.optJSONArray("fields").objects().map { f ->
+                                val secret = f.optBoolean("secret", false)
+                                PluginAuthField(
+                                    key = f.getString("key"),
+                                    label = f.optString("label").ifBlank { f.getString("key") },
+                                    secret = secret,
+                                    type = f.optString("type").ifBlank { if (secret) "password" else "text" },
+                                )
+                            },
+                            note = a.optString("note"),
+                            web = a.optJSONObject("web")?.let { w ->
+                                val url = w.optString("url").trim()
+                                val cookie = w.optString("doneCookie").trim()
+                                PluginWebLogin(url, cookie).takeIf {
+                                    url.startsWith("https://") && cookie.isNotEmpty()
+                                }
+                            },
+                        )
+                    }
                 },
                 settings = obj.optJSONArray("settings").objects().mapNotNull { s ->
                     val type = PluginSettingType.parse(s.optString("type")) ?: return@mapNotNull null
@@ -205,7 +238,11 @@ data class PluginManifest(
                         max = if (s.has("max")) s.optInt("max") else null,
                     )
                 },
-                shareHosts = obj.optJSONArray("shareHosts").strings().map { it.lowercase() },
+                shareHosts = if (kind == PluginKind.Tts) {
+                    emptyList()
+                } else {
+                    obj.optJSONArray("shareHosts").strings().map { it.lowercase() }
+                },
             )
         }
     }

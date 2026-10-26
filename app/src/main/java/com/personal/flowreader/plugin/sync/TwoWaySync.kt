@@ -77,7 +77,7 @@ class TwoWaySync(private val app: FlowApp) {
 
     /** Every installed plugin that supports sync; failures are logged per plugin. */
     suspend fun runAll() {
-        for (plugin in manager.installed.value) {
+        for (plugin in manager.sourcePlugins()) {
             currentCoroutineContext().ensureActive()
             if (!supports(plugin.manifest)) continue
             try {

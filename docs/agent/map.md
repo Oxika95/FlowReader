@@ -22,12 +22,12 @@ Paths are relative to `app/src/main/java/com/personal/flowreader/`. Line numbers
 | --- | --- | --- |
 | playback: Playback, queueing, prefetch, cache | `tts/TtsController.kt` (large) | `docs/tts.md` |
 | output: PCM output, crossfade, gaps | `tts/TtsAudioEngine.kt`, `Crossfade.kt` | `CrossfadeTest` |
-| edge: Edge voices / synth | `tts/EdgeTtsClient.kt`, `EdgeHandshake.kt`; voice list `EdgeVoiceCatalog.kt` (pure), `EdgeVoiceStore.kt`, snapshot `resources/tts/edge_voices.json` | `EdgeTtsClientTest`, `EdgeVoiceCatalogTest` |
-| network: Edge race stagger / network fallback (Wi-Fi and cellular lanes, offline wait) | `tts/RaceSchedule.kt`, `NetworkLanePolicy.kt` (pure), `NetworkMonitor.kt`, `EdgeNetwork.kt`, `TtsController.awaitNetworkRetry` | `RaceScheduleTest`, `NetworkLanePolicyTest`, `docs/tts.md` |
-| highlight: Word highlight timing | `tts/WordHighlight.kt` | `WordHighlightTest` |
+| edge: Edge TTS plugin (v2 handshake, voices, synth) | Upstream [Readest edgeTTS.ts](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/edgeTTS.ts); plugin `../flow-reader-plugins/EdgeTts/`; host WS `PluginWs.kt` (raw socket ≈ [workersWebSocket.ts](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWebSocket.ts)); rule `../flow-reader-plugins/.cursor/rules/edgetts.mdc` | plugin `edgetts.test.mjs`, `docs/plugins/api-tts.md` |
+| network: Offline wait / mobile-data policy for clip providers | `tts/RaceSchedule.kt`, `NetworkLanePolicy.kt` (pure), `NetworkMonitor.kt`, `EdgeNetwork.kt`, `TtsController.awaitNetworkRetry` | `RaceScheduleTest`, `NetworkLanePolicyTest`, `docs/tts.md` |
+| highlight: Word highlight timing | `tts/WordHighlight.kt`, `TtsModels.kt` (`EdgeWordBoundary`) | `WordHighlightTest` |
 | media: Media session / background | `tts/TtsPlaybackService.kt`, `AudioKeepAlive.kt`, `UnderlayBluetoothMonitor.kt` (media route to picked device), `UnderlayRoute.kt` (pure match), `data/TonalUnderlay.kt` (mode + level logic) | |
 | split: Sentence splitting | `data/SentenceSplitter.kt`, `KoehnSentenceBreak.kt`, `SentenceLengthNormalizer.kt` | `SentenceSplitterTest` |
-| skip: Unspeakable / rejected sentences (skip, log) | `tts/SpeechText.kt` (pure), `TtsController.loop`, `EdgeContentException` in `EdgeTtsClient.kt` | `SpeechTextTest`, `docs/tts.md` |
+| skip: Unspeakable / rejected sentences (skip, log) | `tts/SpeechText.kt` (pure), `TtsController.loop`, `EdgeContentException` in `TtsModels.kt` | `SpeechTextTest`, `docs/tts.md` |
 
 ## library
 

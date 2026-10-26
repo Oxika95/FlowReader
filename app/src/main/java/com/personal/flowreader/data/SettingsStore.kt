@@ -49,7 +49,7 @@ data class ReaderPrefs(
 )
 
 data class TtsPrefs(
-    val engineKey: String = TtsEngines.EDGE,
+    val engineKey: String = TtsEngines.SYSTEM_DEFAULT,
     val voiceId: String = DEFAULT_EDGE_VOICE,
     val speed: Float = 1f,
     val pitch: Float = 1f,
@@ -587,8 +587,15 @@ class SettingsStore(context: Context) {
             showHomeMarker = this[KEY_SHOW_HOME_MARKER] ?: false,
         )
 
+        /** Map legacy built-in `edge` to the Edge TTS plugin engine id. */
+        private fun migrateEngineKey(raw: String?): String = when (raw) {
+            null, "" -> TtsEngines.SYSTEM_DEFAULT
+            TtsEngines.EDGE -> "tts:edgetts"
+            else -> raw
+        }
+
         private fun Preferences.toTtsPrefs() = TtsPrefs(
-            engineKey = this[KEY_TTS_ENGINE] ?: TtsEngines.EDGE,
+            engineKey = migrateEngineKey(this[KEY_TTS_ENGINE]),
             voiceId = this[KEY_TTS_VOICE] ?: TtsPrefs.DEFAULT_EDGE_VOICE,
             speed = this[KEY_TTS_SPEED] ?: 1f,
             pitch = this[KEY_TTS_PITCH] ?: 1f,

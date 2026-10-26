@@ -23,6 +23,13 @@
         android:name="android.hardware.bluetooth"
         android:required="false" />
 
+    <!-- Android 11+: see third-party TTS engines (e.g. Neko Speak) in Settings → Audio. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".FlowApp"
         android:allowBackup="true"

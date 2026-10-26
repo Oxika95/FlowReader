@@ -11,10 +11,10 @@ import org.junit.Test
 class PluginApiVersionTest {
     @Test
     fun hostAcceptsOnlyTheCurrentVersion() {
-        assertEquals(4, PLUGIN_HOST_API_VERSION)
+        assertEquals(5, PLUGIN_HOST_API_VERSION)
         assertEquals(PLUGIN_HOST_API_VERSION, PLUGIN_MIN_API_VERSION)
-        assertTrue(3 !in PLUGIN_MIN_API_VERSION..PLUGIN_HOST_API_VERSION)
-        assertTrue(5 !in PLUGIN_MIN_API_VERSION..PLUGIN_HOST_API_VERSION)
+        assertTrue(4 !in PLUGIN_MIN_API_VERSION..PLUGIN_HOST_API_VERSION)
+        assertTrue(6 !in PLUGIN_MIN_API_VERSION..PLUGIN_HOST_API_VERSION)
     }
 
     @Test

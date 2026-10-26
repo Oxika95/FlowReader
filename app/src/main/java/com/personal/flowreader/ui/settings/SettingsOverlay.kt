@@ -49,11 +49,16 @@ internal fun SettingsOverlay(
     debugEnabled: Boolean,
     onDebugEnabled: (Boolean) -> Unit,
     onDismiss: () -> Unit,
+    onRefreshEngines: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val ruleEditor = remember { DomainRuleEditorState() }
     androidx.compose.runtime.LaunchedEffect(visible) {
-        if (!visible) ruleEditor.request = null
+        if (!visible) {
+            ruleEditor.request = null
+        } else {
+            onRefreshEngines()
+        }
     }
     val prefs by (LocalContext.current.applicationContext as FlowApp).chrome.collectAsState()
     val textTabs = prefs.settingsTabs == TabStyle.Text
@@ -113,6 +118,8 @@ private fun SettingsSection(
             prefetchCount = tts.prefetchCount,
             clipTargetChars = tts.clipTargetChars,
             clipFlexChars = tts.clipFlexChars,
+            showClipSettings = tts.showClipSettings,
+            showNetworkLanes = tts.showNetworkLanes,
             doubleTapPlay = tts.doubleTapPlay,
             mobileDataFallback = tts.mobileDataFallback,
             autoScrollWithTts = tts.autoScrollWithTts,

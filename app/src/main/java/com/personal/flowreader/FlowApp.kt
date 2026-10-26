@@ -96,11 +96,11 @@ class FlowApp : Application() {
             .build()
         settings = SettingsStore(this)
         chrome = settings.chrome.stateIn(appScope, SharingStarted.Eagerly, ChromePrefs())
-        tts = TtsController(this, settings)
-        booksDir = File(filesDir, "books").apply { mkdirs() }
-        catalog = BookCatalog(this)
         pluginManager = PluginManager(this)
         pluginManager.initialize()
+        tts = TtsController(this, settings, pluginManager)
+        booksDir = File(filesDir, "books").apply { mkdirs() }
+        catalog = BookCatalog(this)
         pluginDbs = PluginDatabases(this)
         pluginCatalog = PluginCatalog(this)
         appScope.launch {

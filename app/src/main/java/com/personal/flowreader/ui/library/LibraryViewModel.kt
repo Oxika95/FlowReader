@@ -36,7 +36,10 @@ import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -77,7 +80,9 @@ data class CrawlProgress(
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val flow = app as FlowApp
     val tts = flow.tts
-    val plugins: StateFlow<List<InstalledPlugin>> = flow.pluginManager.installed
+    val plugins: StateFlow<List<InstalledPlugin>> =
+        flow.pluginManager.installed.map { list -> list.filter { it.manifest.isSource } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private val _ui = MutableStateFlow(LibraryUi())
     val ui: StateFlow<LibraryUi> = _ui
 
