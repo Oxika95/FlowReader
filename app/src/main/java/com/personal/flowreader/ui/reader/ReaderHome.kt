@@ -47,4 +47,26 @@ internal object ReaderHome {
         itemIndex > lastVisible -> PlaybackPinEdge.Bottom
         else -> null
     }
+
+    /**
+     * First..last chapter among composed LazyColumn keys that resolve in [chapterByBlockId].
+     * Null when no visible key matches (layout still describes a prior items list after
+     * prepend/trim) — callers must not fall back to numeric LazyList indices.
+     */
+    fun visibleChapterRange(
+        visibleKeys: List<Any>,
+        chapterByBlockId: Map<String, Int>,
+    ): IntRange? {
+        var first: Int? = null
+        var last: Int? = null
+        for (key in visibleKeys) {
+            val id = key as? String ?: continue
+            val chapter = chapterByBlockId[id] ?: continue
+            if (first == null) first = chapter
+            last = chapter
+        }
+        val lo = first ?: return null
+        val hi = last ?: return null
+        return lo..hi
+    }
 }

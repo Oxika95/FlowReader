@@ -62,4 +62,26 @@ class ReaderHomeTest {
         assertEquals(HomePosition.MAX, HomePosition.coerce(1f), 0f)
         assertEquals(0.4f, HomePosition.coerce(0.4f), 0f)
     }
+
+    @Test
+    fun visibleChapterRangeFromMatchingKeys() {
+        val byId = mapOf("c4-0" to 4, "c4-1" to 4, "c5-0" to 5)
+        assertEquals(4..5, ReaderHome.visibleChapterRange(listOf("c4-1", "c5-0"), byId))
+        assertEquals(4..4, ReaderHome.visibleChapterRange(listOf("c4-0", "c4-1"), byId))
+    }
+
+    @Test
+    fun visibleChapterRangeNullWhenKeysAbsent() {
+        // After front trim, layoutInfo may still list removed block ids — skip, do not use index.
+        val byId = mapOf("c5-0" to 5, "c6-0" to 6)
+        assertNull(ReaderHome.visibleChapterRange(listOf("c3-0", "c4-0"), byId))
+        assertNull(ReaderHome.visibleChapterRange(emptyList(), byId))
+    }
+
+    @Test
+    fun visibleChapterRangeIgnoresUnresolvedKeys() {
+        val byId = mapOf("c5-0" to 5, "c6-0" to 6)
+        // Mix of stale and live keys: only live ones count.
+        assertEquals(5..6, ReaderHome.visibleChapterRange(listOf("c4-0", "c5-0", "c6-0"), byId))
+    }
 }

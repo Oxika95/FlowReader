@@ -160,6 +160,15 @@ class ReadingSession(
         trimLocked()
     }
 
+    /** Reader viewport chapters [first]..[last]: both foci under one lock, one trim. */
+    suspend fun setReaderViewport(first: Int, last: Int) = mutex.withLock {
+        val lo = minOf(first, last)
+        val hi = maxOf(first, last)
+        focus[FOCUS_READER] = lo
+        focus[FOCUS_READER_END] = hi
+        trimLocked()
+    }
+
     suspend fun resplit(targetChars: Int, flexChars: Int) = mutex.withLock {
         _window.value = _window.value.resplit(targetChars, flexChars)
     }

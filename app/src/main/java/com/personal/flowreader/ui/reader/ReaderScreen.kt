@@ -284,6 +284,7 @@ fun ReaderScreen(
             }
             val s = allSentences.getOrNull(si) ?: return@derivedStateOf null
             val idx = blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@derivedStateOf null
+            val key = items.getOrNull(idx)?.block?.id ?: return@derivedStateOf null
 
             // Subscribe to scroll position (layoutInfo alone can miss some updates).
             listState.firstVisibleItemIndex
@@ -292,9 +293,17 @@ fun ReaderScreen(
             val info = listState.layoutInfo
             val visible = info.visibleItemsInfo
             if (visible.isEmpty()) return@derivedStateOf null
-            val placed = visible.firstOrNull { it.index == idx }
-                ?: return@derivedStateOf ReaderHome.edgeOfItem(idx, visible.first().index, visible.last().index)
-            val span = trackedSpan?.takeIf { it.sentenceIndex == si && it.blockId == items.getOrNull(idx)?.block?.id }
+            // Match by block id: numeric indices are stale across prepend/trim.
+            val placed = visible.firstOrNull { it.key == key }
+            if (placed == null) {
+                val visibleIndices = visible.mapNotNull { v ->
+                    val id = v.key as? String ?: return@mapNotNull null
+                    items.indexOfFirst { it.block.id == id }.takeIf { it >= 0 }
+                }
+                if (visibleIndices.isEmpty()) return@derivedStateOf null
+                return@derivedStateOf ReaderHome.edgeOfItem(idx, visibleIndices.first(), visibleIndices.last())
+            }
+            val span = trackedSpan?.takeIf { it.sentenceIndex == si && it.blockId == key }
             if (span != null) {
                 ReaderHome.edgeOf(span.top, span.bottom, listTopY, listTopY + listHeight)
             } else {
@@ -428,12 +437,11 @@ fun ReaderScreen(
     }
 
     LaunchedEffect(listState, items) {
+        val chapterByBlockId = items.associate { it.block.id to it.chapterIndex }
         snapshotFlow {
-            val visible = listState.layoutInfo.visibleItemsInfo
-            val first = visible.firstOrNull()?.let { items.getOrNull(it.index) } ?: return@snapshotFlow null
-            val last = visible.lastOrNull()?.let { items.getOrNull(it.index) } ?: return@snapshotFlow null
-            first.chapterIndex to last.chapterIndex
-        }.collect { range -> range?.let { vm.onViewport(it.first, it.second) } }
+            val keys = listState.layoutInfo.visibleItemsInfo.map { it.key }
+            ReaderHome.visibleChapterRange(keys, chapterByBlockId)
+        }.collect { range -> range?.let { vm.onViewport(it.first, it.last) } }
     }
 
     fun toggleChrome() {

@@ -83,8 +83,10 @@ Leaving the reader does not pause TTS; the Library now-playing card controls it.
 Opening a book reads only the saved chapter, plus following chapters while it has no text (covers,
 title pages). The neighbouring chapters load right after first paint. Scrolling or playback into
 the first or last loaded chapter loads the next one; chapters far from both the viewport and the
-TTS playhead are dropped (see [data.md](data.md#book-loading)). A ToC jump to a chapter outside the
-window opens a new window there. The progress bar is whole-book progress by chapter size.
+TTS playhead are dropped (see [data.md](data.md#book-loading)). Visible chapters for that window
+come from composed LazyColumn block ids, not flat list indices, so a prepend or front trim cannot
+mis-report the seam into a load/trim loop. A ToC jump to a chapter outside the window opens a new
+window there. The progress bar is whole-book progress by chapter size.
 
 ## Gestures
 

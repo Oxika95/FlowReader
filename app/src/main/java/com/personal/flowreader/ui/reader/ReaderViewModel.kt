@@ -102,6 +102,7 @@ class ReaderViewModel(
     /** Single book: its table and row (Library or plugin), set on load. Unused in Queue mode. */
     private var bookSessionId: ReadingSessionId? = null
     private var windowJob: Job? = null
+    private var viewportJob: Job? = null
     private val showLock = Mutex()
     private var viewport: IntRange? = null
 
@@ -332,16 +333,16 @@ class ReaderViewModel(
 
     /**
      * Chapters [first]..[last] are on screen: keep them and one neighbour each side loaded,
-     * drop the rest (unless TTS is reading there).
+     * drop the rest (unless TTS is reading there). Latest-only: a superseded range is cancelled.
      */
     fun onViewport(first: Int, last: Int) {
         val s = session ?: return
         val visible = first..last
         if (visible == viewport) return
         viewport = visible
-        viewModelScope.launch {
-            s.setFocus(ReadingSession.FOCUS_READER, first)
-            s.setFocus(ReadingSession.FOCUS_READER_END, last)
+        viewportJob?.cancel()
+        viewportJob = viewModelScope.launch {
+            s.setReaderViewport(first, last)
             val clip = tts.state.value
             val range = s.window.value.loaded ?: return@launch
             if (last >= range.last) s.loadAdjacent(range.last + 1, clip.clipTargetChars, clip.clipFlexChars)

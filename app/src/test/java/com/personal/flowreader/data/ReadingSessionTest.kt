@@ -57,6 +57,16 @@ class ReadingSessionTest {
     }
 
     @Test
+    fun setReaderViewportSetsBothFociAndTrimsOnce() = runBlocking {
+        val s = session(2)
+        // Grow without a focus so trim does not shrink during loads.
+        repeat(5) { s.loadNext(200, 50) }
+        assertEquals(2..7, s.window.value.loaded)
+        s.setReaderViewport(5, 6)
+        assertEquals(4..7, s.window.value.loaded)
+    }
+
+    @Test
     fun windowDocKeepsAllChapterSlots() = runBlocking {
         val s = session(4)
         s.loadAdjacent(5, 200, 50)
