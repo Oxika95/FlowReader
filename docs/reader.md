@@ -54,11 +54,20 @@ Settings, Contents and their child editors are fullscreen cards that stack; Back
 
 ### Current position and home
 
-The **current position** is always a sentence, never a paragraph: the spoken sentence while TTS
-plays, otherwise the saved locus sentence. The **home position** is a horizontal line in the
-viewport (Settings → Layout → Reading, 15–85% from the top, default 50%). Every jump settles the current
-sentence's center on that line: TTS follow, pin tap, jump-back chip, double-tap, scroll lock, ToC,
-and opening the book. A sentence taller than the screen starts at the top instead.
+Place in the book uses one coordinate system: chapter + paragraph (block) + character, resolved to a
+**sentence**. There are two slots on that ruler:
+
+- **Reading locus** — saved progress / TTS / home / jump-back (persisted).
+- **View locus** — where the viewport is while free-scrolling (ephemeral, not saved). Cleared on
+  jump-back, follow, ToC, open, and any other home jump so the list locks to the reading locus
+  again. While follow (or scroll-lock) is on, view stays cleared: screen and reading place move
+  together.
+
+The **current position** for chips and home is always a sentence: the spoken one while TTS plays,
+otherwise the saved locus sentence. The **home position** is a horizontal line in the viewport
+(Settings → Layout → Reading, 15–85% from the top, default 50%). Every jump settles that sentence's
+center on the line: TTS follow, pin tap, jump-back chip, double-tap, scroll lock, ToC, and opening
+the book. A sentence taller than the screen starts at the top instead.
 
 **Who may move the page:** only follow-along playback (or scroll-lock follow) may keep scrolling.
 Opening the book, Contents, jump-back, double-tap, and the home marker each do **one** jump to the
@@ -79,8 +88,9 @@ Math lives in [`ReaderHome.kt`](../app/src/main/java/com/personal/flowreader/ui/
 - A paragraph that is still visible does not hide the chip if its current sentence has scrolled past
 - Both dock at the edge nearest the off-screen sentence and return it to home
 
-Free scrolling does **not** update the saved reading position; double-tap play / TTS seek does.
-Leaving the reader does not pause TTS; the Library now-playing card controls it.
+Free scrolling updates the view locus only — it does **not** update the saved reading locus;
+double-tap play / TTS seek does. Leaving the reader does not pause TTS; the Library now-playing
+card controls it.
 
 ### Loading
 
@@ -88,10 +98,11 @@ Opening a book reads only the saved chapter, plus following chapters while it ha
 title pages). The neighbouring chapters load right after first paint. Scrolling or playback into
 the first or last loaded chapter loads the next one; chapters far from both the viewport and the
 TTS playhead are dropped (see [data.md](data.md#book-loading)). Visible chapters for that window
-come from composed LazyColumn block ids, not flat list indices. When a previous chapter is loaded
-above the page, the list keeps the same paragraph on screen (re-anchor by block id) so background
-loading cannot walk the view backward. A ToC jump to a chapter outside the window opens a new
-window there. The progress bar is whole-book progress by chapter size.
+come from composed LazyColumn block ids, not flat list indices. When the item list changes (a
+chapter loaded above or trimmed), the list re-resolves its row from the active locus
+(`view ?: reading`) so the page does not jump to the newly inserted text. A ToC jump to a chapter
+outside the window opens a new window there. The progress bar is whole-book progress by chapter
+size.
 
 ### Debug
 

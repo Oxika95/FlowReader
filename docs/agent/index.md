@@ -26,9 +26,9 @@ Hand-written guide: [map.md](map.md).
 | `ui/library` | [index/ui-library.md](index/ui-library.md) | 13 | 2162 |
 | `ui/open` | [index/ui-open.md](index/ui-open.md) | 1 | 169 |
 | `ui/plugin` | [index/ui-plugin.md](index/ui-plugin.md) | 17 | 3536 |
-| `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 21 | 4335 |
-| `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 24 | 5566 |
+| `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 21 | 4421 |
+| `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 24 | 5568 |
 | `ui/theme` | [index/ui-theme.md](index/ui-theme.md) | 5 | 517 |
 | tests | [index/tests.md](index/tests.md) | 59 | |
 
-Totals: 204 main files, 37043 lines.
+Totals: 204 main files, 37131 lines.

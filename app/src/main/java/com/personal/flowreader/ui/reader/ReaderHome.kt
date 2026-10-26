@@ -1,5 +1,8 @@
 package com.personal.flowreader.ui.reader
 
+import com.personal.flowreader.data.Locus
+import com.personal.flowreader.data.ReaderItem
+
 /**
  * Current-position geometry. The reader tracks one sentence (the spoken one while TTS plays,
  * otherwise the saved locus sentence); every "on screen?" check and every jump targets that
@@ -69,4 +72,13 @@ internal object ReaderHome {
         val hi = last ?: return null
         return lo..hi
     }
+
+    /**
+     * LazyColumn index for [locus]'s chapter+block in the current window, or -1 when that
+     * paragraph is not loaded. Includes synthetic chapter-title rows (`blockIndex == -1`).
+     */
+    fun locusToListIndex(items: List<ReaderItem>, locus: Locus): Int =
+        items.indexOfFirst {
+            it.chapterIndex == locus.chapterIndex && it.blockIndex == locus.blockIndex
+        }
 }

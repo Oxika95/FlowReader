@@ -1,6 +1,10 @@
 package com.personal.flowreader.ui.reader
 
+import com.personal.flowreader.data.Block
+import com.personal.flowreader.data.BlockKind
 import com.personal.flowreader.data.HomePosition
+import com.personal.flowreader.data.Locus
+import com.personal.flowreader.data.ReaderItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -83,5 +87,25 @@ class ReaderHomeTest {
         val byId = mapOf("c5-0" to 5, "c6-0" to 6)
         // Mix of stale and live keys: only live ones count.
         assertEquals(5..6, ReaderHome.visibleChapterRange(listOf("c4-0", "c5-0", "c6-0"), byId))
+    }
+
+    @Test
+    fun locusToListIndexFindsChapterAndBlock() {
+        val items = listOf(
+            ReaderItem(4, ReaderItem.CHAPTER_TITLE_BLOCK, Block("t4", BlockKind.Heading, "Ch 4")),
+            ReaderItem(4, 0, Block("c4-0", BlockKind.Paragraph, "a")),
+            ReaderItem(4, 1, Block("c4-1", BlockKind.Paragraph, "b")),
+            ReaderItem(5, 0, Block("c5-0", BlockKind.Paragraph, "c")),
+        )
+        assertEquals(0, ReaderHome.locusToListIndex(items, Locus(4, ReaderItem.CHAPTER_TITLE_BLOCK, 0)))
+        assertEquals(2, ReaderHome.locusToListIndex(items, Locus(4, 1, 3)))
+        assertEquals(3, ReaderHome.locusToListIndex(items, Locus(5, 0, 0)))
+    }
+
+    @Test
+    fun locusToListIndexMissWhenNotLoaded() {
+        val items = listOf(ReaderItem(5, 0, Block("c5-0", BlockKind.Paragraph, "c")))
+        assertEquals(-1, ReaderHome.locusToListIndex(items, Locus(4, 0, 0)))
+        assertEquals(-1, ReaderHome.locusToListIndex(emptyList(), Locus(5, 0, 0)))
     }
 }

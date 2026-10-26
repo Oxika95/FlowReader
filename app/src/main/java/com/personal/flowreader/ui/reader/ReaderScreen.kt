@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -157,7 +158,8 @@ fun ReaderScreen(
     val doc = ui.doc
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    var programmatic by remember { mutableStateOf(false) }
+    /** True while [scrollToHome] is moving the list; layout must not write [viewLocus]. */
+    var homing by remember { mutableStateOf(false) }
     var overlay by remember { mutableStateOf(ReaderOverlay.Hidden) }
     var filterEditor by remember { mutableStateOf<FilterEditorSession?>(null) }
     /** Follow TTS scroll, hide chrome, and ignore taps until unlocked. */
@@ -166,13 +168,12 @@ fun ReaderScreen(
     var suppressFollowScroll by remember { mutableStateOf(false) }
     var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
     /**
-     * First visible block id + pixel offset. Updated only for keys already in the committed
-     * item list so a prepend that slips the list cannot overwrite the glue point.
+     * Ephemeral free-scroll place (same [Locus] ruler as reading). Null = lock-step with the
+     * reading/spoken locus. Never persisted; cleared on jump-back / follow / any home jump.
      */
-    var listAnchor by remember { mutableStateOf<Pair<String, Int>?>(null) }
-    var committedItemIds by remember { mutableStateOf<List<String>>(emptyList()) }
-    /** While true, do not let a slipped prepend overwrite [listAnchor]. */
-    var freezeAnchor by remember { mutableStateOf(false) }
+    var viewLocus by remember { mutableStateOf<Locus?>(null) }
+    /** LazyColumn pixel offset within the view-locus row (not a second place ruler). */
+    var viewItemOffset by remember { mutableIntStateOf(0) }
     /** Root-Y lines of the tracked sentence, written from layout while its paragraph is composed. */
     var trackedSpan by remember { mutableStateOf<SentenceSpan?>(null) }
     var listTopY by remember { mutableFloatStateOf(0f) }
@@ -352,7 +353,10 @@ fun ReaderScreen(
         DebugLog.reader(
             "scrollToHome start reason=$reason si=$sentenceIndex key=$key placed=$wasPlaced animated=$animated",
         )
-        programmatic = true
+        // Home jumps target the reading place — drop free-scroll view.
+        viewLocus = null
+        viewItemOffset = 0
+        homing = true
         try {
             if (placed() == null) {
                 val index = currentIndex().takeIf { it >= 0 } ?: run {
@@ -383,7 +387,9 @@ fun ReaderScreen(
             snapshotFlow { listState.isScrollInProgress }.first { !it }
             DebugLog.reader("scrollToHome done reason=$reason si=$sentenceIndex key=$key delta=$delta span=${span != null}")
         } finally {
-            programmatic = false
+            homing = false
+            viewLocus = null
+            viewItemOffset = 0
         }
     }
 
@@ -469,54 +475,65 @@ fun ReaderScreen(
         }
     }
 
-    // Hold place when a previous chapter is prepended (LazyColumn keeps the old index otherwise).
-    LaunchedEffect(items) {
-        val ids = items.map { it.block.id }
-        val prev = committedItemIds
-        val prepended = prev.isNotEmpty() &&
-            ids.size > prev.size &&
-            prev.firstOrNull()?.let { ids.indexOf(it) > 0 } == true
-        if (!prepended) {
-            committedItemIds = ids
-            return@LaunchedEffect
-        }
-        freezeAnchor = true
-        programmatic = true
-        try {
-            val anchor = listAnchor
-            if (anchor != null) {
-                val index = ids.indexOf(anchor.first)
-                if (index >= 0) {
-                    withFrameNanos { }
-                    if (listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key != anchor.first) {
-                        listState.scrollToItem(index, anchor.second)
-                        DebugLog.reader("reanchor key=${anchor.first} index=$index offset=${anchor.second}")
-                        snapshotFlow { listState.isScrollInProgress }.first { !it }
-                    }
-                }
-            }
-        } finally {
-            programmatic = false
-            freezeAnchor = false
-            committedItemIds = ids
+    // Follow lock-step: view locus stays cleared so the list tracks the reading/spoken place.
+    val followScrollActive = scrollLocked || (tts.playing && tts.following && tts.autoScrollWithTts)
+    LaunchedEffect(followScrollActive) {
+        if (followScrollActive) {
+            viewLocus = null
+            viewItemOffset = 0
         }
     }
 
+    // When the window's item list changes, derive LazyColumn row N from the active Locus
+    // (view ?: reading) so a prepend cannot leave the camera on the new chapter.
+    val itemIds = remember(items) { items.map { it.block.id } }
+    val previousItemIds = remember { mutableStateOf<List<String>?>(null) }
+    if (items.isNotEmpty() && itemIds != previousItemIds.value) {
+        val spoken = tts.sentence
+        val reading = if (followScrollActive && spoken != null) {
+            Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start)
+        } else {
+            ui.locus
+        }
+        val active = viewLocus ?: reading
+        val index = ReaderHome.locusToListIndex(items, active)
+        if (index >= 0) {
+            val firstItem = items.getOrNull(listState.firstVisibleItemIndex)
+            val sameBlock = firstItem != null &&
+                firstItem.chapterIndex == active.chapterIndex &&
+                firstItem.blockIndex == active.blockIndex
+            val offset = if (sameBlock) {
+                listState.firstVisibleItemScrollOffset
+            } else {
+                viewItemOffset
+            }
+            listState.requestScrollToItem(index, offset)
+            DebugLog.reader(
+                "viewKeep c=${active.chapterIndex} b=${active.blockIndex} " +
+                    "index=$index offset=$offset view=${viewLocus != null}",
+            )
+        }
+    }
+    SideEffect { previousItemIds.value = itemIds }
+
+    val homingForView = rememberUpdatedState(homing)
+    val followForView = rememberUpdatedState(followScrollActive)
     LaunchedEffect(listState, items) {
         val chapterByBlockId = items.associate { it.block.id to it.chapterIndex }
+        val itemById = items.associateBy { it.block.id }
         snapshotFlow {
             val visible = listState.layoutInfo.visibleItemsInfo
             val first = visible.firstOrNull()
             val key = first?.key as? String
-            val anchor = if (key != null) key to first.offset else null
+            val item = key?.let { itemById[it] }
+            val locus = item?.let { Locus(it.chapterIndex, it.blockIndex, 0) }
+            val offset = first?.offset ?: 0
             val range = ReaderHome.visibleChapterRange(visible.map { it.key }, chapterByBlockId)
-            anchor to range
-        }.collect { (anchor, range) ->
-            if (anchor != null && !freezeAnchor) listAnchor = anchor
-            // One-shot jumps must not load chapters mid-scroll (list changes under the jump).
-            if (programmatic) {
-                DebugLog.reader("viewportSkip programmatic range=$range")
-                return@collect
+            Triple(locus, offset, range)
+        }.collect { (locus, offset, range) ->
+            if (!homingForView.value && !followForView.value && locus != null) {
+                viewLocus = locus
+                viewItemOffset = offset
             }
             range?.let { vm.onViewport(it.first, it.last) }
         }

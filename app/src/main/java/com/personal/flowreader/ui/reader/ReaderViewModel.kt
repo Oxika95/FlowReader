@@ -106,11 +106,6 @@ class ReaderViewModel(
     private var viewportJob: Job? = null
     private val showLock = Mutex()
     private var viewport: IntRange? = null
-    /**
-     * Chapter just prepended for an edge load. If the list slips onto that chapter, do not keep
-     * walking further backward until the screen leaves it.
-     */
-    private var justLoadedBelow: Int? = null
 
     /**
      * True once the user or TTS moved the position after load. The loaded (possibly clamped)
@@ -301,7 +296,6 @@ class ReaderViewModel(
         session?.takeIf { it !== s }?.let { releaseFocus(it) }
         session = s
         viewport = null
-        justLoadedBelow = null
         ref?.book?.let { queue?.applySegment(it.segmentIndexOf(locus.chapterIndex)) }
         _ui.value.let { tts.setSpeechFilters(it.filtersGlobal, it.filtersGroups, it.filtersLocal) }
         tts.attach(s, locus)
@@ -348,7 +342,6 @@ class ReaderViewModel(
         if (visible == viewport) return
         DebugLog.reader("onViewport $first..$last prev=${viewport ?: "null"}")
         viewport = visible
-        if (justLoadedBelow != null && first != justLoadedBelow) justLoadedBelow = null
         viewportJob?.cancel()
         viewportJob = viewModelScope.launch {
             s.setReaderViewport(first, last)
@@ -358,12 +351,7 @@ class ReaderViewModel(
                 s.loadAdjacent(range.last + 1, clip.clipTargetChars, clip.clipFlexChars)
             }
             if (first <= range.first) {
-                val prev = range.first - 1
-                if (justLoadedBelow == first) {
-                    DebugLog.reader("edgeLoadSkip below stillOn=$first")
-                } else if (s.loadAdjacent(prev, clip.clipTargetChars, clip.clipFlexChars)) {
-                    justLoadedBelow = prev
-                }
+                s.loadAdjacent(range.first - 1, clip.clipTargetChars, clip.clipFlexChars)
             }
         }
     }
