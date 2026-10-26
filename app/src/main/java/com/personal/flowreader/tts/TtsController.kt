@@ -1236,7 +1236,12 @@ class TtsController(
                     append(langTag)
                     append(")")
                 }
-                TtsVoiceOption(v.name, label, language = language)
+                TtsVoiceOption(
+                    v.name,
+                    label,
+                    language = language,
+                    gender = VoiceGender.infer(v.name, label),
+                )
             }
             .distinctBy { it.id }
     }

@@ -6,6 +6,7 @@ import com.personal.flowreader.plugin.PluginManager
 import com.personal.flowreader.plugin.api.PluginCapability
 import com.personal.flowreader.plugin.api.PluginManifest
 import com.personal.flowreader.tts.EdgeWordBoundary
+import com.personal.flowreader.tts.VoiceGender
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -31,18 +32,17 @@ class PluginTtsProvider(
                 val o = arr.optJSONObject(i) ?: continue
                 val voiceId = o.optString("id").trim()
                 if (voiceId.isEmpty()) continue
-                val gender = o.optString("gender").trim().lowercase().let { g ->
-                    when (g) {
-                        "male", "female" -> g
-                        else -> ""
-                    }
-                }
+                val label = o.optString("label").ifBlank { voiceId }
                 add(
                     TtsVoiceOption(
                         id = voiceId,
-                        label = o.optString("label").ifBlank { voiceId },
+                        label = label,
                         language = o.optString("language"),
-                        gender = gender,
+                        gender = VoiceGender.resolve(
+                            o.optString("gender"),
+                            voiceId,
+                            label,
+                        ),
                     ),
                 )
             }

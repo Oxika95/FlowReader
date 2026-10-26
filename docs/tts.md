@@ -75,9 +75,11 @@ of an item in the stream synthesizes fresh clips (cache key is the stream, not t
   plugin owns Sec-MS-GEC **v2** and opens WSS via `flow.ws.collect` (see
   [plugins/api-tts.md](plugins/api-tts.md)). Voice catalog:
   `api.msedgeservices.com/.../voices/list` with v2 GEC (key-only → 403); falls back to Bing
-  `voices/list` if needed. Settings Voice list is always the selected engine’s catalog, then
-  Language, then optional All/Male/Female (from `gender` on voice entries). The app owns clip
-  cache, prefetch, word highlight, and `TtsAudioEngine` playback.
+  `voices/list` if needed.   Settings Voice list is always the selected engine’s catalog, then Language, then
+  All/Male/Female. Gender comes from the plugin API when present (Edge `Gender`), else from
+  name heuristics (`VoiceGender`: trailing `-f`/`-m`, `f1`…`m5`, whole-word male/female) for
+  system engines like Neko. The app owns clip cache, prefetch, word highlight, and
+  `TtsAudioEngine` playback.
 - **Upstream:** [Readest `edgeTTS.ts`](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/edgeTTS.ts)
   is the source of truth for GEC, URL, headers, and framing; host `PluginWs` follows Readest’s
   [raw-socket upgrade](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWebSocket.ts)
