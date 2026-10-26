@@ -7,7 +7,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -19,21 +18,26 @@ import org.json.JSONObject
 /**
  * `flow.fetch` backend for one plugin: host allowlist, per-plugin cookies, and a request gap.
  * Never throws to JS; failures come back as `{ error: { code, message } }`.
+ *
+ * Anubis challenge pages trigger at most one WebView clearance ([PluginClearanceGate]) and one retry.
  */
 class PluginHttp(
+    private val pluginId: String,
     allowedHosts: List<String>,
     private val minIntervalMs: Long,
     val cookieJar: PluginCookieJar,
 ) {
-    private val allowed = allowedHosts.map { it.trim().lowercase().removePrefix("www.") }.filter { it.isNotEmpty() }
+    private val allowedHostsList = allowedHosts.map { it.trim() }.filter { it.isNotEmpty() }
+    private val allowed = allowedHostsList.map { it.lowercase().removePrefix("www.") }
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .cookieJar(cookieJar)
         .build()
-    /** `flow.fetch(url, { cookies: false })`: no session sent or stored, same request gap. */
-    private val anonymousClient: OkHttpClient = client.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+    /** `cookies: false`: clearance cookies only (Anubis / CF), not session cookies. */
+    private val clearanceClient: OkHttpClient =
+        client.newBuilder().cookieJar(ClearanceOnlyCookieJar(cookieJar)).build()
     private val rate = Mutex()
     private var lastFetchAt = 0L
 
@@ -51,8 +55,12 @@ class PluginHttp(
             return error("BLOCKED", "Host not allowed by plugin manifest: ${parsed.host}")
         }
         val opts = req.optJSONObject("opts") ?: JSONObject()
+        return fetchAttempt(parsed.toString(), opts, alreadyRetried = false)
+    }
+
+    private suspend fun fetchAttempt(url: String, opts: JSONObject, alreadyRetried: Boolean): String {
         val method = opts.optString("method").ifBlank { "GET" }.uppercase()
-        val builder = Request.Builder().url(parsed)
+        val builder = Request.Builder().url(url)
             .header("User-Agent", USER_AGENT)
             .header("Accept", DEFAULT_ACCEPT)
             .header("Accept-Language", "en-US,en;q=0.9")
@@ -71,8 +79,8 @@ class PluginHttp(
             else -> ByteArray(0).toRequestBody(null)
         }
         builder.method(method, body)
-        val caller = if (opts.optBoolean("cookies", true)) client else anonymousClient
-        return withRateLimit {
+        val caller = if (opts.optBoolean("cookies", true)) client else clearanceClient
+        val result = withRateLimit {
             try {
                 withContext(Dispatchers.IO) {
                     caller.newCall(builder.build()).execute().use { response ->
@@ -110,6 +118,14 @@ class PluginHttp(
                 error("NETWORK", t.message ?: "Network error")
             }
         }
+        if (!alreadyRetried) {
+            val text = runCatching { JSONObject(result).optString("text") }.getOrNull().orEmpty()
+            if (AnubisDetector.isChallenge(text)) {
+                val cleared = PluginClearanceGate.await(pluginId, url, allowedHostsList)
+                if (cleared) return fetchAttempt(url, opts, alreadyRetried = true)
+            }
+        }
+        return result
     }
 
     private suspend fun <T> withRateLimit(block: suspend () -> T): T = rate.withLock {

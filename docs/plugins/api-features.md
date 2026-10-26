@@ -50,7 +50,8 @@ on **Sync now**:
 - When only one side moved since the last sync it wins; when both moved the user picks. Overwrite
   (**Replace with site lists**) applies every site position as is.
 - Fetch chapter bodies with `flow.fetch(url, { cookies: false })` when the site records reads on
-  page views, so downloads ahead of the reader do not move the site's position.
+  page views, so downloads ahead of the reader do not move the site's position. Clearance cookies
+  (Anubis / Cloudflare) are still sent so bot checks do not break chapter downloads.
 
 ## Browse lists
 

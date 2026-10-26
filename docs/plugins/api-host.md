@@ -6,7 +6,7 @@ Part of the [Plugin API](api.md) (apiVersion 5).
 
 | Call | Result |
 | --- | --- |
-| `await flow.fetch(url, { method, headers, form, body, contentType, cookies })` | `{ status, url, headers, text }`. `url` is the final URL after redirects; header names are lower-case. Non-2xx statuses are returned, not thrown. Cookies persist per plugin; `cookies: false` sends and stores none for this request. |
+| `await flow.fetch(url, { method, headers, form, body, contentType, cookies })` | `{ status, url, headers, text }`. `url` is the final URL after redirects; header names are lower-case. Non-2xx statuses are returned, not thrown. Cookies persist per plugin. `cookies: false` omits session cookies but still sends and stores bot-clearance cookies (Anubis `techaro.lol-anubis` / `techaro.lol-anubis-*`, Cloudflare `cf_clearance` / `__cf_bm` / `__cfruid`). When the response is an Anubis challenge page and a UI host is present, the app runs the site's check in a WebView once, imports cookies, and retries the fetch once. |
 | `await flow.ws.collect({ url, headers, messages, endPath, timeoutMs })` | `{ texts, binariesBase64 }`. WebSocket session for TTS (and similar). Host must be in `allowedHosts`. See [api-tts.md](api-tts.md). |
 | `flow.crypto.sha256(inputBase64)` | Base64 SHA-256 digest of the decoded bytes (TTS tokens, etc.). |
 | `flow.crypto.sha256Hex(inputHex)` | Hex SHA-256 of even-length hex input bytes (Edge Sec-MS-GEC). |

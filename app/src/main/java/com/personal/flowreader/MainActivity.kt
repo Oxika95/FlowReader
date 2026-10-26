@@ -30,6 +30,7 @@ import com.personal.flowreader.ui.design.layer.FlowOverlayHost
 import com.personal.flowreader.ui.library.LibraryScreen
 import com.personal.flowreader.ui.library.LibraryViewModel
 import com.personal.flowreader.ui.open.OpenBookViewModel
+import com.personal.flowreader.ui.plugin.PluginClearanceHost
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.reader.QueueBook
@@ -151,6 +152,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                     ) {
+                        PluginClearanceHost()
                         NavHost(
                             navController = nav,
                             startDestination = "library",

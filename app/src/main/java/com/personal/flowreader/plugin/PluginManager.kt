@@ -92,6 +92,7 @@ class PluginManager(private val context: Context) {
         val code = File(plugin.dir, CODE_FILE).readText()
         val secrets = PluginSecrets(context, pluginId)
         val http = PluginHttp(
+            pluginId = pluginId,
             allowedHosts = plugin.manifest.allowedHosts,
             minIntervalMs = plugin.manifest.minRequestIntervalMs,
             cookieJar = PluginCookieJar(secrets),
