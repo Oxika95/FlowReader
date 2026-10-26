@@ -88,6 +88,12 @@ come from composed LazyColumn block ids, not flat list indices, so a prepend or 
 mis-report the seam into a load/trim loop. A ToC jump to a chapter outside the window opens a new
 window there. The progress bar is whole-book progress by chapter size.
 
+### Debug
+
+About → Debug mode, then About → Debug → **eReader**: logs every home scroll, ToC/double-tap/follow
+seek, viewport range, and chapter window load/trim to the bug bubble and logcat
+(`FlowReader.Reader`).
+
 ## Gestures
 
 | Gesture | Result |

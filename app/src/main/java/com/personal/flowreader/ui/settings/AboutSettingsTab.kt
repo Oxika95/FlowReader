@@ -52,22 +52,57 @@ private const val GITHUB_LATEST_API =
 internal fun AboutSettingsTab(
     debugEnabled: Boolean,
     onDebugEnabled: (Boolean) -> Unit,
+    debugTtsLog: Boolean = true,
+    onDebugTtsLog: (Boolean) -> Unit = {},
+    debugReaderLog: Boolean = true,
+    onDebugReaderLog: (Boolean) -> Unit = {},
 ) {
     var subTab by rememberSaveable { mutableIntStateOf(0) }
-    SettingsSubTabBar(
-        listOf(
-            R.drawable.ic_settings_info to "Info",
-            R.drawable.ic_settings_notifications to "Notifications",
-            R.drawable.ic_settings_data to "Data",
-        ),
-        subTab,
-    ) { subTab = it }
+    val tabs = buildList {
+        add(R.drawable.ic_settings_info to "Info")
+        add(R.drawable.ic_settings_notifications to "Notifications")
+        add(R.drawable.ic_settings_data to "Data")
+        if (debugEnabled) add(R.drawable.ic_bug to "Debug")
+    }
+    LaunchedEffect(debugEnabled) {
+        if (!debugEnabled && subTab >= 3) subTab = 0
+    }
+    SettingsSubTabBar(tabs, subTab) { subTab = it }
     Spacer(Modifier.height(FlowTokens.Space.M))
     when (subTab) {
         0 -> AboutInfoPane(debugEnabled, onDebugEnabled)
         1 -> NotificationSettingsPane(debugEnabled)
-        else -> DataSettingsPane()
+        2 -> DataSettingsPane()
+        else -> AboutDebugPane(
+            debugTtsLog = debugTtsLog,
+            onDebugTtsLog = onDebugTtsLog,
+            debugReaderLog = debugReaderLog,
+            onDebugReaderLog = onDebugReaderLog,
+        )
     }
+}
+
+@Composable
+private fun AboutDebugPane(
+    debugTtsLog: Boolean,
+    onDebugTtsLog: (Boolean) -> Unit,
+    debugReaderLog: Boolean,
+    onDebugReaderLog: (Boolean) -> Unit,
+) {
+    FlowHint("Lines go to the bug bubble and logcat (FlowReader.Tts / FlowReader.Reader).")
+    Spacer(Modifier.height(FlowTokens.Space.M))
+    FlowToggleRow(
+        title = "TTS Synthesis",
+        subtitle = "Synth, prefetch, focus, and engine events",
+        checked = debugTtsLog,
+        onCheckedChange = onDebugTtsLog,
+    )
+    FlowToggleRow(
+        title = "eReader",
+        subtitle = "Jumps, follow, viewport, and chapter window",
+        checked = debugReaderLog,
+        onCheckedChange = onDebugReaderLog,
+    )
 }
 
 @Composable
@@ -127,7 +162,7 @@ private fun AboutInfoPane(
         Spacer(Modifier.height(FlowTokens.Space.L))
         FlowToggleRow(
             title = "Debug mode",
-            subtitle = "Show a draggable bug bubble; drag to the X to turn off",
+            subtitle = "Show the Debug tab and bug bubble",
             checked = debugEnabled,
             onCheckedChange = onDebugEnabled,
         )

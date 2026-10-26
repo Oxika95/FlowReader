@@ -1,5 +1,6 @@
 package com.personal.flowreader.data
 
+import com.personal.flowreader.debug.DebugLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -141,13 +142,15 @@ class ReadingSession(
 
     /** Load [index] if it is directly before or after the window. */
     suspend fun loadAdjacent(index: Int, targetChars: Int, flexChars: Int): Boolean = mutex.withLock {
-        val range = _window.value.loaded ?: return@withLock false
+        val before = _window.value.loaded
+        val range = before ?: return@withLock false
         if (index in range) return@withLock true
         if (index != range.last + 1 && index != range.first - 1) return@withLock false
         if (index < 0 || index >= chapterCount()) return@withLock false
         val prepared = loader(index, targetChars, flexChars) ?: return@withLock false
         _window.value = _window.value.with(prepared)
         trimLocked(also = index)
+        DebugLog.reader("loadAdjacent index=$index before=$before after=${_window.value.loaded}")
         true
     }
 
@@ -156,17 +159,25 @@ class ReadingSession(
 
     /** [owner]'s position moved to [chapterIndex] (null: owner gone). */
     suspend fun setFocus(owner: String, chapterIndex: Int?) = mutex.withLock {
+        val before = _window.value.loaded
         if (chapterIndex == null) focus.remove(owner) else focus[owner] = chapterIndex
         trimLocked()
+        DebugLog.reader(
+            "setFocus owner=$owner chapter=$chapterIndex focus=$focus before=$before after=${_window.value.loaded}",
+        )
     }
 
     /** Reader viewport chapters [first]..[last]: both foci under one lock, one trim. */
     suspend fun setReaderViewport(first: Int, last: Int) = mutex.withLock {
+        val before = _window.value.loaded
         val lo = minOf(first, last)
         val hi = maxOf(first, last)
         focus[FOCUS_READER] = lo
         focus[FOCUS_READER_END] = hi
         trimLocked()
+        DebugLog.reader(
+            "setReaderViewport $lo..$hi focus=$focus before=$before after=${_window.value.loaded}",
+        )
     }
 
     suspend fun resplit(targetChars: Int, flexChars: Int) = mutex.withLock {
@@ -178,7 +189,12 @@ class ReadingSession(
         if (focus.isEmpty()) return
         val lo = minOf(focus.values.min() - keepRadius, also ?: Int.MAX_VALUE)
         val hi = maxOf(focus.values.max() + keepRadius, also ?: Int.MIN_VALUE)
+        val before = _window.value.loaded
         _window.value = _window.value.retain(lo..hi)
+        val after = _window.value.loaded
+        if (before != after) {
+            DebugLog.reader("trim keep=$lo..$hi also=$also before=$before after=$after")
+        }
     }
 
     companion object {

@@ -40,8 +40,12 @@ data class ReaderPrefs(
     val showChapterHeadingsInBody: Boolean = false,
     /** When true, the reader keeps the display on while open. */
     val keepScreenAwake: Boolean = false,
-    /** When true, synth debug logging and the floating dump FAB are available. */
+    /** When true, the Debug About tab and bug FAB are available. */
     val debugEnabled: Boolean = false,
+    /** About → Debug → TTS Synthesis log channel (default on). */
+    val debugTtsLog: Boolean = true,
+    /** About → Debug → eReader jump log channel (default on). */
+    val debugReaderLog: Boolean = true,
     /** See [HomePosition]. */
     val homePosition: Float = HomePosition.DEFAULT,
     /** When true, the reader shows a draggable marker at [homePosition]. */
@@ -272,6 +276,14 @@ class SettingsStore(context: Context) {
 
     suspend fun setDebugEnabled(enabled: Boolean) {
         store.edit { it[KEY_DEBUG_ENABLED] = enabled }
+    }
+
+    suspend fun setDebugTtsLog(enabled: Boolean) {
+        store.edit { it[KEY_DEBUG_TTS_LOG] = enabled }
+    }
+
+    suspend fun setDebugReaderLog(enabled: Boolean) {
+        store.edit { it[KEY_DEBUG_READER_LOG] = enabled }
     }
 
     suspend fun setHomePosition(position: Float) {
@@ -518,6 +530,8 @@ class SettingsStore(context: Context) {
         private val KEY_SHOW_CHAPTER_HEADINGS = booleanPreferencesKey("show_chapter_headings")
         private val KEY_KEEP_SCREEN_AWAKE = booleanPreferencesKey("keep_screen_awake")
         private val KEY_DEBUG_ENABLED = booleanPreferencesKey("debug_enabled")
+        private val KEY_DEBUG_TTS_LOG = booleanPreferencesKey("debug_tts_log")
+        private val KEY_DEBUG_READER_LOG = booleanPreferencesKey("debug_reader_log")
         private val KEY_HOME_POSITION = floatPreferencesKey("home_position")
         private val KEY_SHOW_HOME_MARKER = booleanPreferencesKey("show_home_marker")
         private val KEY_TTS_ENGINE = stringPreferencesKey("tts_engine")
@@ -583,6 +597,8 @@ class SettingsStore(context: Context) {
             showChapterHeadingsInBody = this[KEY_SHOW_CHAPTER_HEADINGS] ?: false,
             keepScreenAwake = this[KEY_KEEP_SCREEN_AWAKE] ?: false,
             debugEnabled = this[KEY_DEBUG_ENABLED] ?: false,
+            debugTtsLog = this[KEY_DEBUG_TTS_LOG] ?: true,
+            debugReaderLog = this[KEY_DEBUG_READER_LOG] ?: true,
             homePosition = HomePosition.coerce(this[KEY_HOME_POSITION] ?: HomePosition.DEFAULT),
             showHomeMarker = this[KEY_SHOW_HOME_MARKER] ?: false,
         )

@@ -12,6 +12,7 @@ import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.data.UiScale
+import com.personal.flowreader.debug.DebugLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -30,6 +31,8 @@ data class OpenUi(
     val showChapterHeadingsInBody: Boolean = false,
     val keepScreenAwake: Boolean = false,
     val debugEnabled: Boolean = false,
+    val debugTtsLog: Boolean = true,
+    val debugReaderLog: Boolean = true,
     val homePosition: Float = HomePosition.DEFAULT,
     val showHomeMarker: Boolean = false,
 )
@@ -56,9 +59,14 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
                 showChapterHeadingsInBody = prefs.showChapterHeadingsInBody,
                 keepScreenAwake = prefs.keepScreenAwake,
                 debugEnabled = prefs.debugEnabled,
+                debugTtsLog = prefs.debugTtsLog,
+                debugReaderLog = prefs.debugReaderLog,
                 homePosition = prefs.homePosition,
                 showHomeMarker = prefs.showHomeMarker,
             )
+            DebugLog.setMasterEnabled(prefs.debugEnabled)
+            DebugLog.setTtsLogEnabled(prefs.debugTtsLog)
+            DebugLog.setReaderLogEnabled(prefs.debugReaderLog)
         }
     }
 
@@ -144,5 +152,18 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(debugEnabled = enabled)
         viewModelScope.launch { flow.settings.setDebugEnabled(enabled) }
         flow.tts.setDebugEnabled(enabled)
+        DebugLog.setMasterEnabled(enabled)
+    }
+
+    fun setDebugTtsLog(enabled: Boolean) {
+        _ui.value = _ui.value.copy(debugTtsLog = enabled)
+        DebugLog.setTtsLogEnabled(enabled)
+        viewModelScope.launch { flow.settings.setDebugTtsLog(enabled) }
+    }
+
+    fun setDebugReaderLog(enabled: Boolean) {
+        _ui.value = _ui.value.copy(debugReaderLog = enabled)
+        DebugLog.setReaderLogEnabled(enabled)
+        viewModelScope.launch { flow.settings.setDebugReaderLog(enabled) }
     }
 }

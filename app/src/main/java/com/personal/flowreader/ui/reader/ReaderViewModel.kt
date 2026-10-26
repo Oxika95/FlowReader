@@ -21,6 +21,7 @@ import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.ResumeLocus
 import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.data.TextFilters
+import com.personal.flowreader.debug.DebugLog
 import com.personal.flowreader.tts.SynthDebugLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -339,6 +340,7 @@ class ReaderViewModel(
         val s = session ?: return
         val visible = first..last
         if (visible == viewport) return
+        DebugLog.reader("onViewport $first..$last prev=${viewport ?: "null"}")
         viewport = visible
         viewportJob?.cancel()
         viewportJob = viewModelScope.launch {
@@ -453,9 +455,11 @@ class ReaderViewModel(
         val chapter = (b.toc.getOrNull(row)?.first ?: row).coerceIn(0, b.chapterCount - 1)
         val loaded = session?.window?.value?.chapters?.get(chapter)
         if (loaded != null && loaded.chapter.blocks.isNotEmpty()) {
+            DebugLog.reader("jumpToChapter row=$row chapter=$chapter path=inWindow")
             jumpTo(Locus(chapter, 0, 0))
             return
         }
+        DebugLog.reader("jumpToChapter row=$row chapter=$chapter path=show")
         val ui = _ui.value
         show(Locus(chapter, 0, 0), TextFilters.merge(ui.filtersGlobal, ui.filtersGroups, ui.filtersLocal), session)
         positionMoved = true
@@ -463,6 +467,7 @@ class ReaderViewModel(
     }
 
     fun jumpTo(locus: Locus) {
+        DebugLog.reader("jumpTo c=${locus.chapterIndex} b=${locus.blockIndex} o=${locus.charOffset}")
         onLocus(locus)
         tts.jumpTo(locus)
     }
@@ -471,6 +476,7 @@ class ReaderViewModel(
     fun onSpoken(locus: Locus) {
         val s = session ?: return
         if (tts.attachedSession() !== s) return
+        DebugLog.reader("onSpoken c=${locus.chapterIndex} b=${locus.blockIndex} o=${locus.charOffset}")
         onLocus(locus)
     }
 
@@ -479,6 +485,10 @@ class ReaderViewModel(
         val b = book
         val window = session?.window?.value
         queue?.onLocus(locus)
+        DebugLog.reader(
+            "onLocus c=${locus.chapterIndex} b=${locus.blockIndex} o=${locus.charOffset} " +
+                "loaded=${window?.loaded}",
+        )
         _ui.update {
             it.copy(
                 locus = locus,

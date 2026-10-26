@@ -80,6 +80,7 @@ import com.personal.flowreader.data.BlockKind
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.Locus
+import com.personal.flowreader.debug.DebugLog
 import com.personal.flowreader.data.ReaderFont
 import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
@@ -324,17 +325,32 @@ fun ReaderScreen(
      * Scroll so [sentenceIndex] sits on the home line. Every jump (follow, pin, jump-back,
      * double-tap, scroll lock, ToC, book open) goes through here.
      */
-    suspend fun scrollToHome(sentenceIndex: Int, animated: Boolean = true) {
+    suspend fun scrollToHome(sentenceIndex: Int, reason: String, animated: Boolean = true) {
         val (sentences, blocks, listItems) = homeLookup.value
-        val s = sentences.getOrNull(sentenceIndex) ?: return
+        val s = sentences.getOrNull(sentenceIndex) ?: run {
+            DebugLog.reader("scrollToHome reason=$reason si=$sentenceIndex miss=noSentence")
+            return
+        }
         // Chapters prepended mid-scroll shift list indices; the block id is the stable target.
-        val key = blocks[s.chapterIndex to s.blockIndex]?.let { listItems.getOrNull(it)?.block?.id } ?: return
+        val key = blocks[s.chapterIndex to s.blockIndex]?.let { listItems.getOrNull(it)?.block?.id } ?: run {
+            DebugLog.reader(
+                "scrollToHome reason=$reason si=$sentenceIndex c=${s.chapterIndex} b=${s.blockIndex} miss=noKey",
+            )
+            return
+        }
         fun placed() = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }
         fun currentIndex() = homeLookup.value.third.indexOfFirst { it.block.id == key }
+        val wasPlaced = placed() != null
+        DebugLog.reader(
+            "scrollToHome start reason=$reason si=$sentenceIndex key=$key placed=$wasPlaced animated=$animated",
+        )
         programmatic = true
         try {
             if (placed() == null) {
-                val index = currentIndex().takeIf { it >= 0 } ?: return
+                val index = currentIndex().takeIf { it >= 0 } ?: run {
+                    DebugLog.reader("scrollToHome reason=$reason key=$key miss=noIndex")
+                    return
+                }
                 listState.scrollToItem(index)
             }
             val span = withTimeoutOrNull(HomeSpanTimeoutMs) {
@@ -345,7 +361,10 @@ fun ReaderScreen(
             val delta = if (span != null) {
                 ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
             } else {
-                val item = placed() ?: return
+                val item = placed() ?: run {
+                    DebugLog.reader("scrollToHome reason=$reason key=$key miss=noPlaceAfterSnap")
+                    return
+                }
                 val top = (item.offset - info.viewportStartOffset).toFloat()
                 ReaderHome.scrollDelta(top, top + item.size, 0f, viewport, homePosition)
             }
@@ -354,6 +373,7 @@ fun ReaderScreen(
             }
             // Wait for idle so a settling scroll is not mistaken for a user fling.
             snapshotFlow { listState.isScrollInProgress }.first { !it }
+            DebugLog.reader("scrollToHome done reason=$reason si=$sentenceIndex key=$key delta=$delta span=${span != null}")
         } finally {
             programmatic = false
         }
@@ -361,7 +381,7 @@ fun ReaderScreen(
 
     fun jumpToSavedPosition() {
         if (items.isEmpty()) return
-        scope.launch { scrollToHome(trackedSentenceIndex()) }
+        scope.launch { scrollToHome(trackedSentenceIndex(), reason = "jumpBack") }
     }
 
     /**
@@ -370,7 +390,10 @@ fun ReaderScreen(
      */
     fun playResumingSavedPosition() {
         val playheadOffScreen = pinEdge != null
-        if (playheadOffScreen) suppressFollowScroll = true
+        if (playheadOffScreen) {
+            suppressFollowScroll = true
+            DebugLog.reader("suppressFollow set reason=playOffScreen")
+        }
         vm.tts.play(follow = !playheadOffScreen)
     }
 
@@ -378,7 +401,7 @@ fun ReaderScreen(
     LaunchedEffect(doc, ui.loading) {
         if (doc == null || ui.loading || restoredScroll || items.isEmpty()) return@LaunchedEffect
         try {
-            scrollToHome(trackedSentenceIndex(), animated = false)
+            scrollToHome(trackedSentenceIndex(), reason = "restore", animated = false)
         } finally {
             restoredScroll = true
         }
@@ -400,9 +423,10 @@ fun ReaderScreen(
         if (tts.sentence == null) return@LaunchedEffect
         if (suppressFollowScroll) {
             suppressFollowScroll = false
+            DebugLog.reader("suppressFollow consume si=${tts.sentenceIndex}")
             return@LaunchedEffect
         }
-        scrollToHome(tts.sentenceIndex)
+        scrollToHome(tts.sentenceIndex, reason = if (scrollLocked) "lockFollow" else "follow")
     }
 
     val ttsForScroll = rememberUpdatedState(tts)
@@ -421,6 +445,7 @@ fun ReaderScreen(
                     ttsForScroll.value.playing &&
                     ttsForScroll.value.following
                 ) {
+                    DebugLog.reader("userScrolledAway dy=${available.y}")
                     vm.tts.userScrolledAway()
                 }
                 return Offset.Zero
@@ -459,7 +484,7 @@ fun ReaderScreen(
         filterEditor = null
         if (selectionActive) clearTextSelection()
         if (tts.playing && tts.sentence != null) {
-            scope.launch { scrollToHome(tts.sentenceIndex) }
+            scope.launch { scrollToHome(tts.sentenceIndex, reason = "scrollLock") }
         }
     }
 
@@ -483,9 +508,12 @@ fun ReaderScreen(
     fun resumeFollow() {
         // Only when follow actually turns on: the follow effect re-runs and consumes the flag.
         val live = vm.tts.state.value
-        if (live.playing && live.autoScrollWithTts && !live.following) suppressFollowScroll = true
+        if (live.playing && live.autoScrollWithTts && !live.following) {
+            suppressFollowScroll = true
+            DebugLog.reader("suppressFollow set reason=resumeFollow")
+        }
         vm.tts.followAgain()
-        scope.launch { scrollToHome(trackedSentenceIndex()) }
+        scope.launch { scrollToHome(trackedSentenceIndex(), reason = "resumeFollow") }
     }
 
     /** All reader gesture outcomes go through here so handlers share one policy. */
@@ -754,12 +782,16 @@ fun ReaderScreen(
                                                                     if (item.isChapterTitle) {
                                                                         val target = Locus(item.chapterIndex, 0, 0)
                                                                         suppressFollowScroll = true
+                                                                        DebugLog.reader("suppressFollow set reason=doubleTapTitle")
                                                                         vm.jumpTo(target)
                                                                         if (tts.doubleTapPlay) {
                                                                             vm.tts.play()
                                                                         }
                                                                         scope.launch {
-                                                                            scrollToHome(allSentences.indexAt(target))
+                                                                            scrollToHome(
+                                                                                allSentences.indexAt(target),
+                                                                                reason = "doubleTapTitle",
+                                                                            )
                                                                         }
                                                                         return@onReaderGesture
                                                                     }
@@ -783,6 +815,7 @@ fun ReaderScreen(
                                                                     }
                                                                     val charOffset = sentence?.start ?: 0
                                                                     suppressFollowScroll = true
+                                                                    DebugLog.reader("suppressFollow set reason=doubleTap")
                                                                     vm.jumpTo(
                                                                         Locus(
                                                                             item.chapterIndex,
@@ -797,7 +830,9 @@ fun ReaderScreen(
                                                                         ?: allSentences.indexAt(
                                                                             Locus(item.chapterIndex, item.blockIndex, charOffset),
                                                                         )
-                                                                    scope.launch { scrollToHome(homeIndex) }
+                                                                    scope.launch {
+                                                                        scrollToHome(homeIndex, reason = "doubleTap")
+                                                                    }
                                                                 }
                                                             },
                                                         )
@@ -859,7 +894,7 @@ fun ReaderScreen(
                                 val target = trackedSentenceIndex()
                                 scope.launch {
                                     withFrameNanos { }
-                                    scrollToHome(target)
+                                    scrollToHome(target, reason = "homeMarker")
                                 }
                             }
                         },
@@ -1060,13 +1095,14 @@ fun ReaderScreen(
         val onTocRow: (Int) -> Unit = { ci ->
             overlay = ReaderOverlay.Hidden
             suppressFollowScroll = true
+            DebugLog.reader("suppressFollow set reason=toc row=$ci")
             scope.launch {
                 vm.jumpToChapter(ci)
                 // A chapter outside the window swaps the doc; let the sentence lookup recompose first.
                 withFrameNanos { }
                 val sentences = homeLookup.value.first
                 if (sentences.isNotEmpty()) {
-                    scrollToHome(sentences.indexAt(vm.ui.value.locus))
+                    scrollToHome(sentences.indexAt(vm.ui.value.locus), reason = "toc")
                 }
             }
         }

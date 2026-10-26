@@ -33,6 +33,7 @@ import com.personal.flowreader.data.TtsEngines
 import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.data.UnderlayMode
+import com.personal.flowreader.debug.DebugLog
 import java.io.File
 import java.util.Locale
 import java.util.UUID
@@ -131,9 +132,8 @@ class TtsController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val providers = com.personal.flowreader.tts.provider.TtsProviderRegistry(plugins)
     private val edgeNet = EdgeNetwork(context)
-    /** Cached voices for the current clip-audio provider (plugin). */
-    @Volatile
-    private var clipVoiceOptions: List<TtsVoiceOption> = emptyList()
+    /** Cached voices per clip-audio engine key (`tts:{id}`). */
+    private val clipVoicesByEngine = java.util.concurrent.ConcurrentHashMap<String, List<TtsVoiceOption>>()
     /** Consecutive playhead network failures; drives the retry backoff. */
     private var networkFailures = 0
     /** Consecutive playhead handshake rejections (200/401/403); drives [awaitServiceRetry]. */
@@ -398,6 +398,10 @@ class TtsController(
     ) {
         // Reopening the reader on the book that is already playing must not interrupt it.
         if (session === reading) {
+            DebugLog.reader(
+                "tts.attach earlyReturn sameSession start=c${start.chapterIndex} " +
+                    "si=$index following?${_state.value.autoScrollWithTts}",
+            )
             _state.update { it.copy(following = it.autoScrollWithTts) }
             return
         }
@@ -432,6 +436,10 @@ class TtsController(
         wordBoundariesBySentence.clear()
         cuesBySentence.clear()
         val first = sentences.getOrNull(index)
+        DebugLog.reader(
+            "tts.attach full book=$bookId sameBook=$sameBook resume=$resume " +
+                "start=c${start.chapterIndex} si=$index",
+        )
         // One update: bookId and sentence must never be observed from different books.
         _state.update {
             it.copy(
@@ -851,7 +859,10 @@ class TtsController(
         val text = message.ifBlank { "TTS failed" }
         val enable = !_state.value.debugEnabled
         if (enable) {
-            scope.launch { settings.setDebugEnabled(true) }
+            scope.launch {
+                settings.setDebugEnabled(true)
+                settings.setDebugTtsLog(true)
+            }
         }
         _state.update { it.copy(debugEnabled = true, error = null) }
         SynthDebugLog.appendError(text)
@@ -866,15 +877,15 @@ class TtsController(
     }
 
     /**
-     * Snapshot the synth ring buffer + live engine counters to a file under
+     * Snapshot the debug ring buffer + live engine counters to a file under
      * app external files (`synth-logs/`).
      */
     fun dumpSynthLog(): File {
         val dir = File(context.getExternalFilesDir(null), "synth-logs").apply { mkdirs() }
-        val out = File(dir, "synth-${System.currentTimeMillis()}.txt")
+        val out = File(dir, "debug-${System.currentTimeMillis()}.txt")
         val s = _state.value
         val header = buildString {
-            appendLine("Flow Reader synth dump")
+            appendLine("Flow Reader debug dump")
             appendLine("time=${System.currentTimeMillis()}")
             appendLine("engine=${s.engineKey} voice=${s.voiceId}")
             appendLine("playing=${s.playing} speed=${s.speed} pitch=${s.pitch}")
@@ -931,19 +942,14 @@ class TtsController(
 
     fun setEngine(key: String) {
         if (key == _state.value.engineKey) return
-        val voices = voicesFor(key)
         val preferred = _state.value.voiceId
-        val voiceId = when {
-            voices.any { it.id == preferred } -> preferred
-            usesClipAudio(key) -> TtsPrefs.DEFAULT_EDGE_VOICE
-            else -> voices.firstOrNull()?.id.orEmpty()
-        }
         val (showClip, showLanes) = capabilityFlags(key)
+        // Clear stale voices immediately so the UI never shows another engine's list.
         _state.update {
             it.copy(
                 engineKey = key,
-                voiceId = voiceId,
-                voices = voices,
+                voiceId = preferred,
+                voices = emptyList(),
                 showClipSettings = showClip,
                 showNetworkLanes = showLanes,
                 error = null,
@@ -951,15 +957,24 @@ class TtsController(
         }
         scope.launch {
             settings.setEngine(key)
-            settings.setVoice(voiceId)
             clearEdgeCache()
-            // Force re-init when switching system engines.
-            if (!usesClipAudio(key)) {
+            if (usesClipAudio(key)) {
+                val provider = providers.get(key)
+                if (provider != null) {
+                    runCatching { clipVoicesByEngine[key] = provider.listVoices() }
+                }
+            } else {
                 systemTts?.shutdown()
                 systemTts = null
                 systemReady = false
                 boundEnginePackage = null
+                val pkg = if (key == TtsEngines.SYSTEM_DEFAULT) null else key
+                runCatching { ensureSystemForPackage(pkg) }
             }
+            val voices = voicesFor(key)
+            val voiceId = coerceVoiceId(key, preferred, voices)
+            _state.update { it.copy(voices = voices, voiceId = voiceId) }
+            settings.setVoice(voiceId)
             if (_state.value.playing) restartLoop()
         }
     }
@@ -977,17 +992,22 @@ class TtsController(
     fun userScrolledAway() {
         if (!_state.value.autoScrollWithTts) return
         if (_state.value.playing && _state.value.following) {
+            DebugLog.reader("tts.userScrolledAway si=$index")
             _state.update { it.copy(following = false) }
         }
     }
 
     fun followAgain() {
         if (!_state.value.autoScrollWithTts) return
+        DebugLog.reader("tts.followAgain si=$index")
         _state.update { it.copy(following = true) }
     }
 
     fun jumpTo(locus: Locus) {
         index = sentences.indexAt(locus)
+        DebugLog.reader(
+            "tts.jumpTo c=${locus.chapterIndex} b=${locus.blockIndex} o=${locus.charOffset} si=$index",
+        )
         _state.update {
             it.copy(following = it.autoScrollWithTts)
         }
@@ -1133,7 +1153,7 @@ class TtsController(
         val providerList = providers.refresh(systemExtras)
         for (p in providerList) {
             if (p.has(com.personal.flowreader.tts.provider.TtsCapability.ClipAudio)) {
-                runCatching { clipVoiceOptions = p.listVoices() }
+                runCatching { clipVoicesByEngine[p.id] = p.listVoices() }
             }
         }
         val engines = providers.engineOptions()
@@ -1141,12 +1161,12 @@ class TtsController(
         if (providers.get(key) == null) {
             key = TtsEngines.SYSTEM_DEFAULT
         }
-        val voices = voicesFor(key)
-        val voiceId = when {
-            voices.any { it.id == _state.value.voiceId } -> _state.value.voiceId
-            usesClipAudio(key) -> TtsPrefs.DEFAULT_EDGE_VOICE
-            else -> voices.firstOrNull()?.id.orEmpty()
+        if (!usesClipAudio(key)) {
+            val pkg = if (key == TtsEngines.SYSTEM_DEFAULT) null else key
+            runCatching { ensureSystemForPackage(pkg) }
         }
+        val voices = voicesFor(key)
+        val voiceId = coerceVoiceId(key, _state.value.voiceId, voices)
         val (showClip, showLanes) = capabilityFlags(key)
         _state.update {
             it.copy(
@@ -1174,13 +1194,29 @@ class TtsController(
         return clip to usesNetworkLanes(engineKey)
     }
 
+    private fun coerceVoiceId(
+        engineKey: String,
+        preferred: String,
+        voices: List<TtsVoiceOption>,
+    ): String = when {
+        preferred.isNotBlank() && voices.any { it.id == preferred } -> preferred
+        usesClipAudio(engineKey) -> TtsPrefs.DEFAULT_EDGE_VOICE
+        else -> voices.firstOrNull()?.id.orEmpty()
+    }
+
+    private fun systemBoundMatches(engineKey: String): Boolean {
+        if (!systemReady || systemTts == null) return false
+        val expected = if (engineKey == TtsEngines.SYSTEM_DEFAULT) null else engineKey
+        return boundEnginePackage == expected
+    }
+
     private fun voicesFor(engineKey: String): List<TtsVoiceOption> {
         val provider = providers.get(engineKey)
         if (provider != null && provider.has(com.personal.flowreader.tts.provider.TtsCapability.ClipAudio)) {
-            return clipVoiceOptions.ifEmpty { FALLBACK_CLIP_VOICES }
+            return clipVoicesByEngine[engineKey].orEmpty().ifEmpty { FALLBACK_CLIP_VOICES }
         }
         val tts = systemTts
-        return if (tts != null && systemReady) systemVoices(tts)
+        return if (tts != null && systemBoundMatches(engineKey)) systemVoices(tts)
         else listOf(TtsVoiceOption("default", "Default"))
     }
 
@@ -2236,7 +2272,9 @@ class TtsController(
 
     private fun edgeVoiceId(): String {
         val id = _state.value.voiceId
-        return if (id.isNotBlank() && clipVoiceOptions.any { it.id == id }) id else TtsPrefs.DEFAULT_EDGE_VOICE
+        val key = _state.value.engineKey
+        val known = clipVoicesByEngine[key].orEmpty()
+        return if (id.isNotBlank() && known.any { it.id == id }) id else TtsPrefs.DEFAULT_EDGE_VOICE
     }
 
     private fun cacheFile(i: Int): File = File(cacheDir, "b${bookKey}_s${i}_${voiceCacheKey()}.mp3")
@@ -2379,10 +2417,10 @@ class TtsController(
 
         /** Used only while a clip-audio plugin voice list is still loading. */
         private val FALLBACK_CLIP_VOICES = listOf(
-            TtsVoiceOption("en-US-AndrewNeural", "en-US-AndrewNeural", "English"),
-            TtsVoiceOption("en-US-AriaNeural", "en-US-AriaNeural", "English"),
-            TtsVoiceOption("en-US-JennyNeural", "en-US-JennyNeural", "English"),
-            TtsVoiceOption("en-US-GuyNeural", "en-US-GuyNeural", "English"),
+            TtsVoiceOption("en-US-AndrewNeural", "en-US-AndrewNeural", "English", "male"),
+            TtsVoiceOption("en-US-AriaNeural", "en-US-AriaNeural", "English", "female"),
+            TtsVoiceOption("en-US-JennyNeural", "en-US-JennyNeural", "English", "female"),
+            TtsVoiceOption("en-US-GuyNeural", "en-US-GuyNeural", "English", "male"),
         )
     }
 }

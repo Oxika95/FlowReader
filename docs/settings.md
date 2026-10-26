@@ -6,7 +6,7 @@ Shared overlay from library or reader. Primary tabs (alphabetical): **About | Au
 
 ## About
 
-Sub-tabs: **Info | Notifications | Data**.
+Sub-tabs: **Info | Notifications | Data** (| **Debug** when Debug mode is on).
 
 ### Info
 
@@ -16,7 +16,17 @@ Sub-tabs: **Info | Notifications | Data**.
 | Version | Package `versionName` |
 | Latest release | Link via GitHub API |
 | GitHub | Oxika95/FlowReader |
-| Debug mode | `debug_enabled` — synth dump FAB |
+| Debug mode | `debug_enabled` — shows the Debug sub-tab and bug bubble |
+
+### Debug
+
+Visible only while Debug mode is on. Per-feature log channels feed the shared debug bubble and
+logcat.
+
+| Control | Pref / notes |
+|---------|----------------|
+| TTS Synthesis | `debug_tts_log` (default on) — synth, prefetch, focus, engine; tag `FlowReader.Tts` |
+| eReader | `debug_reader_log` (default on) — jumps, follow, viewport, window; tag `FlowReader.Reader` |
 
 ### Notifications
 

@@ -1,79 +1,30 @@
 package com.personal.flowreader.tts
 
-import java.util.ArrayDeque
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.personal.flowreader.debug.DebugLog
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Bounded in-memory ring of synthesizer events for post-stutter dumps.
- * Append is cheap and lock-guarded; only active while [enabled] is true
- * (except [appendError], which force-enables logging first).
+ * TTS Synthesis channel facade over [DebugLog]. Call sites keep using this name;
+ * gating is master debug + About → Debug → TTS Synthesis.
  */
 object SynthDebugLog {
-    /** About 20+ minutes of Edge playback, enough for a walk test. */
-    private const val MAX_LINES = 5_000
-    private val enabled = AtomicBoolean(false)
-    private val lines = ArrayDeque<String>(MAX_LINES)
-    private val lock = Any()
-    private val _revision = MutableStateFlow(0L)
+    val revision: StateFlow<Long> get() = DebugLog.revision
+    val openRequested: StateFlow<Boolean> get() = DebugLog.openRequested
 
-    /** Bumps on each append/clear so UI can refresh a live snapshot. */
-    val revision: StateFlow<Long> = _revision.asStateFlow()
+    fun requestOpen() = DebugLog.requestOpen()
 
-    private val _openRequested = MutableStateFlow(false)
+    fun consumeOpenRequest() = DebugLog.consumeOpenRequest()
 
-    /** True until the log panel opens; stays set if the bubble isn't composed yet. */
-    val openRequested: StateFlow<Boolean> = _openRequested.asStateFlow()
+    /** Master debug on/off (clears the shared ring when off). */
+    fun setEnabled(value: Boolean) = DebugLog.setMasterEnabled(value)
 
-    fun requestOpen() {
-        _openRequested.value = true
-    }
+    fun isEnabled(): Boolean = DebugLog.isMasterEnabled()
 
-    fun consumeOpenRequest() {
-        _openRequested.value = false
-    }
+    fun append(message: String) = DebugLog.tts(message)
 
-    fun setEnabled(value: Boolean) {
-        enabled.set(value)
-        if (!value) {
-            synchronized(lock) { lines.clear() }
-            bump()
-        }
-    }
+    fun appendError(message: String) = DebugLog.appendError(message)
 
-    fun isEnabled(): Boolean = enabled.get()
+    fun snapshot(): List<String> = DebugLog.snapshot()
 
-    fun append(message: String) {
-        if (!enabled.get()) return
-        write(message)
-    }
-
-    /** Force-enable logging and record a media/playback error line. */
-    fun appendError(message: String) {
-        enabled.set(true)
-        write("ERROR $message")
-    }
-
-    fun snapshot(): List<String> = synchronized(lock) { lines.toList() }
-
-    fun clear() {
-        synchronized(lock) { lines.clear() }
-        bump()
-    }
-
-    private fun write(message: String) {
-        val ts = System.currentTimeMillis()
-        val line = "$ts $message"
-        synchronized(lock) {
-            if (lines.size >= MAX_LINES) lines.removeFirst()
-            lines.addLast(line)
-        }
-        bump()
-    }
-
-    private fun bump() {
-        _revision.value = _revision.value + 1L
-    }
+    fun clear() = DebugLog.clear()
 }

@@ -290,7 +290,7 @@ private fun SynthDebugLogPanel(
     FlowFullscreenCard(
         visible = visible,
         onDismiss = onDismiss,
-        title = "Synth log",
+        title = "Debug log",
         scrollable = false,
         footer = {
             FlowActionRow(
@@ -326,7 +326,7 @@ private fun SynthDebugLogPanel(
         },
     ) {
         FlowHint(
-            if (lines.isEmpty()) "No events yet — play TTS to capture synthesizer activity."
+            if (lines.isEmpty()) "No events yet — enable a Debug channel and use the reader or TTS."
             else "${lines.size} events (live)",
         )
         LazyColumn(

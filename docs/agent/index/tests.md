@@ -19,10 +19,13 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `data/TextFiltersTest.kt`
 - `data/TonalUnderlayTest.kt`
 - `data/UiScaleTest.kt`
+- `debug/DebugLogTest.kt`
 - `plugin/api/PluginApiVersionTest.kt`
 - `plugin/api/PluginCardTest.kt`
 - `plugin/repo/PluginVersionUpdatesTest.kt`
 - `plugin/repo/RepoIndexTest.kt`
+- `plugin/runtime/AnubisDetectorTest.kt`
+- `plugin/runtime/ClearanceOnlyCookieJarTest.kt`
 - `plugin/runtime/WebLoginCookiesTest.kt`
 - `plugin/store/PluginChapterBlocksTest.kt`
 - `plugin/store/PluginMembershipStoreTest.kt`
@@ -41,6 +44,7 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `tts/CrossfadeTest.kt`
 - `tts/FocusResumeTest.kt`
 - `tts/NetworkLanePolicyTest.kt`
+- `tts/provider/TtsEngineIdsTest.kt`
 - `tts/RaceScheduleTest.kt`
 - `tts/SpeechTextTest.kt`
 - `tts/UnderlayRouteTest.kt`
