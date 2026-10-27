@@ -8,18 +8,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Bounded in-memory ring for debug channels (TTS synth, eReader jumps). Append is cheap;
- * only writes while master debug is on and the channel pref is on (except [appendError]).
+ * Bounded in-memory ring for debug channels (TTS synth, eReader jumps, plugin fetches). Append is
+ * cheap; only writes while master debug is on and the channel pref is on (except [appendError]).
  */
 object DebugLog {
     const val CHANNEL_TTS = "tts"
     const val CHANNEL_READER = "reader"
+    const val CHANNEL_PLUGINS = "plugins"
 
     /** About 20+ minutes of Edge playback, enough for a walk test. */
     private const val MAX_LINES = 5_000
     private val master = AtomicBoolean(false)
     private val ttsChannel = AtomicBoolean(true)
     private val readerChannel = AtomicBoolean(true)
+    private val pluginsChannel = AtomicBoolean(true)
     private val lines = ArrayDeque<String>(MAX_LINES)
     private val lock = Any()
     private val _revision = MutableStateFlow(0L)
@@ -53,17 +55,24 @@ object DebugLog {
         readerChannel.set(value)
     }
 
+    fun setPluginsLogEnabled(value: Boolean) {
+        pluginsChannel.set(value)
+    }
+
     fun isMasterEnabled(): Boolean = master.get()
 
     fun isTtsLogEnabled(): Boolean = ttsChannel.get()
 
     fun isReaderLogEnabled(): Boolean = readerChannel.get()
 
+    fun isPluginsLogEnabled(): Boolean = pluginsChannel.get()
+
     fun append(channel: String, message: String) {
         if (!master.get()) return
         when (channel) {
             CHANNEL_TTS -> if (!ttsChannel.get()) return
             CHANNEL_READER -> if (!readerChannel.get()) return
+            CHANNEL_PLUGINS -> if (!pluginsChannel.get()) return
             else -> return
         }
         write("$channel $message")
@@ -73,6 +82,8 @@ object DebugLog {
     fun tts(message: String) = append(CHANNEL_TTS, message)
 
     fun reader(message: String) = append(CHANNEL_READER, message)
+
+    fun plugins(message: String) = append(CHANNEL_PLUGINS, message)
 
     /** Force-enable master + TTS channel and record an error line. */
     fun appendError(message: String) {
@@ -105,6 +116,7 @@ object DebugLog {
     private fun logTag(channel: String): String = when (channel) {
         CHANNEL_TTS -> "FlowReader.Tts"
         CHANNEL_READER -> "FlowReader.Reader"
+        CHANNEL_PLUGINS -> "FlowReader.Plugins"
         else -> "FlowReader.Debug"
     }
 

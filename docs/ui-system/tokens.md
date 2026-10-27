@@ -10,15 +10,15 @@ tokens only; a missing value means a missing token (add it here and in code).
 | `Space` | `None 0`, `Hair 2`, `XS 4`, `S 8`, `M 12`, `L 16`, `XL 24`, `XXL 32` dp | All gaps |
 | `Pad` | `Screen 16`, `CardBody 16`, `FloatingCard 8`, `RowV 12`, `HeaderStart/End/Top`, `HeaderTitleStart` | Semantic padding |
 | `Icon` | `S 16`, `M 20`, `L 24`, `XL 28`, `Hero 36` | Icon sizes |
-| `Comp` | `ChipHeight`, `ButtonSecondary 40`, `ButtonPrimary 48`, `FieldHeight`, `TabBar 48`, `TabIndicatorPrimary 3`, `TabIndicatorSecondary 2`, `TabInnerPad`, `TabGap`, `ListRow 104`, `Fab 56`, `CircleButton 36`, `ProgressBar 3`, `GridMinCell 140`, `SegmentStrip`, `CountBadge 24`, `TabDot 8`, `FabClearance`, `DismissTarget`, `CardMaxWidth 640`, `CompactCardMaxWidth 420` | Component metrics |
+| `Comp` | `ChipHeight`, `ButtonSecondary 40`, `ButtonPrimary 48`, `FieldHeight`, `TabBar 48`, `TabIndicatorPrimary 3`, `TabIndicatorSecondary 2`, `TabInnerPad`, `TabGap`, `ListRow 104`, `Fab 56`, `CircleButton 36`, `ProgressBar 3`, `GridMinCell 140`, `CountBadge 24`, `TabDot 8`, `FabClearance`, `DismissTarget`, `CardMaxWidth 640`, `CompactCardMaxWidth 420` | Component metrics |
 | `Radius` / `Shape` | `Shape.Card` (16), `Shape.Field` (12), `Shape.Pill` | Shapes |
 | `Stroke` | `Hairline 1` | Borders |
 | `Elevation` | `None` | Surfaces are flat |
 | `Feather` | `None`, `Panel 20` | Halo outside panel cards (not in layout) |
 | `Scrim` | `Standard .42`, `Hero .66`, `Busy .42`, `ParentScale .97` | Overlay scrims |
 | `Dock` | `EdgePad 16`, `Gap 16` | Dock spacing |
-| `Alpha` | `Disabled`, `Track`, `TrackOnDark`, `Divider`, `OnCoverMuted`, `CoverBand`, `CircleOnCover`, `CircleRingOnCover`, `TextShadow`, `SegmentBehind`, `SegmentEmpty` | Alphas |
-| Cover | `CoverAspect 2:3`, `CoverBandBlack`, `CoverMutedWhite`, `CoverBlur`, `CoverGradientHeight`, `ShelfGradientHeight`, `HighlightRadius`, `NeutralCacheGray`, `CoverEdge.{Row,Tile,Banner,Hero}` (decode px) | Cover art |
+| `Alpha` | `Disabled`, `Track`, `TrackOnDark`, `Divider`, `OnCoverMuted`, `CoverBand`, `CircleOnCover`, `CircleRingOnCover`, `TextShadow`, `SegmentBehind` | Alphas |
+| Cover | `CoverAspect 2:3`, `CoverBandBlack`, `CoverMutedWhite`, `CoverBlur`, `CoverGradientHeight`, `ShelfGradientHeight`, `HighlightRadius`, `NeutralCacheGray` (reader rail), `CoverEdge.{Row,Tile,Banner,Hero}` (decode px) | Cover art |
 | State | `MatchGreen` (positive outline; negative uses `colorScheme.error`) | Valid/invalid field outlines |
 
 ## `FlowType` (`FlowType.kt`)

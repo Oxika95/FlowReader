@@ -39,6 +39,7 @@ import com.personal.flowreader.data.TabStyle
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.api.PluginCapability
+import com.personal.flowreader.plugin.updates.ActiveChapterNotifications
 import androidx.compose.ui.unit.Dp
 import com.personal.flowreader.ui.design.FlowIcons
 import com.personal.flowreader.ui.design.controls.FlowBadgeTone
@@ -49,6 +50,8 @@ import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.design.tabs.FlowTabLevel
 import com.personal.flowreader.ui.library.LibraryBooksPane
 import com.personal.flowreader.ui.library.LibraryRowText
+import com.personal.flowreader.ui.library.LibrarySort
+import com.personal.flowreader.ui.library.LibrarySortOverlay
 import com.personal.flowreader.ui.theme.FlowTokens
 
 /** One view model per installed plugin version, shared by the tab body and its overlays. */
@@ -76,8 +79,12 @@ fun PluginTabContent(
     val lifecycleOwner = LocalLifecycleOwner.current
     val pendingShare by app.pendingPluginShare.collectAsState()
     val chrome by app.chrome.collectAsState()
+    val notifyBookIds by ActiveChapterNotifications.bookIds.collectAsState()
     LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.refreshLocal() }
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            vm.refreshLocal()
+            vm.refreshSessionPublic()
+        }
     }
     LaunchedEffect(pendingShare) {
         val share = pendingShare?.takeIf { it.pluginId == plugin.id } ?: return@LaunchedEffect
@@ -91,10 +98,9 @@ fun PluginTabContent(
     }
     LaunchedEffect(ui.error) {
         val err = ui.error ?: return@LaunchedEffect
-        if (!ui.anyOverlay) {
-            actions.showError(err)
-            vm.consumeError()
-        }
+        // Always toast; Account sheet also shows the hint when open (errors used to be silent under overlays).
+        actions.showError(err)
+        if (!ui.showAccount) vm.consumeError()
     }
 
     Column(modifier.fillMaxSize()) {
@@ -102,55 +108,83 @@ fun PluginTabContent(
         PluginSubTabs(
             ui = ui,
             text = chrome.libraryTabs == TabStyle.Text,
+            notifyBookIds = notifyBookIds,
             onSection = vm::setSection,
-            onAccount = {
-                if (ui.manifest.auth != null) vm.setShowAccount(true) else vm.setShowSettings(true)
-            },
+            onAccount = { vm.setShowAccount(true) },
         )
         when (val section = ui.section) {
-            is PluginSection.Library -> FlowPullRefresh(
-                refreshing = ui.refreshing,
-                onRefresh = vm::refresh,
-                modifier = Modifier.weight(1f),
-            ) {
-                if (ui.manifest.list(section.listId)?.isBrowse == true) {
-                    BrowseListPane(
-                        ui = ui,
-                        listId = section.listId,
-                        onOpen = { row -> vm.openBrowse(section.listId, row) },
-                        bottomInset = bottomInset,
-                    )
+            is PluginSection.Library -> {
+                val isBrowse = ui.manifest.list(section.listId)?.isBrowse == true
+                if (isBrowse) {
+                    FlowPullRefresh(
+                        refreshing = ui.refreshing,
+                        onRefresh = vm::refresh,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        BrowseListPane(
+                            ui = ui,
+                            listId = section.listId,
+                            onOpen = { row -> vm.openBrowse(section.listId, row) },
+                            bottomInset = bottomInset,
+                        )
+                    }
                 } else {
                     val listTitle = ui.manifest.list(section.listId)?.title ?: section.listId
-                    LibraryBooksPane(
-                        books = ui.visibleBooks,
-                        viewMode = viewMode,
-                        busy = ui.busy,
-                        emptyMessage = when {
-                            ui.books.isEmpty() -> "No stories yet.\nTap + to add one" +
-                                if (ui.manifest.auth != null) ", or sign in to import a list." else "."
-                            else -> "No stories in $listTitle."
-                        },
-                        onOpen = { bookId -> vm.readBook(actions, bookId) },
-                        onLongOpen = vm::openStory,
-                        badgesFor = { book ->
-                            if (book.bookId in ui.sync.conflictBookIds) listOf(POSITION_CONFLICT_BADGE to FlowBadgeTone.Negative) else emptyList()
-                        },
+                    LibrarySortOverlay(
+                        modes = LibrarySort.pluginModes,
+                        selected = ui.sortMode,
+                        onSelect = vm::setSortMode,
                         bottomInset = bottomInset,
-                        subtitleFor = { book ->
-                            val meta = ui.libraryMeta[book.bookId]
-                            val row = ui.listRows[book.bookId]
-                            val author = meta?.author?.ifBlank { null } ?: row?.author.orEmpty()
-                            val lastRead = ui.sync.pendingTitles[book.bookId]?.let { "Last read: $it" }
-                            when {
-                                author.isNotBlank() && lastRead != null -> "$author · $lastRead"
-                                lastRead != null -> lastRead
-                                else -> LibraryRowText.subtitle(author, meta?.chapterCount ?: 0, book.chapterIndex)
-                                    ?: ui.manifest.name
-                            }
-                        },
-                        newCountFor = { book -> ui.newCounts[book.bookId] ?: 0 },
-                    )
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        FlowPullRefresh(
+                            refreshing = ui.refreshing,
+                            onRefresh = vm::refresh,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            LibraryBooksPane(
+                                books = ui.visibleBooks,
+                                viewMode = viewMode,
+                                busy = ui.busy || ui.listsLoading,
+                                emptyMessage = when {
+                                    ui.books.isEmpty() -> "No stories yet.\nTap + to add one" +
+                                        if (ui.manifest.auth != null) {
+                                            ", or sign in to import a list."
+                                        } else {
+                                            "."
+                                        }
+                                    else -> "No stories in $listTitle."
+                                },
+                                onOpen = vm::openStory,
+                                onDoubleOpen = { bookId -> vm.readBook(actions, bookId) },
+                                badgesFor = { book ->
+                                    if (book.bookId in ui.sync.conflictBookIds) {
+                                        listOf(POSITION_CONFLICT_BADGE to FlowBadgeTone.Negative)
+                                    } else {
+                                        emptyList()
+                                    }
+                                },
+                                bottomInset = bottomInset,
+                                authorFor = { book ->
+                                    val meta = ui.libraryMeta[book.bookId]
+                                    val row = ui.listRows[book.bookId]
+                                    meta?.author?.ifBlank { null }
+                                        ?: row?.author?.ifBlank { null }
+                                        ?: book.author.ifBlank { ui.manifest.name }
+                                },
+                                chapterCountFor = { book ->
+                                    ui.libraryMeta[book.bookId]?.chapterCount?.takeIf { it > 0 }
+                                        ?: book.chapterCount
+                                },
+                                unreadNewFor = { book ->
+                                    val chapters = ui.libraryMeta[book.bookId]?.chapterCount?.takeIf { it > 0 }
+                                        ?: book.chapterCount
+                                    LibraryRowText.unreadNew(chapters, book.chapterIndex)
+                                },
+                                notifyDotFor = { book -> book.bookId in notifyBookIds },
+                            )
+                        }
+                    }
                 }
             }
             PluginSection.Search -> PluginSearchPane(
@@ -164,24 +198,34 @@ fun PluginTabContent(
     }
 }
 
-/** The plugin tab's FAB ("Add story"), placed by the Library screen's FAB slot. */
+/** The plugin tab's FAB (Search section, or Add-by-link when search is absent). */
 @Composable
 fun PluginTabFab(plugin: InstalledPlugin) {
     val vm = rememberPluginTabViewModel(plugin)
     val ui by vm.ui.collectAsState()
-    val canAdd = ui.manifest.has(PluginCapability.ResolveUrl) || ui.manifest.has(PluginCapability.Search)
-    if (!canAdd) return
-    FlowFab(
-        icon = Icons.Filled.Add,
-        contentDescription = "Add story",
-        onClick = { if (!ui.busy) vm.setShowAdd(true) },
-    )
+    val canSearch = ui.manifest.has(PluginCapability.Search)
+    val canResolve = ui.manifest.has(PluginCapability.ResolveUrl)
+    if (!canSearch && !canResolve) return
+    if (canSearch) {
+        FlowFab(
+            icon = Icons.Filled.Search,
+            contentDescription = "Search ${ui.manifest.name}",
+            onClick = { if (!ui.busy) vm.setSection(PluginSection.Search) },
+        )
+    } else {
+        FlowFab(
+            icon = Icons.Filled.Add,
+            contentDescription = "Add story",
+            onClick = { if (!ui.busy) vm.setShowAdd(true) },
+        )
+    }
 }
 
 @Composable
 private fun PluginSubTabs(
     ui: PluginTabUi,
     text: Boolean,
+    notifyBookIds: Set<String>,
     onSection: (PluginSection) -> Unit,
     onAccount: () -> Unit,
 ) {
@@ -195,7 +239,8 @@ private fun PluginSubTabs(
         manifest.lists.forEach { list ->
             val section = PluginSection.Library(list.id)
             val selected = !ui.showAccount && ui.section == section
-            val badge = ui.listNewCounts[list.id]
+            val members = ui.listMembers[list.id].orEmpty()
+            val badge = if (members.any { it in notifyBookIds }) 1 else null
             add(
                 if (text || list.icon.isBlank()) {
                     FlowTab.text(list.title, selected = selected, onClick = { onSection(section) }, key = list.id, badge = badge)
@@ -204,23 +249,12 @@ private fun PluginSubTabs(
                 },
             )
         }
-        if (manifest.has(PluginCapability.Search)) {
-            val selected = !ui.showAccount && ui.section == PluginSection.Search
-            val onClick = { onSection(PluginSection.Search) }
-            add(
-                if (text) {
-                    FlowTab.text("Search", selected = selected, onClick = onClick)
-                } else {
-                    FlowTab.icon(Icons.Filled.Search, "Search", selected = selected, onClick = onClick)
-                },
-            )
-        }
         if (trailing != null) {
             add(
                 FlowTab.action(
                     trailing.first,
                     trailing.second,
-                    open = ui.showAccount || ui.showSettings,
+                    open = ui.showAccount,
                     onClick = onAccount,
                 ),
             )
@@ -238,11 +272,8 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
     AddFromSourceSheet(
         ui = ui,
         onDismiss = { vm.setShowAdd(false) },
-        onQuery = vm::setQuery,
-        onSearch = { vm.search() },
         onUrl = vm::setUrlDraft,
         onOpenUrl = { vm.openUrl() },
-        onOpen = vm::openWork,
     )
     CreatorPageOverlay(
         ui = ui,
@@ -264,9 +295,29 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
         onDismiss = { vm.setShowAccount(false) },
         onShowLogin = { vm.setShowLogin(true) },
         onLogout = vm::logout,
+        onOpenSite = vm::openSite,
         onSync = { vm.askSync(it) },
         onSyncNow = vm::syncNow,
-        onSettings = { vm.setShowSettings(true) },
+        onDeleteData = vm::eraseLocalData,
+    )
+    SiteWebViewCard(
+        visible = ui.showSiteWeb,
+        title = ui.siteWebTitle.ifBlank { ui.manifest.name },
+        startUrl = ui.siteWebUrl,
+        allowedHosts = ui.manifest.allowedHosts,
+        seedCookies = ui.siteSeedCookies,
+        busy = ui.busy,
+        onDone = vm::completeSiteWeb,
+        onDismiss = vm::dismissSiteWeb,
+    )
+    PluginListCrawlCard(
+        crawl = ui.listCrawl,
+        pluginName = ui.manifest.name,
+        allowedHosts = ui.manifest.allowedHosts,
+        onParse = vm::parseCrawledListPage,
+        onFinished = vm::finishListCrawl,
+        onCancel = vm::cancelListCrawl,
+        onError = vm::onListCrawlError,
     )
     LoginSheet(
         ui = ui,
@@ -279,11 +330,6 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
         ui = ui,
         onDismiss = { vm.askSync(null) },
         onChoose = vm::syncList,
-    )
-    PluginSettingsSheet(
-        visible = ui.showSettings,
-        pluginId = plugin.id,
-        onDismiss = { vm.setShowSettings(false) },
     )
 }
 
@@ -305,7 +351,7 @@ fun PluginStoryOverlays(
         onRead = onRead,
         onDownload = vm::onDownloadTap,
         onDownloadOptions = vm::openPartial,
-        onSeek = vm::proposePosition,
+        onOpenPosition = vm::openPosition,
         onRefreshToc = vm::refreshStoryToc,
         onDelete = vm::deleteStory,
         onToggleList = vm::toggleList,
@@ -328,17 +374,9 @@ fun PluginStoryOverlays(
         onCleanup = vm::setCleanup,
         onDownload = vm::downloadAhead,
     )
-    MovePositionCard(
-        draft = ui.positionDraft.takeIf { !ui.showPosition },
-        story = ui.story,
-        onMove = vm::savePosition,
-        onFineTune = vm::openPosition,
-        onDismiss = vm::cancelPositionDraft,
-    )
     PositionSliderCard(
         visible = ui.showPosition,
         story = ui.story,
-        initial = ui.positionDraft,
         busy = ui.busy,
         onDismiss = vm::closePosition,
         onSave = vm::savePosition,

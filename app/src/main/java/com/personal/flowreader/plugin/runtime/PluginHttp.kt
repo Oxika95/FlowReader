@@ -1,5 +1,6 @@
 package com.personal.flowreader.plugin.runtime
 
+import com.personal.flowreader.debug.DebugLog
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -48,11 +49,17 @@ class PluginHttp(
 
     suspend fun fetch(requestJson: String): String {
         val req = runCatching { JSONObject(requestJson) }.getOrNull()
-            ?: return error("ERROR", "Bad fetch arguments")
+            ?: return logError("ERROR", "Bad fetch arguments", method = "?", url = "?")
         val url = req.optString("url").trim()
-        val parsed = url.toHttpUrlOrNull() ?: return error("ERROR", "Invalid URL: $url")
+        val parsed = url.toHttpUrlOrNull()
+            ?: return logError("ERROR", "Invalid URL: $url", method = "?", url = url)
         if (!isAllowed(parsed.host)) {
-            return error("BLOCKED", "Host not allowed by plugin manifest: ${parsed.host}")
+            return logError(
+                "BLOCKED",
+                "Host not allowed by plugin manifest: ${parsed.host}",
+                method = "?",
+                url = parsed.toString(),
+            )
         }
         val opts = req.optJSONObject("opts") ?: JSONObject()
         return fetchAttempt(parsed.toString(), opts, alreadyRetried = false)
@@ -80,6 +87,8 @@ class PluginHttp(
         }
         builder.method(method, body)
         val caller = if (opts.optBoolean("cookies", true)) client else clearanceClient
+        val retryNote = if (alreadyRetried) " (retry after bot-check)" else ""
+        DebugLog.plugins("$pluginId → $method $url$retryNote")
         val result = withRateLimit {
             try {
                 withContext(Dispatchers.IO) {
@@ -118,14 +127,50 @@ class PluginHttp(
                 error("NETWORK", t.message ?: "Network error")
             }
         }
+        logFetchResult(method, url, result, retried = alreadyRetried)
         if (!alreadyRetried) {
             val text = runCatching { JSONObject(result).optString("text") }.getOrNull().orEmpty()
             if (AnubisDetector.isChallenge(text)) {
+                DebugLog.plugins(
+                    "$pluginId bot-check page — opening clearance browser for $url",
+                )
                 val cleared = PluginClearanceGate.await(pluginId, url, allowedHostsList)
+                DebugLog.plugins(
+                    if (cleared) {
+                        "$pluginId bot-check cleared — retrying fetch"
+                    } else {
+                        "$pluginId bot-check clearance failed — not retrying"
+                    },
+                )
                 if (cleared) return fetchAttempt(url, opts, alreadyRetried = true)
             }
         }
         return result
+    }
+
+    private fun logFetchResult(method: String, requestedUrl: String, resultJson: String, retried: Boolean) {
+        val parsed = runCatching { JSONObject(resultJson) }.getOrNull() ?: return
+        val retry = if (retried) " after-retry" else ""
+        val err = parsed.optJSONObject("error")
+        if (err != null) {
+            DebugLog.plugins(
+                "$pluginId ← $method failed$retry " +
+                    "${err.optString("code")}: ${err.optString("message")} ($requestedUrl)",
+            )
+            return
+        }
+        val finalUrl = parsed.optString("url").ifBlank { requestedUrl }
+        val status = parsed.optInt("status", -1)
+        val text = parsed.optString("text")
+        val contentType = parsed.optJSONObject("headers")?.optString("content-type")
+        val probe = PluginResponseProbe.summarize(text, contentType)
+        val redirect = if (finalUrl != requestedUrl) " final=$finalUrl" else ""
+        DebugLog.plugins("$pluginId ← HTTP $status$retry$redirect $probe")
+    }
+
+    private fun logError(code: String, message: String, method: String, url: String): String {
+        DebugLog.plugins("$pluginId ← $method blocked: $code $message ($url)")
+        return error(code, message)
     }
 
     private suspend fun <T> withRateLimit(block: suspend () -> T): T = rate.withLock {

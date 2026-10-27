@@ -335,6 +335,8 @@ data class BookItem(
     val sourceKind: String,
     val readingProgress: Float,
     val lastReadAt: Long,
+    /** When the row was first added to the library (Files / shelves / plugin catalog). */
+    val addedAt: Long = 0L,
     /** Saved chapter (0-based), or -1 when nothing has been read. */
     val chapterIndex: Int = -1,
     val author: String = "",
@@ -353,6 +355,7 @@ fun LibraryBookEntity.toItem() = BookItem(
     sourceKind = sourceKind,
     readingProgress = position.fraction,
     lastReadAt = maxOf(addedAt, position.positionAt),
+    addedAt = addedAt,
     chapterIndex = position.savedChapterOrNone,
     author = author,
     chapterCount = chapterCount,
@@ -366,4 +369,5 @@ fun QueueItemEntity.toItem() = BookItem(
     sourceKind = sourceKind,
     readingProgress = position.fraction,
     lastReadAt = maxOf(addedAt, position.positionAt),
+    addedAt = addedAt,
 )

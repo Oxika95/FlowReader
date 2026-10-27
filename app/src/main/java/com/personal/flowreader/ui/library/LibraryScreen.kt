@@ -182,26 +182,40 @@ fun LibraryScreen(
             )
             val paneModifier = Modifier.weight(1f)
             when (val tab = ui.tab) {
-                LibraryTabId.Files -> LibraryBooksPane(
-                    books = ui.books,
-                    viewMode = chrome.libraryView,
-                    busy = ui.busy,
-                    emptyMessage = "No books yet.\nTap + to add an EPUB or TXT.",
-                    onOpen = onOpenBook,
-                    onLongOpen = { bookId -> filesSplashId = bookId },
+                LibraryTabId.Files -> LibrarySortOverlay(
+                    modes = LibrarySort.filesModes,
+                    selected = ui.sortMode,
+                    onSelect = vm::setSortMode,
                     bottomInset = docks.bottom,
                     modifier = paneModifier,
-                )
-                is LibraryTabId.Custom -> LibraryBooksPane(
-                    books = ui.books,
-                    viewMode = chrome.libraryView,
-                    busy = ui.busy,
-                    emptyMessage = "Nothing on this shelf yet.\nTap + to add an EPUB or TXT.",
-                    onOpen = onOpenBook,
-                    onLongOpen = { bookId -> filesSplashId = bookId },
+                ) {
+                    LibraryBooksPane(
+                        books = ui.books,
+                        viewMode = chrome.libraryView,
+                        busy = ui.busy,
+                        emptyMessage = "No books yet.\nTap + to add an EPUB or TXT.",
+                        onOpen = { bookId -> filesSplashId = bookId },
+                        onDoubleOpen = onOpenBook,
+                        bottomInset = docks.bottom,
+                    )
+                }
+                is LibraryTabId.Custom -> LibrarySortOverlay(
+                    modes = LibrarySort.filesModes,
+                    selected = ui.sortMode,
+                    onSelect = vm::setSortMode,
                     bottomInset = docks.bottom,
                     modifier = paneModifier,
-                )
+                ) {
+                    LibraryBooksPane(
+                        books = ui.books,
+                        viewMode = chrome.libraryView,
+                        busy = ui.busy,
+                        emptyMessage = "Nothing on this shelf yet.\nTap + to add an EPUB or TXT.",
+                        onOpen = { bookId -> filesSplashId = bookId },
+                        onDoubleOpen = onOpenBook,
+                        bottomInset = docks.bottom,
+                    )
+                }
                 LibraryTabId.Que -> QueTab(
                     entries = ui.que,
                     busy = ui.busy,

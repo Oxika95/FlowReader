@@ -72,7 +72,7 @@ data class PluginCardAction(
 
 /**
  * `WorkDetail.card`. Plugins fill slots; the host owns layout, theme and the
- * core actions (list toggles, Share, Download, Refresh, Delete, Read). See docs/plugins/ui-contract.md.
+ * core actions (list toggles, Share, Download, Delete, Read; pull-to-refresh for ToC). See docs/plugins/ui-contract.md.
  */
 data class PluginCard(
     val stats: List<PluginStat> = emptyList(),

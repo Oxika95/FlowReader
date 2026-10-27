@@ -47,6 +47,8 @@ data class LibraryUi(
     val books: List<BookItem> = emptyList(),
     val que: List<QueueItemEntity> = emptyList(),
     val tab: LibraryTabId = LibraryTabId.Files,
+    /** Card order for Files / custom shelves (not Queue). */
+    val sortMode: LibrarySortMode = LibrarySort.defaultFor(plugin = false),
     val filtersGlobal: List<FilterRule> = emptyList(),
     val filtersGroups: List<FilterRule> = emptyList(),
     val enabledPluginIds: Set<String> = emptySet(),
@@ -131,13 +133,15 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh() {
         viewModelScope.launch {
             val tab = _ui.value.tab
+            val sort = loadSort(tab)
             val books = withContext(Dispatchers.IO) { booksForTab(tab) }
             val que = withContext(Dispatchers.IO) { flow.catalog.listQue() }
             val global = flow.settings.globalFiltersOnce()
             val groups = flow.settings.groupFiltersOnce()
             _ui.value = _ui.value.copy(
-                books = books,
+                books = LibrarySort.sort(books, sort),
                 que = que,
+                sortMode = sort,
                 filtersGlobal = global,
                 filtersGroups = groups,
             )
@@ -150,12 +154,34 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             else -> flow.catalog.list()
         }
 
+    private suspend fun loadSort(tab: LibraryTabId): LibrarySortMode {
+        val fallback = LibrarySort.defaultFor(plugin = false)
+        if (tab is LibraryTabId.Que || tab is LibraryTabId.Plugin) return fallback
+        return LibrarySort.parse(
+            flow.settings.librarySortOnce(tab.persistKey),
+            LibrarySort.filesModes,
+            fallback,
+        )
+    }
+
+    fun setSortMode(mode: LibrarySortMode) {
+        if (mode !in LibrarySort.filesModes) return
+        val tab = _ui.value.tab
+        if (tab is LibraryTabId.Que || tab is LibraryTabId.Plugin) return
+        _ui.value = _ui.value.copy(
+            sortMode = mode,
+            books = LibrarySort.sort(_ui.value.books, mode),
+        )
+        viewModelScope.launch { flow.settings.setLibrarySort(tab.persistKey, mode.name) }
+    }
+
     fun setTab(tab: LibraryTabId) {
         _ui.value = _ui.value.copy(tab = tab)
         viewModelScope.launch {
             flow.settings.setLibraryTabId(tab.persistKey)
+            val sort = loadSort(tab)
             val books = withContext(Dispatchers.IO) { booksForTab(tab) }
-            _ui.value = _ui.value.copy(books = books)
+            _ui.value = _ui.value.copy(books = LibrarySort.sort(books, sort), sortMode = sort)
         }
     }
 
@@ -243,6 +269,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 val pluginId = intent.getStringExtra(UpdateNotifier.EXTRA_PLUGIN_ID).orEmpty()
                 val bookId = intent.getStringExtra(UpdateNotifier.EXTRA_BOOK_ID).orEmpty()
                 if (pluginId.isNotBlank() && bookId.isNotBlank()) {
+                    UpdateNotifier.cancelStory(getApplication(), bookId)
                     viewModelScope.launch { openPluginTab(PluginShareRequest(pluginId, bookId = bookId)) }
                 }
                 return true

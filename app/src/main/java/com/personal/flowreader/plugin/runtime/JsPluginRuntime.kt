@@ -5,6 +5,7 @@ import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.QuickJsException
 import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.function
+import com.personal.flowreader.debug.DebugLog
 import com.personal.flowreader.plugin.api.PluginErrorCode
 import com.personal.flowreader.plugin.api.PluginException
 import com.personal.flowreader.plugin.api.PluginManifest
@@ -120,7 +121,11 @@ class JsPluginRuntime(
 
     private fun bind(engine: QuickJs) {
         engine.function("__host_result") { args -> result = args.getOrNull(0) as? String }
-        engine.function("__host_log") { args -> Log.i(LOG_TAG, "[${manifest.id}] ${args.getOrNull(0)}") }
+        engine.function("__host_log") { args ->
+            val msg = args.getOrNull(0)?.toString().orEmpty()
+            Log.i(LOG_TAG, "[${manifest.id}] $msg")
+            DebugLog.plugins("${manifest.id} $msg")
+        }
         engine.asyncFunction("__host_fetch") { args -> http.fetch(args.getOrNull(0) as? String ?: "{}") }
         engine.asyncFunction("__host_sleep") { args ->
             delay(((args.getOrNull(0) as? Number)?.toLong() ?: 0L).coerceIn(0L, 10_000L))

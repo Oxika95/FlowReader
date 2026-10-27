@@ -41,7 +41,7 @@ private fun SearchField(ui: PluginTabUi, onQuery: (String) -> Unit, onSearch: ()
     )
 }
 
-/** Search sub-tab: query field, work display cards, and "Load more" when the plugin reports more pages. */
+/** Search section: query field, work display cards, and "Load more" when the plugin reports more pages. */
 @Composable
 internal fun PluginSearchPane(
     ui: PluginTabUi,
@@ -74,20 +74,16 @@ internal fun PluginSearchPane(
     }
 }
 
-/** FAB card: paste a link (resolveUrl) and, when supported, search the site. */
+/** FAB card for resolveUrl-only plugins: paste a story or chapter link. */
 @Composable
 internal fun AddFromSourceSheet(
     ui: PluginTabUi,
     onDismiss: () -> Unit,
-    onQuery: (String) -> Unit,
-    onSearch: () -> Unit,
     onUrl: (String) -> Unit,
     onOpenUrl: () -> Unit,
-    onOpen: (PluginWork) -> Unit,
 ) {
     val manifest = ui.manifest
-    val canSearch = manifest.has(PluginCapability.Search)
-    val canResolve = manifest.has(PluginCapability.ResolveUrl)
+    if (!manifest.has(PluginCapability.ResolveUrl)) return
     FlowFullscreenCard(
         visible = ui.showAdd,
         onDismiss = onDismiss,
@@ -95,18 +91,14 @@ internal fun AddFromSourceSheet(
         bodySpacing = Arrangement.spacedBy(FlowTokens.Space.S),
     ) {
         FlowHint("Open a story to see its card, then add it to a list.")
-        if (canSearch) SearchField(ui = ui, onQuery = onQuery, onSearch = onSearch)
-        if (canResolve) {
-            FlowTextField(
-                value = ui.urlDraft,
-                onValueChange = onUrl,
-                label = "Story or chapter link",
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = { onOpenUrl() }),
-                trailingIcon = { TextButton(onClick = onOpenUrl) { Text("Go", style = FlowType.action) } },
-            )
-        }
+        FlowTextField(
+            value = ui.urlDraft,
+            onValueChange = onUrl,
+            label = "Story or chapter link",
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+            keyboardActions = KeyboardActions(onGo = { onOpenUrl() }),
+            trailingIcon = { TextButton(onClick = onOpenUrl) { Text("Go", style = FlowType.action) } },
+        )
         ui.error?.let { FlowHint(it, error = true) }
-        ui.searchResults.forEach { work -> WorkCard(work = work, enabled = !ui.busy, onOpen = onOpen) }
     }
 }

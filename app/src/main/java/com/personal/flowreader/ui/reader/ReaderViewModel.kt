@@ -22,6 +22,7 @@ import com.personal.flowreader.data.ResumeLocus
 import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.debug.DebugLog
+import com.personal.flowreader.plugin.updates.UpdateNotifier
 import com.personal.flowreader.tts.SynthDebugLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -249,6 +250,7 @@ class ReaderViewModel(
         if (row.session.domain == PositionDomain.Plugin) {
             val story = flow.pluginBooks.openStory(bookId)
             withContext(Dispatchers.IO) { flow.pluginBooks.clearNewChapters(bookId) }
+            UpdateNotifier.cancelStory(getApplication(), bookId)
             ReaderBook.plugin(flow.pluginBooks, story)
         } else {
             ReaderBook.local(ChapterSource.open(flow.catalog.materialize(row), row.title))

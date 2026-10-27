@@ -76,13 +76,12 @@ data class PluginMediaInfo(
     val locusTitle: String = "",
     /** Chapters added since the story was last opened. */
     val newChapters: Int = 0,
-    /** Chapter picked on the position slider, awaiting confirmation. */
-    val pendingLocus: Int? = null,
 )
 
 /**
- * Plugin story: merges host-owned actions (list toggles, Share, Rename, Download, Refresh, Delete, Read —
+ * Plugin story: merges host-owned actions (list toggles, Share, Rename, Download, Delete, Read —
  * always present, fixed order) with plugin-declared slots (stats, badges, links, capped actions).
+ * ToC refresh is pull-to-refresh on the media card, not a footer button.
  */
 object PluginMediaCardAdapter {
     fun model(
@@ -159,7 +158,6 @@ object PluginMediaCardAdapter {
                     longPress = !downloading,
                 ),
             )
-            add(MediaAction(MediaActionIds.REFRESH, "Refresh", MediaActionKind.Secondary, enabled = !busy && !downloading))
             add(
                 MediaAction(
                     MediaActionIds.DELETE,
@@ -191,6 +189,7 @@ object PluginMediaCardAdapter {
             }
             else -> "Not started"
         }
+        val progress = info.chapterCount.takeIf { it > 0 }?.let { info.locus.toFloat() / it }
         return MediaCardModel(
             title = info.title,
             subtitle = info.author,
@@ -198,7 +197,7 @@ object PluginMediaCardAdapter {
             badges = badges,
             tags = info.tags,
             synopsis = info.synopsis,
-            segments = MediaSegments(info.chapterCount, info.locus, info.cachedIndices, info.pendingLocus),
+            progress = progress,
             status = status,
             error = error.orEmpty(),
             links = card?.links?.map { MediaLink(it.label, it.url) }.orEmpty(),

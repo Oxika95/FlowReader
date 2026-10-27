@@ -1,0 +1,19 @@
+---
+description: Plain English with full detail; no punchy buzzword prose
+alwaysApply: true
+---
+
+# Plain English (not dumb, not noir)
+
+When talking to the user — especially troubleshooting, log reviews, and diagnoses:
+
+- Keep **granular detail**. Say what ran, what came back, what failed, and why that matters.
+  Do not dumb it down or hide specifics the user needs to decide next steps.
+- Write in **normal sentences**. No punchy headlines, “verdict” frames, stacked negations
+  (“Not X, not Y”), or detective/noir tone.
+- Prefer concrete wording over buzzwords. Bad: “Verdict: Not bot-check, not signed-out.”
+  Good: “Doesn’t look like an anti-bot block; the session still looks signed in.”
+  Good: “Royal Road’s Follows markup no longer matches what the plugin parses.”
+- Technical names (selectors, URLs, status codes, class names) are fine when they carry
+  information — define briefly if obscure, then use them as needed.
+- Skip flower language and marketing cadence. Clarity and evidence first.

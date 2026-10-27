@@ -111,6 +111,8 @@ private fun SettingsSection(
             onDebugTtsLog = appearanceCallbacks.onDebugTtsLog,
             debugReaderLog = appearance.debugReaderLog,
             onDebugReaderLog = appearanceCallbacks.onDebugReaderLog,
+            debugPluginsLog = appearance.debugPluginsLog,
+            onDebugPluginsLog = appearanceCallbacks.onDebugPluginsLog,
         )
         1 -> AudioSettingsTab(
             engineKey = tts.engineKey,

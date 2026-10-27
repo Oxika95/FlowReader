@@ -138,4 +138,7 @@ class PluginCookieJar(private val secrets: PluginSecrets) : CookieJar {
             secrets.clearCookies()
         }
     }
+
+    /** Copy of stored cookies (e.g. seed the Open site WebView). */
+    fun snapshot(): List<Cookie> = synchronized(lock) { cookies.toList() }
 }

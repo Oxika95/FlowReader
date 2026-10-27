@@ -3,6 +3,7 @@ package com.personal.flowreader.ui.design.card.media
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,13 +18,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -31,16 +33,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import com.personal.flowreader.ui.design.FlowIcons
 import com.personal.flowreader.ui.design.card.FlowCardVariant
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
+import com.personal.flowreader.ui.design.controls.FlowBadgeTone
 import com.personal.flowreader.ui.design.controls.FlowCircleButton
-import com.personal.flowreader.ui.design.controls.FlowCountBadge
 import com.personal.flowreader.ui.design.controls.FlowMetaRow
 import com.personal.flowreader.ui.design.controls.FlowPrimaryButton
 import com.personal.flowreader.ui.design.controls.FlowSecondaryButton
+import com.personal.flowreader.ui.design.controls.newChaptersLabel
+import com.personal.flowreader.ui.design.layer.FlowPullRefresh
 import com.personal.flowreader.ui.design.surface.FlowCover
 import com.personal.flowreader.ui.design.surface.FlowProgressBar
 import com.personal.flowreader.ui.design.surface.FlowProgressTrack
@@ -54,14 +59,15 @@ private const val FooterRowMax = 3
  * The file/media card: a Hero fullscreen card showing one work's metadata from a
  * [MediaCardModel]. Layout is fixed; empty slots are hidden.
  *
- * Cover band (blurred [art], gradient, dark band with title, subtitle, badges + stats, tags,
- * synopsis, progress, segments), top-end rail of circular actions, then status, links, error and
+ * Cover band ([art], gradient, dark band with title, subtitle, badges + stats, tags,
+ * synopsis, progress), top-end rail of circular actions, then status, links, error and
  * the footer (secondary/destructive rows, then the primary button).
  *
  * [onAction] receives every rail and footer tap; the caller routes by [MediaAction.id] /
  * [MediaAction.owner]. [onLongAction] receives long presses on footer actions marked
- * [MediaAction.longPress]; [onSeek] the segment picked on the position slider (null = read-only).
- * Links open in the browser unless [onLink] is given.
+ * [MediaAction.longPress]; [onOpenPosition] makes the progress bar open the position card
+ * (null = display-only). [onRefresh] enables pull-to-refresh on the card body. Links open in
+ * the browser unless [onLink] is given.
  */
 @Composable
 fun FlowMediaCard(
@@ -72,52 +78,84 @@ fun FlowMediaCard(
     onAction: (MediaAction) -> Unit,
     onLink: ((MediaLink) -> Unit)? = null,
     onLongAction: ((MediaAction) -> Unit)? = null,
-    onSeek: ((Int) -> Unit)? = null,
+    onOpenPosition: (() -> Unit)? = null,
+    onRefresh: (() -> Unit)? = null,
+    refreshing: Boolean = false,
 ) {
-    val context = LocalContext.current
     FlowFullscreenCard(
         visible = visible && model != null,
         onDismiss = onDismiss,
         variant = FlowCardVariant.Hero,
         bodySpacing = Arrangement.Top,
+        scrollable = onRefresh == null,
     ) {
         val m = model ?: return@FlowFullscreenCard
-        MediaCoverBand(m, art, onAction, onSeek)
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(FlowTokens.Space.S),
-            verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
-        ) {
-            if (m.status.isNotBlank()) {
-                Text(
-                    m.status,
-                    style = FlowType.hint,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
-                )
+        if (onRefresh != null) {
+            FlowPullRefresh(
+                refreshing = refreshing,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.Top,
+                ) {
+                    MediaCardBody(m, art, onAction, onLink, onLongAction, onOpenPosition)
+                }
             }
-            if (m.links.isNotEmpty()) {
-                MediaLinks(m.links) { link ->
-                    if (onLink != null) {
-                        onLink(link)
-                    } else {
-                        runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.url)))
-                        }
+        } else {
+            MediaCardBody(m, art, onAction, onLink, onLongAction, onOpenPosition)
+        }
+    }
+}
+
+@Composable
+private fun MediaCardBody(
+    m: MediaCardModel,
+    art: ImageBitmap?,
+    onAction: (MediaAction) -> Unit,
+    onLink: ((MediaLink) -> Unit)?,
+    onLongAction: ((MediaAction) -> Unit)?,
+    onOpenPosition: (() -> Unit)?,
+) {
+    val context = LocalContext.current
+    MediaCoverBand(m, art, onAction, onOpenPosition)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(FlowTokens.Space.S),
+        verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
+    ) {
+        if (m.status.isNotBlank()) {
+            Text(
+                m.status,
+                style = FlowType.hint,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
+            )
+        }
+        if (m.links.isNotEmpty()) {
+            MediaLinks(m.links) { link ->
+                if (onLink != null) {
+                    onLink(link)
+                } else {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.url)))
                     }
                 }
             }
-            MediaFooter(m.footer, onAction, onLongAction)
-            if (m.error.isNotBlank()) {
-                Text(
-                    m.error,
-                    color = MaterialTheme.colorScheme.error,
-                    style = FlowType.hint,
-                    modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
-                )
-            }
+        }
+        MediaFooter(m.footer, onAction, onLongAction)
+        if (m.error.isNotBlank()) {
+            Text(
+                m.error,
+                color = MaterialTheme.colorScheme.error,
+                style = FlowType.hint,
+                modifier = Modifier.padding(horizontal = FlowTokens.Space.S),
+            )
         }
     }
 }
@@ -127,7 +165,7 @@ private fun MediaCoverBand(
     m: MediaCardModel,
     art: ImageBitmap?,
     onAction: (MediaAction) -> Unit,
-    onSeek: ((Int) -> Unit)?,
+    onOpenPosition: (() -> Unit)?,
 ) {
     BoxWithConstraints(
         Modifier
@@ -138,7 +176,7 @@ private fun MediaCoverBand(
         FlowCover(
             art = art,
             title = m.title,
-            blur = true,
+            blur = false,
             contentScale = ContentScale.FillWidth,
             placeholderStyle = MaterialTheme.typography.displaySmall,
             modifier = Modifier.fillMaxSize(),
@@ -162,7 +200,7 @@ private fun MediaCoverBand(
                         bottom = FlowTokens.Space.M,
                     ),
             ) {
-                MediaBandText(m, coverMaxHeight, onSeek)
+                MediaBandText(m, coverMaxHeight, onOpenPosition)
             }
         }
         if (m.rail.isNotEmpty()) {
@@ -188,22 +226,15 @@ private fun MediaCoverBand(
 }
 
 @Composable
-private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp, onSeek: ((Int) -> Unit)?) {
+private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp, onOpenPosition: (() -> Unit)?) {
     val muted = FlowTokens.CoverMutedWhite
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(FlowTokens.Space.S),
-    ) {
-        Text(
-            m.title,
-            style = FlowType.mediaTitle,
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = m.titleMaxLines,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        FlowCountBadge(m.newCount)
-    }
+    Text(
+        m.title,
+        style = FlowType.mediaTitle,
+        color = MaterialTheme.colorScheme.primary,
+        maxLines = m.titleMaxLines,
+        overflow = TextOverflow.Ellipsis,
+    )
     if (m.subtitle.isNotBlank()) {
         Text(
             m.subtitle,
@@ -212,10 +243,14 @@ private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp, onSeek: ((Int) 
             modifier = Modifier.padding(top = FlowTokens.Space.Hair),
         )
     }
+    val newLabel = newChaptersLabel(m.newCount)
+    val badges = if (newLabel.isEmpty()) m.badges else listOf(newLabel) + m.badges
+    val tones = if (newLabel.isEmpty()) emptyMap() else mapOf(newLabel to FlowBadgeTone.Accent)
     FlowMetaRow(
-        badges = m.badges,
+        badges = badges,
         stats = m.stats,
         onCover = true,
+        badgeTones = tones,
         modifier = Modifier.padding(top = FlowTokens.Space.XS),
     )
     if (m.tags.isNotEmpty()) {
@@ -246,10 +281,17 @@ private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp, onSeek: ((Int) 
             progress = p,
             track = FlowProgressTrack.OnDark,
             roundBottom = false,
-            modifier = Modifier.padding(top = FlowTokens.Space.M),
+            modifier = Modifier
+                .padding(top = FlowTokens.Space.M)
+                .then(
+                    if (onOpenPosition != null) {
+                        Modifier.clickable(role = Role.Button, onClick = onOpenPosition)
+                    } else {
+                        Modifier
+                    },
+                ),
         )
     }
-    m.segments?.takeIf { it.count > 0 }?.let { seg -> MediaSegmentSlider(seg, onSeek) }
 }
 
 @OptIn(ExperimentalLayoutApi::class)

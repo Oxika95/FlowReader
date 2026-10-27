@@ -37,7 +37,7 @@ Show book text as a continuous vertical flow. Tap to reveal title + media cards;
 | Play / Pause | Start or pause TTS |
 | Lock scroll to TTS | Hide chrome, force follow, disable text selection; locked controls (play/pause centered, unlock on the lock button's spot) each need a **double-tap** |
 
-Long-press the title banner to open the book's media card (same card as the library long-press:
+Long-press the title banner to open the book's media card (same card as a library tap:
 Files card for local books, story card for plugin books). Open/Read and Remove/Delete are hidden
 because the book is already open.
 

@@ -52,11 +52,11 @@ Result:
 │ [Ongoing]  ★ 4.55  👥 12k  ♥ 987  👁 1.2M  📖 120               │
 │ Fantasy · Adventure                                             │
 │ A short synopsis…                                               │
-│ ▮▮▮▯▯▯▯▯▯▯▯▯▯▯▯▯▯▯▯▯ (chapter cache strip)                      │
+│ ▬▬▬▬▬▬▬▬▬▬░░░░░░░░ (progress bar; pull down to refresh ToC)     │
 └─────────────────────────────────────────────────────────────────┘
   Last read: Chapter 3 · 3 / 120
   Author Name ↗
-  [Download] [Refresh] [Delete]
+  [Download] [Delete]
   [              Read              ]
 ```
 

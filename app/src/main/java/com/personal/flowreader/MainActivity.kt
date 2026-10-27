@@ -25,6 +25,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.personal.flowreader.data.ReaderOrientation
+import com.personal.flowreader.plugin.updates.ActiveChapterNotifications
 import com.personal.flowreader.ui.debug.DebugSynthDumpFab
 import com.personal.flowreader.ui.design.layer.FlowOverlayHost
 import com.personal.flowreader.ui.library.LibraryScreen
@@ -203,6 +204,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        ActiveChapterNotifications.syncFromSystem(this)
     }
 
     override fun onDestroy() {

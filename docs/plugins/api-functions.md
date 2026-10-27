@@ -11,6 +11,7 @@ Arguments and return values are plain JSON.
 module.exports = {
   async search(query, page) {},              // -> Page          (capability: search)
   async list(listId, page) {},               // -> Page          (capability: lists; syncable lists)
+  async listFromHtml(listId, html, pageUrl) {}, // -> Page       (optional; WebView crawl of sitePages)
   async loadWork(workId) {},                 // -> WorkDetail    (required)
   async loadChapter(chapter, work) {},       // -> Chapter       (required)
   async login(fields) {},                    // -> Session       (capability: auth)
@@ -26,9 +27,11 @@ module.exports = {
 };
 ```
 
-`page` starts at 1. `setMembership` returns `true` if the site was updated (added for `on: true`,
-removed for `on: false`), `false` if only the local list changed (for example signed out, or the
-site has no such list). Two-way sync calls it for both directions, so it must be idempotent.
+`page` starts at 1. `listFromHtml` (optional) parses host-supplied HTML into the same shape as
+`list`; Sync / Replace use OkHttp `list()` today. `setMembership` returns
+`true` if the site was updated (added for `on: true`, removed for `on: false`), `false` if only the
+local list changed (for example signed out, or the site has no such list). Two-way sync calls it for
+both directions, so it must be idempotent.
 
 ### Types
 

@@ -16,6 +16,14 @@ class AnubisDetectorTest {
     }
 
     @Test
+    fun detectsSoftBotCheckCopyWithoutScriptId() {
+        val soft =
+            """<!doctype html><html><head><title>Making sure you're not a bot!</title></head>""" +
+                """<body><p>This concept is called Proof of Work. Anubis requires modern JavaScript.</p></body></html>"""
+        assertTrue(AnubisDetector.isChallenge(soft))
+    }
+
+    @Test
     fun ignoresNormalFictionHtml() {
         val fiction =
             """<html><body><h1>Demo</h1><div class="chapter-inner chapter-content"><p>Hello</p></div></body></html>"""

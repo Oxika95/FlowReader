@@ -33,6 +33,7 @@ data class OpenUi(
     val debugEnabled: Boolean = false,
     val debugTtsLog: Boolean = true,
     val debugReaderLog: Boolean = true,
+    val debugPluginsLog: Boolean = true,
     val homePosition: Float = HomePosition.DEFAULT,
     val showHomeMarker: Boolean = false,
 )
@@ -61,12 +62,14 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
                 debugEnabled = prefs.debugEnabled,
                 debugTtsLog = prefs.debugTtsLog,
                 debugReaderLog = prefs.debugReaderLog,
+                debugPluginsLog = prefs.debugPluginsLog,
                 homePosition = prefs.homePosition,
                 showHomeMarker = prefs.showHomeMarker,
             )
             DebugLog.setMasterEnabled(prefs.debugEnabled)
             DebugLog.setTtsLogEnabled(prefs.debugTtsLog)
             DebugLog.setReaderLogEnabled(prefs.debugReaderLog)
+            DebugLog.setPluginsLogEnabled(prefs.debugPluginsLog)
         }
     }
 
@@ -165,5 +168,11 @@ class OpenBookViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(debugReaderLog = enabled)
         DebugLog.setReaderLogEnabled(enabled)
         viewModelScope.launch { flow.settings.setDebugReaderLog(enabled) }
+    }
+
+    fun setDebugPluginsLog(enabled: Boolean) {
+        _ui.value = _ui.value.copy(debugPluginsLog = enabled)
+        DebugLog.setPluginsLogEnabled(enabled)
+        viewModelScope.launch { flow.settings.setDebugPluginsLog(enabled) }
     }
 }

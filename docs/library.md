@@ -38,10 +38,11 @@ Lists pad by the dock height, so the card never covers the last row.
 | Element | Behavior |
 |---------|----------|
 | Empty copy | “No books yet…” |
-| Book card tap | Open `reader/{id}` |
-| Long-press | Files splash: Open / Share / Remove |
+| Book card tap | Files splash (media card): Open / Share / Remove |
+| Double-tap | Open `reader/{id}` |
 | FAB **+** “Add file” | “Add a book” → Import a copy / Reference in place → system picker |
-| Subtitle | "{Author} · chapter {last read}/{total}" (EPUB spine entries, TXT segments), or "{Author} · N chapters" before reading; read from the file's metadata at import and stored on the row (`library_books.author` / `chapterCount`, `LibraryRowText.kt`). Source label · relative time when neither is known |
+| Card layout | Title; author (or source · last read when author unknown); **Chapter n/total** chip (primary if unstarted, secondary if in progress, muted grey if complete). No **"N new"** chip on Files |
+| Sort | Media-card-style circle above the FAB opens a compact **Sort** card: **Date added** (default, newest first), **Title**, **Author**; remembered per tab (`library_sort`). Custom shelves use the same modes |
 | Link badge | Linked (in-place) files |
 | Progress bar | Reading progress |
 

@@ -22,7 +22,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.plugin.api.PluginSetting
 import com.personal.flowreader.plugin.api.PluginSettingType
-import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.controls.FlowHint
 import com.personal.flowreader.ui.design.controls.FlowTextField
 import com.personal.flowreader.ui.design.controls.FlowToggleRow
@@ -30,23 +29,6 @@ import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.FlowType
 
 /** Settings declared in the plugin manifest, persisted by the app (`flow.settings`). */
-@Composable
-internal fun PluginSettingsSheet(
-    visible: Boolean,
-    pluginId: String,
-    onDismiss: () -> Unit,
-) {
-    val app = LocalContext.current.applicationContext as FlowApp
-    val manifest = app.pluginManager.get(pluginId)?.manifest
-    FlowFullscreenCard(
-        visible = visible && manifest != null,
-        onDismiss = onDismiss,
-        title = "${manifest?.name.orEmpty()} settings",
-    ) {
-        PluginSettingsForm(pluginId = pluginId)
-    }
-}
-
 @Composable
 fun PluginSettingsForm(pluginId: String, modifier: Modifier = Modifier) {
     val app = LocalContext.current.applicationContext as FlowApp

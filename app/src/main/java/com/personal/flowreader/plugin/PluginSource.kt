@@ -36,6 +36,21 @@ class PluginSource(
         return PluginJson.page(runtime.call("list", JSONArray().put(listId).put(page)))
     }
 
+    /** True when the plugin can parse a WebView-captured list page (Sync crawl). */
+    suspend fun supportsListFromHtml(): Boolean =
+        manifest.has(PluginCapability.Lists) && runtime.hasFunction("listFromHtml")
+
+    /** Parse [html] from a crawled list page; same shape as [list]. */
+    suspend fun listFromHtml(listId: String, html: String, pageUrl: String): PluginPage {
+        require(PluginCapability.Lists)
+        if (!runtime.hasFunction("listFromHtml")) {
+            throw PluginException(PluginErrorCode.Unsupported, "${manifest.name} cannot parse crawled list pages")
+        }
+        return PluginJson.page(
+            runtime.call("listFromHtml", JSONArray().put(listId).put(html).put(pageUrl)),
+        )
+    }
+
     /** Entry [id] of a browse list; blank [sort] lets the plugin pick its default. */
     suspend fun browse(id: String, page: Int = 1, sort: String = "", tab: String = ""): PluginBrowsePage {
         require(PluginCapability.Browse)

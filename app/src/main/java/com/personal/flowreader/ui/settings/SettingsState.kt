@@ -29,6 +29,7 @@ data class AppearanceSettingsState(
     val debugEnabled: Boolean,
     val debugTtsLog: Boolean,
     val debugReaderLog: Boolean,
+    val debugPluginsLog: Boolean,
     val homePosition: Float,
     val showHomeMarker: Boolean,
 )
@@ -49,6 +50,7 @@ data class AppearanceSettingsCallbacks(
     val onDebugEnabled: (Boolean) -> Unit,
     val onDebugTtsLog: (Boolean) -> Unit,
     val onDebugReaderLog: (Boolean) -> Unit,
+    val onDebugPluginsLog: (Boolean) -> Unit,
     /** (position, persist): persist is false while dragging. */
     val onHomePosition: (Float, Boolean) -> Unit,
     val onShowHomeMarker: (Boolean) -> Unit,
@@ -70,6 +72,7 @@ fun AppearanceSettingsState(openUi: OpenUi) = AppearanceSettingsState(
     debugEnabled = openUi.debugEnabled,
     debugTtsLog = openUi.debugTtsLog,
     debugReaderLog = openUi.debugReaderLog,
+    debugPluginsLog = openUi.debugPluginsLog,
     homePosition = openUi.homePosition,
     showHomeMarker = openUi.showHomeMarker,
 )
@@ -90,6 +93,7 @@ fun AppearanceSettingsCallbacks(openVm: OpenBookViewModel) = AppearanceSettingsC
     onDebugEnabled = openVm::setDebugEnabled,
     onDebugTtsLog = openVm::setDebugTtsLog,
     onDebugReaderLog = openVm::setDebugReaderLog,
+    onDebugPluginsLog = openVm::setDebugPluginsLog,
     onHomePosition = openVm::setHomePosition,
     onShowHomeMarker = openVm::setShowHomeMarker,
 )

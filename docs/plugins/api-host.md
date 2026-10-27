@@ -18,7 +18,7 @@ Part of the [Plugin API](api.md) (apiVersion 5).
 | `flow.error(code, message)` | Error to `throw`. Codes: `AUTH_REQUIRED`, `NETWORK`, `PARSE`, `UNSUPPORTED`. |
 | `flow.url.resolve(base, href)` | Absolute URL. |
 | `await flow.sleep(ms)` | Delay (max 10 s). |
-| `flow.log(...args)` | Logcat under `FlowPlugin`. |
+| `flow.log(...args)` | Plugins debug channel (bug bubble / `FlowReader.Plugins`) and logcat `FlowPlugin`. |
 | `flow.plugin` | `{ id, version }`. |
 
 Throwing `AUTH_REQUIRED` makes the app open its sign-in sheet.

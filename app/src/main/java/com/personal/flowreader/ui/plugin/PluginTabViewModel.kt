@@ -23,6 +23,8 @@ import com.personal.flowreader.plugin.api.PluginException
 import com.personal.flowreader.plugin.api.PluginManifest
 import com.personal.flowreader.plugin.api.PluginSession
 import com.personal.flowreader.plugin.api.PluginWork
+import com.personal.flowreader.plugin.runtime.PluginSecrets
+import com.personal.flowreader.plugin.runtime.PluginSessionSeed
 import com.personal.flowreader.plugin.store.PluginCachePolicy
 import com.personal.flowreader.plugin.store.PluginLibraryMeta
 import com.personal.flowreader.plugin.store.PluginMembershipStore
@@ -33,6 +35,8 @@ import com.personal.flowreader.plugin.sync.ProgressReconcile
 import com.personal.flowreader.plugin.sync.PushResult
 import com.personal.flowreader.plugin.updates.UpdateChecker
 import com.personal.flowreader.plugin.updates.UpdateDiff
+import com.personal.flowreader.ui.library.LibrarySort
+import com.personal.flowreader.ui.library.LibrarySortMode
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -116,10 +120,8 @@ data class PluginTabUi(
     val confirmDownloadAll: Boolean = false,
     /** Partial download card (long-press Download) is showing. */
     val showPartial: Boolean = false,
-    /** Fine-tune position card (−/+ steps) is showing. */
+    /** Reading-position card (−/+ steps) is showing. */
     val showPosition: Boolean = false,
-    /** Chapter picked on the card's position slider, awaiting "Move reading position?". */
-    val positionDraft: Int? = null,
     val showRename: Boolean = false,
     /** Chapters kept ahead of the reading position; may be blank while editing. */
     val cacheLevelDraft: String = PluginCachePolicy.DEFAULT_LEVEL.toString(),
@@ -132,7 +134,16 @@ data class PluginTabUi(
     val showLogin: Boolean = false,
     val showAdd: Boolean = false,
     val showAccount: Boolean = false,
-    val showSettings: Boolean = false,
+    /** Account → Open site WebView. */
+    val showSiteWeb: Boolean = false,
+    /** Page title for the Open site WebView. */
+    val siteWebTitle: String = "",
+    /** Start URL for the Open site WebView. */
+    val siteWebUrl: String = "",
+    /** Jar cookies to seed into the Open site WebView. */
+    val siteSeedCookies: List<Cookie> = emptyList(),
+    /** WebView crawl of sitePages with listId (Sync / Replace / Site Done). */
+    val listCrawl: PluginListCrawlUi? = null,
     /** List id awaiting a Merge / Overwrite choice. */
     val syncListId: String? = null,
     /** Open browse-list entry page (creator page). */
@@ -143,21 +154,40 @@ data class PluginTabUi(
     /** Book id whose position conflict card was put off ("Later") while its story card is open. */
     val conflictDismissedFor: String? = null,
     val busy: Boolean = false,
+    /** Soft ToC refresh on the open media card (pull or open-in-background); does not block actions. */
+    val storyRefreshing: Boolean = false,
+    /** True until the first local membership + catalog paint finishes. */
+    val listsLoading: Boolean = true,
     /** Pull to refresh running on the list. */
     val refreshing: Boolean = false,
     val message: String? = null,
     val error: String? = null,
+    /** Soft re-login nudge when the cookie blob is older than the plugin's soft TTL. */
+    val sessionStaleHint: String? = null,
+    /** Card order for story lists (not browse / search). */
+    val sortMode: LibrarySortMode = LibrarySort.defaultFor(plugin = true),
 ) {
     val visibleBooks: List<BookItem>
-        get() = if (listBookIds.isEmpty()) emptyList() else books.filter { it.bookId in listBookIds }
-
-    /** List id → new chapters across its stories (sub-tab dots). */
-    val listNewCounts: Map<String, Int>
-        get() = listMembers.mapValues { (_, ids) -> ids.sumOf { newCounts[it] ?: 0 } }
+        get() {
+            if (listBookIds.isEmpty()) return emptyList()
+            val rows = books.filter { it.bookId in listBookIds }
+            return LibrarySort.sort(
+                rows,
+                sortMode,
+                chapterCountOf = { book ->
+                    libraryMeta[book.bookId]?.chapterCount?.takeIf { it > 0 } ?: book.chapterCount
+                },
+                authorOf = { book ->
+                    libraryMeta[book.bookId]?.author?.ifBlank { null }
+                        ?: listRows[book.bookId]?.author?.ifBlank { null }
+                        ?: book.author
+                },
+            )
+        }
 
     val anyOverlay: Boolean
-        get() = showLogin || showAdd || showAccount || showSettings || syncListId != null || story != null ||
-            browse != null
+        get() = showLogin || showAdd || showAccount || showSiteWeb ||
+            listCrawl != null || syncListId != null || story != null || browse != null
 }
 
 /**
@@ -178,6 +208,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     private fun source(): PluginSource = manager.source(pluginId)
 
     private var downloadJob: Job? = null
+    private var storyRefreshJob: Job? = null
 
     private val browser = PluginBrowseController(viewModelScope, _ui, ::source, ::fail) { localStory(it, catalog = false) }
 
@@ -192,6 +223,14 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     private val browseRefreshedAt = HashMap<String, Long>()
 
     init {
+        viewModelScope.launch {
+            val sort = LibrarySort.parse(
+                flow.settings.librarySortOnce(pluginId),
+                LibrarySort.pluginModes,
+                LibrarySort.defaultFor(plugin = true),
+            )
+            _ui.update { it.copy(sortMode = sort) }
+        }
         refreshLocal()
         refreshSession()
         viewModelScope.launch {
@@ -202,26 +241,34 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         }
     }
 
+    fun setSortMode(mode: LibrarySortMode) {
+        if (mode !in LibrarySort.pluginModes) return
+        _ui.update { it.copy(sortMode = mode) }
+        viewModelScope.launch { flow.settings.setLibrarySort(pluginId, mode.name) }
+    }
+
     fun refreshLocal() {
         viewModelScope.launch {
-            val rows = withContext(Dispatchers.IO) { flow.pluginCatalog.list(pluginId).map { it.toItem(pluginId) } }
+            // Paint membership + catalog first so the library is not empty while meta/posts load.
             val (ids, listRows) = withContext(Dispatchers.IO) { membership(_ui.value.section) }
-            val meta = withContext(Dispatchers.IO) { books.libraryMetas(rows.map { it.bookId }) }
+            val rows = withContext(Dispatchers.IO) { flow.pluginCatalog.list(pluginId).map { it.toItem(pluginId) } }
             val storyLists = withContext(Dispatchers.IO) { storyLists() }
             val members = withContext(Dispatchers.IO) { listMembers() }
-            val posts = withContext(Dispatchers.IO) {
-                browser.postsBookIds().mapNotNull { runCatching { loadStory(it) }.getOrNull() }
-            }
             _ui.update {
                 it.copy(
                     books = rows,
-                    libraryMeta = meta,
                     listMembers = members,
                     listBookIds = ids,
                     listRows = listRows,
                     storyLists = storyLists,
+                    listsLoading = false,
                 )
             }
+            val meta = withContext(Dispatchers.IO) { books.libraryMetas(rows.map { it.bookId }) }
+            val posts = withContext(Dispatchers.IO) {
+                browser.postsBookIds().mapNotNull { runCatching { loadStory(it) }.getOrNull() }
+            }
+            _ui.update { it.copy(libraryMeta = meta) }
             posts.forEach(browser::updatePosts)
         }
     }
@@ -239,9 +286,28 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         return out
     }
 
+    /** Tab resume / Account open: re-check sign-in (secrets first, then network). */
+    fun refreshSessionPublic() = refreshSession()
+
     private fun refreshSession() {
         if (!manifest.has(PluginCapability.Auth)) return
         viewModelScope.launch {
+            val secrets = PluginSecrets(getApplication(), pluginId)
+            val seeded = PluginSessionSeed.fromSecrets(
+                secrets.get("account"),
+                secrets.get("loggedIn"),
+            )
+            val importedAt = PluginSessionSeed.parseImportedAt(secrets.get(PluginSessionSeed.COOKIES_IMPORTED_AT))
+            _ui.update {
+                it.copy(
+                    session = seeded,
+                    sessionStaleHint = if (seeded.loggedIn) {
+                        PluginSessionSeed.staleHint(pluginId, importedAt)
+                    } else {
+                        null
+                    },
+                )
+            }
             val session = withContext(Dispatchers.IO) { runCatching { source().session() }.getOrNull() }
                 ?: return@launch
             _ui.update { ui ->
@@ -253,10 +319,19 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                 } else {
                     ui.loginFields
                 }
-                ui.copy(session = session, loginFields = prefill)
+                ui.copy(
+                    session = session,
+                    loginFields = prefill,
+                    sessionStaleHint = if (session.loggedIn) {
+                        PluginSessionSeed.staleHint(pluginId, importedAt)
+                    } else {
+                        null
+                    },
+                )
             }
             maybeRefreshBrowse(_ui.value.section)
-            syncer.autoSync()
+            // Sync is manual (Sync now / Replace / pull-to-refresh) or the new-chapter worker — not
+            // on Account open or session refresh.
         }
     }
 
@@ -403,10 +478,115 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         it.copy(showAdd = show, urlDraft = if (show) it.urlDraft else "", error = null)
     }
 
-    fun setShowAccount(show: Boolean) = _ui.update { it.copy(showAccount = show, error = null) }
+    /** Open/close Account only — no network (session refresh stays on tab start / sign-in). */
+    fun setShowAccount(show: Boolean) =
+        _ui.update {
+            it.copy(
+                showAccount = show,
+                showSiteWeb = if (show) it.showSiteWeb else false,
+                siteWebTitle = if (show) it.siteWebTitle else "",
+                siteWebUrl = if (show) it.siteWebUrl else "",
+                siteSeedCookies = if (show) it.siteSeedCookies else emptyList(),
+                error = if (show) null else it.error,
+            )
+        }
 
-    fun setShowSettings(show: Boolean) = _ui.update {
-        it.copy(showSettings = show, showAccount = if (show) false else it.showAccount)
+    /** Account → Site page: seed WebView from the jar; no network until the page loads. */
+    fun openSite(title: String, url: String) {
+        if (!url.startsWith("https://")) return
+        val cookies = runCatching { manager.cookieJar(pluginId).snapshot() }.getOrDefault(emptyList())
+        _ui.update {
+            it.copy(
+                showSiteWeb = true,
+                siteWebTitle = title.ifBlank { manifest.name },
+                siteWebUrl = url,
+                siteSeedCookies = cookies,
+                error = null,
+            )
+        }
+    }
+
+    fun dismissSiteWeb() =
+        _ui.update {
+            it.copy(showSiteWeb = false, siteWebTitle = "", siteWebUrl = "", siteSeedCookies = emptyList())
+        }
+
+    /**
+     * Open site Done: import WebView cookies, stamp import time, one user-initiated `session()`.
+     * Does not pull lists — use Sync / Replace for that.
+     */
+    fun completeSiteWeb() {
+        viewModelScope.launch {
+            _ui.update {
+                it.copy(
+                    busy = true,
+                    error = null,
+                    showSiteWeb = false,
+                    siteWebTitle = "",
+                    siteWebUrl = "",
+                    siteSeedCookies = emptyList(),
+                )
+            }
+            try {
+                val session = withContext(Dispatchers.IO) {
+                    manager.cookieJar(pluginId).import(WebLoginCookieStore.read(manifest.allowedHosts))
+                    PluginSecrets(getApplication(), pluginId).set(
+                        PluginSessionSeed.COOKIES_IMPORTED_AT,
+                        System.currentTimeMillis().toString(),
+                    )
+                    source().session()
+                }
+                _ui.update {
+                    it.copy(
+                        busy = false,
+                        session = session,
+                        sessionStaleHint = null,
+                        showAccount = true,
+                        message = if (session.loggedIn) {
+                            "Site session updated. Use Sync to pull lists."
+                        } else {
+                            "Cookies saved, but still signed out — open Sign in or try Sign in again."
+                        },
+                    )
+                }
+                manager.sessionChanged(pluginId)
+            } catch (t: Throwable) {
+                _ui.update {
+                    it.copy(
+                        busy = false,
+                        showAccount = true,
+                        error = t.message ?: "Could not update site session",
+                    )
+                }
+            }
+        }
+    }
+
+    /** Account → Delete local data (site unchanged). */
+    fun eraseLocalData() {
+        viewModelScope.launch {
+            _ui.update { it.copy(busy = true, error = null) }
+            try {
+                val removed = erasePluginData(flow, pluginId, manifest)
+                _ui.update {
+                    it.copy(
+                        busy = false,
+                        session = PluginSession(),
+                        sessionStaleHint = null,
+                        loginFields = emptyMap(),
+                        syncListId = null,
+                        message = "Deleted ${manifest.name} data ($removed ${if (removed == 1) "story" else "stories"})",
+                    )
+                }
+                manager.sessionChanged(pluginId)
+                refreshLocal()
+                syncer.refreshState()
+            } catch (t: Throwable) {
+                _ui.update {
+                    it.copy(busy = false, error = t.message ?: "Could not delete ${manifest.name} data")
+                }
+            }
+        }
     }
 
     fun askSync(listId: String?) = _ui.update { it.copy(syncListId = listId) }
@@ -420,15 +600,20 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             _ui.update {
                 it.copy(
                     busy = false,
+                    storyRefreshing = false,
                     downloadProgress = null,
                     session = it.session.copy(loggedIn = false),
+                    sessionStaleHint = null,
                     showLogin = true,
                     showAccount = false,
                     error = t.message ?: "Sign in to ${manifest.name} again.",
                 )
             }
+            manager.sessionChanged(pluginId)
         } else {
-            _ui.update { it.copy(busy = false, downloadProgress = null, error = t.message ?: fallback) }
+            _ui.update {
+                it.copy(busy = false, storyRefreshing = false, downloadProgress = null, error = t.message ?: fallback)
+            }
         }
     }
 
@@ -511,18 +696,31 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         showStory(splash, closeAdd = true)
     }
 
-    /** Long-press a library card: open the splash from cache (fetching only if missing). */
+    /**
+     * Open a library story's media card from local cache first. For plugins with syncable lists
+     * or [PluginCapability.Updates], refresh the ToC in the background without blocking the card.
+     * A missing local ToC still fetches before showing (cold open).
+     */
     fun openStory(bookId: String) {
+        storyRefreshJob?.cancel()
         viewModelScope.launch {
-            _ui.update { it.copy(busy = true, error = null, showAdd = false) }
+            _ui.update { it.copy(error = null, showAdd = false, storyRefreshing = false) }
             try {
-                val splash = withContext(Dispatchers.IO) {
-                    if (books.readSplashBundle(bookId)?.first?.toc.isNullOrEmpty()) {
-                        books.refreshToc(bookId)
-                    }
-                    loadStory(bookId)
+                val emptyToc = withContext(Dispatchers.IO) {
+                    books.readSplashBundle(bookId)?.first?.toc.isNullOrEmpty()
                 }
-                showStory(splash, closeAdd = false)
+                if (emptyToc) {
+                    _ui.update { it.copy(busy = true) }
+                    val splash = withContext(Dispatchers.IO) {
+                        books.refreshToc(bookId)
+                        loadStory(bookId)
+                    }
+                    showStory(splash, closeAdd = false)
+                } else {
+                    val splash = withContext(Dispatchers.IO) { loadStory(bookId) }
+                    showStory(splash, closeAdd = false)
+                    if (shouldBackgroundRefreshToc()) refreshStoryTocInBackground(bookId, silent = true)
+                }
             } catch (t: Throwable) {
                 fail(t, "Could not open story")
             }
@@ -541,6 +739,8 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     }
 
     fun closeStory() {
+        storyRefreshJob?.cancel()
+        storyRefreshJob = null
         chapterFocus = null
         val closed = _ui.value.story
         _ui.update {
@@ -549,13 +749,16 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                 confirmDownloadAll = false,
                 showPartial = false,
                 showPosition = false,
-                positionDraft = null,
                 showRename = false,
+                storyRefreshing = false,
                 conflictDismissedFor = null,
             )
         }
         if (closed != null && closed.bookId in browser.postsBookIds()) refreshLocal()
     }
+
+    private fun shouldBackgroundRefreshToc(): Boolean =
+        manifest.lists.any { it.syncable } || manifest.has(PluginCapability.Updates)
 
     private suspend fun loadStory(bookId: String): PluginStory {
         val (session, splash) = books.readSplashBundle(bookId)
@@ -718,6 +921,137 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         setSection(PluginSection.Library(targets.first().id))
     }
 
+    /**
+     * Start WebView list crawl when the plugin declares list sitePages and implements
+     * `listFromHtml`. [mode] null = Sync now (three-way); otherwise Replace Merge/Overwrite.
+     */
+    private suspend fun startListCrawlIfSupported(
+        targets: List<ListCrawlTarget>,
+        mode: SyncMode?,
+    ): Boolean {
+        if (targets.isEmpty()) return false
+        if (!withContext(Dispatchers.IO) { runCatching { source().supportsListFromHtml() }.getOrDefault(false) }) {
+            return false
+        }
+        val cookies = runCatching { manager.cookieJar(pluginId).snapshot() }.getOrDefault(emptyList())
+        _ui.update {
+            it.copy(
+                listCrawl = PluginListCrawlUi(targets, mode, cookies),
+                showSiteWeb = false,
+                siteWebTitle = "",
+                siteWebUrl = "",
+                siteSeedCookies = emptyList(),
+                syncListId = null,
+                busy = true,
+                error = null,
+                sync = it.sync.copy(running = true),
+            )
+        }
+        return true
+    }
+
+    fun cancelListCrawl() {
+        _ui.update {
+            it.copy(
+                listCrawl = null,
+                busy = false,
+                sync = it.sync.copy(running = false),
+                showAccount = true,
+            )
+        }
+    }
+
+    fun onListCrawlError(message: String) {
+        _ui.update {
+            it.copy(
+                listCrawl = null,
+                busy = false,
+                sync = it.sync.copy(running = false),
+                showAccount = true,
+                error = message,
+            )
+        }
+    }
+
+    /** WebView crawl finished: import cookies, write memberships, refresh UI. */
+    fun finishListCrawl(remotes: Map<String, List<com.personal.flowreader.plugin.api.PluginWork>>) {
+        val crawl = _ui.value.listCrawl
+        viewModelScope.launch {
+            _ui.update { it.copy(listCrawl = null) }
+            try {
+                withContext(Dispatchers.IO) {
+                    manager.cookieJar(pluginId).import(WebLoginCookieStore.read(manifest.allowedHosts))
+                    PluginSecrets(getApplication(), pluginId).set(
+                        PluginSessionSeed.COOKIES_IMPORTED_AT,
+                        System.currentTimeMillis().toString(),
+                    )
+                }
+                val mode = crawl?.mode
+                val message = withContext(Dispatchers.IO) {
+                    when (mode) {
+                        SyncMode.Merge -> {
+                            val count = lists.applyLists(pluginId, remotes, SyncMode.Merge)
+                            flow.pluginSync.resetListBaselines(pluginId, remotes.keys)
+                            val positions = flow.pluginSync.pullPositions(pluginId, overwrite = false).positionsPulled
+                            val head = "Merged $count from crawled lists"
+                            if (positions > 0) "$head, $positions reading positions set" else head
+                        }
+                        SyncMode.Overwrite -> {
+                            val report = flow.pluginSync.ingestCrawledLists(pluginId, remotes, overwrite = true)
+                            crawlSummary(report, overwrite = true)
+                        }
+                        null -> {
+                            val report = flow.pluginSync.ingestCrawledLists(pluginId, remotes, overwrite = false)
+                            crawlSummary(report, overwrite = false)
+                        }
+                    }
+                }
+                val session = withContext(Dispatchers.IO) { runCatching { source().session() }.getOrNull() }
+                _ui.update {
+                    it.copy(
+                        busy = false,
+                        sync = it.sync.copy(running = false),
+                        showAccount = true,
+                        session = session ?: it.session,
+                        sessionStaleHint = if (session?.loggedIn == true) null else it.sessionStaleHint,
+                        message = message,
+                    )
+                }
+                manager.sessionChanged(pluginId)
+                syncer.refreshState()
+                refreshLocal()
+            } catch (t: Throwable) {
+                _ui.update {
+                    it.copy(
+                        busy = false,
+                        sync = it.sync.copy(running = false),
+                        showAccount = true,
+                        error = t.message ?: "Could not import crawled lists",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun crawlSummary(report: com.personal.flowreader.plugin.sync.SyncReport, overwrite: Boolean): String {
+        val parts = buildList {
+            if (overwrite && report.added > 0) add("imported ${report.added}")
+            else if (report.added > 0) add("${report.added} added")
+            if (report.removed > 0) add("${report.removed} removed")
+            if (report.positionsPulled > 0) add("${report.positionsPulled} positions updated")
+            if (report.pushed > 0) add("${report.pushed} queued for ${manifest.name}")
+        }
+        return when {
+            parts.isEmpty() && overwrite -> "Imported lists from ${manifest.name}"
+            parts.isEmpty() -> "Up to date with ${manifest.name}"
+            overwrite -> "Imported: " + parts.joinToString(", ")
+            else -> "Synced: " + parts.joinToString(", ")
+        }
+    }
+
+    suspend fun parseCrawledListPage(listId: String, html: String, pageUrl: String) =
+        withContext(Dispatchers.IO) { source().listFromHtml(listId, html, pageUrl) }
+
     // --- Reading ----------------------------------------------------------------------------
 
     /** Tap a library card: open the reader at saved progress. */
@@ -790,20 +1124,43 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     }
 
     fun refreshStoryToc() {
-        val story = _ui.value.story ?: return
-        viewModelScope.launch {
-            _ui.update { it.copy(busy = true, error = null) }
+        val bookId = _ui.value.story?.bookId ?: return
+        refreshStoryTocInBackground(bookId, silent = false)
+    }
+
+    /**
+     * Reload ToC + splash for [bookId] without setting [PluginTabUi.busy]. Pull-to-refresh
+     * ([silent] false) toasts on success; open-card background refresh stays quiet unless auth fails.
+     */
+    private fun refreshStoryTocInBackground(bookId: String, silent: Boolean) {
+        storyRefreshJob?.cancel()
+        storyRefreshJob = viewModelScope.launch {
+            _ui.update { it.copy(storyRefreshing = true, error = null) }
             try {
                 val refreshed = withContext(Dispatchers.IO) {
-                    books.refreshToc(story.bookId)
-                    loadStory(story.bookId)
+                    books.refreshToc(bookId)
+                    loadStory(bookId)
                 }
+                if (_ui.value.story?.bookId != bookId) return@launch
                 refreshLocal()
                 _ui.update {
-                    it.copy(busy = false, story = refreshed, message = "Updated chapter list (${refreshed.chapterCount})")
+                    it.copy(
+                        storyRefreshing = false,
+                        story = refreshed,
+                        message = if (silent) {
+                            it.message
+                        } else {
+                            "Updated chapter list (${refreshed.chapterCount})"
+                        },
+                    )
                 }
+            } catch (t: CancellationException) {
+                throw t
             } catch (t: Throwable) {
-                fail(t, "Could not refresh chapter list")
+                if (_ui.value.story?.bookId != bookId) return@launch
+                _ui.update { it.copy(storyRefreshing = false) }
+                val auth = t is PluginException && t.code == PluginErrorCode.AuthRequired
+                if (!silent || auth) fail(t, "Could not refresh chapter list")
             }
         }
     }
@@ -949,15 +1306,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
 
     // --- Position ---------------------------------------------------------------------------
 
-    /** Released the card's position slider on [chapterIndex]: ask before moving there. */
-    fun proposePosition(chapterIndex: Int) = _ui.update { it.copy(positionDraft = chapterIndex.takeIf { _ -> it.story != null }) }
-
-    fun cancelPositionDraft() = _ui.update { it.copy(positionDraft = null) }
-
-    /** "Fine-tune" on the move card: the −/+ position card, starting at the slider's chapter. */
+    /** Open the reading-position card (−/+ steps) from the media card progress bar. */
     fun openPosition() = _ui.update { it.copy(showPosition = it.story != null, error = null) }
 
-    fun closePosition() = _ui.update { it.copy(showPosition = false, positionDraft = null) }
+    fun closePosition() = _ui.update { it.copy(showPosition = false) }
 
     /**
      * Save chapter [chapterIndex] as the reading position (start of the chapter). Goes through
@@ -1004,7 +1356,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                     it.copy(
                         busy = false,
                         showPosition = false,
-                        positionDraft = null,
                         story = refreshed,
                         message = "Position saved: chapter ${index + 1}",
                     )
@@ -1054,6 +1405,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             try {
                 val session = withContext(Dispatchers.IO) {
                     manager.cookieJar(pluginId).import(cookies)
+                    PluginSecrets(getApplication(), pluginId).set(
+                        PluginSessionSeed.COOKIES_IMPORTED_AT,
+                        System.currentTimeMillis().toString(),
+                    )
                     source().session()
                 }
                 if (!session.loggedIn) throw PluginException(PluginErrorCode.AuthRequired, "Sign in failed")
@@ -1061,6 +1416,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                     it.copy(
                         busy = false,
                         session = session,
+                        sessionStaleHint = null,
                         showLogin = false,
                         showAccount = true,
                     )
@@ -1083,7 +1439,13 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             withContext(Dispatchers.IO) { runCatching { source().logout() } }
             if (manifest.auth?.web != null) WebLoginCookieStore.clear(manifest.allowedHosts)
             _ui.update {
-                it.copy(session = PluginSession(), loginFields = emptyMap(), syncListId = null, showAccount = false)
+                it.copy(
+                    session = PluginSession(),
+                    loginFields = emptyMap(),
+                    syncListId = null,
+                    showAccount = false,
+                    sessionStaleHint = null,
+                )
             }
             manager.sessionChanged(pluginId)
         }

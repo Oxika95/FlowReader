@@ -45,7 +45,7 @@ over either screen the same way.
 | Buttons | `FlowPrimaryButton`, `FlowSecondaryButton`, `FlowTextAction`, `FlowIconButton`, `FlowCircleButton`, `FlowFab` | |
 | Settings rows | `FlowToggleRow`, `FlowSliderRow`, `FlowDropdownRow`, `FlowTextField`, `FlowChoiceChips`, `FlowCollapsible` | |
 | Text | `FlowSection`, `FlowLabel`, `FlowHint` | |
-| Meta | `FlowBadge`, `FlowStat`, `FlowMetaRow`, `FlowCountBadge`, `FlowDot` | Count badge / dot: new chapters |
+| Meta | `FlowBadge`, `FlowStat`, `FlowMetaRow`, `FlowDot`, `newChaptersLabel` | "N new" chip / notification dot |
 | Icons | `FlowIcons.forToken` | Shared with plugins |
 
 ### Layers (back to front)

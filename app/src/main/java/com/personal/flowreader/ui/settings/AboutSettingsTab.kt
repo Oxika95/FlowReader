@@ -56,6 +56,8 @@ internal fun AboutSettingsTab(
     onDebugTtsLog: (Boolean) -> Unit = {},
     debugReaderLog: Boolean = true,
     onDebugReaderLog: (Boolean) -> Unit = {},
+    debugPluginsLog: Boolean = true,
+    onDebugPluginsLog: (Boolean) -> Unit = {},
 ) {
     var subTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = buildList {
@@ -80,6 +82,8 @@ internal fun AboutSettingsTab(
             onDebugTtsLog = onDebugTtsLog,
             debugReaderLog = debugReaderLog,
             onDebugReaderLog = onDebugReaderLog,
+            debugPluginsLog = debugPluginsLog,
+            onDebugPluginsLog = onDebugPluginsLog,
         )
     }
 }
@@ -90,8 +94,10 @@ private fun AboutDebugPane(
     onDebugTtsLog: (Boolean) -> Unit,
     debugReaderLog: Boolean,
     onDebugReaderLog: (Boolean) -> Unit,
+    debugPluginsLog: Boolean,
+    onDebugPluginsLog: (Boolean) -> Unit,
 ) {
-    FlowHint("Lines go to the bug bubble and logcat (FlowReader.Tts / FlowReader.Reader).")
+    FlowHint("Lines go to the bug bubble and logcat (FlowReader.Tts / Reader / Plugins).")
     Spacer(Modifier.height(FlowTokens.Space.M))
     FlowToggleRow(
         title = "TTS Synthesis",
@@ -104,6 +110,12 @@ private fun AboutDebugPane(
         subtitle = "Jumps, follow, viewport, and chapter window",
         checked = debugReaderLog,
         onCheckedChange = onDebugReaderLog,
+    )
+    FlowToggleRow(
+        title = "Plugins",
+        subtitle = "Site fetches, sync lists, bot-check retries",
+        checked = debugPluginsLog,
+        onCheckedChange = onDebugPluginsLog,
     )
 }
 

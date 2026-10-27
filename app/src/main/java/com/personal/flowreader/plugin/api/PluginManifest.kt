@@ -92,6 +92,16 @@ data class PluginWebLogin(
     val doneCookie: String,
 )
 
+/**
+ * Account → Site page. When [listId] is set, Sync/Replace (and Site Done) crawl this URL into that
+ * list via WebView HTML instead of OkHttp `list()`.
+ */
+data class PluginSitePage(
+    val title: String,
+    val url: String,
+    val listId: String? = null,
+)
+
 data class PluginAuth(
     val fields: List<PluginAuthField>,
     val note: String = "",
@@ -143,6 +153,11 @@ data class PluginManifest(
     val capabilities: Set<PluginCapability> = emptySet(),
     val lists: List<PluginList> = emptyList(),
     val auth: PluginAuth? = null,
+    /**
+     * Pages for Account → Site (Sign in first, then plugin-specific). Empty: host defaults to
+     * `auth.web.url` then `site` when distinct.
+     */
+    val sitePages: List<PluginSitePage> = emptyList(),
     val settings: List<PluginSetting> = emptyList(),
     val shareHosts: List<String> = emptyList(),
 ) {
@@ -153,8 +168,38 @@ data class PluginManifest(
 
     fun list(id: String): PluginList? = lists.firstOrNull { it.id == id }
 
+    /** Ordered Site pages for Account (declared [sitePages], or Sign in + home default). */
+    fun resolvedSitePages(): List<PluginSitePage> {
+        if (sitePages.isNotEmpty()) return sitePages
+        return buildList {
+            val login = auth?.web?.url?.trim().orEmpty()
+            if (login.startsWith("https://")) add(PluginSitePage("Sign in", login))
+            val home = site.trim()
+            if (home.startsWith("https://") && home.trimEnd('/') != login.trimEnd('/')) {
+                add(PluginSitePage(name, home))
+            }
+        }
+    }
+
+    /** Site pages that Sync/Replace crawl into a list (`listId` set and known). */
+    fun listCrawlPages(): List<PluginSitePage> =
+        resolvedSitePages().filter { page ->
+            val id = page.listId?.trim().orEmpty()
+            id.isNotEmpty() && list(id) != null
+        }
+
+    /** Site page for [url] (ignores query / trailing slash), if any. */
+    fun sitePageForUrl(url: String): PluginSitePage? {
+        val key = normalizeSiteUrl(url)
+        if (key.isEmpty()) return null
+        return resolvedSitePages().firstOrNull { normalizeSiteUrl(it.url) == key }
+    }
+
     companion object {
         private val ID_PATTERN = Regex("^[a-z0-9][a-z0-9_-]{1,39}$")
+
+        fun normalizeSiteUrl(url: String): String =
+            url.trim().substringBefore('#').substringBefore('?').trimEnd('/').lowercase()
 
         fun parse(json: String): PluginManifest = parse(JSONObject(json))
 
@@ -218,6 +263,17 @@ data class PluginManifest(
                                 }
                             },
                         )
+                    }
+                },
+                sitePages = if (kind == PluginKind.Tts) {
+                    emptyList()
+                } else {
+                    obj.optJSONArray("sitePages").objects().mapNotNull { p ->
+                        val title = p.optString("title").trim()
+                        val url = p.optString("url").trim()
+                        val listId = p.optString("listId").trim().ifBlank { null }
+                        if (title.isEmpty() || !url.startsWith("https://")) null
+                        else PluginSitePage(title, url, listId)
                     }
                 },
                 settings = obj.optJSONArray("settings").objects().mapNotNull { s ->

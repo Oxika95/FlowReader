@@ -71,7 +71,6 @@ object FlowTokens {
         val SliderValueWidth = 48.dp
         val AccentTrack = 22.dp
         val GridMinCell = 140.dp
-        val SegmentStrip = Space.M
         /** New-chapter count circle; display rows hang half of it past their trailing edge. */
         val CountBadge = Icon.L
         /** Number-less tab dot. */
@@ -145,7 +144,6 @@ object FlowTokens {
         const val CircleRingOnCover = 0.55f
         const val TextShadow = 0.55f
         const val SegmentBehind = 0.40f
-        const val SegmentEmpty = 0.14f
     }
 
     // --- Cover / splash visuals ---
@@ -158,7 +156,7 @@ object FlowTokens {
     val ShelfGradientHeight = 36.dp
     val HighlightRadius = 6.dp
 
-    /** Neutral gray for cache-behind indicators (reader rail + segment strip). */
+    /** Neutral gray for cache-behind indicators (reader rail). */
     val NeutralCacheGray = Color(0xFF8A8A8A)
 
     /** Positive state outline (e.g. URL match covers the Test URL); pairs with `colorScheme.error`. */

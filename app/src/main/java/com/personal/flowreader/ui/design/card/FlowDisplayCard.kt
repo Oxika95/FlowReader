@@ -37,8 +37,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import com.personal.flowreader.ui.design.card.media.MediaStat
 import com.personal.flowreader.ui.design.controls.FlowBadgeTone
-import com.personal.flowreader.ui.design.controls.FlowCountBadge
+import com.personal.flowreader.ui.design.controls.FlowDot
 import com.personal.flowreader.ui.design.controls.FlowMetaRow
+import com.personal.flowreader.ui.design.controls.newChaptersLabel
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import com.personal.flowreader.ui.design.surface.FlowCover
 import com.personal.flowreader.ui.design.surface.FlowProgressBar
 import com.personal.flowreader.ui.design.surface.FlowProgressTrack
@@ -60,7 +63,7 @@ data class FlowCornerBadge(val icon: ImageVector, val contentDescription: String
 
 /**
  * The one display card: a tappable item in a list or grid (books, plugin works).
- * Tap opens the item's media card; long press is the secondary action.
+ * Tap opens the item's media card; double-tap opens the reader when [onDoubleClick] is set.
  * Empty slots (subtitle, badges, stats, progress) are hidden. See `docs/ui-system/cards.md`.
  */
 @Composable
@@ -78,14 +81,20 @@ fun FlowDisplayCard(
     corner: FlowCornerBadge? = null,
     enabled: Boolean = true,
     onLongClick: (() -> Unit)? = null,
-    /** New-chapter count: a [FlowCountBadge] on the row's trailing edge or the tile's top-right corner. */
+    onDoubleClick: (() -> Unit)? = null,
+    /** Unread chapters: host adds an accent "N new" chip ahead of [badges]. */
     newCount: Int = 0,
+    /** Plain accent dot when a system chapter notification for this item is still in the shade. */
+    notifyDot: Boolean = false,
 ) {
+    val newLabel = newChaptersLabel(newCount)
+    val shownBadges = if (newLabel.isEmpty()) badges else listOf(newLabel) + badges
+    val shownTones = if (newLabel.isEmpty()) badgeTones else badgeTones + (newLabel to FlowBadgeTone.Accent)
     val sized = when (layout) {
         FlowDisplayLayout.Row -> modifier
             .fillMaxWidth()
             .then(
-                if (badges.isEmpty() && stats.isEmpty()) {
+                if (shownBadges.isEmpty() && stats.isEmpty()) {
                     Modifier.height(FlowTokens.Comp.ListRow)
                 } else {
                     Modifier.heightIn(min = FlowTokens.Comp.ListRow)
@@ -101,11 +110,12 @@ fun FlowDisplayCard(
             style = FlowSurfaceStyle.Flat,
             onClick = if (enabled) onClick else null,
             onLongClick = if (enabled) onLongClick else null,
+            onDoubleClick = if (enabled) onDoubleClick else null,
             onClickLabel = "Open",
         ) {
             when (layout) {
-                FlowDisplayLayout.Row -> DisplayRow(title, art, subtitle, badges, badgeTones, stats, progress)
-                FlowDisplayLayout.Tile -> DisplayTile(title, art, progress)
+                FlowDisplayLayout.Row -> DisplayRow(title, art, subtitle, shownBadges, shownTones, stats, progress)
+                FlowDisplayLayout.Tile -> DisplayTile(title, art, subtitle, shownBadges, shownTones, progress)
             }
             if (corner != null) {
                 Icon(
@@ -122,19 +132,16 @@ fun FlowDisplayCard(
                 FlowProgressBar(progress = progress, modifier = Modifier.align(Alignment.BottomCenter))
             }
         }
-        when (layout) {
-            FlowDisplayLayout.Row -> FlowCountBadge(
-                newCount,
-                Modifier
+        if (notifyDot) {
+            val dotMod = when (layout) {
+                FlowDisplayLayout.Row -> Modifier
                     .align(Alignment.CenterEnd)
-                    .offset(x = FlowTokens.Comp.CountBadge / 2),
-            )
-            FlowDisplayLayout.Tile -> FlowCountBadge(
-                newCount,
-                Modifier
+                    .offset(x = FlowTokens.Comp.TabDot)
+                FlowDisplayLayout.Tile -> Modifier
                     .align(Alignment.TopEnd)
-                    .padding(FlowTokens.Space.S),
-            )
+                    .padding(FlowTokens.Space.S)
+            }
+            FlowDot(dotMod.semantics { stateDescription = "New chapter notification" })
         }
     }
 }
@@ -196,7 +203,14 @@ private fun DisplayRow(
 }
 
 @Composable
-private fun DisplayTile(title: String, art: ImageBitmap?, progress: Float?) {
+private fun DisplayTile(
+    title: String,
+    art: ImageBitmap?,
+    subtitle: String,
+    badges: List<String>,
+    badgeTones: Map<String, FlowBadgeTone>,
+    progress: Float?,
+) {
     Box(Modifier.fillMaxSize()) {
         FlowCover(art = art, title = title, modifier = Modifier.fillMaxSize())
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
@@ -206,20 +220,37 @@ private fun DisplayTile(title: String, art: ImageBitmap?, progress: Float?) {
                     .height(FlowTokens.ShelfGradientHeight)
                     .background(Brush.verticalGradient(listOf(Color.Transparent, FlowTokens.CoverBandBlack))),
             )
-            Column(Modifier.fillMaxWidth().background(FlowTokens.CoverBandBlack)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(FlowTokens.CoverBandBlack)
+                    .padding(
+                        start = FlowTokens.Space.M,
+                        end = FlowTokens.Space.M,
+                        top = FlowTokens.Space.Hair,
+                        bottom = FlowTokens.Space.S,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.Hair),
+            ) {
                 Text(
                     title,
                     style = FlowType.tileTitle,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(
-                        start = FlowTokens.Space.M,
-                        end = FlowTokens.Space.M,
-                        top = FlowTokens.Space.Hair,
-                        bottom = FlowTokens.Space.S,
-                    ),
                 )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        style = FlowType.hint,
+                        color = FlowTokens.CoverMutedWhite,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (badges.isNotEmpty()) {
+                    FlowMetaRow(badges, emptyList(), onCover = true, badgeTones = badgeTones)
+                }
                 if (progress != null) FlowProgressBar(progress = progress, track = FlowProgressTrack.OnDark)
             }
         }

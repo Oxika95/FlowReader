@@ -9,7 +9,7 @@ area); `Flat` is a hard edge for lists.
 | Fullscreen | `FlowFullscreenCard`, `FlowCardHeader`, `FlowActionRow`, `FlowTextAction`, `FlowConfirmCard` | `ui/design/card/FlowFullscreenCard.kt` |
 | Floating | `FlowFloatingCard`, `FlowFloatingChip` | `ui/design/card/FlowFloatingCard.kt` |
 | Display | `FlowDisplayCard`, `FlowDisplayList`, `FlowDisplayGrid`, `FlowEmptyState` | `ui/design/card/FlowDisplayCard.kt` |
-| Media | `FlowMediaCard`, `MediaCardModel`, adapters, `MediaSegmentSlider`, `MediaSegmentStrip` | `ui/design/card/media/` |
+| Media | `FlowMediaCard`, `MediaCardModel`, adapters | `ui/design/card/media/` |
 
 ## Fullscreen card
 
@@ -106,11 +106,12 @@ FlowDisplayList(contentPadding = flowDisplayListPadding(bottomExtra = docks.bott
 ```
 
 Empty slots are hidden. `Row` is `Comp.ListRow` high (grows when badges/stats are present).
-`newCount` (plugin stories with new chapters) adds a `FlowCountBadge`: on a row it sits on the
-trailing edge, vertically centred, half past the border; on a tile it sits in the cover's top-right
-corner.
-`Tile` is a 2:3 cover with a dark title band. `FlowDisplayGrid` uses adaptive `Comp.GridMinCell`
-columns. Convention: **tap = primary (read/open), long-press = media card**.
+`newCount` (plugin stories with new chapters) prepends an accent **"N new"** chip to the badge row.
+`notifyDot` draws a plain accent [FlowDot] on the row trailing edge / tile top-right when that
+story still has a chapter-update notification in the system shade.
+`Tile` is a 2:3 cover with a dark band for title, author, and chips (same badge row as `Row`).
+`FlowDisplayGrid` uses adaptive `Comp.GridMinCell` columns. Convention: **tap = media card,
+double-tap = reader** (when a double-tap handler is set).
 
 ## Media card
 
@@ -162,7 +163,7 @@ FlowMediaCard(
 | `title`, `subtitle`, `titleMaxLines` | |
 | `stats: List<MediaStat(icon, value, label)>` | Icon tokens from `FlowIcons` |
 | `badges`, `tags`, `synopsis` | Hidden when empty |
-| `progress: Float?` / `segments: MediaSegments?` | Reading progress bar or chapter position slider (cache strip track) |
+| `progress: Float?` | Reading progress bar on the cover band (0..1); tap opens the position card when `onOpenPosition` is set |
 | `newCount` | New chapters since last opened; count badge beside the title |
 | `status`, `error` | Host text under the band |
 | `links: List<MediaLink>` | Opened with `ACTION_VIEW` unless `onLink` is passed |
@@ -171,23 +172,23 @@ FlowMediaCard(
 
 `MediaAction(id, label, kind, icon, on, enabled, owner, longPress)`. `owner = Plugin` actions are
 routed to the plugin (`cardAction`); `Host` actions are handled by the caller. Reserved host ids:
-`MediaActionIds.READ/OPEN/DOWNLOAD/REFRESH/DELETE/REMOVE/SHARE/NOTIFY/RENAME` and `list:{listId}`.
+`MediaActionIds.READ/OPEN/DOWNLOAD/DELETE/REMOVE/SHARE/NOTIFY/RENAME` and `list:{listId}`.
 
 Footer actions with `longPress = true` also go to `onLongAction` (via
 `FlowSecondaryButton(onLongClick)`, which keeps the outlined button look); the plugin story card
-uses it for Partial download. `segments` render as `MediaSegmentSlider`: an M3 `Slider` whose
-track is the cache strip (`MediaSegmentStrip`). Releasing on another segment calls `onSeek(index)`;
-the caller confirms ("Move reading position?") and sets `MediaSegments.pending` meanwhile so the
-mark stays put. Without `onSeek` the slider is read-only.
+uses it for Partial download. Plugin stories show a library-style `%` progress bar (`locus /
+chapterCount`); tapping it opens the reading-position card (− / +). Without `onOpenPosition` the
+bar is display-only. Pull-to-refresh on the media card reloads the chapter list.
 
-`newCount` shows a `FlowCountBadge` beside the title (plugin stories with new chapters).
+`newCount` prepends an accent **"N new"** chip to the cover badge row (plugin stories with new
+chapters).
 
 ### Adapters (`MediaCardAdapters.kt`, pure Kotlin, unit-tested)
 
 | Adapter | Source | Stats | Rail | Footer |
 | --- | --- | --- | --- | --- |
 | `FileMediaCardAdapter` | Files tab book | Read %, format, size | — | Share, Remove, Open |
-| `PluginMediaCardAdapter` | Plugin story | `card.stats`, then chapters | List toggles, Share, plugin rail actions (≤2) | Download (hold: partial; "Cancel download" while running), Refresh, Delete, plugin footer actions (≤2), Read |
+| `PluginMediaCardAdapter` | Plugin story | `card.stats`, then chapters | List toggles, Share, plugin rail actions (≤2) | Download (hold: partial; "Cancel download" while running), Delete, plugin footer actions (≤2), Read; pull-to-refresh reloads ToC |
 
 New media source = new adapter + a caller that routes ids. Do not add parameters to
 `FlowMediaCard` for one source.

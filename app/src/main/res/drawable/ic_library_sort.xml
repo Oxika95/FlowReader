@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bars longest→shortest + down arrow (library sort control). Tintable. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Top bar (longest) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,5.25h12c0.69,0 1.25,0.56 1.25,1.25v0c0,0.69 -0.56,1.25 -1.25,1.25H3c-0.69,0 -1.25,-0.56 -1.25,-1.25v0C1.75,5.81 2.31,5.25 3,5.25z" />
+    <!-- Middle bar -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,10.75h8.5c0.69,0 1.25,0.56 1.25,1.25v0c0,0.69 -0.56,1.25 -1.25,1.25H3c-0.69,0 -1.25,-0.56 -1.25,-1.25v0c0,-0.69 0.56,-1.25 1.25,-1.25z" />
+    <!-- Bottom bar (shortest) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,16.25h5c0.69,0 1.25,0.56 1.25,1.25v0c0,0.69 -0.56,1.25 -1.25,1.25H3c-0.69,0 -1.25,-0.56 -1.25,-1.25v0c0,-0.69 0.56,-1.25 1.25,-1.25z" />
+    <!-- Down arrow stem + head -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18.25,4.5c0.69,0 1.25,0.56 1.25,1.25v10.19l1.47,-1.47c0.49,-0.49 1.28,-0.49 1.77,0c0.49,0.49 0.49,1.28 0,1.77l-3.54,3.54c-0.49,0.49 -1.28,0.49 -1.77,0l-3.54,-3.54c-0.49,-0.49 -0.49,-1.28 0,-1.77c0.49,-0.49 1.28,-0.49 1.77,0l1.47,1.47V5.75c0,-0.69 0.56,-1.25 1.25,-1.25z" />
+</vector>

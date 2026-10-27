@@ -18,6 +18,7 @@ fun PluginBookEntity.toItem(pluginId: String) = BookItem(
     sourceKind = pluginId,
     readingProgress = position.fraction,
     lastReadAt = maxOf(addedAt, position.positionAt),
+    addedAt = addedAt,
     chapterIndex = position.savedChapterOrNone,
 )
 

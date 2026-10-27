@@ -27,6 +27,7 @@ logcat.
 |---------|----------------|
 | TTS Synthesis | `debug_tts_log` (default on) — synth, prefetch, focus, engine; tag `FlowReader.Tts` |
 | eReader | `debug_reader_log` (default on) — jumps, follow, viewport, window; tag `FlowReader.Reader` |
+| Plugins | `debug_plugins_log` (default on) — site fetches, sync lists, bot-check retries; tag `FlowReader.Plugins` |
 
 ### Notifications
 

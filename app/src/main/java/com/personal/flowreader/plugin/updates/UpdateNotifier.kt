@@ -21,6 +21,7 @@ import com.personal.flowreader.plugin.repo.PluginVersionUpdate
 object UpdateNotifier {
     const val CHANNEL_ID = "flow_chapter_updates"
     const val ACTION_OPEN_STORY = "com.personal.flowreader.updates.OPEN_STORY"
+    const val ACTION_DISMISSED = "com.personal.flowreader.updates.CHAPTER_DISMISSED"
     const val EXTRA_PLUGIN_ID = "plugin_id"
     const val EXTRA_BOOK_ID = "book_id"
     private const val GROUP = "flow_chapter_updates"
@@ -39,6 +40,7 @@ object UpdateNotifier {
             .filter { it.notification.group == GROUP && it.id != SUMMARY_ID }
             .associate { it.id to it.notification.extras.getInt(EXTRA_COUNT, 0) }
             .toMutableMap()
+        val posted = ArrayList<String>(updates.size)
         for (update in updates) {
             val id = notificationId(update.bookId)
             val count = (counts[id] ?: 0) + update.newChapters.size
@@ -55,13 +57,22 @@ object UpdateNotifier {
                 .setContentText(titles.last())
                 .setStyle(style)
                 .setContentIntent(openStoryIntent(context, update))
+                .setDeleteIntent(dismissIntent(context, update.bookId))
                 .setAutoCancel(true)
                 .setGroup(GROUP)
                 .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
-                .addExtras(android.os.Bundle().apply { putInt(EXTRA_COUNT, count) })
+                .addExtras(
+                    android.os.Bundle().apply {
+                        putInt(EXTRA_COUNT, count)
+                        putString(EXTRA_BOOK_ID, update.bookId)
+                        putString(EXTRA_PLUGIN_ID, update.pluginId)
+                    },
+                )
                 .build()
-            notifySafely(manager, id, notification)
+            if (notifySafely(manager, id, notification)) posted += update.bookId
         }
+        ActiveChapterNotifications.markPosted(posted)
+        ActiveChapterNotifications.syncFromSystem(context)
         val headline = UpdateDiff.headline(counts.values.sum())
         val summary = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_flow)
@@ -73,6 +84,24 @@ object UpdateNotifier {
             .setAutoCancel(true)
             .build()
         notifySafely(manager, SUMMARY_ID, summary)
+    }
+
+    /** Cancel the per-story notification (reader open / clear); refreshes [ActiveChapterNotifications]. */
+    fun cancelStory(context: Context, bookId: String) {
+        if (bookId.isBlank()) return
+        NotificationManagerCompat.from(context).cancel(notificationId(bookId))
+        ActiveChapterNotifications.clear(bookId)
+        ActiveChapterNotifications.syncFromSystem(context)
+    }
+
+    /** Book ids with a live chapter-update notification in the shade. */
+    fun activeBookIds(context: Context): Set<String> {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return emptySet()
+        return manager.activeNotifications.orEmpty()
+            .asSequence()
+            .filter { it.notification.group == GROUP && it.id != SUMMARY_ID }
+            .mapNotNull { it.notification.extras.getString(EXTRA_BOOK_ID)?.takeIf(String::isNotBlank) }
+            .toSet()
     }
 
     /** One notification listing every pending plugin update; false when notifications are blocked. */
@@ -118,7 +147,7 @@ object UpdateNotifier {
         BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
     }.getOrNull()
 
-    private fun notificationId(bookId: String): Int = 7_000_000 + (bookId.hashCode() and 0xFFFFF)
+    fun notificationId(bookId: String): Int = 7_000_000 + (bookId.hashCode() and 0xFFFFF)
 
     private fun openStoryIntent(context: Context, update: ChapterUpdate): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
@@ -129,6 +158,18 @@ object UpdateNotifier {
         return PendingIntent.getActivity(
             context,
             notificationId(update.bookId),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun dismissIntent(context: Context, bookId: String): PendingIntent {
+        val intent = Intent(context, ChapterNotificationReceiver::class.java)
+            .setAction(ACTION_DISMISSED)
+            .putExtra(EXTRA_BOOK_ID, bookId)
+        return PendingIntent.getBroadcast(
+            context,
+            notificationId(bookId),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

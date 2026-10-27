@@ -16,8 +16,6 @@ data class MediaCardModel(
     val synopsis: String = "",
     /** Reading progress 0..1 as a bar on the band; null hides it. */
     val progress: Float? = null,
-    /** Per-segment position slider (chapters cached / locus); null hides it. */
-    val segments: MediaSegments? = null,
     /** Host-owned status line under the band ("Last read: Chapter 12 · 12 / 40"). */
     val status: String = "",
     val error: String = "",
@@ -35,18 +33,6 @@ data class MediaCardModel(
 data class MediaStat(val icon: String?, val value: String, val label: String = "")
 
 data class MediaLink(val label: String, val url: String)
-
-/**
- * Segment strip: [count] segments, [locus] marked in the saturated accent, [filled] drawn
- * gray behind the locus and desaturated accent ahead of it; others are empty track.
- */
-data class MediaSegments(
-    val count: Int,
-    val locus: Int,
-    val filled: Set<Int>,
-    /** Segment picked on the slider and awaiting confirmation; the mark stays there meanwhile. */
-    val pending: Int? = null,
-)
 
 enum class MediaActionKind {
     /** The single full-width footer button. */
@@ -84,7 +70,6 @@ object MediaActionIds {
     const val READ = "read"
     const val OPEN = "open"
     const val DOWNLOAD = "download"
-    const val REFRESH = "refresh"
     const val DELETE = "delete"
     const val REMOVE = "remove"
     const val SHARE = "share"

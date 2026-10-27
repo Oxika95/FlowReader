@@ -122,5 +122,13 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".plugin.updates.ChapterNotificationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.personal.flowreader.updates.CHAPTER_DISMISSED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

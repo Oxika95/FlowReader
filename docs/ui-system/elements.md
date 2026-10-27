@@ -79,7 +79,7 @@ selected tab in view.
 
 ## Pull to refresh (`ui/design/layer/FlowPullRefresh.kt`)
 
-`FlowPullRefresh(refreshing, onRefresh, modifier) { list }` wraps a list area (M3
+`FlowPullRefresh(refreshing, onRefresh, modifier) { list }` wraps a list area or the media card (M3
 `PullToRefreshBox`). The content must scroll vertically: `FlowDisplayList` / `FlowDisplayGrid`, or
 `FlowEmptyState`, which scrolls so an empty list still pulls. Used by the plugin tab's lists.
 
@@ -88,11 +88,10 @@ selected tab in view.
 `FlowBadge(label, onCover)`, `FlowStat(stat, color)`, `FlowMetaRow(badges, stats, onCover)`:
 wrapping row of pills then icon+value stats. Used by display and media cards.
 
-**New items:** `FlowCountBadge(count)` is a `colorScheme.primary` (accent) circle with a bold
-"+N" in `onPrimary`; "+99" above 99, nothing at 0; size `Comp.CountBadge`. It marks new chapters
-on plugin stories only (never Files): display rows (trailing edge, centred, half past the border),
-tiles (cover top-right), and the media card title. `FlowDot()` (`Comp.TabDot`) is the number-less
-version; tabs show it through `FlowTab(badge = n)` when `n > 0`.
+**Library chips:** `FlowBadgeTone.Accent` (primary) for unstarted / **"N new"**; `Neutral`
+(secondary container) for in-progress **Chapter n/total**; `Muted` (surface variant / grey) when
+complete (n/n). `newChaptersLabel(count)` builds the **"N new"** / **"99+ new"** string.
+`FlowDot()` (`Comp.TabDot`) marks an active system chapter notification on rows and tabs.
 
 ## Icons (`FlowIcons`)
 

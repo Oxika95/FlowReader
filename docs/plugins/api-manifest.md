@@ -58,6 +58,7 @@ A plugin is two files plus an optional icon, installed to `filesDir/plugins/inst
 | `lists[]` | `id`, `title`, `icon` ([icon tokens](ui-contract.md#icon-tokens)), `membershipToggle`, `syncable`, `notifyDefault` (new-chapter bell defaults on for stories on this list; no other list notifies by default), `kind` (`stories` default, or `browse`: see [Browse lists](api-features.md#browse-lists)). |
 | `auth.fields[]` | `key`, `label`, `secret`, `type` (`text`/`email`/`password`). |
 | `auth.web` | `{ url, doneCookie }`: sign in on the site itself (see [Web sign-in](api-features.md#web-sign-in)). Replaces `fields`. |
+| `sitePages[]` | `{ title, url, listId? }` pages for Account → Site (manual Open browser). Put **Sign in** first, then plugin-specific pages. `listId` may mark which list a URL belongs to; Sync / Replace still use quiet OkHttp `list()`. Optional: when omitted, the host offers `auth.web.url` then `site` when distinct. |
 | `settings[]` | `key`, `type` (`toggle`/`int`/`choice`/`text`), `label`, `description`, `default`, `options[]` (`choice`), `min`/`max` (`int`). |
 | `shareHosts` | Seeds Import > Router rules that send shared URLs on these hosts to this plugin. |
 

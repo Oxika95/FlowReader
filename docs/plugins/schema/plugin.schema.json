@@ -74,6 +74,19 @@
         "note": { "type": "string" }
       }
     },
+    "sitePages": {
+      "type": "array",
+      "description": "Account → Site pages for the manual Open browser (Sign in first, then plugin-specific). listId marks which list a URL belongs to; Sync uses quiet OkHttp list(). Empty: host defaults to auth.web.url then site.",
+      "items": {
+        "type": "object",
+        "required": ["title", "url"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "pattern": "^https://" },
+          "listId": { "type": "string", "description": "Optional list id this site page corresponds to (Sync still uses list())" }
+        }
+      }
+    },
     "settings": {
       "type": "array",
       "items": {

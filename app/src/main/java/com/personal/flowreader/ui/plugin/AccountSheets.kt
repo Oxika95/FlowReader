@@ -2,37 +2,55 @@ package com.personal.flowreader.ui.plugin
 
 import android.app.Application
 import android.text.format.DateUtils
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.personal.flowreader.plugin.InstalledPlugin
-import com.personal.flowreader.plugin.store.SyncMode
-import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.personal.flowreader.plugin.InstalledPlugin
+import com.personal.flowreader.plugin.api.PluginSitePage
+import com.personal.flowreader.plugin.store.SyncMode
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowConfirmCard
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowTextAction
+import com.personal.flowreader.ui.design.controls.FlowChip
+import com.personal.flowreader.ui.design.controls.FlowChipRow
 import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowIconButton
+import com.personal.flowreader.ui.design.controls.FlowListRow
 import com.personal.flowreader.ui.design.controls.FlowSection
 import com.personal.flowreader.ui.design.controls.FlowTextField
+import com.personal.flowreader.ui.design.tabs.FlowTab
+import com.personal.flowreader.ui.design.tabs.FlowTabBar
+import com.personal.flowreader.ui.design.tabs.FlowTabLevel
 import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.FlowType
 import okhttp3.Cookie
+
+/** Sub-tabs inside the Account hub card. */
+private enum class AccountHubTab { Account, Urls, Manage }
 
 /** Sign-in form generated from the manifest's `auth.fields`, or the site's page for `auth.web`. */
 @Composable
@@ -93,67 +111,240 @@ internal fun LoginSheet(
     }
 }
 
-/** Account status, two-way sync (or per-list import), plugin settings, sign out. */
+/**
+ * Account hub: Account (sign-in), URLs (site pages), Manage (settings / data / sync).
+ * Opening the card makes no network calls; actions are explicit.
+ */
 @Composable
 internal fun AccountSheet(
     ui: PluginTabUi,
     onDismiss: () -> Unit,
     onShowLogin: () -> Unit,
     onLogout: () -> Unit,
+    onOpenSite: (title: String, url: String) -> Unit,
     onSync: (String) -> Unit,
     onSyncNow: () -> Unit,
-    onSettings: () -> Unit,
+    onDeleteData: () -> Unit,
 ) {
     val manifest = ui.manifest
     val twoWay = ui.sync.supported
+    val sitePages = remember(manifest) { manifest.resolvedSitePages() }
+    val syncChoice = defaultSyncChoice(manifest)
+    val showDataActions = ui.session.loggedIn && (twoWay || syncChoice != null)
+    var tab by remember { mutableStateOf(AccountHubTab.Account) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.showAccount) {
+        if (ui.showAccount) {
+            tab = AccountHubTab.Account
+            confirmDelete = false
+        }
+    }
+    LaunchedEffect(sitePages.isEmpty()) {
+        if (sitePages.isEmpty() && tab == AccountHubTab.Urls) tab = AccountHubTab.Account
+    }
+    val trail = when (tab) {
+        AccountHubTab.Account -> "Account"
+        AccountHubTab.Urls -> "URLs"
+        AccountHubTab.Manage -> "Manage"
+    }
     FlowFullscreenCard(
         visible = ui.showAccount,
         onDismiss = onDismiss,
-        title = if (manifest.auth != null) "${manifest.name} account" else manifest.name,
-    ) {
-        FlowHint(
-            if (twoWay) {
-                "Lists and reading positions sync both ways with ${manifest.name}: on the new-chapter check, " +
-                    "when you open this tab, and on Sync now."
-            } else {
-                "Local stories stay on this device. Sync imports a list from the site when you choose."
-            },
-        )
-        if (manifest.auth != null) {
-            if (ui.session.loggedIn) {
-                Text(ui.session.account.ifBlank { "Signed in" }, style = FlowType.rowTitle)
-                if (twoWay) {
-                    TextButton(onClick = onSyncNow, enabled = !ui.busy && !ui.sync.running) {
-                        Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.padding(end = FlowTokens.Space.S))
-                        Text(if (ui.sync.running) "Syncing…" else "Sync now", style = FlowType.action)
-                    }
-                    FlowHint(syncStatus(ui))
-                }
-                defaultSyncChoice(manifest)?.let { choice ->
-                    TextButton(onClick = { onSync(choice) }, enabled = !ui.busy && !ui.sync.running) {
-                        if (!twoWay) {
-                            Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.padding(end = FlowTokens.Space.S))
-                        }
-                        Text(
-                            when {
-                                twoWay -> "Replace with site lists"
-                                choice == SYNC_ALL_LISTS -> "Sync lists"
-                                else -> "Sync ${syncTitle(syncTargets(manifest, choice))}"
-                            },
-                            style = FlowType.action,
+        title = manifest.name,
+        titleTrail = listOf(trail),
+        tabs = {
+            FlowTabBar(
+                tabs = buildList {
+                    add(
+                        FlowTab.icon(
+                            Icons.Filled.Person,
+                            "Account",
+                            selected = tab == AccountHubTab.Account,
+                            onClick = { tab = AccountHubTab.Account },
+                            key = "account",
+                        ),
+                    )
+                    if (sitePages.isNotEmpty()) {
+                        add(
+                            FlowTab.icon(
+                                Icons.Filled.Public,
+                                "URLs",
+                                selected = tab == AccountHubTab.Urls,
+                                onClick = { tab = AccountHubTab.Urls },
+                                key = "urls",
+                            ),
                         )
                     }
-                }
-                TextButton(onClick = onLogout, enabled = !ui.busy) { Text("Sign out", style = FlowType.action) }
-            } else {
-                TextButton(onClick = onShowLogin) { Text("Sign in", style = FlowType.action) }
-            }
+                    add(
+                        FlowTab.icon(
+                            Icons.Filled.Tune,
+                            "Manage",
+                            selected = tab == AccountHubTab.Manage,
+                            onClick = { tab = AccountHubTab.Manage },
+                            key = "manage",
+                        ),
+                    )
+                },
+                level = FlowTabLevel.Secondary,
+                inset = FlowTokens.Pad.CardBody,
+            )
+        },
+    ) {
+        ui.error?.let { FlowHint(it, error = true) }
+        when (tab) {
+            AccountHubTab.Account -> AccountIdentityTab(
+                ui = ui,
+                onShowLogin = onShowLogin,
+                onLogout = onLogout,
+            )
+            AccountHubTab.Urls -> AccountUrlsTab(
+                ui = ui,
+                sitePages = sitePages,
+                onOpenSite = onOpenSite,
+            )
+            AccountHubTab.Manage -> AccountManageTab(
+                ui = ui,
+                twoWay = twoWay,
+                syncChoice = syncChoice,
+                showDataActions = showDataActions,
+                onSync = onSync,
+                onSyncNow = onSyncNow,
+                onDelete = { confirmDelete = true },
+            )
         }
-        if (manifest.settings.isNotEmpty()) {
-            TextButton(onClick = onSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.padding(end = FlowTokens.Space.S))
-                Text("Plugin settings", style = FlowType.action)
+    }
+    FlowConfirmCard(
+        visible = confirmDelete && ui.showAccount,
+        title = "Delete ${manifest.name} data?",
+        message = pluginDataSummary(manifest),
+        confirmLabel = "Delete",
+        destructive = true,
+        onConfirm = {
+            confirmDelete = false
+            onDeleteData()
+        },
+        onDismiss = { confirmDelete = false },
+    )
+}
+
+@Composable
+private fun AccountIdentityTab(
+    ui: PluginTabUi,
+    onShowLogin: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    if (ui.manifest.auth == null) {
+        FlowHint("This plugin has no account sign-in.")
+        return
+    }
+    if (ui.session.loggedIn) {
+        Text(
+            if (ui.session.account.isBlank()) "Signed in" else "Signed in as ${ui.session.account}",
+            style = FlowType.rowTitle,
+        )
+        ui.sessionStaleHint?.let { FlowHint(it) }
+        TextButton(onClick = onLogout, enabled = !ui.busy && !ui.sync.running) {
+            Text("Sign out", style = FlowType.action)
+        }
+        TextButton(onClick = onShowLogin, enabled = !ui.busy && !ui.sync.running) {
+            Text("Sign in again", style = FlowType.action)
+        }
+    } else {
+        Text("Not signed in", style = FlowType.rowTitle)
+        TextButton(onClick = onShowLogin, enabled = !ui.busy) {
+            Text("Sign in", style = FlowType.action)
+        }
+    }
+}
+
+@Composable
+private fun AccountUrlsTab(
+    ui: PluginTabUi,
+    sitePages: List<PluginSitePage>,
+    onOpenSite: (title: String, url: String) -> Unit,
+) {
+    FlowHint(
+        "Open a page to clear a bot check or refresh the session, then tap Done. " +
+            "List sync still runs from Manage → Data.",
+    )
+    sitePages.forEach { page ->
+        FlowListRow(
+            title = page.url,
+            meta = page.title,
+            actions = {
+                FlowIconButton(
+                    icon = Icons.AutoMirrored.Filled.OpenInNew,
+                    contentDescription = "Open ${page.title}",
+                    onClick = { onOpenSite(page.title, page.url) },
+                    enabled = !ui.busy,
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun AccountManageTab(
+    ui: PluginTabUi,
+    twoWay: Boolean,
+    syncChoice: String?,
+    showDataActions: Boolean,
+    onSync: (String) -> Unit,
+    onSyncNow: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val manifest = ui.manifest
+    val idle = !ui.busy && !ui.sync.running
+    if (manifest.settings.isNotEmpty()) {
+        FlowSection("Settings")
+        PluginSettingsForm(pluginId = manifest.id)
+    }
+    FlowSection("Data")
+    if (showDataActions) {
+        if (twoWay) {
+            FlowHint(syncStatus(ui))
+            FlowChipRow {
+                FlowChip(
+                    label = if (ui.sync.running) "Syncing…" else "Sync",
+                    selected = ui.sync.running,
+                    onClick = onSyncNow,
+                    enabled = idle,
+                )
+                FlowChip(
+                    label = "Delete",
+                    selected = false,
+                    onClick = onDelete,
+                    enabled = idle,
+                )
             }
+            FlowHint(
+                "Sync merges lists and reading positions with ${manifest.name}. " +
+                    "Delete clears this device’s copy (site unchanged); Sync after that pulls a fresh copy. " +
+                    "Also runs after sign-in, pull-to-refresh, and the new-chapter check.",
+            )
+        } else {
+            FlowHint("Import a list from the site. Local stories stay on this device.")
+            syncChoice?.let { choice ->
+                TextButton(onClick = { onSync(choice) }, enabled = idle) {
+                    Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.padding(end = FlowTokens.Space.S))
+                    Text(
+                        when (choice) {
+                            SYNC_ALL_LISTS -> "Import / Replace lists"
+                            else -> "Import / Replace ${syncTitle(syncTargets(manifest, choice))}"
+                        },
+                        style = FlowType.action,
+                    )
+                }
+            }
+            FlowChipRow {
+                FlowChip(label = "Delete", selected = false, onClick = onDelete, enabled = idle)
+            }
+            FlowHint("Delete clears this device’s copy (site unchanged).")
+        }
+    } else {
+        FlowHint(pluginDataSummary(manifest))
+        FlowChipRow {
+            FlowChip(label = "Delete", selected = false, onClick = onDelete, enabled = idle)
         }
     }
 }
@@ -198,6 +389,7 @@ internal fun PluginAccountSettings(plugin: InstalledPlugin) {
         style = FlowType.rowTitle,
     )
     if (ui.session.loggedIn) {
+        ui.sessionStaleHint?.let { FlowHint(it) }
         TextButton(onClick = vm::logout, enabled = !ui.busy) { Text("Sign out", style = FlowType.action) }
     } else {
         TextButton(onClick = { vm.setShowLogin(true) }, enabled = !ui.busy) { Text("Sign in", style = FlowType.action) }

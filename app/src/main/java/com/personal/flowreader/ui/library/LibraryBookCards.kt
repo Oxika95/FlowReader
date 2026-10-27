@@ -25,6 +25,7 @@ import com.personal.flowreader.ui.design.card.FlowDisplayList
 import com.personal.flowreader.ui.design.card.FlowEmptyState
 import com.personal.flowreader.ui.design.card.flowDisplayListPadding
 import com.personal.flowreader.ui.design.controls.FlowBadgeTone
+import com.personal.flowreader.ui.design.controls.newChaptersLabel
 import com.personal.flowreader.ui.theme.FlowTokens
 
 private val LinkedCorner = FlowCornerBadge(Icons.Filled.Link, "Linked file")
@@ -39,11 +40,21 @@ fun LibraryBooksPane(
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
     bottomInset: Dp = FlowTokens.Space.None,
-    /** Row subtitle; null = Files rows ("{author} · chapter x/y" from the file's metadata). */
-    subtitleFor: ((BookItem) -> String)? = null,
-    onLongOpen: ((String) -> Unit)? = null,
+    /** Author line under the title; null = [BookItem.author] (or source · last read when blank). */
+    authorFor: ((BookItem) -> String)? = null,
+    /** Chapter total for the progress chip; null = [BookItem.chapterCount]. */
+    chapterCountFor: (BookItem) -> Int = { it.chapterCount },
+    /**
+     * Unread-ahead count for the "N new" chip (live/synced plugin lists). 0 hides the chip.
+     * Files / local shelves leave the default.
+     */
+    unreadNewFor: (BookItem) -> Int = { 0 },
+    /** Double-tap opens the reader; null = single tap only (media card / splash). */
+    onDoubleOpen: ((String) -> Unit)? = null,
+    /** Extra badges after the chapter / new chips (e.g. position conflict). */
     badgesFor: (BookItem) -> List<Pair<String, FlowBadgeTone>> = { emptyList() },
-    newCountFor: (BookItem) -> Int = { 0 },
+    /** True when this book still has a chapter-update notification in the system shade. */
+    notifyDotFor: (BookItem) -> Boolean = { false },
 ) {
     Box(modifier.fillMaxSize()) {
         if (books.isEmpty() && !busy) {
@@ -54,47 +65,82 @@ fun LibraryBooksPane(
         when (viewMode) {
             LibraryViewMode.List -> FlowDisplayList(contentPadding = padding) {
                 items(books, key = { it.bookId }) { book ->
-                    val subtitle = subtitleFor?.invoke(book) ?: filesRowSubtitle(book)
-                    BookCard(book, FlowDisplayLayout.Row, subtitle, onOpen, onLongOpen, badgesFor(book), newCountFor(book))
+                    BookCard(
+                        book = book,
+                        layout = FlowDisplayLayout.Row,
+                        author = authorFor?.invoke(book) ?: filesAuthorLine(book),
+                        chapterCount = chapterCountFor(book),
+                        unreadNew = unreadNewFor(book),
+                        onOpen = onOpen,
+                        onDoubleOpen = onDoubleOpen,
+                        extraBadges = badgesFor(book),
+                        notifyDot = notifyDotFor(book),
+                    )
                 }
             }
             LibraryViewMode.Shelf -> FlowDisplayGrid(contentPadding = padding) {
                 items(books, key = { it.bookId }) { book ->
-                    BookCard(book, FlowDisplayLayout.Tile, "", onOpen, onLongOpen, badgesFor(book), newCountFor(book))
+                    BookCard(
+                        book = book,
+                        layout = FlowDisplayLayout.Tile,
+                        author = authorFor?.invoke(book) ?: filesAuthorLine(book),
+                        chapterCount = chapterCountFor(book),
+                        unreadNew = unreadNewFor(book),
+                        onOpen = onOpen,
+                        onDoubleOpen = onDoubleOpen,
+                        extraBadges = badgesFor(book),
+                        notifyDot = notifyDotFor(book),
+                    )
                 }
             }
         }
     }
 }
 
-private fun filesRowSubtitle(book: BookItem): String =
-    LibraryRowText.subtitle(book.author, book.chapterCount, book.chapterIndex) ?: libraryBookSubtitle(book)
+private fun filesAuthorLine(book: BookItem): String =
+    book.author.ifBlank { libraryBookSubtitle(book) }
 
 @Composable
 private fun BookCard(
     book: BookItem,
     layout: FlowDisplayLayout,
-    subtitle: String,
+    author: String,
+    chapterCount: Int,
+    unreadNew: Int,
     onOpen: (String) -> Unit,
-    onLongOpen: ((String) -> Unit)?,
-    badges: List<Pair<String, FlowBadgeTone>>,
-    newCount: Int,
+    onDoubleOpen: ((String) -> Unit)?,
+    extraBadges: List<Pair<String, FlowBadgeTone>>,
+    notifyDot: Boolean,
 ) {
     val edge = if (layout == FlowDisplayLayout.Row) FlowTokens.CoverEdge.Row else FlowTokens.CoverEdge.Tile
     val cover by rememberBookCover(book, maxEdge = edge)
+    val badges = buildList {
+        LibraryRowText.chapterChip(chapterCount, book.chapterIndex)?.let { chip ->
+            add(chip.label to chip.kind.toTone())
+        }
+        val newLabel = newChaptersLabel(unreadNew)
+        if (newLabel.isNotEmpty()) add(newLabel to FlowBadgeTone.Accent)
+        addAll(extraBadges)
+    }
     FlowDisplayCard(
         title = book.title,
         art = cover,
         onClick = { onOpen(book.bookId) },
         layout = layout,
-        subtitle = subtitle,
+        subtitle = author,
         badges = badges.map { it.first },
         badgeTones = badges.toMap(),
         progress = book.readingProgress,
         corner = LinkedCorner.takeIf { book.sourceKind == BookSource.Linked.name },
-        onLongClick = onLongOpen?.let { handler -> { handler(book.bookId) } },
-        newCount = newCount,
+        onDoubleClick = onDoubleOpen?.let { handler -> { handler(book.bookId) } },
+        notifyDot = notifyDot,
     )
+}
+
+private fun ChapterChipKind.toTone(): FlowBadgeTone = when (this) {
+    ChapterChipKind.Unstarted -> FlowBadgeTone.Accent
+    ChapterChipKind.InProgress -> FlowBadgeTone.Neutral
+    ChapterChipKind.Complete -> FlowBadgeTone.Muted
 }
 
 internal fun librarySourceLabel(book: BookItem): String =

@@ -10,23 +10,22 @@ Each enabled plugin adds one library tab (next to Files and Queue).
 
 - **Sub-tabs**: a `Secondary` `FlowTabBar`. Order:
   1. One text tab per manifest `lists[]` entry, in declared order (local stories on that list).
-  2. **Search** icon tab, if `search` is declared.
-  3. Trailing action: **Account** (if `auth`), else **Plugin settings** (if `settings`).
+  2. Trailing action: **Account** (if `auth`), else **Plugin settings** (if `settings`).
 - **Body**: local stories use `LibraryBooksPane` (the Files display cards, following the library
-  view mode). Search results and browse-list rows (`kind: "browse"`) use `WorkCard` (a
+  view mode). Search results (via FAB) and browse-list rows (`kind: "browse"`) use `WorkCard` (a
   `FlowDisplayCard` row).
-- **FAB** (`PluginTabFab`): `+` in the library FAB slot, shown when `resolveUrl` or `search` is
-  declared. Opens **Add from source**.
+- **FAB** (`PluginTabFab`): search icon → Search section when `search` is declared; otherwise `+`
+  opens **Add from source** when `resolveUrl` is declared.
 
 ## Components
 
 | Component | Built on | When | Content | Actions |
 | --- | --- | --- | --- | --- |
 | `WorkCard` | `FlowDisplayCard` (Row) | Search results, add sheet | Cover, title, `author · subtitle`, `badges`/`stats` | Tap opens the media card |
-| Library card | `FlowDisplayCard` | Local stories on a list | Same card as Files | Tap reads at saved progress; long-press opens the media card |
+| Library card | `FlowDisplayCard` | Local stories on a list | Same card as Files | Tap opens the media card; double-tap reads at saved progress |
 | `BrowseListPane` | `WorkCard` rows | A `browse` list's tab | Rows from `list()` with their `badges` (toned: positive green, negative red) / `stats`; `GroupHeader` (divider + `FlowSection` title) where `group` changes, when 2+ groups | Tap opens `CreatorPageOverlay` |
 | `CreatorPageOverlay` | `FlowFullscreenCard` | Tapping a browse-list row | Row title; pinned secondary `FlowTabBar` (2+ `tabs`); sort chips below the tabs (`FlowChoiceChips`: 2+ `sorts`, or Newest / Oldest first on a story tab). Tab body: text tab (header `FlowDisplayCard` with `cover`/`badges`/`stats`, `text` paragraphs, link buttons, then `sections`: `heading` as `GroupHeader`, or a folded `FlowCollapsible` when `collapsed`; `title`, paragraphs, links); story tab (chapter rows with lock / downloaded icons); items tab (grouped `WorkCard`s, declared `groups` always headed with a `FlowHint` when empty, "In {list}" badge when already on a story list, Load more) | Item tap opens its media card on top; chapter tap opens the story's media card positioned at that chapter |
-| `StoryMediaCard` | `FlowMediaCard` + `PluginMediaCardAdapter` | Opening any story | See [Media card](#media-card) | See [Media card](#media-card) |
+| `StoryMediaCard` | `FlowMediaCard` + `PluginMediaCardAdapter` | Opening any story (local cache first; sync/`updates` plugins refresh ToC in the background) | See [Media card](#media-card) | See [Media card](#media-card) |
 | `DownloadSheet` | `FlowFullscreenCard` | Download on the media card | Download all; partial download with cache settings | Download all, Begin partial download, Download range |
 | `LoginSheet` | `FlowFullscreenCard` | Account while signed out, Settings > Plugins > the plugin's Sign in, or `AUTH_REQUIRED` | One field per `auth.fields[]` (secret fields masked), `auth.note` | Sign in, Cancel |
 | `WebLoginOverlay` | `FlowFullscreenCard` + WebView | Instead of `LoginSheet` when `auth.web` is set | The site's `auth.web.url`; closes itself once `doneCookie` is set | Cancel |
@@ -34,7 +33,8 @@ Each enabled plugin adds one library tab (next to Files and Queue).
 | `PositionConflictCard` | `FlowConfirmCard` | Story with a **Position conflict** badge (two-way sync conflict) | App vs site chapter titles | Use {site}, Keep mine, Later |
 | `SyncChoiceSheet` | `FlowConfirmCard` | After sign-in / Sync | Merge vs Overwrite | Merge, Overwrite, Cancel |
 | `PluginSettingsSheet` | `FlowFullscreenCard` | Settings > Plugins > the plugin's sub-tab (inline form), or the tab's settings action | One row per manifest `settings[]` entry | Edits persist immediately |
-| `AddFromSourceSheet` | `FlowFullscreenCard` | Tab FAB | Paste URL (`resolveUrl`); search box (`search`) | Go, Search, result tap |
+| `AddFromSourceSheet` | `FlowFullscreenCard` | FAB when `resolveUrl` only | Paste URL | Go |
+| `PluginSearchPane` | Search field + `WorkCard` list | FAB search icon | Query + results | Search, Load more, result tap |
 
 All sheets stack over the media card (Back closes the top one).
 
@@ -50,14 +50,15 @@ cover band ─ title ............................. host (WorkDetail.title)
              stats ............................. card.stats
                                                  + host chapter count (pages), always last
              tags, synopsis .................... host (WorkDetail.tags / synopsis)
-             position slider (cache strip) ..... host
+             progress bar (tap → position) ..... host
 rail ─────── list toggles (membershipToggle) ... host, manifest order
              New-chapter bell .................. host (toggle; see plugins.md)
              Share ............................. host
              plugin rail actions (≤2) .......... card.actions placement "rail"
 body ─────── status line ....................... host ("Last read: {chapter} · 12 / 40", "Not started", or download progress)
              links (≤3) ........................ card.links
-footer ───── Download, Refresh, Delete ......... host
+footer ───── Download, Delete .................. host
+             (pull down refreshes ToC) ......... host
              plugin footer actions (≤2) ........ card.actions placement "footer"
              Read (primary) .................... host
              error ............................. host
@@ -66,7 +67,7 @@ footer ───── Download, Refresh, Delete ......... host
 ## Rules
 
 1. There are no plugin-defined card types, layouts, colors or fonts. Plugins fill slots.
-2. Host actions (list toggles, bell, Share, Download, Refresh, Delete, Read) are always present, in a
+2. Host actions (list toggles, bell, Share, Download, Delete, Read) are always present, in a
    fixed order. A plugin cannot remove, reorder or shadow them (reserved ids are dropped).
 3. Plugin actions are capped (2 rail, 2 footer) and routed to `cardAction`. Rail actions render
    as circular icon buttons (`toggle` → filled accent while `on`); footer actions as outlined

@@ -108,6 +108,8 @@ internal fun WebLoginOverlay(
 internal object WebLoginCookieStore {
     fun read(allowedHosts: List<String>): List<Cookie> {
         val manager = CookieManager.getInstance()
+        manager.setAcceptCookie(true)
+        manager.flush()
         val now = System.currentTimeMillis()
         return WebLoginCookies.origins(allowedHosts)
             .flatMap { origin -> WebLoginCookies.parse(manager.getCookie(origin), hostOf(origin), now) }
@@ -128,6 +130,33 @@ internal object WebLoginCookieStore {
             for (name in names) {
                 manager.setCookie(origin, "$name=; Max-Age=0; Path=/")
                 manager.setCookie(origin, "$name=; Max-Age=0; Path=/; Domain=.${host.removePrefix("www.")}")
+            }
+        }
+        manager.flush()
+    }
+
+    /** Replace WebView cookies for [allowedHosts] with [cookies] (Open site seed). */
+    fun seed(allowedHosts: List<String>, cookies: List<Cookie>) {
+        clear(allowedHosts)
+        if (cookies.isEmpty()) return
+        val manager = CookieManager.getInstance()
+        manager.setAcceptCookie(true)
+        val now = System.currentTimeMillis()
+        for (cookie in cookies) {
+            if (cookie.expiresAt <= now) continue
+            val domain = cookie.domain.trim().lowercase().removePrefix(".").removePrefix("www.")
+            val header = buildString {
+                append(cookie.name).append('=').append(cookie.value)
+                append("; Path=").append(cookie.path.ifBlank { "/" })
+                append("; Domain=.").append(domain)
+                if (cookie.secure) append("; Secure")
+                if (cookie.expiresAt < Long.MAX_VALUE / 2) {
+                    val maxAge = ((cookie.expiresAt - now) / 1000L).coerceAtLeast(0L)
+                    append("; Max-Age=").append(maxAge)
+                }
+            }
+            for (origin in WebLoginCookies.origins(listOf(domain))) {
+                manager.setCookie(origin, header)
             }
         }
         manager.flush()

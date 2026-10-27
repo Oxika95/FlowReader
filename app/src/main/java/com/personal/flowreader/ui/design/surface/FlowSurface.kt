@@ -49,11 +49,12 @@ fun FlowSurface(
     containerColor: Color = MaterialTheme.colorScheme.background,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
     onClickLabel: String? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val feather = if (style == FlowSurfaceStyle.Panel) FlowTokens.Feather.Panel else FlowTokens.Feather.None
-    val interactive = onClick != null || onLongClick != null
+    val interactive = onClick != null || onLongClick != null || onDoubleClick != null
     Box(
         modifier = modifier
             .then(
@@ -71,6 +72,7 @@ fun FlowSurface(
                     Modifier.combinedClickable(
                         onClick = onClick ?: {},
                         onLongClick = onLongClick,
+                        onDoubleClick = onDoubleClick,
                         onClickLabel = onClickLabel,
                         role = Role.Button,
                     )

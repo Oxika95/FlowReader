@@ -13,11 +13,12 @@ import com.personal.flowreader.ui.design.card.media.MediaActionOwner
 import com.personal.flowreader.ui.design.card.media.PluginMediaCardAdapter
 import com.personal.flowreader.ui.design.card.media.PluginMediaInfo
 import com.personal.flowreader.ui.design.card.media.withoutHostActions
+import com.personal.flowreader.ui.library.LibraryRowText
 import com.personal.flowreader.ui.theme.FlowTokens
 
 /**
  * Story media card shared by every plugin. Host actions (list toggles, new-chapter bell, Share, Rename, Download,
- * Refresh, Delete, Read) are always present; plugins add stats, badges, links and
+ * Delete, Read) are always present; pull-to-refresh reloads the ToC. Plugins add stats, badges, links and
  * up to 2 rail + 2 footer actions, routed to `cardAction`.
  */
 @Composable
@@ -28,7 +29,7 @@ internal fun StoryMediaCard(
     onRead: () -> Unit,
     onDownload: () -> Unit,
     onDownloadOptions: () -> Unit,
-    onSeek: (chapterIndex: Int) -> Unit,
+    onOpenPosition: () -> Unit,
     onRefreshToc: () -> Unit,
     onDelete: () -> Unit,
     onToggleList: (String) -> Unit,
@@ -42,7 +43,7 @@ internal fun StoryMediaCard(
     val book = story?.let { s -> ui.books.find { it.bookId == s.bookId } }
     val cover by rememberBookCover(book, maxEdge = FlowTokens.CoverEdge.Hero)
     val overlayOpen = ui.showPartial || ui.showPosition || ui.showRename
-    val model = remember(story, ui.busy, ui.downloadProgress, ui.downloadBookId, ui.error, overlayOpen, ui.positionDraft, hiddenActions) {
+    val model = remember(story, ui.busy, ui.downloadProgress, ui.downloadBookId, ui.error, overlayOpen, hiddenActions) {
         story?.let { s ->
             val progress = ui.downloadProgress?.takeIf { ui.downloadBookId == s.bookId }
             PluginMediaCardAdapter.model(
@@ -64,8 +65,11 @@ internal fun StoryMediaCard(
                     notify = s.notify,
                     hasPosition = s.hasSavedPosition,
                     locusTitle = s.toc.getOrNull(s.chapterIndex)?.title.orEmpty(),
-                    newChapters = s.newChapters,
-                    pendingLocus = ui.positionDraft,
+                    newChapters = if (s.hasSavedPosition) {
+                        LibraryRowText.unreadNew(s.chapterCount, s.chapterIndex)
+                    } else {
+                        0
+                    },
                 ),
                 busy = ui.busy,
                 downloadProgress = progress,
@@ -79,7 +83,9 @@ internal fun StoryMediaCard(
         art = cover,
         onDismiss = onDismiss,
         onLongAction = { action -> if (action.id == MediaActionIds.DOWNLOAD) onDownloadOptions() },
-        onSeek = onSeek,
+        onOpenPosition = onOpenPosition.takeIf { story != null && (story.chapterCount > 1) },
+        onRefresh = onRefreshToc.takeIf { story != null },
+        refreshing = ui.storyRefreshing,
         onAction = { action ->
             val s = story ?: return@FlowMediaCard
             if (action.owner == MediaActionOwner.Plugin) {
@@ -99,7 +105,6 @@ internal fun StoryMediaCard(
                 MediaActionIds.NOTIFY -> onToggleNotify()
                 MediaActionIds.RENAME -> onRename()
                 MediaActionIds.DOWNLOAD -> onDownload()
-                MediaActionIds.REFRESH -> onRefreshToc()
                 MediaActionIds.DELETE -> onDelete()
                 MediaActionIds.READ -> onRead()
             }

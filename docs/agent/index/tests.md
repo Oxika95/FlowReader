@@ -27,6 +27,8 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `plugin/runtime/AnubisCookiesTest.kt`
 - `plugin/runtime/AnubisDetectorTest.kt`
 - `plugin/runtime/ClearanceOnlyCookieJarTest.kt`
+- `plugin/runtime/PluginResponseProbeTest.kt`
+- `plugin/runtime/PluginSessionSeedTest.kt`
 - `plugin/runtime/WebLoginCookiesTest.kt`
 - `plugin/store/PluginChapterBlocksTest.kt`
 - `plugin/store/PluginMembershipStoreTest.kt`
@@ -34,6 +36,7 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `plugin/store/TocRemapTest.kt`
 - `plugin/sync/ListReconcileTest.kt`
 - `plugin/sync/ProgressReconcileTest.kt`
+- `plugin/sync/SyncPullKindTest.kt`
 - `plugin/sync/SyncStateTest.kt`
 - `plugin/updates/UpdateDiffTest.kt`
 - `share/HiddenContentTest.kt`
@@ -55,8 +58,10 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `ui/design/tabs/FlowTabLayoutTest.kt`
 - `ui/library/CrawlCountTest.kt`
 - `ui/library/LibraryRowTextTest.kt`
+- `ui/library/LibrarySortTest.kt`
 - `ui/library/QueueChaptersTest.kt`
 - `ui/plugin/GroupedRowsTest.kt`
+- `ui/plugin/SiteOpenUrlTest.kt`
 - `ui/plugin/SyncTargetsTest.kt`
 - `ui/reader/QueueBookTest.kt`
 - `ui/reader/ReaderHomeTest.kt`

@@ -28,11 +28,11 @@ import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.design.controls.FlowHint
 import com.personal.flowreader.ui.design.controls.FlowIconButton
 import com.personal.flowreader.ui.design.controls.FlowPrimaryButton
-import com.personal.flowreader.ui.design.controls.FlowSliderRow
 import com.personal.flowreader.ui.design.controls.FlowTextField
 import com.personal.flowreader.ui.design.controls.FlowToggleRow
+import com.personal.flowreader.ui.design.surface.FlowProgressBar
+import com.personal.flowreader.ui.design.surface.FlowProgressTrack
 import com.personal.flowreader.ui.theme.FlowType
-import kotlin.math.roundToInt
 
 /** "Download all N chapters?" (tap Download on the story media card). */
 @Composable
@@ -79,7 +79,7 @@ internal fun PartialDownloadCard(
         val title = story.toc.getOrNull(story.chapterIndex)?.title.orEmpty()
         FlowHint(
             "From chapter ${story.chapterIndex + 1}" + (if (title.isNotBlank()) " — $title" else "") +
-                " (saved position). Drag the position slider on the card to change it.",
+                " (saved position). Tap the progress bar on the card to change it.",
         )
         OutlinedFieldWithInfo(
             value = ui.cacheLevelDraft,
@@ -107,45 +107,21 @@ internal fun PartialDownloadCard(
     }
 }
 
-/** "Move reading position?" after releasing the card's position slider on chapter [draft]. */
-@Composable
-internal fun MovePositionCard(
-    draft: Int?,
-    story: PluginStory?,
-    onMove: (chapterIndex: Int) -> Unit,
-    onFineTune: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val index = draft ?: 0
-    val title = story?.toc?.getOrNull(index)?.title.orEmpty().ifBlank { "Chapter ${index + 1}" }
-    FlowConfirmCard(
-        visible = draft != null && story != null,
-        title = "Move reading position?",
-        message = "To the start of chapter ${index + 1}: $title. Saving downloads ahead from there.",
-        confirmLabel = "Move",
-        onConfirm = { onMove(index) },
-        onDismiss = onDismiss,
-        extraActions = { FlowTextAction("Fine-tune", onFineTune) },
-    )
-}
-
 /**
- * Reading position with −/+ steps ("Fine-tune" on the move card), starting at [initial] or the
- * saved chapter. Save replaces the saved position with the start of the chosen chapter, after a
- * confirm when a position is already saved.
+ * Reading position with a % progress tracker and −/+ chapter steps. Save replaces the saved
+ * position with the start of the chosen chapter, after a confirm when a position is already saved.
  */
 @Composable
 internal fun PositionSliderCard(
     visible: Boolean,
     story: PluginStory?,
-    initial: Int?,
     busy: Boolean,
     onDismiss: () -> Unit,
     onSave: (chapterIndex: Int) -> Unit,
 ) {
     val count = story?.chapterCount ?: 0
     var draft by remember(visible, story?.bookId, story?.chapterIndex) {
-        mutableIntStateOf(initial ?: story?.chapterIndex ?: 0)
+        mutableIntStateOf(story?.chapterIndex ?: 0)
     }
     var confirm by remember(visible) { mutableStateOf(false) }
     FlowFullscreenCard(
@@ -166,12 +142,15 @@ internal fun PositionSliderCard(
     ) {
         if (story == null) return@FlowFullscreenCard
         if (count > 1) {
-            FlowSliderRow(
-                label = "Chapter",
-                value = draft.toFloat(),
-                onValueChange = { draft = it.roundToInt().coerceIn(0, count - 1) },
-                valueRange = 0f..(count - 1).toFloat(),
-                valueLabel = "${draft + 1} / $count",
+            Text(
+                "${draft + 1} / $count",
+                style = FlowType.label,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            FlowProgressBar(
+                progress = draft.toFloat() / count,
+                track = FlowProgressTrack.OnPage,
+                roundBottom = false,
             )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 FlowIconButton(

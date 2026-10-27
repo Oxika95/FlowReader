@@ -46,6 +46,8 @@ data class ReaderPrefs(
     val debugTtsLog: Boolean = true,
     /** About → Debug → eReader jump log channel (default on). */
     val debugReaderLog: Boolean = true,
+    /** About → Debug → Plugins fetch log channel (default on). */
+    val debugPluginsLog: Boolean = true,
     /** See [HomePosition]. */
     val homePosition: Float = HomePosition.DEFAULT,
     /** When true, the reader shows a draggable marker at [homePosition]. */
@@ -286,6 +288,10 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_DEBUG_READER_LOG] = enabled }
     }
 
+    suspend fun setDebugPluginsLog(enabled: Boolean) {
+        store.edit { it[KEY_DEBUG_PLUGINS_LOG] = enabled }
+    }
+
     suspend fun setHomePosition(position: Float) {
         store.edit { it[KEY_HOME_POSITION] = HomePosition.coerce(position) }
     }
@@ -386,6 +392,18 @@ class SettingsStore(context: Context) {
 
     suspend fun setLibraryTabId(id: String) {
         store.edit { it[KEY_LIBRARY_TAB] = id }
+    }
+
+    /** Last chosen library card sort for [tabKey] ([LibraryTabId.persistKey]); null if never set. */
+    suspend fun librarySortOnce(tabKey: String): String? =
+        decodeLibrarySorts(store.data.first()[KEY_LIBRARY_SORT])[tabKey]
+
+    suspend fun setLibrarySort(tabKey: String, modeName: String) {
+        store.edit { prefs ->
+            val next = decodeLibrarySorts(prefs[KEY_LIBRARY_SORT]).toMutableMap()
+            next[tabKey] = modeName
+            prefs[KEY_LIBRARY_SORT] = encodeLibrarySorts(next)
+        }
     }
 
     suspend fun enabledPluginIdsOnce(): Set<String> =
@@ -532,6 +550,7 @@ class SettingsStore(context: Context) {
         private val KEY_DEBUG_ENABLED = booleanPreferencesKey("debug_enabled")
         private val KEY_DEBUG_TTS_LOG = booleanPreferencesKey("debug_tts_log")
         private val KEY_DEBUG_READER_LOG = booleanPreferencesKey("debug_reader_log")
+        private val KEY_DEBUG_PLUGINS_LOG = booleanPreferencesKey("debug_plugins_log")
         private val KEY_HOME_POSITION = floatPreferencesKey("home_position")
         private val KEY_SHOW_HOME_MARKER = booleanPreferencesKey("show_home_marker")
         private val KEY_TTS_ENGINE = stringPreferencesKey("tts_engine")
@@ -555,6 +574,7 @@ class SettingsStore(context: Context) {
         private val KEY_GLOBAL_FILTERS = stringPreferencesKey("global_filters")
         private val KEY_GROUP_FILTERS = stringPreferencesKey("group_filters")
         private val KEY_LIBRARY_TAB = stringPreferencesKey("library_tab")
+        private val KEY_LIBRARY_SORT = stringPreferencesKey("library_sort")
         private val KEY_ENABLED_PLUGINS = stringPreferencesKey("enabled_plugins")
         private val KEY_CUSTOM_TABS = stringPreferencesKey("custom_library_tabs")
         private val KEY_NOTIFICATIONS_ASKED = booleanPreferencesKey("notifications_asked")
@@ -599,6 +619,7 @@ class SettingsStore(context: Context) {
             debugEnabled = this[KEY_DEBUG_ENABLED] ?: false,
             debugTtsLog = this[KEY_DEBUG_TTS_LOG] ?: true,
             debugReaderLog = this[KEY_DEBUG_READER_LOG] ?: true,
+            debugPluginsLog = this[KEY_DEBUG_PLUGINS_LOG] ?: true,
             homePosition = HomePosition.coerce(this[KEY_HOME_POSITION] ?: HomePosition.DEFAULT),
             showHomeMarker = this[KEY_SHOW_HOME_MARKER] ?: false,
         )
@@ -677,6 +698,23 @@ class SettingsStore(context: Context) {
                     }
                 }.sortedBy { it.order }
             }.getOrDefault(emptyList())
+        }
+
+        /** `tabKey=ModeName` pairs joined by commas. */
+        private fun encodeLibrarySorts(map: Map<String, String>): String =
+            map.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
+
+        private fun decodeLibrarySorts(raw: String?): Map<String, String> {
+            if (raw.isNullOrBlank()) return emptyMap()
+            return raw.split(',')
+                .mapNotNull { part ->
+                    val i = part.indexOf('=')
+                    if (i <= 0) return@mapNotNull null
+                    val key = part.substring(0, i).trim()
+                    val value = part.substring(i + 1).trim()
+                    if (key.isEmpty() || value.isEmpty()) null else key to value
+                }
+                .toMap()
         }
     }
 }

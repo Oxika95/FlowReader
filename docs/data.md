@@ -10,6 +10,7 @@ Notable keys beyond Settings UI:
 |-----|---------|
 | `library_view` | List / Shelf |
 | `library_tab` | Selected tab id |
+| `library_sort` | Per-tab card sort (`tabKey=ModeName` pairs): Files/shelves Date added / Title / Author; plugins also Updates |
 | `enabled_plugins` | Comma-separated plugin ids |
 | `custom_library_tabs` | JSON shelves |
 | `notifications_asked` | Notification prompt flag |
@@ -78,8 +79,8 @@ so a locus is always mapped by the session it came from:
 
 Sources: reader jumps (`ReaderViewModel.persist`, only after load and once moved), every spoken
 TTS sentence (`TtsController.spoken` carries the session that spoke it; `FlowApp.persistSpokenPosition`
-writes through that session, also with the reader closed), the plugin card's position slider
-(`PluginSeek`), and two-way sync (`Sync`). Plugin-domain writes call
+writes through that session, also with the reader closed), the plugin card's reading-position
+card (`PluginSeek`), and two-way sync (`Sync`). Plugin-domain writes call
 `PluginBookStore.scheduleMaintain`, which on a chapter change syncs the site and downloads /
 cleans up in its own job. A plugin story read through the Queue writes its Queue row only, so it
 does not trigger downloads ahead.

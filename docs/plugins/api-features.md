@@ -73,7 +73,7 @@ stories:
   - **Story tab** (`storyId` set): the host lists that work's chapters (fetching it with `loadWork`
     once if not stored) with lock icons (`ChapterRef.locked`) and downloaded icons, newest first or
     oldest first. Tapping a chapter opens that work's media card positioned at that chapter (Read,
-    Download, and the position slider start there); downloads are started from the card.
+    Download, and the progress bar start there); downloads are started from the card.
   - **Text tab** (`text`, `cover`, `stats`, `badges`, `links`, `sections`; no `items`): a header
     card plus `text` paragraphs (split on blank lines) and link buttons, then `sections`. A section
     `heading` starts a divided group (for example "Your membership", "More tiers"); each section

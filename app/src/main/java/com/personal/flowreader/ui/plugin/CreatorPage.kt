@@ -62,6 +62,7 @@ internal fun BrowseListPane(
 ) {
     val rows = ui.listRows.values.toList()
     if (rows.isEmpty()) {
+        if (ui.listsLoading) return
         val title = ui.manifest.list(listId)?.title ?: listId
         val hint = when {
             ui.manifest.auth != null && !ui.session.loggedIn -> "Sign in to import $title."

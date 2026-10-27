@@ -11,6 +11,7 @@ class DebugLogTest {
         DebugLog.setMasterEnabled(false)
         DebugLog.setTtsLogEnabled(true)
         DebugLog.setReaderLogEnabled(true)
+        DebugLog.setPluginsLogEnabled(true)
         DebugLog.clear()
     }
 
@@ -19,6 +20,7 @@ class DebugLogTest {
         DebugLog.setMasterEnabled(false)
         DebugLog.reader("shouldDrop")
         DebugLog.tts("shouldDrop")
+        DebugLog.plugins("shouldDrop")
         assertTrue(DebugLog.snapshot().isEmpty())
     }
 
@@ -37,8 +39,10 @@ class DebugLogTest {
         DebugLog.setMasterEnabled(true)
         DebugLog.setReaderLogEnabled(false)
         DebugLog.setTtsLogEnabled(false)
+        DebugLog.setPluginsLogEnabled(false)
         DebugLog.reader("nope")
         DebugLog.tts("nope")
+        DebugLog.plugins("nope")
         assertTrue(DebugLog.snapshot().isEmpty())
     }
 
@@ -47,11 +51,25 @@ class DebugLogTest {
         DebugLog.setMasterEnabled(true)
         DebugLog.setTtsLogEnabled(true)
         DebugLog.setReaderLogEnabled(false)
+        DebugLog.setPluginsLogEnabled(false)
         DebugLog.tts("synth")
         DebugLog.reader("jump")
+        DebugLog.plugins("fetch")
         val lines = DebugLog.snapshot()
         assertEquals(1, lines.size)
         assertTrue(lines.single().contains("tts synth"))
+    }
+
+    @Test
+    fun pluginsChannel() {
+        DebugLog.setMasterEnabled(true)
+        DebugLog.setPluginsLogEnabled(true)
+        DebugLog.setTtsLogEnabled(false)
+        DebugLog.setReaderLogEnabled(false)
+        DebugLog.plugins("royalroad GET /my/follows status=200")
+        val lines = DebugLog.snapshot()
+        assertEquals(1, lines.size)
+        assertTrue(lines.single().contains("plugins royalroad GET"))
     }
 
     @Test

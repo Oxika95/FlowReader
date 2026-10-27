@@ -104,11 +104,11 @@ class MediaCardAdaptersTest {
             ),
         )
         val m = model(info(card = card))
-        assertEquals(listOf("download", "refresh", "delete", "comments", "read"), m.footer.map { it.id })
+        assertEquals(listOf("download", "delete", "comments", "read"), m.footer.map { it.id })
         val read = m.footer.last()
         assertEquals(MediaActionOwner.Host, read.owner)
         assertEquals(MediaActionKind.Primary, read.kind)
-        assertEquals(MediaActionKind.Destructive, m.footer[2].kind)
+        assertEquals(MediaActionKind.Destructive, m.footer[1].kind)
     }
 
     @Test
@@ -120,7 +120,7 @@ class MediaCardAdaptersTest {
         val empty = model(info(chapters = 0))
         assertFalse(empty.footer.first { it.id == MediaActionIds.READ }.enabled)
         assertFalse(empty.footer.first { it.id == MediaActionIds.DOWNLOAD }.enabled)
-        assertTrue(empty.footer.first { it.id == MediaActionIds.REFRESH }.enabled)
+        assertTrue(empty.footer.first { it.id == MediaActionIds.DELETE }.enabled)
     }
 
     @Test
@@ -131,6 +131,12 @@ class MediaCardAdaptersTest {
         assertEquals("Last read: Chapter 2 · 2 / 10", model(info().copy(hasPosition = true)).status)
         val downloading = PluginMediaCardAdapter.model(manifest, info(), busy = false, downloadProgress = 4 to 10, error = null)
         assertEquals("Downloading 4 / 10", downloading.status)
+    }
+
+    @Test
+    fun progress_isLocusOverChapterCount() {
+        assertEquals(0.1f, model(info(chapters = 10)).progress)
+        assertEquals(null, model(info(chapters = 0)).progress)
     }
 
     @Test
@@ -183,7 +189,7 @@ class MediaCardAdaptersTest {
         val m = model(info(card = card)).withoutHostActions(
             setOf(MediaActionIds.READ, MediaActionIds.DELETE, "later"),
         )
-        assertEquals(listOf("download", "refresh", "comments"), m.footer.map { it.id })
+        assertEquals(listOf("download", "comments"), m.footer.map { it.id })
         assertEquals(listOf("list:follow", "list:favorite", "share", "rename", "later"), m.rail.map { it.id })
     }
 

@@ -18,6 +18,7 @@ import com.personal.flowreader.plugin.store.PluginListWriter
 import com.personal.flowreader.plugin.store.PluginMembershipStore
 import com.personal.flowreader.plugin.store.PluginReadSession
 import com.personal.flowreader.plugin.store.PluginSessionStore
+import com.personal.flowreader.plugin.store.SyncMode
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -36,15 +37,25 @@ data class SyncReport(
     val queued: Int = 0,
     val guardedLists: Set<String> = emptySet(),
     val signedOut: Boolean = false,
+    /** Syncable list ids whose site fetch failed; [lastSyncedAt] is not advanced when non-empty. */
+    val failedLists: Set<String> = emptySet(),
+    /** Site lists replaced local memberships (no up-pushes of local-only leftovers). */
+    val initialPull: Boolean = false,
 )
 
 /** Result of pushing one membership change right away. */
 enum class PushResult { Site, LocalOnly, Queued }
 
 /**
- * Two-way sync of a plugin's syncable lists and reading positions (docs/plugins.md). Each run:
- * flush the outbox, three-way merge every list ([ListReconcile]), then every known position
- * ([ProgressReconcile]). Runs share [lock] with the new-chapter check.
+ * Two-way sync of a plugin's syncable lists and reading positions (docs/plugins.md).
+ *
+ * - **Initial pull** (no list baselines and empty local memberships): overwrite local lists from
+ *   the site and force site positions; no membership up-pushes.
+ * - **Progressive**: flush the outbox, three-way merge every list ([ListReconcile]), then every
+ *   known position ([ProgressReconcile]).
+ *
+ * [lastSyncedAt] advances only when every syncable list fetch succeeded. Runs share [lock] with
+ * the new-chapter check.
  */
 class TwoWaySync(private val app: FlowApp) {
     private val manager get() = app.pluginManager
@@ -103,13 +114,60 @@ class TwoWaySync(private val app: FlowApp) {
         if (manifest.auth != null && !manager.source(pluginId).session().loggedIn) {
             return@withLock SyncReport(signedOut = true)
         }
-        flush(pluginId)
-        var report = if (syncsLists(manifest)) syncLists(pluginId, manifest) else SyncReport()
-        if (manifest.has(PluginCapability.ProgressSync)) report = syncPositions(pluginId, manifest, report)
-        val queued = flush(pluginId)
-        SyncStateStore.update(dataDir(pluginId)) { it.copy(lastSyncedAt = System.currentTimeMillis()) }
+        val initial = syncsLists(manifest) && needsInitialPull(pluginId, manifest)
+        if (!initial) flush(pluginId)
+        var report = when {
+            !syncsLists(manifest) -> SyncReport()
+            initial -> initialPull(pluginId, manifest)
+            else -> syncLists(pluginId, manifest)
+        }
+        if (report.failedLists.isEmpty() && manifest.has(PluginCapability.ProgressSync)) {
+            report = syncPositions(pluginId, manifest, report, overwrite = initial)
+        }
+        val queued = if (report.failedLists.isEmpty()) flush(pluginId) else state(pluginId).outbox.size
+        if (report.failedLists.isEmpty()) {
+            SyncStateStore.update(dataDir(pluginId)) { it.copy(lastSyncedAt = System.currentTimeMillis()) }
+        }
         _changes.tryEmit(pluginId)
         report.copy(queued = queued, conflicts = state(pluginId).conflicts.size)
+    }
+
+    /**
+     * First sync with empty local memberships and no baselines: site lists replace local ones and
+     * become the baseline (same effect as Replace → Overwrite), without pushing local leftovers up.
+     */
+    fun needsInitialPull(pluginId: String, manifest: PluginManifest): Boolean {
+        val syncable = manifest.lists.filter { it.syncable && !it.isBrowse }
+        val dir = dataDir(pluginId)
+        return SyncPullKind.needsInitialPull(
+            syncableListIds = syncable.map { it.id },
+            baselineListIds = state(pluginId).lists.keys,
+            localWorkCounts = syncable.associate { it.id to PluginMembershipStore.workIds(dir, it.id).size },
+        )
+    }
+
+    private suspend fun initialPull(pluginId: String, manifest: PluginManifest): SyncReport {
+        val syncable = manifest.lists.filter { it.syncable && !it.isBrowse }
+        val remote = LinkedHashMap<String, List<PluginWork>>()
+        val failed = LinkedHashSet<String>()
+        for (list in syncable) {
+            currentCoroutineContext().ensureActive()
+            try {
+                remote[list.id] = lists.fetchList(pluginId, list.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: PluginException) {
+                if (e.code == PluginErrorCode.AuthRequired) throw e
+                Log.w(TAG, "Could not read ${list.id} for $pluginId (initial pull)", e)
+                failed += list.id
+            }
+        }
+        if (failed.isNotEmpty()) {
+            return SyncReport(failedLists = failed, initialPull = true)
+        }
+        val count = lists.applyLists(pluginId, remote, SyncMode.Overwrite)
+        resetListBaselines(pluginId, remote.keys)
+        return SyncReport(added = count, initialPull = true)
     }
 
     private suspend fun syncLists(pluginId: String, manifest: PluginManifest): SyncReport {
@@ -117,6 +175,7 @@ class TwoWaySync(private val app: FlowApp) {
         val planned = HashMap<String, Set<String>>()
         val dropped = LinkedHashSet<String>()
         val guarded = LinkedHashSet<String>()
+        val failed = LinkedHashSet<String>()
         var added = 0
         var pushed = 0
         for (list in manifest.lists.filter { it.syncable && !it.isBrowse }) {
@@ -128,6 +187,7 @@ class TwoWaySync(private val app: FlowApp) {
             } catch (e: PluginException) {
                 if (e.code == PluginErrorCode.AuthRequired) throw e
                 Log.w(TAG, "Could not read ${list.id} for $pluginId", e)
+                failed += list.id
                 continue
             }
             val state = SyncStateStore.read(dir)
@@ -155,12 +215,114 @@ class TwoWaySync(private val app: FlowApp) {
             added += plan.addLocal.size
             pushed += plan.pushAdd.size + plan.pushRemove.size
         }
-        flush(pluginId)
-        SyncStateStore.update(dir) { s ->
-            s.copy(lists = s.lists + planned.mapValues { (id, p) -> s.listBaseline(id, p) }, guardedLists = guarded)
+        if (planned.isNotEmpty()) {
+            flush(pluginId)
+            SyncStateStore.update(dir) { s ->
+                s.copy(
+                    lists = s.lists + planned.mapValues { (id, p) -> s.listBaseline(id, p) },
+                    guardedLists = (s.guardedLists - planned.keys) + guarded,
+                )
+            }
+            lists.dropUnlisted(pluginId, dropped)
         }
-        lists.dropUnlisted(pluginId, dropped)
-        return SyncReport(added = added, removed = dropped.size, pushed = pushed, guardedLists = guarded)
+        return SyncReport(
+            added = added,
+            removed = dropped.size,
+            pushed = pushed,
+            guardedLists = guarded,
+            failedLists = failed,
+        )
+    }
+
+    /**
+     * Apply WebView-crawled list HTML results (no OkHttp `list()`). [overwrite] forces site lists
+     * as baseline (Replace / Site Done / initial); otherwise three-way merge like Sync now.
+     */
+    suspend fun ingestCrawledLists(
+        pluginId: String,
+        remotes: Map<String, List<PluginWork>>,
+        overwrite: Boolean,
+    ): SyncReport = lock.withLock {
+        val manifest = manager.get(pluginId)?.manifest ?: return@withLock SyncReport()
+        if (!supports(manifest) && remotes.isEmpty()) return@withLock SyncReport()
+        if (manifest.auth != null && !manager.source(pluginId).session().loggedIn) {
+            return@withLock SyncReport(signedOut = true)
+        }
+        if (remotes.isEmpty()) return@withLock SyncReport()
+        val force = overwrite || needsInitialPull(pluginId, manifest)
+        if (!force) flush(pluginId)
+        var report = if (force) {
+            val count = lists.applyLists(pluginId, remotes, SyncMode.Overwrite)
+            resetListBaselines(pluginId, remotes.keys)
+            SyncReport(added = count, initialPull = true)
+        } else {
+            ingestMerged(pluginId, remotes)
+        }
+        if (report.failedLists.isEmpty() && manifest.has(PluginCapability.ProgressSync)) {
+            report = syncPositions(pluginId, manifest, report, overwrite = force)
+        }
+        val queued = if (report.failedLists.isEmpty()) flush(pluginId) else state(pluginId).outbox.size
+        if (report.failedLists.isEmpty()) {
+            SyncStateStore.update(dataDir(pluginId)) { it.copy(lastSyncedAt = System.currentTimeMillis()) }
+        }
+        _changes.tryEmit(pluginId)
+        report.copy(queued = queued, conflicts = state(pluginId).conflicts.size)
+    }
+
+    /** Progressive list merge using already-crawled [remotes] (keys = list ids). */
+    private suspend fun ingestMerged(
+        pluginId: String,
+        remotes: Map<String, List<PluginWork>>,
+    ): SyncReport {
+        val dir = dataDir(pluginId)
+        val planned = HashMap<String, Set<String>>()
+        val dropped = LinkedHashSet<String>()
+        val guarded = LinkedHashSet<String>()
+        var added = 0
+        var pushed = 0
+        for ((listId, remote) in remotes) {
+            currentCoroutineContext().ensureActive()
+            val state = SyncStateStore.read(dir)
+            val pending = state.outbox.filterIsInstance<SyncOp.Membership>().filter { it.listId == listId }
+            val plan = ListReconcile.plan(
+                local = PluginMembershipStore.workIds(dir, listId),
+                remote = remote.map { it.id }.toSet(),
+                baseline = state.lists[listId],
+                pendingAdd = pending.filter { it.on }.map { it.workId }.toSet(),
+                pendingRemove = pending.filterNot { it.on }.map { it.workId }.toSet(),
+            )
+            if (plan.guarded) {
+                Log.w(TAG, "$pluginId $listId: crawled list looks truncated (${remote.size}); skipped its removals")
+                guarded += listId
+            }
+            lists.mergeList(pluginId, listId, remote, skip = plan.pushRemove, remove = plan.removeLocal)
+            SyncStateStore.update(dir) { s ->
+                var next = s
+                plan.pushAdd.forEach { next = next.enqueue(SyncOp.Membership(it, listId, on = true)) }
+                plan.pushRemove.forEach { next = next.enqueue(SyncOp.Membership(it, listId, on = false)) }
+                next
+            }
+            planned[listId] = plan.baseline
+            dropped += plan.removeLocal
+            added += plan.addLocal.size
+            pushed += plan.pushAdd.size + plan.pushRemove.size
+        }
+        if (planned.isNotEmpty()) {
+            flush(pluginId)
+            SyncStateStore.update(dir) { s ->
+                s.copy(
+                    lists = s.lists + planned.mapValues { (id, p) -> s.listBaseline(id, p) },
+                    guardedLists = (s.guardedLists - planned.keys) + guarded,
+                )
+            }
+            lists.dropUnlisted(pluginId, dropped)
+        }
+        return SyncReport(
+            added = added,
+            removed = dropped.size,
+            pushed = pushed,
+            guardedLists = guarded,
+        )
     }
 
     /**

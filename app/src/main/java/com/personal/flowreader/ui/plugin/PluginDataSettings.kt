@@ -12,6 +12,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.plugin.InstalledPlugin
+import com.personal.flowreader.plugin.api.PluginCapability
+import com.personal.flowreader.plugin.api.PluginManifest
 import com.personal.flowreader.plugin.store.PluginDataEraser
 import com.personal.flowreader.ui.design.card.FlowConfirmCard
 import com.personal.flowreader.ui.design.controls.FlowHint
@@ -22,17 +24,31 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Deletes all of [plugin]'s data on this device, WebView sign-in cookies included; returns stories removed. */
-internal suspend fun erasePluginData(app: FlowApp, plugin: InstalledPlugin): Int {
-    val removed = withContext(Dispatchers.IO) { PluginDataEraser(app).erase(plugin.id) }
-    if (plugin.manifest.auth?.web != null) WebLoginCookieStore.clear(plugin.manifest.allowedHosts)
+internal suspend fun erasePluginData(app: FlowApp, plugin: InstalledPlugin): Int =
+    erasePluginData(app, plugin.id, plugin.manifest)
+
+/** Deletes all of [pluginId]'s data on this device, WebView sign-in cookies included; returns stories removed. */
+internal suspend fun erasePluginData(app: FlowApp, pluginId: String, manifest: PluginManifest): Int {
+    val removed = withContext(Dispatchers.IO) { PluginDataEraser(app).erase(pluginId) }
+    if (manifest.auth?.web != null) WebLoginCookieStore.clear(manifest.allowedHosts)
     return removed
 }
 
 /** What "delete data" removes, for confirm cards. */
-internal fun pluginDataSummary(plugin: InstalledPlugin): String =
-    "Removes its stories, downloads, lists, reading positions, sync history, settings" +
-        (if (plugin.manifest.auth != null) " and sign-in" else "") +
-        " from this device. Nothing changes on ${plugin.name}."
+internal fun pluginDataSummary(plugin: InstalledPlugin): String = pluginDataSummary(plugin.manifest)
+
+/** What "delete data" removes, for confirm cards. */
+internal fun pluginDataSummary(manifest: PluginManifest): String {
+    val sourced = !manifest.has(PluginCapability.ProgressSync)
+    return buildString {
+        append("Removes its stories, downloads, lists, reading positions, sync history, settings")
+        if (manifest.auth != null) append(" and sign-in")
+        append(" from this device. Nothing changes on ${manifest.name}.")
+        if (sourced) {
+            append(" Reading positions live only on this device and cannot be restored from the site.")
+        }
+    }
+}
 
 /** Settings > Plugins > (plugin): Data section with "Delete data". */
 @Composable

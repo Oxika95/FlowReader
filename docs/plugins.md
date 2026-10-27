@@ -33,29 +33,15 @@ Then show the tab from Library → **+** → **Plugins**.
 ## Tab
 
 Sub-tabs are the plugin's lists as icons (manifest `lists[].icon`; for Royal Road: Follow,
-Favorite, Read Later), then Search and Account (or plugin Settings) when supported. Rows read
-"{Author} · chapter {last read}/{total}", or "{Author} · N chapters" before any reading. Tap a
-story to read; long-press opens the story media card (cover, badges, stats, tags, synopsis,
-position slider, list toggles, new-chapter bell, Share, Rename, links, Download / Refresh / Delete,
-**Read**). Plugins add their own stats, badges, links and up to two rail and two footer actions
-([example](plugins/examples/media-card.md)).
-
-**New chapters** found by the update check (every story on a list, plus bell-on stories) add to
-the story's `newChapters` count (`plugin_stories` in the plugin's database). The count shows as an accent "+N" badge on the
-library row (grid: cover corner) and beside the media card title, and as a dot on the list sub-tab
-and the plugin's Library tab. Opening the story in the reader clears it. Only bell-on stories also
-post a system notification.
-
-**Rename** sets a local title (`titleOverride` in `plugin_stories`) shown in the library, reader,
-and queue; refresh and sync never touch it; **Reset** goes back to the plugin's title. Renames,
-counts, the bell, and cache settings are backed up with the plugin's database.
-**Locked chapters** (`ChapterRef.locked`, Patreon posts above your tier) show a lock in Contents and
-the creator page; never downloaded, they are an untappable Contents entry only, and reading, TTS and
-the saved position stop before them (later readable chapters open from Contents). Downloaded
-chapters show a download icon in Contents. **Pull to refresh** on a list (not Search) re-imports a
-browse list or syncs a story list, then checks for new chapters (badges only; signed out: check only).
-Patreon's **All posts** story (what Follow adds for a creator) is named after the creator's largest
-collection, else their most used tag, else the creator.
+Favorite, Read Later), then Account (or plugin Settings) when supported. Search is the FAB.
+Library rows: title, author, **Chapter n/total** chip (primary / secondary / muted) and **"N new"**
+when chapters remain after the saved position. Sort circle above the FAB opens a compact **Sort**
+card (default **Updates**: unread-ahead, then unstarted, then complete; else Title / Author / Date
+added). Tap = media card; double-tap = reader. Plugin stats/badges/links/actions:
+[media-card example](plugins/examples/media-card.md). A **plain accent dot** tracks an active shade
+notification. **Rename** / **Reset** use `titleOverride`. **Locked** chapters are Contents-only.
+**Pull to refresh** re-imports or syncs, then checks for new chapters. Patreon **All posts** names
+from largest collection, else top tag, else creator.
 
 **Browse lists** (`kind: "browse"`, Patreon: Memberships) list entry points instead of stories.
 Tapping a creator opens a creator page with tabs; each tab loads only when first shown and stays
@@ -65,7 +51,7 @@ loaded while the page is open:
   caches the profile for 6 hours, so this tab usually opens without network.
 - **Posts**: every post of the All posts story, newest or oldest first, with a lock icon on posts
   the account cannot read and a download icon on posts stored locally. Tapping a post opens the All
-  posts media card positioned at that post (Read, Download, and the position slider start there);
+  posts media card positioned at that post (Read, Download, and the progress bar start there);
   downloads run from the card (locked posts are skipped).
 - **Collections**: Patreon collections and tags as cards grouped under divided headers (both
   headers always show; an empty one says the creator has no collections or tags),
@@ -87,11 +73,9 @@ opened) and the newest post date. Sync never adds or deletes stories for a brows
 - Each chapter opens with its title as a heading (like an EPUB chapter), shown and spoken; a body
   that already starts with the title isn't repeated
 - **Saved position** (the story's row in the plugin's own database, `plugin_<id>.db`; see
-  [data.md](data.md#room-flowdb)) is the one anchor: the position slider's mark, the partial
-  download start, and the stream window all use it. **Drag the position slider** on the card (its
-  track is the cache strip) and release on a chapter: "Move reading position?" offers **Move**
-  (writes the start of that chapter, then downloads ahead from it) or **Fine-tune** (a card with
-  − / + for exact steps)
+  [data.md](data.md#room-flowdb)) is the one anchor: the progress bar, the partial download start,
+  and the stream window all use it. **Tap the progress bar** on the card to open the reading-
+  position card (− / +); Save writes the start of that chapter, then downloads ahead from it
 - **Download:** tap = "Download all N chapters?" confirm; while running the button reads **Cancel
   download**. **Hold Download** for Partial download: the saved position, the cache level field,
   **Clean up old chapters**, and **Download next N** (the saved chapter through N after it)
@@ -100,7 +84,8 @@ opened) and the newest post date. Sync never adds or deletes stories for a brows
   downloaded and never cleaned up. A cancelled or failed Download all turns it back off. With
   cleanup off, chapters stay until Delete
 - New stories take cache level and cleanup from **Settings → About → Data → Plugin story downloads**
-- **ToC refresh** (Refresh, update check, re-add): chapter bodies are stored by chapter URL
+- **ToC refresh** (open card background for sync/`updates` plugins, pull down on the media card,
+  update check, re-add): chapter bodies are stored by chapter URL
   (`c/{sha1(url)}.txt`), so a refresh moves nothing on disk and chapters inserted earlier in the
   ToC (Patreon posts unlocked by a tier change) shift nothing. Bodies whose URL left the ToC are
   deleted by the next cache upkeep. Positions are identified by chapter URL too; when the author
@@ -109,6 +94,18 @@ opened) and the newest post date. Sync never adds or deletes stories for a brows
   reads the right text; new chapters show the next time the story opens
 - **Caught up:** TTS reaching the end of the last chapter saves `chapterFinished`; once an update
   adds a chapter, the story opens and downloads ahead from it (site position moves only on open)
+
+## Local-first library
+
+Plugin tabs paint from on-device data first (`_lists/*.txt`, `plugin_*.db`, splash/ToC/bodies).
+Opening a tab must not wait on the network: membership and catalog rows show immediately; cover
+meta and browse post panes fill in a second pass. Cloud work (sync, Memberships reimport, chapter
+bodies) runs afterward and never clears the list while refreshing. Opening a story media card
+likewise shows the cached splash/ToC first; for plugins with syncable lists or `updates`, a
+background ToC refresh runs with a non-blocking pull indicator on the card (pull down still
+forces a refresh). Source-kind rules (`synced` vs `sourced`) are designed in
+[plugins/source-kinds.md](plugins/source-kinds.md); Royal Road syncs lists and positions, Patreon
+keeps positions on-device only.
 
 ## Sign-in
 
@@ -119,61 +116,58 @@ closes. Sign out also clears those browser cookies. Google / Apple sign-in may r
 browsers; use the site's email sign-in. Sign in / Sign out live in the plugin tab's Account sheet
 and in **Settings → Plugins → (plugin) → Account**; either one refreshes the other.
 
-Signed in, the Account sheet offers **Sync** (also prompted right after sign-in). With several
-`syncable` lists it is one **Sync lists** action covering all of them (Royal Road: Follow, Favorite,
-Read Later). **Merge** keeps local additions; **Overwrite** makes each list match the site and
-deletes a story's local data only when it is on none of the synced lists afterwards.
+Account UI seeds from encrypted secrets (`account`, Royal Road `loggedIn`) before the network
+`session()` round-trip, so "Signed in as …" appears immediately when cookies were imported earlier.
+Opening Account makes **no** network calls; returning to the tab re-checks `session()`. Cookie jar
+lifetime is synthetic (1 year); a soft nudge after ~30 days (Royal Road) or ~14 days (Patreon)
+suggests signing in again. Hard expiry still comes from HTTP / `session()` (`AUTH_REQUIRED`), which
+also broadcasts `sessionChanges` so Settings and the tab stay aligned. There is no silent cookie
+refresh.
+
+### Account hub
+
+The plugin tab's Account card is the day-to-day hub (Settings → Plugins stays install/admin), with
+secondary tabs:
+
+- **Account:** signed-in status; Sign in / Sign out / Sign in again.
+- **URLs:** `sitePages` (Sign in first). **Open** = in-app browser; **Done** imports cookies and
+  runs `session()` only (no list pull).
+- **Manage:** manifest Settings when present; **Data** with Sync / Delete (two-way) or Import /
+  Replace + Delete (sourced). Delete clears this device only; Sync after Delete is a fresh pull.
+
+Sync / list errors point at **Open site** or **Sign in**, not “try Sync again”. With Debug mode on,
+Settings → About → Debug → **Plugins** logs Sync steps, each `flow.fetch` (URL, status, HTML
+fingerprint: title / logged-in / bot-check / fiction-list markers), and plugin `flow.log` lines
+(e.g. “Requesting Oxika95's Follows…”, parse counts) on the bug bubble / `FlowReader.Plugins`.
+
+Signed in after web/form login, two-way plugins run **Sync**; sourced plugins offer the Merge /
+Overwrite import choice on Library.
 
 ### Two-way sync
 
-Plugins with `setMembership` and `readPositions` (Royal Road) sync lists and reading positions both
-ways: on tab open (at most every 10 min), **Sync now** in the Account sheet, after sign-in, and
-before each new-chapter check. Code: [`plugin/sync/`](../app/src/main/java/com/personal/flowreader/plugin/sync/)
-(`ListReconcile`, `ProgressReconcile` (pure), `SyncState`, `TwoWaySync`).
+Plugins with `setMembership` and `readPositions` (Royal Road today) sync lists and positions both
+ways via **Sync** (Account; opening Account does not sync), after sign-in, pull-to-refresh, and
+before each new-chapter check. Quiet OkHttp `list()` pulls. Code:
+[`plugin/sync/`](../app/src/main/java/com/personal/flowreader/plugin/sync/).
 
-- **Three-way merge:** each run compares local, site, and the last synced state (`sync.json` in the
-  plugin data dir). A change on one side is copied to the other; additions and removals propagate
-  both ways. A removed story keeps its downloads until it is on no list (Delete removes it from the
-  site lists too).
-- **First sync:** lists are unioned (nothing deleted); positions take the further chapter. Stories
-  never opened, or whose saved ToC lacks the site's chapter, are not loaded: the card shows
-  "Last read: {chapter}" and the position applies when the ToC is next stored (opening the story,
-  new-chapter check). Royal Road reads every Follow's position from the Follows pages; stories only
-  on Favorite / Read Later (those pages show no position) get theirs from "Continue Reading" on the
-  story page whenever that page is loaded for its ToC. Sync never requests a page per story.
-- **Guard:** site removals are skipped when the site list is empty or under half of a last-synced
-  list of 4 or more (login-gated or truncated page); the Account sheet says so.
-  **Replace with site lists** (Overwrite) accepts the site as is and resets the baseline: lists and
-  every reading position the site reports (no conflict prompts; queued position pushes dropped).
-  Merge there runs the normal position merge.
-- **Positions:** a chapter change in the reader pushes to the site (not when it equals the synced
-  chapter, or opening an unread story at chapter 1). When both sides moved since the last sync, the
-  story gets a **Position conflict** badge and a card: Use {site} / Keep mine / Later.
-- **Offline:** list toggles and position pushes queue in `sync.json` and retry on the next run;
-  network and sign-in errors don't count against the 5-attempt limit.
-- **Royal Road:** chapter downloads are anonymous (`cookies: false`) so preloading never moves the
-  site's "Continue"; pushes view the chapter signed in and submit RR's "Set Progress" form when
-  moving backwards (a signed-in view only moves progress forward).
+- **Initial pull:** empty local baselines → site overwrites memberships + forces positions.
+- **Progressive:** three-way merge local × site × `sync.json`; adds/removes both ways.
+- **Success gating:** `lastSyncedAt` only when every syncable list fetch succeeds.
+- **Pending positions:** "Last read: {chapter}" until ToC is stored; RR Follow positions from
+  Follows pages (cached); no per-story page during sync.
+- **Guard / Replace:** skip site removals when the list looks truncated; Overwrite resets baseline.
+- **Positions / Offline / RR:** conflict card when both moved; outbox in `sync.json`; chapter
+  downloads use `cookies: false`; backwards push via rewind form; `minRequestIntervalMs: 700`.
+
+Patreon post indexes resume across calls; partial ToC is served when some posts are already indexed.
 
 ## New-chapter notifications
 
-Sites can't push to the app, so a background job (WorkManager) checks for new chapters every
-**Settings → About → Notifications → New chapters** interval (slider, Off or 1–24 h, default
-12 h; optional Wi-Fi only; **Check now** runs once).
-
-- **Which stories:** the **bell** on the story media card. Unset, it is on while the story is on a
-  `notifyDefault` list (Royal Road and Patreon: Follow) and off once it leaves; tapping it stores
-  an explicit on/off (`notify` in `plugin_stories`) that wins over list membership.
-- **How:** plugins with the `updates` capability answer `checkUpdates` cheaply (Royal Road: the
-  signed-in Follows page, else each story's public RSS feed; Patreon: the signed-in home feed, else
-  each creator's newest posts); only stories that changed
-  get a `loadWork`. Other plugins get one `loadWork` per monitored story (max 100 per run). Followed
-  stories never opened are fetched once (max 10 per run) as a baseline, without notifying.
-- **Then:** the new ToC is stored; chapters new by URL (not re-titled or reordered ones) produce one
-  notification per story (cover, title, newest chapter; tap opens its media card) under a summary
-  totalling "N new chapters", counting up until opened. Stories with a saved position download
-  the cache level ahead of it. Code: [`plugin/updates/`](../app/src/main/java/com/personal/flowreader/plugin/updates/)
-  (`UpdateChecker`, `UpdateDiff` (pure), `UpdateNotifier`, `UpdateScheduler`, `ChapterUpdateWorker`).
+WorkManager job (**Settings → About → Notifications → New chapters**, Off or 1–24 h, default 12 h;
+Wi-Fi only optional; **Check now**). Bell on the media card (`notifyDefault` lists, else explicit
+`notify`). Plugins with `updates` use cheap `checkUpdates` (else `loadWork`, max 100); new-by-URL
+chapters notify under a group summary. Code:
+[`plugin/updates/`](../app/src/main/java/com/personal/flowreader/plugin/updates/).
 
 ## Import routing
 

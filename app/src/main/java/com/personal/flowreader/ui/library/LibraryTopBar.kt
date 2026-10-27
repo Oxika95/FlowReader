@@ -52,7 +52,7 @@ internal fun LibraryTopBar(
     onAddTab: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val newCounts by rememberPluginNewChapterTotals(plugins)
+    val notifyDots by rememberPluginNotifyDots(plugins)
     val pluginIcons = rememberPluginTabIcons(plugins)
     val text = tabStyle == TabStyle.Text
     fun selected(id: LibraryTabId) = !addTabOpen && tab == id
@@ -71,7 +71,7 @@ internal fun LibraryTopBar(
         }
         plugins.forEach { plugin ->
             val id = LibraryTabId.Plugin(plugin.id)
-            val badge = newCounts[plugin.id]
+            val badge = notifyDots[plugin.id]
             val icon = pluginIcons[plugin.id]?.takeUnless { text }
             add(
                 if (icon != null) {
