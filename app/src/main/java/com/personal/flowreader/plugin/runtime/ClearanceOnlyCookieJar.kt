@@ -17,9 +17,8 @@ class ClearanceOnlyCookieJar(private val delegate: CookieJar) : CookieJar {
     }
 
     companion object {
-        /** Anubis v1.28+ uses `techaro.lol-anubis` (+ optional dynamic suffix), not `…-auth`. */
         fun isClearanceCookie(name: String): Boolean =
-            name.startsWith("techaro.lol-anubis") ||
+            AnubisCookies.isAnubisAuthCookie(name) ||
                 name == "cf_clearance" ||
                 name == "__cf_bm" ||
                 name == "__cfruid"

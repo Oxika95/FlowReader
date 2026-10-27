@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.personal.flowreader.FlowApp
+import com.personal.flowreader.plugin.runtime.AnubisCookies
 import com.personal.flowreader.plugin.runtime.PluginClearanceGate
 import com.personal.flowreader.plugin.runtime.PluginHttp
 import com.personal.flowreader.ui.design.card.FlowActionRow
@@ -29,16 +30,19 @@ import com.personal.flowreader.ui.theme.FlowTokens
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 private const val POLL_MS = 250L
 private const val TIMEOUT_MS = 60_000L
 
-/** Anubis JWT cookie: `techaro.lol-anubis` or `techaro.lol-anubis-<suffix>` (not verification). */
-private fun isAnubisAuthCookie(name: String): Boolean =
-    name.startsWith("techaro.lol-anubis") &&
-        !name.contains("cookie-verification") &&
-        !name.contains("original-referer")
+/** True only after document is ready and the challenge node is absent (not during blank load). */
+private const val CHALLENGE_GONE_JS =
+    "(function(){" +
+        "if(!document.body||document.readyState==='loading')return false;" +
+        "return !document.getElementById('anubis_challenge');" +
+        "})()"
 
 /**
  * Registers [PluginClearanceGate.handler] while composed: shows a WebView that runs the site's
@@ -95,13 +99,31 @@ private fun ClearanceOverlay(
     onCancel: () -> Unit,
 ) {
     var done by remember { mutableStateOf(false) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
     val success by rememberUpdatedState(onSuccess)
     val cancel by rememberUpdatedState(onCancel)
+    // Cleared on open so a prior attempt cannot false-succeed; baseline stays empty after clear.
+    val baseline = remember {
+        WebLoginCookieStore.clearWhere(allowedHosts, AnubisCookies::isAnubisAuthCookie)
+        emptyMap<String, String>()
+    }
 
-    fun check() {
+    suspend fun challengeGone(view: WebView?): Boolean {
+        if (view == null) return false
+        return suspendCancellableCoroutine { cont ->
+            view.evaluateJavascript(CHALLENGE_GONE_JS) { raw ->
+                if (cont.isActive) cont.resume(raw == "true")
+            }
+        }
+    }
+
+    suspend fun tryComplete() {
         if (done) return
-        val cookies = WebLoginCookieStore.read(allowedHosts)
-        if (cookies.none { isAnubisAuthCookie(it.name) && it.value.isNotBlank() }) return
+        val current = AnubisCookies.authCookieMap(
+            WebLoginCookieStore.read(allowedHosts).map { it.name to it.value },
+        )
+        if (!AnubisCookies.hasNewAuthCookie(baseline, current)) return
+        if (!challengeGone(webView)) return
         done = true
         success()
     }
@@ -115,7 +137,7 @@ private fun ClearanceOverlay(
                 return@LaunchedEffect
             }
             delay(POLL_MS)
-            check()
+            tryComplete()
         }
     }
 
@@ -158,16 +180,15 @@ private fun ClearanceOverlay(
                     settings.domStorageEnabled = true
                     settings.userAgentString = PluginHttp.USER_AGENT
                     android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView, finishedUrl: String?) = check()
-
-                        override fun doUpdateVisitedHistory(view: WebView, historyUrl: String?, isReload: Boolean) =
-                            check()
-                    }
+                    webViewClient = WebViewClient()
+                    webView = this
                     loadUrl(url)
                 }
             },
-            onRelease = { it.destroy() },
+            onRelease = {
+                if (webView === it) webView = null
+                it.destroy()
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),

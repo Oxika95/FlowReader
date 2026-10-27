@@ -24,6 +24,7 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `plugin/api/PluginCardTest.kt`
 - `plugin/repo/PluginVersionUpdatesTest.kt`
 - `plugin/repo/RepoIndexTest.kt`
+- `plugin/runtime/AnubisCookiesTest.kt`
 - `plugin/runtime/AnubisDetectorTest.kt`
 - `plugin/runtime/ClearanceOnlyCookieJarTest.kt`
 - `plugin/runtime/WebLoginCookiesTest.kt`

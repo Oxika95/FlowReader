@@ -115,13 +115,16 @@ internal object WebLoginCookieStore {
     }
 
     /** Expire every cookie the WebView holds for [allowedHosts] (fresh sign-in, sign-out). */
-    fun clear(allowedHosts: List<String>) {
+    fun clear(allowedHosts: List<String>) = clearWhere(allowedHosts) { true }
+
+    /** Expire WebView cookies whose names match [predicate] (e.g. Anubis auth only). */
+    fun clearWhere(allowedHosts: List<String>, predicate: (String) -> Boolean) {
         val manager = CookieManager.getInstance()
         for (origin in WebLoginCookies.origins(allowedHosts)) {
             val host = hostOf(origin)
             val names = manager.getCookie(origin).orEmpty().split(';')
                 .map { it.substringBefore('=').trim() }
-                .filter { it.isNotEmpty() }
+                .filter { it.isNotEmpty() && predicate(it) }
             for (name in names) {
                 manager.setCookie(origin, "$name=; Max-Age=0; Path=/")
                 manager.setCookie(origin, "$name=; Max-Age=0; Path=/; Domain=.${host.removePrefix("www.")}")
