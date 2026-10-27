@@ -3,7 +3,6 @@ package com.personal.flowreader.ui.reader
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,12 +14,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,26 +34,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
@@ -77,7 +67,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.recyclerview.widget.RecyclerView
 import com.personal.flowreader.data.BlockKind
+import com.personal.flowreader.data.BookPlace
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.Locus
@@ -108,10 +100,10 @@ private val EdgeFade = 96.dp
 internal val RailGutterWidth = ReaderContentStartPadding
 /** Hit strip for Android-style swipe-left back gesture. */
 private val RightEdgeBackWidth = 24.dp
-/** LazyColumn top/bottom content pad (16 + 12). */
+/** Reader body list top/bottom content pad (16 + 12). */
 private val ReaderListVerticalPad = FlowTokens.Space.L + FlowTokens.Space.M
 /** Horizontal inset for TTS highlight pills (matches typical line-box pad). */
-private val HighlightSidePad = 4.dp
+internal val HighlightSidePad = 4.dp
 /** Edge-band tap targets — gesture constants, not on spacing ramp. */
 private val EdgeBandTopHeight = 56.dp
 private val EdgeBandBottomHeight = 72.dp
@@ -156,9 +148,9 @@ fun ReaderScreen(
     val ui by vm.ui.collectAsState()
     val tts by vm.tts.state.collectAsState()
     val doc = ui.doc
-    val listState = rememberLazyListState()
+    val body = remember { ReaderBodyController() }
     val scope = rememberCoroutineScope()
-    /** True while [scrollToHome] is moving the list; layout must not write [viewLocus]. */
+    /** True while [scrollToHome] is moving the list; layout must not write [viewPlace]. */
     var homing by remember { mutableStateOf(false) }
     var overlay by remember { mutableStateOf(ReaderOverlay.Hidden) }
     var filterEditor by remember { mutableStateOf<FilterEditorSession?>(null) }
@@ -168,12 +160,12 @@ fun ReaderScreen(
     var suppressFollowScroll by remember { mutableStateOf(false) }
     var restoredScroll by remember(vm.bookId) { mutableStateOf(false) }
     /**
-     * Ephemeral free-scroll place (same [Locus] ruler as reading). Null = lock-step with the
-     * reading/spoken locus. Never persisted; cleared on jump-back / follow / any home jump.
+     * Ephemeral free-scroll [BookPlace]. Null = lock-step with the reading/spoken place.
+     * Never persisted; cleared on jump-back / follow / any home jump.
      */
-    var viewLocus by remember { mutableStateOf<Locus?>(null) }
-    /** LazyColumn pixel offset within the view-locus row (not a second place ruler). */
-    var viewItemOffset by remember { mutableIntStateOf(0) }
+    var viewPlace by remember { mutableStateOf<BookPlace?>(null) }
+    /** Bumped on body scroll so pin/edge derived state recomputes. */
+    var scrollEpoch by remember { mutableIntStateOf(0) }
     /** Root-Y lines of the tracked sentence, written from layout while its paragraph is composed. */
     var trackedSpan by remember { mutableStateOf<SentenceSpan?>(null) }
     var listTopY by remember { mutableFloatStateOf(0f) }
@@ -284,8 +276,9 @@ fun ReaderScreen(
      * the tracked sentence is on-screen. Sentence-level: a visible paragraph whose tracked
      * sentence is scrolled past still shows the chip.
      */
-    val pinEdge by remember(doc, items, blockIndexOf, allSentences) {
+    val pinEdge by remember(doc, items, blockIndexOf, allSentences, scrollEpoch) {
         derivedStateOf {
+            scrollEpoch // dependency
             val si = if (tts.playing) {
                 if (tts.sentence == null) return@derivedStateOf null
                 tts.sentenceIndex
@@ -296,30 +289,20 @@ fun ReaderScreen(
             val idx = blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@derivedStateOf null
             val key = items.getOrNull(idx)?.block?.id ?: return@derivedStateOf null
 
-            // Subscribe to scroll position (layoutInfo alone can miss some updates).
-            listState.firstVisibleItemIndex
-            listState.firstVisibleItemScrollOffset
-
-            val info = listState.layoutInfo
-            val visible = info.visibleItemsInfo
-            if (visible.isEmpty()) return@derivedStateOf null
-            // Match by block id: numeric indices are stale across prepend/trim.
-            val placed = visible.firstOrNull { it.key == key }
-            if (placed == null) {
-                val visibleIndices = visible.mapNotNull { v ->
-                    val id = v.key as? String ?: return@mapNotNull null
-                    items.indexOfFirst { it.block.id == id }.takeIf { it >= 0 }
-                }
-                if (visibleIndices.isEmpty()) return@derivedStateOf null
-                return@derivedStateOf ReaderHome.edgeOfItem(idx, visibleIndices.first(), visibleIndices.last())
+            val first = body.firstVisibleAdapterIndex()
+            val last = body.lastVisibleAdapterIndex()
+            if (first == RecyclerView.NO_POSITION || last == RecyclerView.NO_POSITION) {
+                return@derivedStateOf null
+            }
+            val bounds = body.rowWindowBounds(idx)
+            if (bounds == null) {
+                return@derivedStateOf ReaderHome.edgeOfItem(idx, first, last)
             }
             val span = trackedSpan?.takeIf { it.sentenceIndex == si && it.blockId == key }
             if (span != null) {
                 ReaderHome.edgeOf(span.top, span.bottom, listTopY, listTopY + listHeight)
             } else {
-                // Geometry not reported yet: judge by the paragraph until the rail lays out.
-                val top = (placed.offset - info.viewportStartOffset).toFloat()
-                ReaderHome.edgeOf(top, top + placed.size, 0f, (info.viewportEndOffset - info.viewportStartOffset).toFloat())
+                ReaderHome.edgeOf(bounds.first, bounds.second, listTopY, listTopY + listHeight)
             }
         }
     }
@@ -331,65 +314,90 @@ fun ReaderScreen(
     val homeLookup = rememberUpdatedState(Triple(allSentences, blockIndexOf, items))
 
     /**
-     * Scroll so [sentenceIndex] sits on the home line. Every jump (follow, pin, jump-back,
-     * double-tap, scroll lock, ToC, book open) goes through here.
+     * One jump: park [place]'s row top on the home marker
+     * (`offset = homeY − padTop`). No snap-to-top / measure / scrollBy.
      */
+    suspend fun anchorPlaceAtHome(
+        place: BookPlace,
+        key: String,
+        sentenceIndex: Int,
+        allowSentenceNudge: Boolean,
+    ): Int {
+        fun resolveIndex(): Int = body.adapterIndexOf(place)
+
+        withTimeoutOrNull(HomeSpanTimeoutMs) { body.awaitListCommitted() }
+        if (resolveIndex() < 0 || body.blockIdAt(resolveIndex()) != key) {
+            DebugLog.reader("scrollToHome key=$key miss=noIndexAfterCommit")
+            return 0
+        }
+        if (listHeight <= 0f) {
+            listTopY = body.viewTopInWindow().toFloat()
+            listHeight = body.viewHeight().toFloat()
+        }
+        if (listHeight <= 0f) {
+            DebugLog.reader("scrollToHome key=$key miss=noViewport")
+            return 0
+        }
+
+        val offset = ReaderHome.homePadOffset(listHeight, homePosition, body.padTopPx)
+        body.scrollToPlace(place, offsetPx = offset)
+        body.awaitScrollIdle(HomeSpanTimeoutMs)
+
+        if (allowSentenceNudge) {
+            val span = withTimeoutOrNull(HomeSpanTimeoutMs) {
+                snapshotFlow { trackedSpan }.first {
+                    it != null && it.blockId == key && it.sentenceIndex == sentenceIndex
+                }
+            }
+            if (span != null) {
+                if (listHeight <= 0f) {
+                    listTopY = body.viewTopInWindow().toFloat()
+                    listHeight = body.viewHeight().toFloat()
+                }
+                val nudge = ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
+                if (abs(nudge) > 2f) {
+                    body.scrollBy(nudge.toInt())
+                    body.awaitScrollIdle(HomeSpanTimeoutMs)
+                }
+            }
+        }
+        return offset
+    }
+
     suspend fun scrollToHome(sentenceIndex: Int, reason: String, animated: Boolean = true) {
         val (sentences, blocks, listItems) = homeLookup.value
         val s = sentences.getOrNull(sentenceIndex) ?: run {
             DebugLog.reader("scrollToHome reason=$reason si=$sentenceIndex miss=noSentence")
             return
         }
-        // Chapters prepended mid-scroll shift list indices; the block id is the stable target.
+        val place = BookPlace(s.chapterIndex, s.blockIndex, s.start)
         val key = blocks[s.chapterIndex to s.blockIndex]?.let { listItems.getOrNull(it)?.block?.id } ?: run {
             DebugLog.reader(
                 "scrollToHome reason=$reason si=$sentenceIndex c=${s.chapterIndex} b=${s.blockIndex} miss=noKey",
             )
             return
         }
-        fun placed() = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }
-        fun currentIndex() = homeLookup.value.third.indexOfFirst { it.block.id == key }
-        val wasPlaced = placed() != null
+        val startIndex = body.adapterIndexOf(place).takeIf { it >= 0 }
+            ?: ReaderHome.placeToAdapterIndex(listItems, place)
+        if (startIndex < 0) {
+            DebugLog.reader("scrollToHome reason=$reason key=$key miss=noIndex")
+            return
+        }
+        val wasPlaced = body.rowWindowBounds(startIndex) != null
+        val allowSentenceNudge = reason == "follow" || reason == "lockFollow" || reason == "resumeFollow"
         DebugLog.reader(
-            "scrollToHome start reason=$reason si=$sentenceIndex key=$key placed=$wasPlaced animated=$animated",
+            "scrollToHome start reason=$reason si=$sentenceIndex key=$key home=$homePosition placed=$wasPlaced",
         )
-        // Home jumps target the reading place — drop free-scroll view.
-        viewLocus = null
-        viewItemOffset = 0
+        viewPlace = null
         homing = true
         try {
-            if (placed() == null) {
-                val index = currentIndex().takeIf { it >= 0 } ?: run {
-                    DebugLog.reader("scrollToHome reason=$reason key=$key miss=noIndex")
-                    return
-                }
-                listState.scrollToItem(index)
-            }
-            val span = withTimeoutOrNull(HomeSpanTimeoutMs) {
-                snapshotFlow { trackedSpan }.first { it != null && it.blockId == key && it.sentenceIndex == sentenceIndex }
-            }
-            val info = listState.layoutInfo
-            val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
-            val delta = if (span != null) {
-                ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
-            } else {
-                val item = placed() ?: run {
-                    DebugLog.reader("scrollToHome reason=$reason key=$key miss=noPlaceAfterSnap")
-                    return
-                }
-                val top = (item.offset - info.viewportStartOffset).toFloat()
-                ReaderHome.scrollDelta(top, top + item.size, 0f, viewport, homePosition)
-            }
-            if (abs(delta) > 2f) {
-                if (animated) listState.animateScrollBy(delta) else listState.scroll { scrollBy(delta) }
-            }
-            // Wait for idle so a settling scroll is not mistaken for a user fling.
-            snapshotFlow { listState.isScrollInProgress }.first { !it }
-            DebugLog.reader("scrollToHome done reason=$reason si=$sentenceIndex key=$key delta=$delta span=${span != null}")
+            val offset = anchorPlaceAtHome(place, key, sentenceIndex, allowSentenceNudge)
+            DebugLog.reader(
+                "scrollToHome done reason=$reason si=$sentenceIndex key=$key home=$homePosition offset=$offset",
+            )
         } finally {
             homing = false
-            viewLocus = null
-            viewItemOffset = 0
+            viewPlace = null
         }
     }
 
@@ -445,98 +453,49 @@ fun ReaderScreen(
 
     val ttsForScroll = rememberUpdatedState(tts)
     val scrollLockedForScroll = rememberUpdatedState(scrollLocked)
+    val homingForView = rememberUpdatedState(homing)
 
-    // Only real user gestures break follow. Do not watch isScrollInProgress —
-    // follow animations and their cancellation settling look identical and were
-    // permanently clearing [following] mid-playback. A drag during a follow scroll still
-    // counts: programmatic scrolls never arrive as UserInput.
-    val stopFollowOnUserScroll = remember(vm) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (scrollLockedForScroll.value) return Offset.Zero
-                if (source == NestedScrollSource.UserInput &&
-                    available != Offset.Zero &&
-                    ttsForScroll.value.playing &&
-                    ttsForScroll.value.following
-                ) {
-                    DebugLog.reader("userScrolledAway dy=${available.y}")
-                    vm.tts.userScrolledAway()
-                }
-                return Offset.Zero
-            }
-        }
-    }
-
-    // Playback locus is updated by TTS while playing, or by explicit double-tap / TOC — not by scroll.
+    // Playback BookPlace is updated by TTS while playing, or by explicit double-tap / TOC — not by scroll.
     LaunchedEffect(tts.sentence, tts.playing) {
         if (!tts.playing) return@LaunchedEffect
         tts.sentence?.let { s ->
-            vm.onSpoken(Locus(s.chapterIndex, s.blockIndex, s.start))
+            vm.onSpoken(BookPlace(s.chapterIndex, s.blockIndex, s.start))
         }
     }
 
-    // Follow lock-step: view locus stays cleared so the list tracks the reading/spoken place.
+    // Follow lock-step: view place stays cleared so the list tracks the reading/spoken place.
     val followScrollActive = scrollLocked || (tts.playing && tts.following && tts.autoScrollWithTts)
     LaunchedEffect(followScrollActive) {
         if (followScrollActive) {
-            viewLocus = null
-            viewItemOffset = 0
+            viewPlace = null
         }
     }
 
-    // When the window's item list changes, derive LazyColumn row N from the active Locus
-    // (view ?: reading) so a prepend cannot leave the camera on the new chapter.
-    val itemIds = remember(items) { items.map { it.block.id } }
-    val previousItemIds = remember { mutableStateOf<List<String>?>(null) }
-    if (items.isNotEmpty() && itemIds != previousItemIds.value) {
-        val spoken = tts.sentence
-        val reading = if (followScrollActive && spoken != null) {
-            Locus(spoken.chapterIndex, spoken.blockIndex, spoken.start)
-        } else {
-            ui.locus
-        }
-        val active = viewLocus ?: reading
-        val index = ReaderHome.locusToListIndex(items, active)
-        if (index >= 0) {
-            val firstItem = items.getOrNull(listState.firstVisibleItemIndex)
-            val sameBlock = firstItem != null &&
-                firstItem.chapterIndex == active.chapterIndex &&
-                firstItem.blockIndex == active.blockIndex
-            val offset = if (sameBlock) {
-                listState.firstVisibleItemScrollOffset
-            } else {
-                viewItemOffset
-            }
-            listState.requestScrollToItem(index, offset)
-            DebugLog.reader(
-                "viewKeep c=${active.chapterIndex} b=${active.blockIndex} " +
-                    "index=$index offset=$offset view=${viewLocus != null}",
-            )
+    fun onBodyUserScroll() {
+        if (scrollLockedForScroll.value) return
+        val live = ttsForScroll.value
+        if (live.playing && live.following) {
+            DebugLog.reader("userScrolledAway")
+            vm.tts.userScrolledAway()
         }
     }
-    SideEffect { previousItemIds.value = itemIds }
 
-    val homingForView = rememberUpdatedState(homing)
-    val followForView = rememberUpdatedState(followScrollActive)
-    LaunchedEffect(listState, items) {
-        val chapterByBlockId = items.associate { it.block.id to it.chapterIndex }
-        val itemById = items.associateBy { it.block.id }
-        snapshotFlow {
-            val visible = listState.layoutInfo.visibleItemsInfo
-            val first = visible.firstOrNull()
-            val key = first?.key as? String
-            val item = key?.let { itemById[it] }
-            val locus = item?.let { Locus(it.chapterIndex, it.blockIndex, 0) }
-            val offset = first?.offset ?: 0
-            val range = ReaderHome.visibleChapterRange(visible.map { it.key }, chapterByBlockId)
-            Triple(locus, offset, range)
-        }.collect { (locus, offset, range) ->
-            if (!homingForView.value && !followForView.value && locus != null) {
-                viewLocus = locus
-                viewItemOffset = offset
-            }
-            range?.let { vm.onViewport(it.first, it.last) }
+    fun onBodyViewPlace(place: BookPlace) {
+        scrollEpoch++
+        listTopY = body.viewTopInWindow().toFloat()
+        listHeight = body.viewHeight().toFloat()
+        if (!homingForView.value && !followScrollActive) {
+            viewPlace = place
         }
+    }
+
+    fun onBodyVisibleChapters(range: IntRange) {
+        // Mid-jump list mutations (loadAdjacent) shift adapter indices under scrollToHome.
+        if (homingForView.value) {
+            DebugLog.reader("viewportSkip homing range=$range")
+            return
+        }
+        vm.onViewport(range.first, range.last)
     }
 
     fun toggleChrome() {
@@ -664,259 +623,106 @@ fun ReaderScreen(
                 ) {
                 CompositionLocalProvider(LocalTextToolbar provides textToolbar) {
                     key(selectionEpoch) {
-                        ReaderSelectionContainer(
-                            enabled = !scrollLocked,
-                            modifier = Modifier
+                        Box(
+                            Modifier
                                 .fillMaxSize()
+                                .onGloballyPositioned { coords ->
+                                    listTopY = coords.positionInWindow().y
+                                    listHeight = coords.size.height.toFloat()
+                                }
+                                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                                .drawWithContent {
+                                    drawContent()
+                                    val stop = (fadePx / size.height).coerceIn(0f, 0.5f)
+                                    drawRect(
+                                        brush = Brush.verticalGradient(
+                                            0f to Color.Transparent,
+                                            stop to Color.Black,
+                                            1f - stop to Color.Black,
+                                            1f to Color.Transparent,
+                                        ),
+                                        blendMode = BlendMode.DstIn,
+                                    )
+                                }
                                 .pointerInput(selectionActive) {
                                     if (!selectionActive) return@pointerInput
                                     detectSelectionCancelGestures(
-                                        onCancel = {
-                                            dispatch(ReaderTouchAction.ClearSelection)
-                                        },
+                                        onCancel = { dispatch(ReaderTouchAction.ClearSelection) },
                                     )
                                 },
                         ) {
-                            LazyColumn(
-                                state = listState,
+                            ReaderBodyList(
+                                controller = body,
+                                items = items,
                                 userScrollEnabled = !scrollLocked,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .onGloballyPositioned { coords ->
-                                        listTopY = coords.positionInRoot().y
-                                        listHeight = coords.size.height.toFloat()
-                                    }
-                                    .nestedScroll(stopFollowOnUserScroll)
-                                    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-                                    .drawWithContent {
-                                        drawContent()
-                                        val stop = (fadePx / size.height).coerceIn(0f, 0.5f)
-                                        drawRect(
-                                            brush = Brush.verticalGradient(
-                                                0f to Color.Transparent,
-                                                stop to Color.Black,
-                                                1f - stop to Color.Black,
-                                                1f to Color.Transparent,
-                                            ),
-                                            blendMode = BlendMode.DstIn,
-                                        )
+                                contentPaddingTop = ReaderListVerticalPad,
+                                contentPaddingBottom = ReaderListVerticalPad,
+                                contentPaddingEnd = ReaderListEndPadding,
+                                onUserScroll = { onBodyUserScroll() },
+                                onViewPlace = { onBodyViewPlace(it) },
+                                onVisibleChapters = { onBodyVisibleChapters(it) },
+                                modifier = Modifier.fillMaxSize(),
+                            ) { item ->
+                                ReaderBodyRow(
+                                    item = item,
+                                    items = items,
+                                    locusIndex = locusIndex,
+                                    ttsPlaying = tts.playing,
+                                    ttsSentence = tts.sentence,
+                                    ttsWordHighlight = tts.wordHighlight,
+                                    ttsReady = tts.readySentenceIndices,
+                                    ttsGenerating = tts.generatingSentenceIndices,
+                                    ttsDoubleTapPlay = tts.doubleTapPlay,
+                                    ttsSentenceIndex = tts.sentenceIndex,
+                                    allSentences = allSentences,
+                                    replacedRangesByBlockId = ui.replacedRangesByBlockId,
+                                    colors = colors,
+                                    bodyStyle = bodyStyle,
+                                    headingStyle = headingStyle,
+                                    justifyText = justifyText,
+                                    currentSentenceIndex = currentSentenceIndex,
+                                    scrollLocked = scrollLocked,
+                                    overlay = overlay,
+                                    selectionActive = selectionActive,
+                                    onTrackedSpan = { trackedSpan = it },
+                                    onClearTrackedIf = { id -> if (trackedSpan?.blockId == id) trackedSpan = null },
+                                    onGapTap = {
+                                        onReaderGesture(ReaderTouchTarget.BodyGap, ReaderGestureKind.SingleTap)
                                     },
-                                contentPadding = PaddingValues(
-                                    start = FlowTokens.Radius.None,
-                                    end = ReaderListEndPadding,
-                                    top = ReaderListVerticalPad,
-                                    bottom = ReaderListVerticalPad,
-                                ),
-                            ) {
-                                itemsIndexed(items, key = { _, it -> it.block.id }) { index, item ->
-                                    val active = index == locusIndex
-                                    val sentence = tts.sentence
-                                    val highlight = active && sentence != null &&
-                                        sentence.chapterIndex == item.chapterIndex &&
-                                        sentence.blockIndex == item.blockIndex &&
-                                        tts.playing
-                                    val sentenceRange: IntRange? =
-                                        if (highlight) sentence!!.start until sentence.end else null
-                                    val wordRange: IntRange? = when {
-                                        !highlight -> null
-                                        else -> {
-                                            val spoken = sentence!!
-                                            val word = tts.wordHighlight
-                                            if (word != null &&
-                                                word.first >= spoken.start &&
-                                                word.last < spoken.end
-                                            ) {
-                                                word
-                                            } else {
-                                                null
-                                            }
+                                    onTextTap = {
+                                        onReaderGesture(ReaderTouchTarget.BodyText, ReaderGestureKind.SingleTap)
+                                    },
+                                    onDoubleTapTitle = {
+                                        val target = BookPlace(item.chapterIndex, 0, 0)
+                                        suppressFollowScroll = true
+                                        DebugLog.reader("suppressFollow set reason=doubleTapTitle")
+                                        vm.jumpTo(target)
+                                        if (tts.doubleTapPlay) vm.tts.play()
+                                        scope.launch {
+                                            scrollToHome(allSentences.indexAt(target), reason = "doubleTapTitle")
                                         }
-                                    }
-                                    val blockSentences = remember(allSentences, item.chapterIndex, item.blockIndex) {
-                                        allSentences.inBlock(item.chapterIndex, item.blockIndex).mapNotNull { si ->
-                                            allSentences.getOrNull(si)?.let { s -> BlockSentence(si, s.start, s.end) }
+                                    },
+                                    onDoubleTapBody = { place, homeIndex, alreadySpeaking ->
+                                        if (alreadySpeaking) {
+                                            resumeFollow()
+                                        } else {
+                                            suppressFollowScroll = true
+                                            DebugLog.reader("suppressFollow set reason=doubleTap")
+                                            vm.jumpTo(place)
+                                            if (tts.doubleTapPlay) vm.tts.play()
+                                            scope.launch { scrollToHome(homeIndex, reason = "doubleTap") }
                                         }
-                                    }
-                                    var textLayout by remember(item.block.id, justifyText) {
-                                        mutableStateOf<TextLayoutResult?>(null)
-                                    }
-                                    // A span is only current while the paragraph that measured it is composed.
-                                    DisposableEffect(item.block.id) {
-                                        onDispose { if (trackedSpan?.blockId == item.block.id) trackedSpan = null }
-                                    }
-                                    val replacedRanges = ui.replacedRangesByBlockId[item.block.id].orEmpty()
-                                    val sentenceHighlightColor = colors.secondary.copy(alpha = 0.40f)
-                                    val wordHighlightColor = colors.primary.copy(alpha = 0.40f)
-                                    val text = buildAnnotatedString {
-                                        val raw = item.block.text
-                                        append(raw)
-                                        for (range in replacedRanges) {
-                                            val start = range.first.coerceIn(0, raw.length)
-                                            val end = (range.last + 1).coerceIn(start, raw.length)
-                                            if (start < end) {
-                                                addStyle(SpanStyle(color = colors.secondary), start, end)
-                                            }
-                                        }
-                                    }
-                                    val style = when (item.block.kind) {
-                                        BlockKind.Heading -> headingStyle
-                                        BlockKind.Quote, BlockKind.Paragraph -> bodyStyle
-                                    }
-                                    // Gaps: single-tap chrome / clear. Double-tap play stays on Text.
-                                    // Rail occupies the left gutter; list end pad is the right gutter —
-                                    // same ContentStart/ContentEnd the chrome cards use.
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .pointerInput(overlay, selectionActive) {
-                                                detectTapGestures(
-                                                    onTap = {
-                                                        onReaderGesture(
-                                                            ReaderTouchTarget.BodyGap,
-                                                            ReaderGestureKind.SingleTap,
-                                                        )
-                                                    },
-                                                )
-                                            },
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(IntrinsicSize.Min)
-                                                .padding(vertical = FlowTokens.Space.M),
-                                        ) {
-                                            LocusRail(
-                                                modifier = Modifier
-                                                    .width(RailGutterWidth)
-                                                    .fillMaxHeight(),
-                                                blockId = item.block.id,
-                                                sentences = blockSentences,
-                                                textLayout = textLayout,
-                                                currentSentenceIndex = currentSentenceIndex,
-                                                ready = tts.readySentenceIndices,
-                                                generating = tts.generatingSentenceIndices,
-                                                softAccent = colors.secondary,
-                                                onForceRegenerate = { vm.tts.forceRegenerateSentence(it) },
-                                                onCurrentSpan = { trackedSpan = it },
-                                            )
-                                            Text(
-                                                text,
-                                                style = style,
-                                                color = colors.onBackground,
-                                                onTextLayout = { textLayout = it },
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .fillMaxWidth()
-                                                    .drawBehind {
-                                                        val layout = textLayout ?: return@drawBehind
-                                                        val radius = 6.dp.toPx()
-                                                        val pad = HighlightSidePad.toPx()
-                                                        sentenceRange?.let {
-                                                            drawTtsHighlightRange(
-                                                                layout,
-                                                                it,
-                                                                sentenceHighlightColor,
-                                                                pad,
-                                                                radius,
-                                                            )
-                                                        }
-                                                        wordRange?.let {
-                                                            drawTtsHighlightRange(
-                                                                layout,
-                                                                it,
-                                                                wordHighlightColor,
-                                                                pad,
-                                                                radius,
-                                                            )
-                                                        }
-                                                    }
-                                                    .pointerInput(
-                                                        blockSentences,
-                                                        overlay,
-                                                        tts.doubleTapPlay,
-                                                        selectionActive,
-                                                        index,
-                                                    ) {
-                                                        detectTapGestures(
-                                                            onTap = {
-                                                                onReaderGesture(
-                                                                    ReaderTouchTarget.BodyText,
-                                                                    ReaderGestureKind.SingleTap,
-                                                                )
-                                                            },
-                                                            onDoubleTap = { pos ->
-                                                                onReaderGesture(
-                                                                    ReaderTouchTarget.BodyText,
-                                                                    ReaderGestureKind.DoubleTap,
-                                                                ) {
-                                                                    if (item.isChapterTitle) {
-                                                                        val target = Locus(item.chapterIndex, 0, 0)
-                                                                        suppressFollowScroll = true
-                                                                        DebugLog.reader("suppressFollow set reason=doubleTapTitle")
-                                                                        vm.jumpTo(target)
-                                                                        if (tts.doubleTapPlay) {
-                                                                            vm.tts.play()
-                                                                        }
-                                                                        scope.launch {
-                                                                            scrollToHome(
-                                                                                allSentences.indexAt(target),
-                                                                                reason = "doubleTapTitle",
-                                                                            )
-                                                                        }
-                                                                        return@onReaderGesture
-                                                                    }
-                                                                    val layout = textLayout
-                                                                    val sentence = if (layout != null) {
-                                                                        sentenceAtPosition(
-                                                                            blockSentences,
-                                                                            layout,
-                                                                            pos,
-                                                                        )
-                                                                    } else {
-                                                                        blockSentences.firstOrNull()
-                                                                    }
-                                                                    val live = vm.tts.state.value
-                                                                    if (live.playing && live.sentence != null &&
-                                                                        sentence?.index == live.sentenceIndex
-                                                                    ) {
-                                                                        // Already speaking it: re-home and follow, don't restart.
-                                                                        resumeFollow()
-                                                                        return@onReaderGesture
-                                                                    }
-                                                                    val charOffset = sentence?.start ?: 0
-                                                                    suppressFollowScroll = true
-                                                                    DebugLog.reader("suppressFollow set reason=doubleTap")
-                                                                    vm.jumpTo(
-                                                                        Locus(
-                                                                            item.chapterIndex,
-                                                                            item.blockIndex,
-                                                                            charOffset,
-                                                                        ),
-                                                                    )
-                                                                    if (tts.doubleTapPlay) {
-                                                                        vm.tts.play()
-                                                                    }
-                                                                    val homeIndex = sentence?.index
-                                                                        ?: allSentences.indexAt(
-                                                                            Locus(item.chapterIndex, item.blockIndex, charOffset),
-                                                                        )
-                                                                    scope.launch {
-                                                                        scrollToHome(homeIndex, reason = "doubleTap")
-                                                                    }
-                                                                }
-                                                            },
-                                                        )
-                                                    },
-                                            )
-                                        }
-                                        Spacer(Modifier.height(FlowTokens.Space.XS))
-                                    }
-                                }
+                                    },
+                                    onForceRegenerate = { vm.tts.forceRegenerateSentence(it) },
+                                    isAlreadySpeaking = { si ->
+                                        val live = vm.tts.state.value
+                                        live.playing && live.sentence != null && si == live.sentenceIndex
+                                    },
+                                )
                             }
                         }
                     }
                 }
-
                 if (overlay == ReaderOverlay.Hidden || overlay == ReaderOverlay.Chrome) {
                     Box(
                         Modifier
@@ -1167,12 +973,23 @@ fun ReaderScreen(
             suppressFollowScroll = true
             DebugLog.reader("suppressFollow set reason=toc row=$ci")
             scope.launch {
-                vm.jumpToChapter(ci)
-                // A chapter outside the window swaps the doc; let the sentence lookup recompose first.
-                withFrameNanos { }
-                val sentences = homeLookup.value.first
-                if (sentences.isNotEmpty()) {
-                    scrollToHome(sentences.indexAt(vm.ui.value.locus), reason = "toc")
+                // Jump path: locus + one home move. Homing blocks viewport while settling.
+                homing = true
+                try {
+                    vm.jumpToChapter(ci)
+                    val target = vm.ui.value.locus
+                    withTimeoutOrNull(HomeSpanTimeoutMs) {
+                        snapshotFlow {
+                            ReaderHome.placeToAdapterIndex(homeLookup.value.third, target) >= 0
+                        }.first { it }
+                        body.awaitListCommitted()
+                    }
+                    val sentences = homeLookup.value.first
+                    if (sentences.isNotEmpty()) {
+                        scrollToHome(sentences.indexAt(vm.ui.value.locus), reason = "toc")
+                    }
+                } finally {
+                    homing = false
                 }
             }
         }

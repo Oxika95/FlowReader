@@ -1,11 +1,11 @@
 package com.personal.flowreader.ui.reader
 
-import com.personal.flowreader.data.Locus
+import com.personal.flowreader.data.BookPlace
 import com.personal.flowreader.data.ReaderItem
 
 /**
  * Current-position geometry. The reader tracks one sentence (the spoken one while TTS plays,
- * otherwise the saved locus sentence); every "on screen?" check and every jump targets that
+ * otherwise the saved BookPlace sentence); every "on screen?" check and every jump targets that
  * sentence, never its paragraph. All values share one vertical coordinate space.
  */
 
@@ -23,8 +23,28 @@ internal object ReaderHome {
         viewportTop + viewportHeight * home
 
     /**
-     * Scroll delta (positive moves content up) that puts the span's center on the home line.
-     * A span taller than the viewport starts at the viewport top instead, so its first line shows.
+     * LM [scrollToPositionWithOffset] offset (from the padding edge) that puts the row top
+     * on the home marker. Marker is from the box top; LM offset starts after [padTop].
+     */
+    fun homePadOffset(viewportHeight: Float, home: Float, padTop: Int): Int {
+        if (viewportHeight <= 0f) return 0
+        return (viewportHeight * home - padTop).toInt()
+    }
+
+    /**
+     * Scroll delta (positive moves content up) that puts [targetY] on the home line —
+     * same Y the home marker uses.
+     */
+    fun deltaToHome(
+        targetY: Float,
+        viewportTop: Float,
+        viewportHeight: Float,
+        home: Float,
+    ): Float = targetY - homeY(viewportTop, viewportHeight, home)
+
+    /**
+     * Scroll delta that puts the span's center on the home line (TTS follow).
+     * A span taller than the viewport starts at the viewport top instead.
      */
     fun scrollDelta(
         top: Float,
@@ -34,7 +54,7 @@ internal object ReaderHome {
         home: Float,
     ): Float {
         if (bottom - top >= viewportHeight) return top - viewportTop
-        return (top + bottom) / 2f - homeY(viewportTop, viewportHeight, home)
+        return deltaToHome((top + bottom) / 2f, viewportTop, viewportHeight, home)
     }
 
     /** Edge the span is beyond, or null when any part of it is visible. */
@@ -52,9 +72,8 @@ internal object ReaderHome {
     }
 
     /**
-     * First..last chapter among composed LazyColumn keys that resolve in [chapterByBlockId].
-     * Null when no visible key matches (layout still describes a prior items list after
-     * prepend/trim) — callers must not fall back to numeric LazyList indices.
+     * First..last chapter among visible block ids that resolve in [chapterByBlockId].
+     * Null when no visible id matches.
      */
     fun visibleChapterRange(
         visibleKeys: List<Any>,
@@ -74,11 +93,15 @@ internal object ReaderHome {
     }
 
     /**
-     * LazyColumn index for [locus]'s chapter+block in the current window, or -1 when that
+     * Adapter index for [place]'s chapter+block in the current window, or -1 when that
      * paragraph is not loaded. Includes synthetic chapter-title rows (`blockIndex == -1`).
      */
-    fun locusToListIndex(items: List<ReaderItem>, locus: Locus): Int =
+    fun placeToAdapterIndex(items: List<ReaderItem>, place: BookPlace): Int =
         items.indexOfFirst {
-            it.chapterIndex == locus.chapterIndex && it.blockIndex == locus.blockIndex
+            it.chapterIndex == place.chapterIndex && it.blockIndex == place.blockIndex
         }
+
+    /** @deprecated Use [placeToAdapterIndex]. */
+    fun locusToListIndex(items: List<ReaderItem>, locus: BookPlace): Int =
+        placeToAdapterIndex(items, locus)
 }

@@ -3,7 +3,7 @@ package com.personal.flowreader.ui.reader
 import com.personal.flowreader.data.Block
 import com.personal.flowreader.data.BlockKind
 import com.personal.flowreader.data.HomePosition
-import com.personal.flowreader.data.Locus
+import com.personal.flowreader.data.BookPlace
 import com.personal.flowreader.data.ReaderItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -14,6 +14,22 @@ class ReaderHomeTest {
     fun homeYIsFractionOfViewport() {
         assertEquals(500f, ReaderHome.homeY(viewportTop = 0f, viewportHeight = 1000f, home = 0.5f), 0f)
         assertEquals(350f, ReaderHome.homeY(viewportTop = 50f, viewportHeight = 1000f, home = 0.3f), 0f)
+    }
+
+    @Test
+    fun homePadOffsetPutsRowTopOnMarker() {
+        // homeY=798, padTop=81 → LM offset 717 from padding edge.
+        assertEquals(717, ReaderHome.homePadOffset(2400f, 0.3325f, 81))
+        assertEquals(500, ReaderHome.homePadOffset(1000f, 0.5f, 0))
+        assertEquals(0, ReaderHome.homePadOffset(0f, 0.5f, 81))
+    }
+
+    @Test
+    fun deltaToHomePutsTargetOnHomeLine() {
+        // Row top 800, home at 500 → scroll content up by 300.
+        assertEquals(300f, ReaderHome.deltaToHome(800f, 0f, 1000f, 0.5f), 0f)
+        assertEquals(-400f, ReaderHome.deltaToHome(100f, 0f, 1000f, 0.5f), 0f)
+        assertEquals(0f, ReaderHome.deltaToHome(330f, 0f, 1000f, 0.33f), 0f)
     }
 
     @Test
@@ -90,22 +106,22 @@ class ReaderHomeTest {
     }
 
     @Test
-    fun locusToListIndexFindsChapterAndBlock() {
+    fun placeToAdapterIndexFindsChapterAndBlock() {
         val items = listOf(
             ReaderItem(4, ReaderItem.CHAPTER_TITLE_BLOCK, Block("t4", BlockKind.Heading, "Ch 4")),
             ReaderItem(4, 0, Block("c4-0", BlockKind.Paragraph, "a")),
             ReaderItem(4, 1, Block("c4-1", BlockKind.Paragraph, "b")),
             ReaderItem(5, 0, Block("c5-0", BlockKind.Paragraph, "c")),
         )
-        assertEquals(0, ReaderHome.locusToListIndex(items, Locus(4, ReaderItem.CHAPTER_TITLE_BLOCK, 0)))
-        assertEquals(2, ReaderHome.locusToListIndex(items, Locus(4, 1, 3)))
-        assertEquals(3, ReaderHome.locusToListIndex(items, Locus(5, 0, 0)))
+        assertEquals(0, ReaderHome.placeToAdapterIndex(items, BookPlace(4, ReaderItem.CHAPTER_TITLE_BLOCK, 0)))
+        assertEquals(2, ReaderHome.placeToAdapterIndex(items, BookPlace(4, 1, 3)))
+        assertEquals(3, ReaderHome.placeToAdapterIndex(items, BookPlace(5, 0, 0)))
     }
 
     @Test
-    fun locusToListIndexMissWhenNotLoaded() {
+    fun placeToAdapterIndexMissWhenNotLoaded() {
         val items = listOf(ReaderItem(5, 0, Block("c5-0", BlockKind.Paragraph, "c")))
-        assertEquals(-1, ReaderHome.locusToListIndex(items, Locus(4, 0, 0)))
-        assertEquals(-1, ReaderHome.locusToListIndex(emptyList(), Locus(5, 0, 0)))
+        assertEquals(-1, ReaderHome.placeToAdapterIndex(items, BookPlace(4, 0, 0)))
+        assertEquals(-1, ReaderHome.placeToAdapterIndex(emptyList(), BookPlace(5, 0, 0)))
     }
 }

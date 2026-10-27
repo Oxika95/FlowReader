@@ -80,7 +80,11 @@ data class ReaderItem(
     }
 }
 
-data class Locus(
+/**
+ * Book position index: chapter + paragraph (block) + character.
+ * Reading and free-scroll view places use this — not a list row number.
+ */
+data class BookPlace(
     val chapterIndex: Int = 0,
     val blockIndex: Int = 0,
     val charOffset: Int = 0,
@@ -98,6 +102,9 @@ data class Locus(
         return (i - 1).coerceAtLeast(0)
     }
 }
+
+/** @deprecated Use [BookPlace]; kept as the historical name for call sites and persistence. */
+typealias Locus = BookPlace
 
 data class Sentence(
     val chapterIndex: Int,

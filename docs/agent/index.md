@@ -8,7 +8,7 @@ Hand-written guide: [map.md](map.md).
 | Package | Index | Files | Lines |
 | --- | --- | --- | --- |
 | `root` | [index/root.md](index/root.md) | 3 | 507 |
-| `data` | [index/data.md](index/data.md) | 23 | 4096 |
+| `data` | [index/data.md](index/data.md) | 23 | 4103 |
 | `debug` | [index/debug.md](index/debug.md) | 1 | 118 |
 | `library` | [index/library.md](index/library.md) | 1 | 9 |
 | `plugin` | [index/plugin.md](index/plugin.md) | 3 | 439 |
@@ -19,16 +19,16 @@ Hand-written guide: [map.md](map.md).
 | `plugin/sync` | [index/plugin-sync.md](index/plugin-sync.md) | 4 | 787 |
 | `plugin/updates` | [index/plugin-updates.md](index/plugin-updates.md) | 6 | 461 |
 | `share` | [index/share.md](index/share.md) | 13 | 2026 |
-| `tts` | [index/tts.md](index/tts.md) | 20 | 4554 |
+| `tts` | [index/tts.md](index/tts.md) | 21 | 4607 |
 | `ui/common` | [index/ui-common.md](index/ui-common.md) | 1 | 117 |
 | `ui/debug` | [index/ui-debug.md](index/ui-debug.md) | 1 | 352 |
 | `ui/design` | [index/ui-design.md](index/ui-design.md) | 22 | 3449 |
 | `ui/library` | [index/ui-library.md](index/ui-library.md) | 13 | 2162 |
 | `ui/open` | [index/ui-open.md](index/ui-open.md) | 1 | 169 |
 | `ui/plugin` | [index/ui-plugin.md](index/ui-plugin.md) | 17 | 3536 |
-| `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 21 | 4421 |
+| `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 23 | 4699 |
 | `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 24 | 5568 |
 | `ui/theme` | [index/ui-theme.md](index/ui-theme.md) | 5 | 517 |
-| tests | [index/tests.md](index/tests.md) | 59 | |
+| tests | [index/tests.md](index/tests.md) | 60 | |
 
-Totals: 204 main files, 37131 lines.
+Totals: 207 main files, 37469 lines.

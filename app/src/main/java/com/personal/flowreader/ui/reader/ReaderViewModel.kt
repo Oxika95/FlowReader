@@ -268,6 +268,7 @@ class ReaderViewModel(
         reuse: ReadingSession?,
         anchor: String = "",
         invalidateCache: Boolean = false,
+        loadNeighbors: Boolean = true,
     ) = showLock.withLock {
         val b = book ?: return@withLock
         val ref = queue?.ref
@@ -315,9 +316,11 @@ class ReaderViewModel(
             )
         }
         collectWindow(s)
-        viewModelScope.launch {
-            s.loadAdjacent(locus.chapterIndex + 1, clip.clipTargetChars, clip.clipFlexChars)
-            s.loadAdjacent(locus.chapterIndex - 1, clip.clipTargetChars, clip.clipFlexChars)
+        if (loadNeighbors) {
+            viewModelScope.launch {
+                s.loadAdjacent(locus.chapterIndex + 1, clip.clipTargetChars, clip.clipFlexChars)
+                s.loadAdjacent(locus.chapterIndex - 1, clip.clipTargetChars, clip.clipFlexChars)
+            }
         }
     }
 
@@ -465,7 +468,13 @@ class ReaderViewModel(
         }
         DebugLog.reader("jumpToChapter row=$row chapter=$chapter path=show")
         val ui = _ui.value
-        show(Locus(chapter, 0, 0), TextFilters.merge(ui.filtersGlobal, ui.filtersGroups, ui.filtersLocal), session)
+        // Skip eager ±1 here so the home-line camera move is not racing a prepend; viewport loads after.
+        show(
+            Locus(chapter, 0, 0),
+            TextFilters.merge(ui.filtersGlobal, ui.filtersGroups, ui.filtersLocal),
+            session,
+            loadNeighbors = false,
+        )
         positionMoved = true
         persist(_ui.value.locus)
     }
