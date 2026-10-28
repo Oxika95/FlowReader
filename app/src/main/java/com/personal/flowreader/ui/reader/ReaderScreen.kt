@@ -314,14 +314,13 @@ fun ReaderScreen(
     val homeLookup = rememberUpdatedState(Triple(allSentences, blockIndexOf, items))
 
     /**
-     * One jump: park [place]'s row top on the home marker
-     * (`offset = homeY − padTop`). No snap-to-top / measure / scrollBy.
+     * Bring [place] on-screen at home, then park the **sentence** center on the marker.
+     * Row-top offset only lays the paragraph out; reading position is always the sentence.
      */
     suspend fun anchorPlaceAtHome(
         place: BookPlace,
         key: String,
         sentenceIndex: Int,
-        allowSentenceNudge: Boolean,
     ): Int {
         fun resolveIndex(): Int = body.adapterIndexOf(place)
 
@@ -343,23 +342,27 @@ fun ReaderScreen(
         body.scrollToPlace(place, offsetPx = offset)
         body.awaitScrollIdle(HomeSpanTimeoutMs)
 
-        if (allowSentenceNudge) {
-            val span = withTimeoutOrNull(HomeSpanTimeoutMs) {
-                snapshotFlow { trackedSpan }.first {
-                    it != null && it.blockId == key && it.sentenceIndex == sentenceIndex
-                }
+        // Drop stale span from before the park so we wait for post-layout geometry.
+        trackedSpan = null
+        withFrameNanos { }
+        val span = withTimeoutOrNull(HomeSpanTimeoutMs) {
+            snapshotFlow { trackedSpan }.first {
+                it != null && it.blockId == key && it.sentenceIndex == sentenceIndex
             }
-            if (span != null) {
-                if (listHeight <= 0f) {
-                    listTopY = body.viewTopInWindow().toFloat()
-                    listHeight = body.viewHeight().toFloat()
-                }
-                val nudge = ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
-                if (abs(nudge) > 2f) {
-                    body.scrollBy(nudge.toInt())
-                    body.awaitScrollIdle(HomeSpanTimeoutMs)
-                }
-            }
+        }
+        if (span == null) {
+            DebugLog.reader("scrollToHome key=$key si=$sentenceIndex miss=noSpan")
+            return offset
+        }
+        if (listHeight <= 0f) {
+            listTopY = body.viewTopInWindow().toFloat()
+            listHeight = body.viewHeight().toFloat()
+        }
+        val nudge = ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
+        if (abs(nudge) > 2f) {
+            body.scrollBy(nudge.toInt())
+            body.awaitScrollIdle(HomeSpanTimeoutMs)
+            DebugLog.reader("scrollToHome sentenceNudge si=$sentenceIndex nudge=${nudge.toInt()}")
         }
         return offset
     }
@@ -384,14 +387,13 @@ fun ReaderScreen(
             return
         }
         val wasPlaced = body.rowWindowBounds(startIndex) != null
-        val allowSentenceNudge = reason == "follow" || reason == "lockFollow" || reason == "resumeFollow"
         DebugLog.reader(
             "scrollToHome start reason=$reason si=$sentenceIndex key=$key home=$homePosition placed=$wasPlaced",
         )
         viewPlace = null
         homing = true
         try {
-            val offset = anchorPlaceAtHome(place, key, sentenceIndex, allowSentenceNudge)
+            val offset = anchorPlaceAtHome(place, key, sentenceIndex)
             DebugLog.reader(
                 "scrollToHome done reason=$reason si=$sentenceIndex key=$key home=$homePosition offset=$offset",
             )

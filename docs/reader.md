@@ -70,10 +70,9 @@ momentum first, then parks in one move.
 The **current position** for chips and home is always a sentence: the spoken one while TTS plays,
 otherwise the saved reading sentence. The **home position** is a horizontal line in the viewport
 (Settings → Layout → Reading, 15–85% from the top, default 50%). **BookPlace** picks which
-paragraph; **home position** is the Y of the purple marker. Every jump is one list move that parks
-the BookPlace row top on that Y (Contents, jump-back, open, double-tap, home marker). TTS follow may
-nudge further so the spoken sentence's center hits the line. A sentence taller than the screen
-starts at the top instead.
+paragraph; **home position** is the Y of the purple marker. Every jump brings that paragraph on-screen,
+then parks the **sentence** center on the marker (Contents, jump-back, open, double-tap, follow,
+home marker). A sentence taller than the screen starts at the top instead.
 
 **Who may move the page:** only follow-along playback (or scroll-lock follow) may keep scrolling.
 Opening the book, Contents, jump-back, double-tap, and the home marker each do **one** jump to the

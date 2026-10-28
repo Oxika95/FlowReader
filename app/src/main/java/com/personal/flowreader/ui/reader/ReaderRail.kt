@@ -43,7 +43,7 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -211,7 +211,8 @@ internal fun LocusRail(
         fun Modifier.reportIfCurrent(sentenceIndex: Int): Modifier {
             if (sentenceIndex != currentSentenceIndex) return this
             return onGloballyPositioned { coords ->
-                val top = coords.positionInRoot().y
+                // Window coords — same space as listTopY / home marker.
+                val top = coords.positionInWindow().y
                 reportCurrent.value(SentenceSpan(blockId, sentenceIndex, top, top + coords.size.height))
             }
         }
