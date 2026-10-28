@@ -1,6 +1,7 @@
 package com.personal.flowreader.tts
 
 import android.content.Context
+import android.net.Network
 import android.os.SystemClock
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
@@ -44,7 +45,9 @@ class EdgeNetwork(
             refreshLocked()
             policy.plan()
         }
-        return plan.map { RaceLane(it.startMs, it.lane, monitor.clientFor(it.lane)) }
+        return plan.map {
+            RaceLane(it.startMs, it.lane, monitor.clientFor(it.lane), monitor.networkFor(it.lane))
+        }
     }
 
     fun report(r: RaceReport) {
@@ -53,6 +56,9 @@ class EdgeNetwork(
             logStateLocked(lastSnap, "race")
         }
     }
+
+    /** Android network for a lane (null = system default). */
+    fun networkFor(lane: NetLane): Network? = monitor.networkFor(lane)
 
     fun isOffline(): Boolean = synchronized(lock) {
         refreshLocked()

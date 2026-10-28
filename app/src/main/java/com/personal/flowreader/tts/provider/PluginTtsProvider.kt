@@ -1,5 +1,6 @@
 package com.personal.flowreader.tts.provider
 
+import android.net.Network
 import android.util.Base64
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.plugin.PluginManager
@@ -7,6 +8,7 @@ import com.personal.flowreader.plugin.api.PluginCapability
 import com.personal.flowreader.plugin.api.PluginManifest
 import com.personal.flowreader.tts.EdgeWordBoundary
 import com.personal.flowreader.tts.VoiceGender
+import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -49,7 +51,17 @@ class PluginTtsProvider(
         }
     }
 
-    override suspend fun synthesize(request: TtsSynthRequest): TtsClipAudio {
+    /**
+     * @param raceSlot QuickJS slot for staggered races (0 = primary).
+     * @param network optional Android network to bind the WebSocket (lane).
+     */
+    suspend fun synthesize(
+        request: TtsSynthRequest,
+        raceSlot: Int = 0,
+        network: Network? = null,
+    ): TtsClipAudio {
+        val runtime = manager.runtimeForRace(manifest.id, raceSlot)
+        if (network != null) runtime.ws.bindNetwork(network)
         val args = JSONArray().put(
             JSONObject()
                 .put("text", request.text)
@@ -58,25 +70,45 @@ class PluginTtsProvider(
                 .put("ratePercent", request.ratePercent)
                 .put("pitchPercent", request.pitchPercent),
         )
-        val raw = manager.runtime(manifest.id).call("synthesize", args) as? JSONObject
+        val raw = runtime.call("synthesize", args) as? JSONObject
             ?: throw IllegalStateException("${manifest.name} returned no audio")
-        val b64 = raw.optString("mp3Base64")
-        require(b64.isNotBlank()) { "${manifest.name} returned empty audio" }
-        val mp3 = Base64.decode(b64, Base64.DEFAULT)
-        val boundaries = ArrayList<EdgeWordBoundary>()
-        val meta = raw.optJSONArray("boundaries")
-        if (meta != null) {
-            for (i in 0 until meta.length()) {
-                val o = meta.optJSONObject(i) ?: continue
-                val text = o.optString("text")
-                if (text.isBlank()) continue
-                boundaries += EdgeWordBoundary(
-                    offset = o.optLong("offset"),
-                    duration = o.optLong("duration"),
-                    text = text,
-                )
+        return clipFromResult(raw, manifest.name)
+    }
+
+    override suspend fun synthesize(request: TtsSynthRequest): TtsClipAudio =
+        synthesize(request, raceSlot = 0, network = null)
+
+    companion object {
+        fun clipFromResult(raw: JSONObject, pluginName: String): TtsClipAudio {
+            val path = raw.optString("audioPath").trim()
+            val mp3 = if (path.isNotEmpty()) {
+                val file = File(path)
+                try {
+                    require(file.isFile && file.length() > 0L) { "$pluginName returned empty audio" }
+                    file.readBytes()
+                } finally {
+                    runCatching { file.delete() }
+                }
+            } else {
+                val b64 = raw.optString("mp3Base64")
+                require(b64.isNotBlank()) { "$pluginName returned empty audio" }
+                Base64.decode(b64, Base64.DEFAULT)
             }
+            val boundaries = ArrayList<EdgeWordBoundary>()
+            val meta = raw.optJSONArray("boundaries")
+            if (meta != null) {
+                for (i in 0 until meta.length()) {
+                    val o = meta.optJSONObject(i) ?: continue
+                    val text = o.optString("text")
+                    if (text.isBlank()) continue
+                    boundaries += EdgeWordBoundary(
+                        offset = o.optLong("offset"),
+                        duration = o.optLong("duration"),
+                        text = text,
+                    )
+                }
+            }
+            return TtsClipAudio(mp3, boundaries)
         }
-        return TtsClipAudio(mp3, boundaries)
     }
 }

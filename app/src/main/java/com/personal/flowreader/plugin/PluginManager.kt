@@ -47,6 +47,8 @@ class PluginManager(private val context: Context) {
     private val _installed = MutableStateFlow<List<InstalledPlugin>>(emptyList())
     val installed: StateFlow<List<InstalledPlugin>> = _installed
     private val sources = HashMap<String, Pair<PluginSource, JsPluginRuntime>>()
+    /** Extra QuickJS slots so staggered TTS races can synthesize in parallel. */
+    private val raceRuntimes = HashMap<String, Array<JsPluginRuntime?>>()
     private val _sessionChanges = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
     /** Plugin ids whose sign-in changed, so every screen showing that plugin's account can re-read it. */
@@ -97,21 +99,51 @@ class PluginManager(private val context: Context) {
             minIntervalMs = plugin.manifest.minRequestIntervalMs,
             cookieJar = PluginCookieJar(secrets),
         )
-        val runtime = JsPluginRuntime(
-            manifest = plugin.manifest,
-            code = code,
-            http = http,
-            secrets = secrets,
-            kv = PluginKvStore.forFile(File(dataDir(pluginId), "_kv.preferences_pb")),
-            settingsJson = { settingsValues(pluginId).toString() },
-        )
-        if (plugin.manifest.isSource) {
-            sources[pluginId] = PluginSource(plugin.manifest, runtime) to runtime
-        } else {
-            sources[pluginId] = PluginSource(plugin.manifest, runtime) to runtime
-        }
+        val runtime = newRuntime(plugin, code, http, secrets)
+        sources[pluginId] = PluginSource(plugin.manifest, runtime) to runtime
         runtime
     }
+
+    /**
+     * Runtime for TTS race attempt [slot] (0 = primary shared runtime, 1..[RACE_SLOTS-1] =
+     * dedicated engines so hedges do not serialize on one QuickJS mutex).
+     */
+    fun runtimeForRace(pluginId: String, slot: Int): JsPluginRuntime {
+        if (slot <= 0) return runtime(pluginId)
+        val index = slot.coerceIn(1, RACE_SLOTS - 1)
+        synchronized(sources) {
+            runtime(pluginId) // ensure primary + http/cookie jar exist
+            val slots = raceRuntimes.getOrPut(pluginId) { arrayOfNulls(RACE_SLOTS) }
+            slots[index]?.let { return it }
+            val plugin = get(pluginId)
+                ?: throw PluginException(PluginErrorCode.Unsupported, "Plugin $pluginId is not installed")
+            val code = File(plugin.dir, CODE_FILE).readText()
+            val primary = sources.getValue(pluginId).second
+            val created = newRuntime(
+                plugin,
+                code,
+                primary.http,
+                PluginSecrets(context, pluginId),
+            )
+            slots[index] = created
+            return created
+        }
+    }
+
+    private fun newRuntime(
+        plugin: InstalledPlugin,
+        code: String,
+        http: PluginHttp,
+        secrets: PluginSecrets,
+    ): JsPluginRuntime = JsPluginRuntime(
+        manifest = plugin.manifest,
+        code = code,
+        http = http,
+        secrets = secrets,
+        kv = PluginKvStore.forFile(File(dataDir(plugin.id), "_kv.preferences_pb")),
+        settingsJson = { settingsValues(plugin.id).toString() },
+        audioDir = File(dataDir(plugin.id), "ws-audio"),
+    )
 
     /** The cookie jar behind this plugin's `flow.fetch`. */
     fun cookieJar(pluginId: String): PluginCookieJar {
@@ -247,7 +279,10 @@ class PluginManager(private val context: Context) {
     }
 
     private fun closeRuntime(pluginId: String) {
-        synchronized(sources) { sources.remove(pluginId) }?.second?.close()
+        synchronized(sources) {
+            sources.remove(pluginId)?.second?.close()
+            raceRuntimes.remove(pluginId)?.forEach { it?.close() }
+        }
     }
 
     private fun readSavedSettings(pluginId: String): JSONObject {
@@ -292,6 +327,8 @@ class PluginManager(private val context: Context) {
 
     companion object {
         private const val TAG = "PluginManager"
+        /** Primary + hedges; matches NetworkLanePolicy attempt count. */
+        private const val RACE_SLOTS = 3
         const val MANIFEST_FILE = "plugin.json"
         const val CODE_FILE = "index.js"
         const val ICON_FILE = "icon.png"

@@ -35,7 +35,8 @@ class JsPluginRuntime(
     private val secrets: PluginSecrets,
     private val kv: PluginKvStore,
     private val settingsJson: () -> String,
-    private val ws: PluginWs = PluginWs(manifest.allowedHosts),
+    private val audioDir: java.io.File? = null,
+    val ws: PluginWs = PluginWs(manifest.allowedHosts, audioDir),
 ) {
     private val mutex = Mutex()
     private val html = HtmlHandles()
@@ -217,7 +218,8 @@ class JsPluginRuntime(
     companion object {
         private const val LOG_TAG = "FlowPlugin"
         const val CALL_TIMEOUT_MS = 60_000L
-        private const val MEMORY_LIMIT_BYTES = 64L * 1024 * 1024
+        /** Headroom for voice-list JSON and other plugin work; clip audio stays on disk. */
+        private const val MEMORY_LIMIT_BYTES = 128L * 1024 * 1024
         private const val STACK_LIMIT_BYTES = 1024L * 1024
         private const val THREAD_STACK_BYTES = 4L * 1024 * 1024
 

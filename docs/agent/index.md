@@ -11,24 +11,24 @@ Hand-written guide: [map.md](map.md).
 | `data` | [index/data.md](index/data.md) | 23 | 4145 |
 | `debug` | [index/debug.md](index/debug.md) | 1 | 130 |
 | `library` | [index/library.md](index/library.md) | 1 | 9 |
-| `plugin` | [index/plugin.md](index/plugin.md) | 3 | 454 |
+| `plugin` | [index/plugin.md](index/plugin.md) | 3 | 491 |
 | `plugin/api` | [index/plugin-api.md](index/plugin-api.md) | 2 | 854 |
 | `plugin/repo` | [index/plugin-repo.md](index/plugin-repo.md) | 4 | 290 |
-| `plugin/runtime` | [index/plugin-runtime.md](index/plugin-runtime.md) | 13 | 1361 |
+| `plugin/runtime` | [index/plugin-runtime.md](index/plugin-runtime.md) | 14 | 1440 |
 | `plugin/store` | [index/plugin-store.md](index/plugin-store.md) | 9 | 1618 |
 | `plugin/sync` | [index/plugin-sync.md](index/plugin-sync.md) | 5 | 971 |
 | `plugin/updates` | [index/plugin-updates.md](index/plugin-updates.md) | 7 | 546 |
 | `share` | [index/share.md](index/share.md) | 13 | 2026 |
-| `tts` | [index/tts.md](index/tts.md) | 21 | 4607 |
+| `tts` | [index/tts.md](index/tts.md) | 21 | 4922 |
 | `ui/common` | [index/ui-common.md](index/ui-common.md) | 1 | 117 |
 | `ui/debug` | [index/ui-debug.md](index/ui-debug.md) | 1 | 352 |
 | `ui/design` | [index/ui-design.md](index/ui-design.md) | 20 | 3389 |
-| `ui/library` | [index/ui-library.md](index/ui-library.md) | 15 | 2393 |
+| `ui/library` | [index/ui-library.md](index/ui-library.md) | 15 | 2516 |
 | `ui/open` | [index/ui-open.md](index/ui-open.md) | 1 | 178 |
-| `ui/plugin` | [index/ui-plugin.md](index/ui-plugin.md) | 19 | 4579 |
+| `ui/plugin` | [index/ui-plugin.md](index/ui-plugin.md) | 19 | 4580 |
 | `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 23 | 4886 |
 | `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 24 | 5586 |
 | `ui/theme` | [index/ui-theme.md](index/ui-theme.md) | 5 | 515 |
-| tests | [index/tests.md](index/tests.md) | 66 | |
+| tests | [index/tests.md](index/tests.md) | 67 | |
 
-Totals: 214 main files, 39519 lines.
+Totals: 215 main files, 40074 lines.

@@ -38,7 +38,10 @@ import java.io.File
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +49,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,6 +65,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import com.personal.flowreader.tts.provider.PluginTtsProvider
+import com.personal.flowreader.tts.provider.SystemTtsProvider
+import com.personal.flowreader.tts.provider.TtsCapability
+import com.personal.flowreader.tts.provider.TtsSynthRequest
 
 /** A sentence playback reached, with the session it was read from. */
 class SpokenPosition(val session: ReadingSession, val sentence: Sentence)
@@ -130,7 +138,12 @@ class TtsController(
     private val plugins: com.personal.flowreader.plugin.PluginManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val providers = com.personal.flowreader.tts.provider.TtsProviderRegistry(plugins)
+    private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
+    private val providers = com.personal.flowreader.tts.provider.TtsProviderRegistry(
+        plugins = plugins,
+        systemTempDir = { File(cacheDir, "sys-synth") },
+        obtainSystemTts = { pkg -> ensureSystemForPackage(pkg) },
+    )
     private val edgeNet = EdgeNetwork(context)
     /** Cached voices per clip-audio engine key (`tts:{id}`). */
     private val clipVoicesByEngine = java.util.concurrent.ConcurrentHashMap<String, List<TtsVoiceOption>>()
@@ -138,7 +151,6 @@ class TtsController(
     private var networkFailures = 0
     /** Consecutive playhead handshake rejections (200/401/403); drives [awaitServiceRetry]. */
     private var serviceFailures = 0
-    private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
     private val keepAlive = AudioKeepAlive()
     private val audioEngine = TtsAudioEngine()
     private val underlayBt = UnderlayBluetoothMonitor(context) {
@@ -1152,7 +1164,7 @@ class TtsController(
         }
         val providerList = providers.refresh(systemExtras)
         for (p in providerList) {
-            if (p.has(com.personal.flowreader.tts.provider.TtsCapability.ClipAudio)) {
+            if (p.has(TtsCapability.ClipAudio)) {
                 runCatching { clipVoicesByEngine[p.id] = p.listVoices() }
             }
         }
@@ -1161,7 +1173,8 @@ class TtsController(
         if (providers.get(key) == null) {
             key = TtsEngines.SYSTEM_DEFAULT
         }
-        if (!usesClipAudio(key)) {
+        // System clip engines still need a bound TextToSpeech for synthesizeToFile / voices.
+        if (providers.get(key) is SystemTtsProvider) {
             val pkg = if (key == TtsEngines.SYSTEM_DEFAULT) null else key
             runCatching { ensureSystemForPackage(pkg) }
         }
@@ -1200,7 +1213,7 @@ class TtsController(
         voices: List<TtsVoiceOption>,
     ): String = when {
         preferred.isNotBlank() && voices.any { it.id == preferred } -> preferred
-        usesClipAudio(engineKey) -> TtsPrefs.DEFAULT_EDGE_VOICE
+        providers.get(engineKey) is PluginTtsProvider -> TtsPrefs.DEFAULT_EDGE_VOICE
         else -> voices.firstOrNull()?.id.orEmpty()
     }
 
@@ -1212,8 +1225,14 @@ class TtsController(
 
     private fun voicesFor(engineKey: String): List<TtsVoiceOption> {
         val provider = providers.get(engineKey)
-        if (provider != null && provider.has(com.personal.flowreader.tts.provider.TtsCapability.ClipAudio)) {
-            return clipVoicesByEngine[engineKey].orEmpty().ifEmpty { FALLBACK_CLIP_VOICES }
+        if (provider != null && provider.has(TtsCapability.ClipAudio)) {
+            val cached = clipVoicesByEngine[engineKey].orEmpty()
+            if (cached.isNotEmpty()) return cached
+            return if (provider is SystemTtsProvider) {
+                listOf(TtsVoiceOption("default", "Default"))
+            } else {
+                FALLBACK_CLIP_VOICES
+            }
         }
         val tts = systemTts
         return if (tts != null && systemBoundMatches(engineKey)) systemVoices(tts)
@@ -1453,13 +1472,16 @@ class TtsController(
                 if (generation != playGeneration) return
                 continue
             } catch (t: Throwable) {
-                stopSessionAudio()
-                _state.update { it.copy(playing = false, sessionActive = false) }
+                // Hard fail (incl. exhausted race / OOM): pause on this sentence, open the log.
+                // Do not skip; do not tear down the session ? Play retries the same clip.
                 reportMediaError(t.message ?: "TTS failed")
-                setSessionState(PlaybackState.STATE_STOPPED)
-                abandonAudioFocus()
-                unregisterNoisyReceiver()
-                TtsPlaybackService.stop()
+                SynthDebugLog.requestOpen()
+                playGeneration++
+                stopSessionAudio()
+                systemTts?.stop()
+                _state.update { it.copy(playing = false) }
+                setSessionState(PlaybackState.STATE_PAUSED)
+                TtsPlaybackService.refresh()
                 return
             }
             if (generation != playGeneration) return
@@ -1786,23 +1808,39 @@ class TtsController(
         return synthesizeToCache(i, force = false, source = source)
     }
 
-    /** Clip-audio provider synthesize (TTS plugin). Race/hedge stays host-side for capable plugins later. */
+    /** Clip-audio provider synthesize. Network plugins use staggered race; others are single-shot. */
     private suspend fun synthesizeEdge(text: String, tag: String): EdgeAudio {
         val provider = providers.get(_state.value.engineKey)
             ?: throw IllegalStateException("No TTS provider for ${_state.value.engineKey}")
         val voice = edgeVoiceId()
         val langTag = voice.split('-').take(2).joinToString("-").ifBlank { "en-US" }
+        val request = TtsSynthRequest(
+            text = text,
+            voice = voice,
+            lang = langTag,
+            ratePercent = ratePercent(),
+            pitchPercent = pitchPercent(),
+        )
         SynthDebugLog.append("tts synth[$tag] provider=${provider.id} voice=$voice")
+        return if (provider is PluginTtsProvider && provider.has(TtsCapability.NetworkLanes)) {
+            racePluginSynth(provider, request, tag)
+        } else {
+            synthOnce(provider, request)
+        }
+    }
+
+    private suspend fun synthOnce(
+        provider: com.personal.flowreader.tts.provider.TtsProvider,
+        request: TtsSynthRequest,
+        raceSlot: Int = 0,
+        network: android.net.Network? = null,
+    ): EdgeAudio {
         try {
-            val clip = provider.synthesize(
-                com.personal.flowreader.tts.provider.TtsSynthRequest(
-                    text = text,
-                    voice = voice,
-                    lang = langTag,
-                    ratePercent = ratePercent(),
-                    pitchPercent = pitchPercent(),
-                ),
-            )
+            val clip = if (provider is PluginTtsProvider) {
+                provider.synthesize(request, raceSlot = raceSlot, network = network)
+            } else {
+                provider.synthesize(request)
+            }
             return EdgeAudio(clip.mp3, clip.boundaries)
         } catch (e: CancellationException) {
             throw e
@@ -1819,8 +1857,129 @@ class TtsController(
         }
     }
 
+    /**
+     * Staggered race over plugin synthesize: attempt 0 immediately, backups after hedge delay
+     * while no attempt has audio yet; first success wins and cancels the rest.
+     */
+    private suspend fun racePluginSynth(
+        provider: PluginTtsProvider,
+        request: TtsSynthRequest,
+        tag: String,
+    ): EdgeAudio = coroutineScope {
+        val lanes = withContext(Dispatchers.IO) { edgeNet.lanes() }
+        if (lanes.isEmpty()) throw EdgeNetworkException("No network for TTS")
+        val offsets = lanes.map { it.startMs }
+        val raceStart = SystemClock.elapsedRealtime()
+        val winner = CompletableDeferred<Pair<Int, EdgeAudio>>()
+        val failedLanes = java.util.Collections.synchronizedSet(linkedSetOf<NetLane>())
+        val inFlight = AtomicInteger(0)
+        val hasAudio = AtomicBoolean(false)
+        val hardFail = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+        var started = 0
+        val attempts = ArrayList<Job>(lanes.size)
+
+        fun launchAttempt(idx: Int) {
+            val lane = lanes[idx]
+            SynthDebugLog.append(
+                "edge race[$tag #${idx}] start lane=${lane.lane.name.lowercase()} @${lane.startMs}",
+            )
+            inFlight.incrementAndGet()
+            attempts += launch(Dispatchers.IO) {
+                try {
+                    val audio = synthOnce(provider, request, raceSlot = idx, network = lane.network)
+                    hasAudio.set(true)
+                    winner.complete(idx to audio)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: EdgeContentException) {
+                    // Text refused ? no point hedging.
+                    winner.completeExceptionally(e)
+                } catch (e: EdgeServiceException) {
+                    failedLanes.add(lane.lane)
+                    hardFail.compareAndSet(null, e)
+                    SynthDebugLog.append(
+                        "edge race[$tag #${idx}] fail lane=${lane.lane.name.lowercase()}: ${e.message}",
+                    )
+                } catch (e: EdgeNetworkException) {
+                    failedLanes.add(lane.lane)
+                    SynthDebugLog.append(
+                        "edge race[$tag #${idx}] fail lane=${lane.lane.name.lowercase()}: ${e.message}",
+                    )
+                } catch (t: Throwable) {
+                    failedLanes.add(lane.lane)
+                    hardFail.compareAndSet(null, t)
+                    SynthDebugLog.append(
+                        "edge race[$tag #${idx}] fail lane=${lane.lane.name.lowercase()}: " +
+                            (t.message ?: t.javaClass.simpleName),
+                    )
+                } finally {
+                    inFlight.decrementAndGet()
+                }
+            }
+        }
+
+        val scheduler = launch {
+            while (isActive && !winner.isCompleted && started < lanes.size) {
+                val elapsed = SystemClock.elapsedRealtime() - raceStart
+                val due = RaceSchedule.due(
+                    startMs = offsets,
+                    elapsedMs = elapsed,
+                    started = started,
+                    inFlight = inFlight.get(),
+                    audioInFlight = hasAudio.get(),
+                )
+                for (idx in due) {
+                    launchAttempt(idx)
+                    started++
+                }
+                if (winner.isCompleted) break
+                val next = RaceSchedule.nextStartMs(offsets, started) ?: break
+                val wait = next - (SystemClock.elapsedRealtime() - raceStart)
+                if (wait > 0L) delay(wait) else yield()
+            }
+            attempts.forEach { it.join() }
+            if (!winner.isCompleted) {
+                winner.completeExceptionally(
+                    hardFail.get() ?: EdgeNetworkException("All TTS race attempts failed"),
+                )
+            }
+        }
+
+        try {
+            val (winIdx, audio) = winner.await()
+            attempts.forEach { it.cancel() }
+            val totalMs = SystemClock.elapsedRealtime() - raceStart
+            val winLane = lanes[winIdx]
+            edgeNet.report(
+                RaceReport(
+                    winner = winLane.lane,
+                    firstAudioMs = totalMs,
+                    winnerStartMs = winLane.startMs,
+                    winnerLatencyMs = (totalMs - winLane.startMs).coerceAtLeast(0L),
+                    totalMs = totalMs,
+                    started = started,
+                    failed = failedLanes.toList(),
+                ),
+            )
+            SynthDebugLog.append(
+                "edge race[$tag] win lane=${winLane.lane.name.lowercase()} " +
+                    "firstAudioMs=$totalMs started=$started",
+            )
+            audio
+        } finally {
+            scheduler.cancel()
+            attempts.forEach { it.cancel() }
+        }
+    }
+
     private fun mapPluginSynthError(e: com.personal.flowreader.plugin.api.PluginException): Throwable {
         val msg = e.message.orEmpty()
+        // QuickJS OOM / script InternalError: hard-fail at playhead after race, not content-skip.
+        if (msg.contains("out of memory", ignoreCase = true) ||
+            msg.contains("InternalError", ignoreCase = true)
+        ) {
+            return IllegalStateException(msg.ifBlank { "Plugin out of memory" }, e)
+        }
         return when (e.code) {
             com.personal.flowreader.plugin.api.PluginErrorCode.Parse ->
                 EdgeContentException(msg.ifBlank { "Nothing to synthesize." })
@@ -2279,10 +2438,24 @@ class TtsController(
         val id = _state.value.voiceId
         val key = _state.value.engineKey
         val known = clipVoicesByEngine[key].orEmpty()
-        return if (id.isNotBlank() && known.any { it.id == id }) id else TtsPrefs.DEFAULT_EDGE_VOICE
+        if (id.isNotBlank() && (known.isEmpty() || known.any { it.id == id })) return id
+        if (providers.get(key) is PluginTtsProvider) return TtsPrefs.DEFAULT_EDGE_VOICE
+        return known.firstOrNull()?.id.orEmpty().ifBlank { "default" }
     }
 
-    private fun cacheFile(i: Int): File = File(cacheDir, "b${bookKey}_s${i}_${voiceCacheKey()}.mp3")
+    private fun cacheExtension(): String =
+        if (providers.get(_state.value.engineKey) is PluginTtsProvider) "mp3" else "wav"
+
+    private fun cacheFile(i: Int): File {
+        val base = "b${bookKey}_s${i}_${voiceCacheKey()}"
+        val preferred = File(cacheDir, "$base.${cacheExtension()}")
+        if (preferred.exists()) return preferred
+        val mp3 = File(cacheDir, "$base.mp3")
+        if (mp3.exists()) return mp3
+        val wav = File(cacheDir, "$base.wav")
+        if (wav.exists()) return wav
+        return preferred
+    }
 
     private fun voiceCacheKey(): String =
         "${_state.value.engineKey}_${edgeVoiceId()}_${ratePercent()}_${pitchPercent()}"
@@ -2415,8 +2588,8 @@ class TtsController(
         /** Playhead retry after Edge rejected the handshake; the last value repeats. */
         private val SERVICE_RETRY_MS = longArrayOf(2_000L, 5_000L, 15_000L, 30_000L, 60_000L)
 
-        /** `b<bookKey>_s<sentenceIndex>_<voiceKey>.mp3` */
-        private val SENTENCE_CACHE_NAME = Regex("""^b([A-Za-z0-9.-]*)_s(\d+)_.*\.mp3$""")
+        /** `b<bookKey>_s<sentenceIndex>_<voiceKey>.(mp3|wav)` */
+        private val SENTENCE_CACHE_NAME = Regex("""^b([A-Za-z0-9.-]*)_s(\d+)_.*\.(mp3|wav)$""")
         private val BOOK_KEY_UNSAFE = Regex("[^A-Za-z0-9.-]")
         private val VOICE_KEY_UNSAFE = Regex("[^A-Za-z0-9._-]")
 

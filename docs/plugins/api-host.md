@@ -7,7 +7,7 @@ Part of the [Plugin API](api.md) (apiVersion 5).
 | Call | Result |
 | --- | --- |
 | `await flow.fetch(url, { method, headers, form, body, contentType, cookies })` | `{ status, url, headers, text }`. `url` is the final URL after redirects; header names are lower-case. Non-2xx statuses are returned, not thrown. Cookies persist per plugin. `cookies: false` omits session cookies but still sends and stores bot-clearance cookies (Anubis auth `techaro.lol-anubis` / `techaro.lol-anubis-*` excluding `cookie-verification` / `original-referer`; Cloudflare `cf_clearance` / `__cf_bm` / `__cfruid`). When the response is an Anubis challenge page and a UI host is present, the app runs the site's check in a WebView once (clears stale Anubis auth cookies first; finishes only after a new auth cookie and the challenge node are gone), imports cookies, and retries the fetch once. |
-| `await flow.ws.collect({ url, headers, messages, endPath, timeoutMs })` | `{ texts, binariesBase64 }`. WebSocket session for TTS (and similar). Host must be in `allowedHosts`. See [api-tts.md](api-tts.md). |
+| `await flow.ws.collect({ url, headers, messages, endPath, timeoutMs, binaryFormat? })` | `{ texts, binariesBase64 }` or, with `binaryFormat: "edge-audio"`, `{ texts, audioPath }` (host-written MP3). See [api-tts.md](api-tts.md). |
 | `flow.crypto.sha256(inputBase64)` | Base64 SHA-256 digest of the decoded bytes (TTS tokens, etc.). |
 | `flow.crypto.sha256Hex(inputHex)` | Hex SHA-256 of even-length hex input bytes (Edge Sec-MS-GEC). |
 | `flow.html.parse(html, baseUrl?)` | `Node` (see below). Handles are valid only during the current call. |
@@ -34,7 +34,7 @@ Selectors are Jsoup CSS.
 
 ## Limits
 
-- Each call runs with a timeout (60 s; `loadChapter` and `list` included) and a 64 MB heap.
+- Each call runs with a timeout (60 s; `loadChapter` and `list` included) and a 128 MB heap.
 - No `setTimeout`, DOM, or Node.js APIs. Use `flow.*`.
 - Responses larger than 8 MB are refused.
 

@@ -24,5 +24,13 @@ class EdgeServiceException(message: String, val status: Int) : IllegalStateExcep
 /** Network failure synthesizing a clip; retry once a network is usable. */
 class EdgeNetworkException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
-/** One race attempt: sent [startMs] after the race begins, over [http] (bound to [lane]). */
-class RaceLane(val startMs: Long, val lane: NetLane, val http: OkHttpClient)
+/**
+ * One race attempt: sent [startMs] after the race begins, over [http] / [network]
+ * (bound to [lane]). [network] is used by raw WebSocket collects; [http] by OkHttp callers.
+ */
+class RaceLane(
+    val startMs: Long,
+    val lane: NetLane,
+    val http: OkHttpClient,
+    val network: android.net.Network? = null,
+)

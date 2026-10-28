@@ -134,13 +134,16 @@ class NetworkMonitor(context: Context, private val base: OkHttpClient) {
         )
     }
 
+    /** Android [Network] for [lane], or null for the system default route. */
+    fun networkFor(lane: NetLane): Network? = when (lane) {
+        NetLane.DEFAULT -> null
+        NetLane.WIFI -> wifiNet
+        NetLane.CELL -> cellNet
+    }
+
     /** Client bound to [lane]'s network; the shared default client when that network is down. */
     fun clientFor(lane: NetLane): OkHttpClient {
-        val net = when (lane) {
-            NetLane.DEFAULT -> null
-            NetLane.WIFI -> wifiNet
-            NetLane.CELL -> cellNet
-        } ?: return base
+        val net = networkFor(lane) ?: return base
         return clients.getOrPut(net) {
             base.newBuilder()
                 .socketFactory(net.socketFactory)

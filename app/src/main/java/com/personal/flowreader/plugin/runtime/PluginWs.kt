@@ -1,7 +1,9 @@
 package com.personal.flowreader.plugin.runtime
 
+import android.net.Network
 import android.util.Base64
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
@@ -11,6 +13,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLSocketFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,10 +25,22 @@ import org.json.JSONObject
  * One-shot WebSocket collect for TTS plugins over a raw TLS socket (RFC 6455), matching
  * Readest's Workers path: OkHttp's upgrade is answered with HTTP 200 by
  * api.msedgeservices.com; a manual handshake gets 101.
+ *
+ * Optional [audioDir]: when the plugin asks for `binaryFormat: "edge-audio"`, binary frames are
+ * stripped of Edge headers and written as one MP3 under that dir; the JSON returns `audioPath`
+ * instead of shipping `binariesBase64` into QuickJS.
  */
 class PluginWs(
     private val allowedHosts: List<String>,
+    private val audioDir: File? = null,
 ) {
+    /** Bound Android [Network] for the next collect (race lanes); cleared after each call. */
+    private val boundNetwork = AtomicReference<Network?>(null)
+
+    fun bindNetwork(network: Network?) {
+        boundNetwork.set(network)
+    }
+
     suspend fun collect(requestJson: String): String {
         val req = JSONObject(requestJson)
         val url = req.optString("url").trim()
@@ -35,10 +50,12 @@ class PluginWs(
         val messages = req.optJSONArray("messages") ?: JSONArray()
         val endPath = req.optString("endPath").ifBlank { "turn.end" }
         val timeoutMs = req.optLong("timeoutMs", 15_000L).coerceIn(1_000L, 60_000L)
+        val edgeAudio = req.optString("binaryFormat") == BINARY_FORMAT_EDGE_AUDIO
+        val network = boundNetwork.getAndSet(null)
 
         return withTimeout(timeoutMs) {
             withContext(Dispatchers.IO) {
-                collectBlocking(url, headers, messages, endPath)
+                collectBlocking(url, headers, messages, endPath, edgeAudio, network)
             }
         }
     }
@@ -48,6 +65,8 @@ class PluginWs(
         headers: JSONObject,
         messages: JSONArray,
         endPath: String,
+        edgeAudio: Boolean,
+        network: Network?,
     ): String {
         val uri = URI(url)
         val host = uri.host ?: error("missing host")
@@ -62,7 +81,7 @@ class PluginWs(
             if (!uri.rawQuery.isNullOrEmpty()) append('?').append(uri.rawQuery)
         }
 
-        val socket = openSocket(host, port, secure)
+        val socket = openSocket(host, port, secure, network)
         try {
             socket.soTimeout = 30_000
             val input = socket.getInputStream()
@@ -93,14 +112,17 @@ class PluginWs(
                     OP_PONG -> Unit
                 }
             }
-            return envelope(texts, binaries)
+            return envelope(texts, binaries, edgeAudio)
         } finally {
             runCatching { socket.close() }
         }
     }
 
-    private fun openSocket(host: String, port: Int, secure: Boolean): Socket {
+    private fun openSocket(host: String, port: Int, secure: Boolean, network: Network?): Socket {
         val plain = Socket()
+        if (network != null) {
+            runCatching { network.bindSocket(plain) }
+        }
         plain.connect(InetSocketAddress(host, port), 10_000)
         if (!secure) return plain
         val ssl = (SSLSocketFactory.getDefault() as SSLSocketFactory)
@@ -147,6 +169,34 @@ class PluginWs(
             host == allowed || host.endsWith(".$allowed")
         }
         require(ok) { "Host not allowed for this plugin: $host" }
+    }
+
+    private fun envelope(
+        texts: List<String>,
+        binaries: List<ByteArray>,
+        edgeAudio: Boolean,
+    ): String {
+        val o = JSONObject()
+        o.put("texts", JSONArray(texts))
+        if (edgeAudio) {
+            val mp3 = EdgeAudioFrames.assembleMp3(binaries)
+            val dir = audioDir?.apply { mkdirs() }
+            if (dir != null && mp3.isNotEmpty()) {
+                val file = File(dir, "clip-${System.nanoTime()}.mp3")
+                file.writeBytes(mp3)
+                o.put("audioPath", file.absolutePath)
+            } else {
+                o.put("audioPath", "")
+            }
+            o.put("binariesBase64", JSONArray())
+        } else {
+            val bins = JSONArray()
+            for (b in binaries) {
+                bins.put(Base64.encodeToString(b, Base64.NO_WRAP))
+            }
+            o.put("binariesBase64", bins)
+        }
+        return o.toString()
     }
 
     private class Frame(val opcode: Int, val payload: ByteArray)
@@ -295,16 +345,7 @@ class PluginWs(
             }
         }
 
-        private fun envelope(texts: List<String>, binaries: List<ByteArray>): String {
-            val o = JSONObject()
-            o.put("texts", JSONArray(texts))
-            val bins = JSONArray()
-            for (b in binaries) {
-                bins.put(Base64.encodeToString(b, Base64.NO_WRAP))
-            }
-            o.put("binariesBase64", bins)
-            return o.toString()
-        }
+        private const val BINARY_FORMAT_EDGE_AUDIO = "edge-audio"
 
         private fun headerPath(message: String): String {
             for (line in message.lineSequence()) {

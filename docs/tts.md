@@ -8,11 +8,13 @@ Listen while reading. Engines and voices live under Settings → **Audio**; the 
 
 ## Engines
 
-- **Default (system TTS)** / other installed Android TTS engines — on-device speech.
-- **TTS plugins** (e.g. **Edge TTS** when the `edgetts` plugin is installed) — clip MP3 cache,
-  prefetch, and optional word boundaries. Engine key `tts:{pluginId}`. Edge uses Microsoft Read
-  Aloud (`api.msedgeservices.com`) with Sec-MS-GEC **v2**; see [plugins/api-tts.md](plugins/api-tts.md).
-  Language then Voice filters the plugin catalog. Sentence splitting is tuned for English.
+- **Default (system TTS)** / other installed Android TTS engines — on-device speech written to
+  clip files (same cache, prefetch, and margin rail as plugins).
+- **TTS plugins** (e.g. **Edge TTS** when the `edgetts` plugin is installed) — network bridge to a
+  remote TTS service; engine key `tts:{pluginId}`. The app owns clip cache, prefetch, playback,
+  and the rail. Edge uses Microsoft Read Aloud (`api.msedgeservices.com`) with Sec-MS-GEC **v2**;
+  see [plugins/api-tts.md](plugins/api-tts.md). Language then Voice filters the plugin catalog.
+  Sentence splitting is tuned for English.
 
 Priority goals: stability → latency → footprint.
 
@@ -25,7 +27,7 @@ Priority goals: stability → latency → footprint.
 | Auto-scroll | Follows playhead when enabled |
 | Scroll lock | Forces follow; double-tap to unlock |
 | Pin card | When playhead leaves the viewport |
-| Margin rail | Cache / loading indicators for Edge clips |
+| Margin rail | Cache / loading indicators for every clip engine (System and plugins) |
 | Media session | Notification + background keep-alive via `TtsPlaybackService` |
 | Interruptions | Audio focus (`FocusResume`). Transient loss (alarm, call, nav prompt; duck requests too, since speech pauses rather than ducks) pauses and resumes on focus gain if the break lasted ≤ 5 min (`FOCUS_RESUME_MAX_MS`); longer breaks stay paused. Any user play/pause/stop in between cancels the resume. Permanent loss (another media app) pauses with no resume; the next Play requests focus again. Resume restarts the current sentence. Debug log: `focus loss transient`, `focus gain resume after Ns`, `focus gain no-resume …`, `focus loss permanent` |
 | Tonal underlay | Quiet noise while playing. Mode toggle Off / Auto / On; Auto sounds only while playback is routed to the picked paired device (media output route: `getAudioDevicesForAttributes` on API 33+, else the playing track's routed device), not merely connected; re-checked on play, track route changes, device add/remove and Bluetooth broadcasts. |
@@ -64,39 +66,40 @@ of an item in the stream synthesizes fresh clips (cache key is the stream, not t
 - Edge rejecting a sentence (`EdgeContentException`: nothing to synthesize, too long, no audio
   returned) skips it and keeps playing: debug turns on, the log records
   `ERROR skipped i=…: <reason> text="…" spoken="…"`, and the log panel opens.
-- Network failures pause on the current sentence instead of stopping (see below). Other failures
-  still stop playback (logged as `ERROR`).
-- A failed lookahead clip isn't retried by prefetch; the playhead retries or skips it when it gets
-  there. Characters XML forbids (control chars, lone surrogates) are stripped before Edge SSML.
+- Network failures wait on the current sentence and retry (see below). Hard failures after the
+  race is exhausted (including plugin out-of-memory) **pause** playback, log `ERROR`, force debug,
+  and open the log panel — Play retries the same sentence; the session stays up.
+- A failed lookahead clip isn't retried by prefetch; the playhead retries when it gets there.
+  Characters XML forbids (control chars, lone surrogates) are stripped before Edge SSML.
 
-## Clip-audio plugins and networks
+## Clip engines and networks
 
+- The app owns clip cache (MP3 for Edge, WAV for System), prefetch, margin rail, word highlight,
+  and `TtsAudioEngine` playback for every clip-capable engine.
 - **Edge TTS** lives in `flow-reader-plugins/EdgeTts` (`kind: "tts"`, engine `tts:edgetts`). The
-  plugin owns Sec-MS-GEC **v2** and opens WSS via `flow.ws.collect` (see
-  [plugins/api-tts.md](plugins/api-tts.md)). Voice catalog:
-  `api.msedgeservices.com/.../voices/list` with v2 GEC (key-only → 403); falls back to Bing
-  `voices/list` if needed.   Settings Voice list is always the selected engine’s catalog, then Language, then
-  All/Male/Female. Gender comes from the plugin API when present (Edge `Gender`), else from
-  name heuristics (`VoiceGender`: trailing `-f`/`-m`, `f1`…`m5`, whole-word male/female) for
-  system engines like Neko. The app owns clip cache, prefetch, word highlight, and
-  `TtsAudioEngine` playback.
+  plugin is a thin Microsoft bridge: Sec-MS-GEC **v2**, voice list, and `flow.ws.collect` with
+  `binaryFormat: "edge-audio"` (host writes the MP3 and returns `audioPath`). See
+  [plugins/api-tts.md](plugins/api-tts.md). Settings Voice list is always the selected engine’s
+  catalog, then Language, then All/Male/Female. Gender comes from the plugin API when present
+  (Edge `Gender`), else from name heuristics (`VoiceGender`) for system engines like Neko.
 - **Upstream:** [Readest `edgeTTS.ts`](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/edgeTTS.ts)
   is the source of truth for GEC, URL, headers, and framing; host `PluginWs` follows Readest’s
   [raw-socket upgrade](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWebSocket.ts)
   (OkHttp’s WebSocket upgrade gets HTTP 200 from Edge). Port Readest; do not invent a parallel
   handshake. Cursor rule: `flow-reader-plugins/.cursor/rules/edgetts.mdc`.
 
-- **Synth path:** host calls `provider.synthesize` once per clip (single-shot). Host still keeps
-  `RaceSchedule` / `NetworkLanePolicy` / `EdgeNetwork` for offline wait and the mobile-data setting
-  when the provider advertises `networkLanes`; multi-attempt race/hedge over plugin synth is not
-  wired yet (ask before reintroducing).
+- **Synth path:** System engines synthesize once to a file. Network plugins (`networkLanes`) use
+  the staggered race (`RaceSchedule` / `NetworkLanePolicy` / `EdgeNetwork`): first attempt
+  immediately, backups after the adaptive hedge delay while no attempt has audio; first success
+  wins and cancels the rest.
 - Setting **Use mobile data when Wi-Fi is weak** (Playback tab) shows only for `networkLanes`
-  providers. Voice **Advanced** (prefetch / clip size) shows only for clip-audio / prefetch
-  providers.
+  providers. Voice **Advanced** (prefetch / clip size) shows for clip-audio / prefetch engines
+  (including System Default).
 - **Network failure at the playhead** (`EdgeNetworkException`): logged as `ERROR network …`,
   playback waits until a network is usable, backs off 1/2/4/8 s, clears failed lookahead, and
   retries. Session and media card stay up.
-- Synth log lines use `tts synth[…]` (source `pre` / `play` / `next` / `regen` / `preview`).
+- Synth log lines use `tts synth[…]` and `edge race[…]` (source `pre` / `play` / `next` / `regen` /
+  `preview`).
 
 ## Debug
 

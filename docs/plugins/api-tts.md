@@ -36,7 +36,7 @@ Engine key in Settings: `tts:{id}` (e.g. `tts:edgetts`).
 | Export | Result |
 | --- | --- |
 | `listVoices()` | `{ id, label, language, langTag, gender? }[]` — `language` is the Language dropdown label; optional `gender` is `"male"` / `"female"`. |
-| `synthesize({ text, voice, lang, ratePercent, pitchPercent })` | `{ mp3Base64, boundaries? }` where `boundaries` is `{ offset, duration, text }[]` in 100-ns ticks. |
+| `synthesize({ text, voice, lang, ratePercent, pitchPercent })` | `{ audioPath, boundaries? }` preferred (host-written file), or legacy `{ mp3Base64, boundaries? }`. `boundaries` is `{ offset, duration, text }[]` in 100-ns ticks. |
 
 ## Capabilities (app gating)
 
@@ -58,13 +58,17 @@ const session = await flow.ws.collect({
   messages: ['…speech.config…', '…ssml…'],
   endPath: 'turn.end',
   timeoutMs: 15000,
+  binaryFormat: 'edge-audio', // optional
 });
-// { texts: string[], binariesBase64: string[] }
+// default: { texts, binariesBase64 }
+// edge-audio: { texts, audioPath, binariesBase64: [] } — host strips Edge frame headers and writes MP3
 ```
 
 Opens a WebSocket (HTTP/1.1 upgrade), sends each string message in order, collects text and
 binary frames until a text message whose headers include `Path: {endPath}` (or the socket
-closes). Used by Edge Read Aloud; other TTS plugins may use `flow.fetch` instead.
+closes). With `binaryFormat: "edge-audio"`, the host assembles the MP3 on disk so the plugin
+script never holds giant base64 audio. Used by Edge Read Aloud; other TTS plugins may use
+`flow.fetch` instead.
 
 ## Host: `flow.crypto`
 
