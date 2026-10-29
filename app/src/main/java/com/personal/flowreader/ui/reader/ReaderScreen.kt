@@ -314,8 +314,8 @@ fun ReaderScreen(
     val homeLookup = rememberUpdatedState(Triple(allSentences, blockIndexOf, items))
 
     /**
-     * Bring [place] on-screen at home, then park the **sentence** center on the marker.
-     * Row-top offset only lays the paragraph out; reading position is always the sentence.
+     * One camera move: put the target sentence center on the home bar Y.
+     * Math first ([ReaderHome.scrollDelta]), then a single [ReaderBodyController.scrollBy].
      */
     suspend fun anchorPlaceAtHome(
         place: BookPlace,
@@ -323,48 +323,70 @@ fun ReaderScreen(
         sentenceIndex: Int,
     ): Int {
         fun resolveIndex(): Int = body.adapterIndexOf(place)
+        fun refreshListBox() {
+            listTopY = body.viewTopInWindow().toFloat()
+            listHeight = body.viewHeight().toFloat()
+        }
+        /** Span for [sentenceIndex] whose top is unchanged across two frames. */
+        suspend fun awaitStableSpan(): SentenceSpan? = withTimeoutOrNull(HomeSpanTimeoutMs) {
+            var lastTop = Float.NaN
+            var stable: SentenceSpan? = null
+            while (stable == null) {
+                if (!body.isListCommitted()) body.awaitListCommitted()
+                val span = trackedSpan
+                if (span != null && span.blockId == key && span.sentenceIndex == sentenceIndex) {
+                    if (!lastTop.isNaN() && abs(span.top - lastTop) < 1f) {
+                        stable = span
+                    } else {
+                        lastTop = span.top
+                    }
+                } else {
+                    lastTop = Float.NaN
+                }
+                withFrameNanos { }
+            }
+            stable
+        }
 
         withTimeoutOrNull(HomeSpanTimeoutMs) { body.awaitListCommitted() }
         if (resolveIndex() < 0 || body.blockIdAt(resolveIndex()) != key) {
             DebugLog.reader("scrollToHome key=$key miss=noIndexAfterCommit")
             return 0
         }
-        if (listHeight <= 0f) {
-            listTopY = body.viewTopInWindow().toFloat()
-            listHeight = body.viewHeight().toFloat()
-        }
+        refreshListBox()
         if (listHeight <= 0f) {
             DebugLog.reader("scrollToHome key=$key miss=noViewport")
             return 0
         }
 
-        val offset = ReaderHome.homePadOffset(listHeight, homePosition, body.padTopPx)
-        body.scrollToPlace(place, offsetPx = offset)
-        body.awaitScrollIdle(HomeSpanTimeoutMs)
-
-        // Drop stale span from before the park so we wait for post-layout geometry.
-        trackedSpan = null
-        withFrameNanos { }
-        val span = withTimeoutOrNull(HomeSpanTimeoutMs) {
-            snapshotFlow { trackedSpan }.first {
-                it != null && it.blockId == key && it.sentenceIndex == sentenceIndex
-            }
-        }
-        if (span == null) {
-            DebugLog.reader("scrollToHome key=$key si=$sentenceIndex miss=noSpan")
+        // Far jump: row not composed — one LM scroll that parks row top on home (single move).
+        // On-screen paths never enter here; they only scrollBy below.
+        val index = resolveIndex()
+        if (body.rowWindowBounds(index) == null && trackedSpan?.let {
+                it.blockId == key && it.sentenceIndex == sentenceIndex
+            } == null
+        ) {
+            val offset = ReaderHome.homePadOffset(listHeight, homePosition, body.padTopPx)
+            body.scrollToPlace(place, offsetPx = offset)
+            body.awaitScrollIdle(HomeSpanTimeoutMs)
+            DebugLog.reader("scrollToHome park si=$sentenceIndex delta=$offset via=place")
             return offset
         }
-        if (listHeight <= 0f) {
-            listTopY = body.viewTopInWindow().toFloat()
-            listHeight = body.viewHeight().toFloat()
+
+        body.stopScroll()
+        val span = awaitStableSpan()
+        if (span == null) {
+            DebugLog.reader("scrollToHome key=$key si=$sentenceIndex miss=noSpan")
+            return 0
         }
-        val nudge = ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
-        if (abs(nudge) > 2f) {
-            body.scrollBy(nudge.toInt())
+        refreshListBox()
+        val delta = ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
+        if (abs(delta) > 2f) {
+            body.scrollBy(delta.toInt())
             body.awaitScrollIdle(HomeSpanTimeoutMs)
-            DebugLog.reader("scrollToHome sentenceNudge si=$sentenceIndex nudge=${nudge.toInt()}")
         }
-        return offset
+        DebugLog.reader("scrollToHome park si=$sentenceIndex delta=${delta.toInt()}")
+        return delta.toInt()
     }
 
     suspend fun scrollToHome(sentenceIndex: Int, reason: String, animated: Boolean = true) {
@@ -393,9 +415,9 @@ fun ReaderScreen(
         viewPlace = null
         homing = true
         try {
-            val offset = anchorPlaceAtHome(place, key, sentenceIndex)
+            val delta = anchorPlaceAtHome(place, key, sentenceIndex)
             DebugLog.reader(
-                "scrollToHome done reason=$reason si=$sentenceIndex key=$key home=$homePosition offset=$offset",
+                "scrollToHome done reason=$reason si=$sentenceIndex key=$key home=$homePosition delta=$delta",
             )
         } finally {
             homing = false

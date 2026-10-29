@@ -69,10 +69,9 @@ momentum first, then parks in one move.
 
 The **current position** for chips and home is always a sentence: the spoken one while TTS plays,
 otherwise the saved reading sentence. The **home position** is a horizontal line in the viewport
-(Settings → Layout → Reading, 15–85% from the top, default 50%). **BookPlace** picks which
-paragraph; **home position** is the Y of the purple marker. Every jump brings that paragraph on-screen,
-then parks the **sentence** center on the marker (Contents, jump-back, open, double-tap, follow,
-home marker). A sentence taller than the screen starts at the top instead.
+(Settings → Layout → Reading, 15–85% from the top, default 50%). Every home move (follow,
+double-tap, jump-back, restore, ToC, home marker) is **one** list scroll: sentence center → bar Y.
+A sentence taller than the screen starts at the top instead.
 
 **Who may move the page:** only follow-along playback (or scroll-lock follow) may keep scrolling.
 Opening the book, Contents, jump-back, double-tap, and the home marker each do **one** jump to the
@@ -104,10 +103,9 @@ title pages). The neighbouring chapters load right after first paint. Scrolling 
 the first or last loaded chapter loads the next one; chapters far from both the viewport and the
 TTS playhead are dropped (see [data.md](data.md#book-loading)). Visible chapters come from on-screen
 block ids. DiffUtil insert/trim keeps the page still when neighbors load above (viewport reads the
-committed adapter list only, so mid-submit positions cannot lie). Jumps wait for the committed list,
-then one `scrollToPlace` with offset `homeY − padTop` (marker Y, accounting for list padding). While
-a home jump is in flight, viewport reports are ignored. The progress bar is whole-book progress by
-chapter size.
+committed adapter list only, so mid-submit positions cannot lie). Home parking is one `scrollBy` of
+the sentence→bar delta (or one LM place when the row is not composed yet). While a home jump is in
+flight, viewport reports are ignored. The progress bar is whole-book progress by chapter size.
 
 ### Debug
 

@@ -132,9 +132,8 @@ internal class ReaderBodyController {
     }
 
     /**
-     * Park [place]'s row top [offsetPx] below the padding edge (LM).
-     * For home: pass [ReaderHome.homePadOffset] so the top sits on the marker Y.
-     * Stops any in-flight scroll first.
+     * Bring [place]'s row into layout ([offsetPx] from the padding edge). Home parking prefers
+     * [scrollBy] from sentence span; this is only for unbound rows.
      */
     fun scrollToPlace(place: BookPlace, offsetPx: Int = 0) {
         stopScroll()
