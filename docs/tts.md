@@ -88,10 +88,11 @@ of an item in the stream synthesizes fresh clips (cache key is the stream, not t
   (OkHttp’s WebSocket upgrade gets HTTP 200 from Edge). Port Readest; do not invent a parallel
   handshake. Cursor rule: `flow-reader-plugins/.cursor/rules/edgetts.mdc`.
 
-- **Synth path:** System engines synthesize once to a file. Network plugins (`networkLanes`) use
-  the staggered race (`RaceSchedule` / `NetworkLanePolicy` / `EdgeNetwork`): first attempt
-  immediately, backups after the adaptive hedge delay while no attempt has audio; first success
-  wins and cancels the rest.
+- **Synth path:** System engines synthesize once to a file on one `TextToSpeech` — exclusive
+  (prefetch still queues ahead clips; engine calls never overlap). Network plugins
+  (`networkLanes`) use the staggered race (`RaceSchedule` / `NetworkLanePolicy` /
+  `EdgeNetwork`): first attempt immediately, backups after the adaptive hedge delay while no
+  attempt has audio; first success wins and cancels the rest.
 - Setting **Use mobile data when Wi-Fi is weak** (Playback tab) shows only for `networkLanes`
   providers. Voice **Advanced** (prefetch / clip size) shows for clip-audio / prefetch engines
   (including System Default).

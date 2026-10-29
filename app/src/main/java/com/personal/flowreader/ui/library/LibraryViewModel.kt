@@ -715,6 +715,42 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun showFolderError(message: String) {
+        _ui.value = _ui.value.copy(error = message)
+    }
+
+    /** Seek a Files book to [chapterIndex] (spine) then open the reader there. */
+    fun openAtChapter(bookId: String, chapterIndex: Int) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val entity = flow.db.library().get(bookId) ?: return@withContext
+                    val count = entity.chapterCount.coerceAtLeast(1)
+                    val index = chapterIndex.coerceIn(0, count - 1)
+                    flow.progress.submit(
+                        com.personal.flowreader.data.ProgressUpdate(
+                            session = com.personal.flowreader.data.ReadingSessionId(
+                                com.personal.flowreader.data.PositionDomain.Library,
+                                bookId,
+                            ),
+                            rowKey = bookId,
+                            chapterIndex = index,
+                            blockIndex = 0,
+                            charOffset = 0,
+                            fraction = index.toFloat() / count,
+                            at = System.currentTimeMillis(),
+                            source = com.personal.flowreader.data.PositionSource.PluginSeek,
+                        ),
+                    )
+                    flow.progress.drain()
+                }
+                _ui.value = _ui.value.copy(pendingOpenBookId = bookId, error = null)
+            } catch (t: Throwable) {
+                _ui.value = _ui.value.copy(error = t.message ?: "Could not open chapter")
+            }
+        }
+    }
+
     fun addFilter(scope: FilterScope, rule: FilterRule) {
         viewModelScope.launch {
             when (scope) {

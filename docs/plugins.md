@@ -39,7 +39,7 @@ when chapters remain after the saved position. Sort circle above the FAB opens a
 card (default **Updates**: unread-ahead, then unstarted, then complete; else Title / Author / Date
 added). Tap = media card; double-tap = reader. Plugin stats/badges/links/actions:
 [media-card example](plugins/examples/media-card.md). A **plain accent dot** tracks an active shade
-notification. **Rename** / **Reset** use `titleOverride`. **Locked** chapters are Contents-only.
+notification. **Rename** (inline on the media-card title) / **Reset** use `titleOverride`. **Locked** chapters are Contents-only.
 **Pull to refresh** re-imports or syncs, then checks for new chapters. Patreon **All posts** names
 from largest collection, else top tag, else creator.
 
@@ -76,13 +76,13 @@ opened) and the newest post date. Sync never adds or deletes stories for a brows
   [data.md](data.md#room-flowdb)) is the one anchor: the progress bar, the partial download start,
   and the stream window all use it. **Tap the progress bar** on the card to open the reading-
   position card (− / +); Save writes the start of that chapter, then downloads ahead from it
-- **Download:** tap = "Download all N chapters?" confirm; while running the button reads **Cancel
-  download**. **Hold Download** for Partial download: the saved position, the cache level field,
-  **Clean up old chapters**, and **Download next N** (the saved chapter through N after it)
-- **Cleanup** (per story, off by default): deletes chapters more than N behind the saved position.
-  Download all turns on **keep all** for the story: every chapter, including ones added later, is
-  downloaded and never cleaned up. A cancelled or failed Download all turns it back off. With
-  cleanup off, chapters stay until Delete
+- **Download:** tap runs Manage settings — keep-all → every chapter; otherwise the saved position
+  plus cache level ahead. While running the button reads **Cancel download**
+- **Manage** (footer): cache level, clean up old chapters, keep all chapters, clear local
+  downloads, remove from library. Keep-all downloads every chapter (including ones added later)
+  and skips cleanup. With cleanup off (and keep-all off), chapters stay until cleared or removed
+- **Contents** (rail ToC): chapter list; tap opens Read at that chapter. Rename is an inline edit
+  icon on the title (not a rail bubble)
 - New stories take cache level and cleanup from **Settings → About → Data → Plugin story downloads**
 - **ToC refresh** (open card background for sync/`updates` plugins, pull down on the media card,
   update check, re-add): chapter bodies are stored by chapter URL

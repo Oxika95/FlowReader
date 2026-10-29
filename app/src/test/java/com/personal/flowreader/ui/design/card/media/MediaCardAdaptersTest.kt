@@ -66,7 +66,7 @@ class MediaCardAdaptersTest {
     }
 
     @Test
-    fun rail_hostListTogglesThenShareThenPluginActions() {
+    fun rail_hostListTogglesThenShareTocThenPluginActions() {
         val card = PluginCard(
             actions = listOf(
                 PluginCardAction("rate", "Rate", "star", PluginActionPlacement.Rail, toggle = true),
@@ -75,7 +75,7 @@ class MediaCardAdaptersTest {
             ),
         )
         val m = model(info(card = card, listedIn = setOf("favorite")))
-        assertEquals(listOf("list:follow", "list:favorite", "share", "rename", "rate", "later"), m.rail.map { it.id })
+        assertEquals(listOf("list:follow", "list:favorite", "share", "toc", "rate", "later"), m.rail.map { it.id })
         assertFalse(m.rail[0].on)
         assertTrue(m.rail[1].on)
         assertEquals(MediaActionOwner.Host, m.rail[2].owner)
@@ -83,12 +83,13 @@ class MediaCardAdaptersTest {
         assertEquals(MediaActionOwner.Plugin, m.rail[4].owner)
         assertEquals(MediaActionKind.Toggle, m.rail[4].kind)
         assertEquals(MediaActionKind.Icon, m.rail[5].kind)
+        assertFalse(m.rail.any { it.id == MediaActionIds.RENAME })
     }
 
     @Test
     fun rail_notifyBellAfterListToggles_onlyWhenGiven() {
         val on = model(info().copy(notify = true))
-        assertEquals(listOf("list:follow", "list:favorite", "notify", "share", "rename"), on.rail.map { it.id })
+        assertEquals(listOf("list:follow", "list:favorite", "notify", "share", "toc"), on.rail.map { it.id })
         assertTrue(on.rail[2].on)
         assertEquals(MediaActionKind.Toggle, on.rail[2].kind)
         assertFalse(model(info().copy(notify = false)).rail[2].on)
@@ -104,11 +105,12 @@ class MediaCardAdaptersTest {
             ),
         )
         val m = model(info(card = card))
-        assertEquals(listOf("download", "delete", "comments", "read"), m.footer.map { it.id })
+        assertEquals(listOf("download", "manage", "comments", "read"), m.footer.map { it.id })
         val read = m.footer.last()
         assertEquals(MediaActionOwner.Host, read.owner)
         assertEquals(MediaActionKind.Primary, read.kind)
         assertEquals(MediaActionKind.Destructive, m.footer[1].kind)
+        assertEquals("Manage", m.footer[1].label)
     }
 
     @Test
@@ -120,7 +122,8 @@ class MediaCardAdaptersTest {
         val empty = model(info(chapters = 0))
         assertFalse(empty.footer.first { it.id == MediaActionIds.READ }.enabled)
         assertFalse(empty.footer.first { it.id == MediaActionIds.DOWNLOAD }.enabled)
-        assertTrue(empty.footer.first { it.id == MediaActionIds.DELETE }.enabled)
+        assertTrue(empty.footer.first { it.id == MediaActionIds.MANAGE }.enabled)
+        assertFalse(empty.rail.first { it.id == MediaActionIds.TOC }.enabled)
     }
 
     @Test
@@ -140,16 +143,16 @@ class MediaCardAdaptersTest {
     }
 
     @Test
-    fun download_longPressWhenIdle_cancelWhileDownloading() {
+    fun download_noLongPress_cancelWhileDownloading() {
         val idle = model(info()).footer.first { it.id == MediaActionIds.DOWNLOAD }
         assertEquals("Download", idle.label)
-        assertTrue(idle.longPress)
+        assertFalse(idle.longPress)
         val running = PluginMediaCardAdapter.model(manifest, info(), busy = false, downloadProgress = 1 to 10, error = null)
         val cancel = running.footer.first { it.id == MediaActionIds.DOWNLOAD }
         assertEquals("Cancel download", cancel.label)
         assertTrue(cancel.enabled)
         assertFalse(cancel.longPress)
-        assertFalse(running.footer.first { it.id == MediaActionIds.DELETE }.enabled)
+        assertFalse(running.footer.first { it.id == MediaActionIds.MANAGE }.enabled)
     }
 
     @Test
@@ -159,7 +162,7 @@ class MediaCardAdaptersTest {
     }
 
     @Test
-    fun file_statsBadgesFooter() {
+    fun file_statsBadgesRailFooter() {
         val m = FileMediaCardAdapter.model(
             FileMediaInfo(
                 title = "Book",
@@ -175,7 +178,12 @@ class MediaCardAdaptersTest {
         assertEquals(listOf("42%", "EPUB", "2.5 MB"), m.stats.map { it.value })
         assertEquals(listOf("Linked"), m.badges)
         assertEquals("Read 2 days ago", m.subtitle)
-        assertEquals(listOf(MediaActionIds.SHARE, MediaActionIds.REMOVE, MediaActionIds.OPEN), m.footer.map { it.id })
+        assertEquals(
+            listOf(MediaActionIds.SHARE, MediaActionIds.REMOVE, MediaActionIds.FOLDER, MediaActionIds.TOC),
+            m.rail.map { it.id },
+        )
+        assertEquals(listOf(MediaActionIds.OPEN), m.footer.map { it.id })
+        assertEquals("Read", m.footer.single().label)
     }
 
     @Test
@@ -187,10 +195,10 @@ class MediaCardAdaptersTest {
             ),
         )
         val m = model(info(card = card)).withoutHostActions(
-            setOf(MediaActionIds.READ, MediaActionIds.DELETE, "later"),
+            setOf(MediaActionIds.READ, MediaActionIds.MANAGE, "later"),
         )
         assertEquals(listOf("download", "comments"), m.footer.map { it.id })
-        assertEquals(listOf("list:follow", "list:favorite", "share", "rename", "later"), m.rail.map { it.id })
+        assertEquals(listOf("list:follow", "list:favorite", "share", "toc", "later"), m.rail.map { it.id })
     }
 
     @Test

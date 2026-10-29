@@ -41,6 +41,7 @@ import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsPrefs
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.data.VoiceGenderFilter
+import com.personal.flowreader.tts.TtsVoicePick
 import com.personal.flowreader.ui.design.controls.FlowSegmentedRow
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlin.math.min
@@ -97,13 +98,14 @@ internal fun VoiceSettingsTab(
     val voiceLabel = voices.firstOrNull { it.id == voiceId }?.label
         ?: voices.firstOrNull()?.label
         ?: "Default"
-    val languages = remember(voices) { voices.map { it.language }.filter { it.isNotBlank() }.distinct() }
+    val languages = remember(voices) {
+        voices.map { it.language }.filter { it.isNotBlank() }.distinct().sorted()
+    }
     var languageOpen by remember { mutableStateOf(false) }
     var language by remember(voiceId, languages) {
         mutableStateOf(
             voices.firstOrNull { it.id == voiceId }?.language?.takeIf { it.isNotBlank() }
-                ?: "English".takeIf { it in languages }
-                ?: languages.firstOrNull().orEmpty(),
+                ?: TtsVoicePick.defaultLanguage(languages),
         )
     }
     var genderFilter by remember(engineKey) { mutableStateOf(VoiceGenderFilter.All) }

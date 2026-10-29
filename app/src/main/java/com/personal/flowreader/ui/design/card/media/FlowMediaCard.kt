@@ -18,8 +18,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -66,8 +69,9 @@ private const val FooterRowMax = 3
  * [onAction] receives every rail and footer tap; the caller routes by [MediaAction.id] /
  * [MediaAction.owner]. [onLongAction] receives long presses on footer actions marked
  * [MediaAction.longPress]; [onOpenPosition] makes the progress bar open the position card
- * (null = display-only). [onRefresh] enables pull-to-refresh on the card body. Links open in
- * the browser unless [onLink] is given.
+ * (null = display-only). [onRefresh] enables pull-to-refresh on the card body. [onRename] shows
+ * an inline edit icon beside the title (no rail bubble). Links open in the browser unless
+ * [onLink] is given.
  */
 @Composable
 fun FlowMediaCard(
@@ -79,6 +83,7 @@ fun FlowMediaCard(
     onLink: ((MediaLink) -> Unit)? = null,
     onLongAction: ((MediaAction) -> Unit)? = null,
     onOpenPosition: (() -> Unit)? = null,
+    onRename: (() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
 ) {
@@ -102,11 +107,11 @@ fun FlowMediaCard(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.Top,
                 ) {
-                    MediaCardBody(m, art, onAction, onLink, onLongAction, onOpenPosition)
+                    MediaCardBody(m, art, onAction, onLink, onLongAction, onOpenPosition, onRename)
                 }
             }
         } else {
-            MediaCardBody(m, art, onAction, onLink, onLongAction, onOpenPosition)
+            MediaCardBody(m, art, onAction, onLink, onLongAction, onOpenPosition, onRename)
         }
     }
 }
@@ -119,9 +124,10 @@ private fun MediaCardBody(
     onLink: ((MediaLink) -> Unit)?,
     onLongAction: ((MediaAction) -> Unit)?,
     onOpenPosition: (() -> Unit)?,
+    onRename: (() -> Unit)?,
 ) {
     val context = LocalContext.current
-    MediaCoverBand(m, art, onAction, onOpenPosition)
+    MediaCoverBand(m, art, onAction, onOpenPosition, onRename)
     Column(
         Modifier
             .fillMaxWidth()
@@ -166,6 +172,7 @@ private fun MediaCoverBand(
     art: ImageBitmap?,
     onAction: (MediaAction) -> Unit,
     onOpenPosition: (() -> Unit)?,
+    onRename: (() -> Unit)?,
 ) {
     BoxWithConstraints(
         Modifier
@@ -200,7 +207,7 @@ private fun MediaCoverBand(
                         bottom = FlowTokens.Space.M,
                     ),
             ) {
-                MediaBandText(m, coverMaxHeight, onOpenPosition)
+                MediaBandText(m, coverMaxHeight, onOpenPosition, onRename)
             }
         }
         if (m.rail.isNotEmpty()) {
@@ -226,15 +233,41 @@ private fun MediaCoverBand(
 }
 
 @Composable
-private fun MediaBandText(m: MediaCardModel, coverMaxHeight: Dp, onOpenPosition: (() -> Unit)?) {
+private fun MediaBandText(
+    m: MediaCardModel,
+    coverMaxHeight: Dp,
+    onOpenPosition: (() -> Unit)?,
+    onRename: (() -> Unit)?,
+) {
     val muted = FlowTokens.CoverMutedWhite
-    Text(
-        m.title,
-        style = FlowType.mediaTitle,
-        color = MaterialTheme.colorScheme.primary,
-        maxLines = m.titleMaxLines,
-        overflow = TextOverflow.Ellipsis,
-    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            m.title,
+            style = FlowType.mediaTitle,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = m.titleMaxLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (onRename != null) {
+            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
+                IconButton(
+                    onClick = onRename,
+                    modifier = Modifier.size(FlowTokens.Icon.M),
+                ) {
+                    Icon(
+                        FlowIcons.forToken("edit"),
+                        contentDescription = "Rename",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(FlowTokens.Icon.S),
+                    )
+                }
+            }
+        }
+    }
     if (m.subtitle.isNotBlank()) {
         Text(
             m.subtitle,

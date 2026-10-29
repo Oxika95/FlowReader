@@ -9,11 +9,16 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * Android [TextToSpeech] engine that writes clips to a temp WAV for the host cache /
  * [com.personal.flowreader.tts.TtsAudioEngine] path (same rail / prefetch as plugins).
+ *
+ * [TextToSpeech] is exclusive: one listener and one utterance at a time. Prefetch may
+ * queue multiple [synthesize] callers; they run one after another, never overlapping.
  */
 class SystemTtsProvider(
     override val id: String,
@@ -25,6 +30,9 @@ class SystemTtsProvider(
         TtsCapability.ClipAudio,
         TtsCapability.Prefetch,
     )
+
+    /** One in-flight [synthesizeToFile] per provider — matches the engine contract. */
+    private val synthMutex = Mutex()
 
     private val enginePackage: String?
         get() = if (id == TtsEngineIds.SYSTEM_DEFAULT) null else id
@@ -48,29 +56,35 @@ class SystemTtsProvider(
             }
     }
 
-    override suspend fun synthesize(request: TtsSynthRequest): TtsClipAudio {
-        val tts = obtainEngine(enginePackage)
-        val rate = 1f + request.ratePercent / 100f
-        val pitch = 1f + request.pitchPercent / 50f
-        tts.setSpeechRate(rate.coerceIn(0.5f, 2.5f))
-        tts.setPitch(pitch.coerceIn(0.5f, 2f))
-        if (request.voice.isNotBlank() && request.voice != "default") {
-            tts.voices?.firstOrNull { it.name == request.voice }?.let { tts.voice = it }
-        } else if (request.lang.isNotBlank()) {
-            runCatching { tts.language = Locale.forLanguageTag(request.lang) }
+    override suspend fun synthesize(request: TtsSynthRequest): TtsClipAudio =
+        synthMutex.withLock {
+            val tts = obtainEngine(enginePackage)
+            val rate = 1f + request.ratePercent / 100f
+            val pitch = 1f + request.pitchPercent / 50f
+            tts.setSpeechRate(rate.coerceIn(0.5f, 2.5f))
+            tts.setPitch(pitch.coerceIn(0.5f, 2f))
+            if (request.voice.isNotBlank() && request.voice != "default") {
+                tts.voices?.firstOrNull { it.name == request.voice }?.let { tts.voice = it }
+            } else if (request.lang.isNotBlank()) {
+                runCatching { tts.language = Locale.forLanguageTag(request.lang) }
+            }
+            val dir = tempDir().apply { mkdirs() }
+            val out = File(dir, "sys-${UUID.randomUUID()}.wav")
+            try {
+                synthesizeToFile(tts, request.text, out)
+                val bytes = out.readBytes()
+                require(bytes.isNotEmpty()) { "System TTS returned empty audio" }
+                TtsClipAudio(bytes, emptyList())
+            } finally {
+                runCatching { out.delete() }
+            }
         }
-        val dir = tempDir().apply { mkdirs() }
-        val out = File(dir, "sys-${UUID.randomUUID()}.wav")
-        return try {
-            synthesizeToFile(tts, request.text, out)
-            val bytes = out.readBytes()
-            require(bytes.isNotEmpty()) { "System TTS returned empty audio" }
-            TtsClipAudio(bytes, emptyList())
-        } finally {
-            runCatching { out.delete() }
-        }
-    }
 
+    /**
+     * Runs only under [synthMutex]. Cancel stops this utterance (the mutex holder).
+     * Waiters cancelled while acquiring the mutex never enter here, so they never
+     * call [TextToSpeech.stop] on a sibling synth.
+     */
     private suspend fun synthesizeToFile(tts: TextToSpeech, text: String, file: File): Unit =
         suspendCancellableCoroutine { cont ->
             val id = UUID.randomUUID().toString()

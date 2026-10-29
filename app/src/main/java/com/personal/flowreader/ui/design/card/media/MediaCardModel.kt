@@ -75,6 +75,9 @@ object MediaActionIds {
     const val SHARE = "share"
     const val NOTIFY = "notify"
     const val RENAME = "rename"
+    const val FOLDER = "folder"
+    const val MANAGE = "manage"
+    const val TOC = "toc"
     const val LIST_PREFIX = "list:"
 
     fun list(listId: String): String = LIST_PREFIX + listId

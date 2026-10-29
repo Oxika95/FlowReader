@@ -21,6 +21,8 @@ private val ReaderHiddenActions = setOf(
     MediaActionIds.READ,
     MediaActionIds.REMOVE,
     MediaActionIds.DELETE,
+    MediaActionIds.MANAGE,
+    MediaActionIds.FOLDER,
 )
 
 /**

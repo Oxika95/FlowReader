@@ -18,7 +18,7 @@ data class FileMediaInfo(
     val sizeBytes: Long?,
 )
 
-/** Files tab: Share, Remove, Open. */
+/** Files tab: rail Share / Remove / Folder / Contents; footer Read. */
 object FileMediaCardAdapter {
     fun model(info: FileMediaInfo, busy: Boolean): MediaCardModel {
         val pct = (info.progress.coerceIn(0f, 1f) * 100f).toInt()
@@ -34,10 +34,14 @@ object FileMediaCardAdapter {
             badges = listOfNotNull(info.sourceLabel.takeIf { it.isNotBlank() }, "Linked".takeIf { info.linked }).distinct(),
             progress = info.progress,
             titleMaxLines = 3,
+            rail = listOf(
+                MediaAction(MediaActionIds.SHARE, "Share", MediaActionKind.Icon, icon = "share", enabled = !busy),
+                MediaAction(MediaActionIds.REMOVE, "Remove from library", MediaActionKind.Icon, icon = "delete", enabled = !busy),
+                MediaAction(MediaActionIds.FOLDER, "Open folder", MediaActionKind.Icon, icon = "folder", enabled = !busy),
+                MediaAction(MediaActionIds.TOC, "Contents", MediaActionKind.Icon, icon = "toc", enabled = !busy),
+            ),
             footer = listOf(
-                MediaAction(MediaActionIds.SHARE, "Share", MediaActionKind.Secondary, enabled = !busy),
-                MediaAction(MediaActionIds.REMOVE, "Remove", MediaActionKind.Destructive, enabled = !busy),
-                MediaAction(MediaActionIds.OPEN, "Open", MediaActionKind.Primary, enabled = !busy),
+                MediaAction(MediaActionIds.OPEN, "Read", MediaActionKind.Primary, enabled = !busy),
             ),
         )
     }
@@ -68,6 +72,8 @@ data class PluginMediaInfo(
     val card: PluginCard?,
     /** Chapters more than [cacheLevel] behind [locus] are deleted. */
     val cleanup: Boolean = false,
+    /** Download-all / keep every chapter. */
+    val keepAll: Boolean = false,
     /** New-chapter bell state; null hides the bell. */
     val notify: Boolean? = null,
     /** A reading position is saved (else the story is unread and [locus] is chapter 1). */
@@ -79,9 +85,9 @@ data class PluginMediaInfo(
 )
 
 /**
- * Plugin story: merges host-owned actions (list toggles, Share, Rename, Download, Delete, Read —
+ * Plugin story: merges host-owned actions (list toggles, Share, Contents, Download, Manage, Read —
  * always present, fixed order) with plugin-declared slots (stats, badges, links, capped actions).
- * ToC refresh is pull-to-refresh on the media card, not a footer button.
+ * Rename is inline on the title (not a rail bubble). ToC refresh is pull-to-refresh on the card.
  */
 object PluginMediaCardAdapter {
     fun model(
@@ -131,7 +137,15 @@ object PluginMediaCardAdapter {
                     enabled = info.workUrl.isNotBlank(),
                 ),
             )
-            add(MediaAction(MediaActionIds.RENAME, "Rename", MediaActionKind.Icon, icon = "edit", enabled = !busy))
+            add(
+                MediaAction(
+                    MediaActionIds.TOC,
+                    "Contents",
+                    MediaActionKind.Icon,
+                    icon = "toc",
+                    enabled = !busy && info.chapterCount > 0,
+                ),
+            )
             card?.actions?.filter { it.placement == PluginActionPlacement.Rail }?.forEach { a ->
                 add(
                     MediaAction(
@@ -155,13 +169,12 @@ object PluginMediaCardAdapter {
                     if (downloading) "Cancel download" else "Download",
                     MediaActionKind.Secondary,
                     enabled = canRead || downloading,
-                    longPress = !downloading,
                 ),
             )
             add(
                 MediaAction(
-                    MediaActionIds.DELETE,
-                    "Delete",
+                    MediaActionIds.MANAGE,
+                    "Manage",
                     MediaActionKind.Destructive,
                     enabled = !busy && !downloading,
                 ),

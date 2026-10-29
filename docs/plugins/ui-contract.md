@@ -26,7 +26,7 @@ Each enabled plugin adds one library tab (next to Files and Queue).
 | `BrowseListPane` | `WorkCard` rows | A `browse` list's tab | Rows from `list()` with their `badges` (toned: positive green, negative red) / `stats`; `GroupHeader` (divider + `FlowSection` title) where `group` changes, when 2+ groups | Tap opens `CreatorPageOverlay` |
 | `CreatorPageOverlay` | `FlowFullscreenCard` | Tapping a browse-list row | Row title; pinned secondary `FlowTabBar` (2+ `tabs`); sort chips below the tabs (`FlowChoiceChips`: 2+ `sorts`, or Newest / Oldest first on a story tab). Tab body: text tab (header `FlowDisplayCard` with `cover`/`badges`/`stats`, `text` paragraphs, link buttons, then `sections`: `heading` as `GroupHeader`, or a folded `FlowCollapsible` when `collapsed`; `title`, paragraphs, links); story tab (chapter rows with lock / downloaded icons); items tab (grouped `WorkCard`s, declared `groups` always headed with a `FlowHint` when empty, "In {list}" badge when already on a story list, Load more) | Item tap opens its media card on top; chapter tap opens the story's media card positioned at that chapter |
 | `StoryMediaCard` | `FlowMediaCard` + `PluginMediaCardAdapter` | Opening any story (local cache first; sync/`updates` plugins refresh ToC in the background) | See [Media card](#media-card) | See [Media card](#media-card) |
-| `DownloadSheet` | `FlowFullscreenCard` | Download on the media card | Download all; partial download with cache settings | Download all, Begin partial download, Download range |
+| `StoryManageCard` | `FlowFullscreenCard` | Manage on the media card | Cache level, cleanup, keep-all, clear downloads, remove | Close; confirms for clear / remove |
 | `LoginSheet` | `FlowFullscreenCard` | Account while signed out, Settings > Plugins > the plugin's Sign in, or `AUTH_REQUIRED` | One field per `auth.fields[]` (secret fields masked), `auth.note` | Sign in, Cancel |
 | `WebLoginOverlay` | `FlowFullscreenCard` + WebView | Instead of `LoginSheet` when `auth.web` is set | The site's `auth.web.url`; closes itself once `doneCookie` is set | Cancel |
 | `AccountSheet` | `FlowFullscreenCard` | Account while signed in | Account name; two-way plugins: last synced, conflicts, queued changes, guarded lists | Sync (one action for all `syncable` lists; hidden when none) or, two-way: Sync now + Replace with site lists; Settings, Sign out |
@@ -54,10 +54,12 @@ cover band ─ title ............................. host (WorkDetail.title)
 rail ─────── list toggles (membershipToggle) ... host, manifest order
              New-chapter bell .................. host (toggle; see plugins.md)
              Share ............................. host
+             Contents (ToC) .................... host
              plugin rail actions (≤2) .......... card.actions placement "rail"
+             (Rename is an inline edit icon on the title, not a rail bubble)
 body ─────── status line ....................... host ("Last read: {chapter} · 12 / 40", "Not started", or download progress)
              links (≤3) ........................ card.links
-footer ───── Download, Delete .................. host
+footer ───── Download, Manage .................. host
              (pull down refreshes ToC) ......... host
              plugin footer actions (≤2) ........ card.actions placement "footer"
              Read (primary) .................... host
@@ -67,8 +69,8 @@ footer ───── Download, Delete .................. host
 ## Rules
 
 1. There are no plugin-defined card types, layouts, colors or fonts. Plugins fill slots.
-2. Host actions (list toggles, bell, Share, Download, Delete, Read) are always present, in a
-   fixed order. A plugin cannot remove, reorder or shadow them (reserved ids are dropped).
+2. Host actions (list toggles, bell, Share, Contents, Download, Manage, Read) are always present,
+   in a fixed order. A plugin cannot remove, reorder or shadow them (reserved ids are dropped).
 3. Plugin actions are capped (2 rail, 2 footer) and routed to `cardAction`. Rail actions render
    as circular icon buttons (`toggle` → filled accent while `on`); footer actions as outlined
    secondary buttons.
@@ -107,6 +109,9 @@ Unknown tokens fall back to `bookmark`.
 | `share` | | Share |
 | `notifications` | `bell` | Alerts (host new-chapter bell) |
 | `lock` | | Locked chapter (host) |
-| `edit` | | Rename (host) |
+| `edit` | | Rename (host, inline on title) |
+| `delete` | | Remove (host Files rail) |
+| `folder` | | Open containing folder (host Files rail) |
+| `toc` | | Contents (host rail) |
 
 Source of truth: `FlowIcons.tokens` in `ui/design/FlowIcons.kt`. Tokens are only ever added.

@@ -289,7 +289,11 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
             )
         },
     )
-    PluginStoryOverlays(vm = vm, onRead = { vm.readStory(actions) })
+    PluginStoryOverlays(
+        vm = vm,
+        onRead = { vm.readStory(actions) },
+        onReadChapter = { index -> vm.readStory(actions, startIndex = index) },
+    )
     AccountSheet(
         ui = ui,
         onDismiss = { vm.setShowAccount(false) },
@@ -334,45 +338,60 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
 }
 
 /**
- * Story media card with its download and position cards; shared by the plugin tab and the reader
- * title card.
+ * Story media card with Manage / Contents / position cards; shared by the plugin tab and the
+ * reader title card.
  */
 @Composable
 fun PluginStoryOverlays(
     vm: PluginTabViewModel,
     onRead: () -> Unit,
+    onReadChapter: (Int) -> Unit = { onRead() },
     hiddenActions: Set<String> = emptySet(),
 ) {
     val ui by vm.ui.collectAsState()
+    val story = ui.story
     StoryMediaCard(
-        visible = ui.story != null,
+        visible = story != null,
         ui = ui,
         onDismiss = vm::closeStory,
         onRead = onRead,
         onDownload = vm::onDownloadTap,
-        onDownloadOptions = vm::openPartial,
+        onManage = vm::openManage,
+        onToc = vm::openToc,
         onOpenPosition = vm::openPosition,
         onRefreshToc = vm::refreshStoryToc,
-        onDelete = vm::deleteStory,
         onToggleList = vm::toggleList,
         onToggleNotify = vm::toggleNotify,
         onRename = vm::openRename,
         onPluginAction = vm::runCardAction,
         hiddenActions = hiddenActions,
     )
-    DownloadAllCard(
-        visible = ui.confirmDownloadAll,
-        story = ui.story,
-        onConfirm = vm::downloadAllChapters,
-        onDismiss = vm::dismissDownloadAll,
-    )
-    PartialDownloadCard(
-        visible = ui.showPartial,
+    StoryManageCard(
+        visible = ui.showManage,
         ui = ui,
-        onDismiss = vm::closePartial,
+        onDismiss = vm::closeManage,
         onCacheLevel = vm::setCacheLevelDraft,
         onCleanup = vm::setCleanup,
-        onDownload = vm::downloadAhead,
+        onKeepAll = vm::setKeepAll,
+        onClearDownloads = vm::clearLocalDownloads,
+        onRemove = {
+            vm.closeManage()
+            vm.deleteStory()
+        },
+    )
+    com.personal.flowreader.ui.reader.TocOverlay(
+        visible = ui.showToc && story != null,
+        chapters = story?.toc?.map { it.title.ifBlank { "Chapter" } }.orEmpty(),
+        locked = story?.toc?.mapIndexedNotNull { i, ch -> i.takeIf { ch.locked && i !in story.cachedIndices } }
+            ?.toSet()
+            .orEmpty(),
+        downloaded = story?.cachedIndices.orEmpty(),
+        chapterIndex = story?.chapterIndex ?: 0,
+        onChapter = { index ->
+            vm.closeToc()
+            onReadChapter(index)
+        },
+        onDismiss = vm::closeToc,
     )
     PositionSliderCard(
         visible = ui.showPosition,

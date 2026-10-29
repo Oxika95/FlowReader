@@ -172,13 +172,14 @@ FlowMediaCard(
 
 `MediaAction(id, label, kind, icon, on, enabled, owner, longPress)`. `owner = Plugin` actions are
 routed to the plugin (`cardAction`); `Host` actions are handled by the caller. Reserved host ids:
-`MediaActionIds.READ/OPEN/DOWNLOAD/DELETE/REMOVE/SHARE/NOTIFY/RENAME` and `list:{listId}`.
+`MediaActionIds.READ/OPEN/DOWNLOAD/DELETE/REMOVE/SHARE/NOTIFY/RENAME/FOLDER/MANAGE/TOC` and
+`list:{listId}`.
 
-Footer actions with `longPress = true` also go to `onLongAction` (via
-`FlowSecondaryButton(onLongClick)`, which keeps the outlined button look); the plugin story card
-uses it for Partial download. Plugin stories show a library-style `%` progress bar (`locus /
-chapterCount`); tapping it opens the reading-position card (− / +). Without `onOpenPosition` the
-bar is display-only. Pull-to-refresh on the media card reloads the chapter list.
+`FlowMediaCard(onRename)` shows an inline edit icon beside the title (plugin stories). Plugin
+stories show a library-style `%` progress bar (`locus / chapterCount`); tapping it opens the
+reading-position card (− / +). Without `onOpenPosition` the bar is display-only. Pull-to-refresh
+on the media card reloads the chapter list. Download settings live in **Manage** (not a
+long-press on Download).
 
 `newCount` prepends an accent **"N new"** chip to the cover badge row (plugin stories with new
 chapters).
@@ -187,8 +188,8 @@ chapters).
 
 | Adapter | Source | Stats | Rail | Footer |
 | --- | --- | --- | --- | --- |
-| `FileMediaCardAdapter` | Files tab book | Read %, format, size | — | Share, Remove, Open |
-| `PluginMediaCardAdapter` | Plugin story | `card.stats`, then chapters | List toggles, Share, plugin rail actions (≤2) | Download (hold: partial; "Cancel download" while running), Delete, plugin footer actions (≤2), Read; pull-to-refresh reloads ToC |
+| `FileMediaCardAdapter` | Files tab book | Read %, format, size | Share, Remove, Folder, Contents | Read |
+| `PluginMediaCardAdapter` | Plugin story | `card.stats`, then chapters | List toggles, notify, Share, Contents, plugin rail (≤2) | Download ("Cancel download" while running), Manage, plugin footer (≤2), Read; pull-to-refresh reloads ToC; rename is inline on the title |
 
 New media source = new adapter + a caller that routes ids. Do not add parameters to
 `FlowMediaCard` for one source.

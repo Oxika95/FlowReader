@@ -15,20 +15,20 @@ Hand-written guide: [map.md](map.md).
 | `plugin/api` | [index/plugin-api.md](index/plugin-api.md) | 2 | 854 |
 | `plugin/repo` | [index/plugin-repo.md](index/plugin-repo.md) | 4 | 290 |
 | `plugin/runtime` | [index/plugin-runtime.md](index/plugin-runtime.md) | 14 | 1440 |
-| `plugin/store` | [index/plugin-store.md](index/plugin-store.md) | 9 | 1618 |
+| `plugin/store` | [index/plugin-store.md](index/plugin-store.md) | 9 | 1632 |
 | `plugin/sync` | [index/plugin-sync.md](index/plugin-sync.md) | 5 | 971 |
 | `plugin/updates` | [index/plugin-updates.md](index/plugin-updates.md) | 7 | 546 |
 | `share` | [index/share.md](index/share.md) | 13 | 2026 |
-| `tts` | [index/tts.md](index/tts.md) | 21 | 4922 |
+| `tts` | [index/tts.md](index/tts.md) | 22 | 5010 |
 | `ui/common` | [index/ui-common.md](index/ui-common.md) | 1 | 117 |
 | `ui/debug` | [index/ui-debug.md](index/ui-debug.md) | 1 | 352 |
-| `ui/design` | [index/ui-design.md](index/ui-design.md) | 20 | 3389 |
-| `ui/library` | [index/ui-library.md](index/ui-library.md) | 15 | 2516 |
+| `ui/design` | [index/ui-design.md](index/ui-design.md) | 20 | 3444 |
+| `ui/library` | [index/ui-library.md](index/ui-library.md) | 15 | 2651 |
 | `ui/open` | [index/ui-open.md](index/ui-open.md) | 1 | 178 |
-| `ui/plugin` | [index/ui-plugin.md](index/ui-plugin.md) | 19 | 4580 |
-| `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 23 | 4886 |
-| `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 24 | 5586 |
+| `ui/plugin` | [index/ui-plugin.md](index/ui-plugin.md) | 19 | 4675 |
+| `ui/reader` | [index/ui-reader.md](index/ui-reader.md) | 23 | 4891 |
+| `ui/settings` | [index/ui-settings.md](index/ui-settings.md) | 24 | 5588 |
 | `ui/theme` | [index/ui-theme.md](index/ui-theme.md) | 5 | 515 |
-| tests | [index/tests.md](index/tests.md) | 67 | |
+| tests | [index/tests.md](index/tests.md) | 68 | |
 
-Totals: 215 main files, 40074 lines.
+Totals: 216 main files, 40468 lines.

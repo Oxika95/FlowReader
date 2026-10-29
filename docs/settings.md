@@ -67,9 +67,9 @@ Sub-tabs: **Voice | Playback**.
 | Control | Key |
 |---------|-----|
 | TTS Engine | `tts_engine` — Default (system TTS), installed TTS plugins (`tts:{id}`), other system engines (via `TextToSpeech.engines`; app declares `TTS_SERVICE` package query). Legacy `edge` migrates to `tts:edgetts`. Re-probed when Settings opens. |
-| Language | not stored — filters Voice when the engine's voices expose `language` (plugins + system) |
+| Language | not stored — filters Voice when the engine's voices expose `language` (plugins + system). Sorted A–Z; defaults to the selected voice’s language, else the device language |
 | Gender | not stored — All / Male / Female; API `gender` or name heuristics (`-f`/`-m`, `f1`/`m1`, …) |
-| Voice | `tts_voice` — full engine catalog, filtered by Language then Gender. Default `en-US-AndrewNeural` when Edge is selected |
+| Voice | `tts_voice` — full engine catalog, filtered by Language then Gender. Edge default `en-US-AndrewNeural`; system engines prefer a voice for the device locale (not the first catalog row, which is often Arabic on Google) |
 | Speed 0.5–2.5× | `tts_speed` |
 | Pitch 0.5–2 | `tts_pitch` |
 | Advanced ▾ Pre-cache clips 1–10 | `tts_prefetch` |

@@ -297,7 +297,12 @@ fun LibraryScreen(
         busy = ui.busy,
         onDismiss = { filesSplashId = null },
         onOpen = onOpenBook,
+        onOpenChapter = { id, chapter ->
+            filesSplashId = null
+            vm.openAtChapter(id, chapter)
+        },
         onRemove = vm::removeFromLibrary,
+        folderError = { msg -> vm.showFolderError(msg) },
     )
 
     activePlugin?.let { PluginTabOverlays(plugin = it, actions = vm.pluginActions) }

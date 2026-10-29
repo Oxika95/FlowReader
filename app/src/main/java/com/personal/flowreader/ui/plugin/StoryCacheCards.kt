@@ -34,77 +34,108 @@ import com.personal.flowreader.ui.design.surface.FlowProgressBar
 import com.personal.flowreader.ui.design.surface.FlowProgressTrack
 import com.personal.flowreader.ui.theme.FlowType
 
-/** "Download all N chapters?" (tap Download on the story media card). */
-@Composable
-internal fun DownloadAllCard(
-    visible: Boolean,
-    story: PluginStory?,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    FlowConfirmCard(
-        visible = visible && story != null,
-        title = "Download all ${story?.chapterCount ?: 0} chapters?",
-        message = "Every chapter is saved for offline reading and kept even when cleanup is on. " +
-            "Large stories take a while; tap Cancel download on the card to stop.",
-        confirmLabel = "Download",
-        onConfirm = onConfirm,
-        onDismiss = onDismiss,
-    )
-}
-
 /**
- * Partial download (long-press Download): downloads the saved position and the cache level of
- * chapters after it. Cache level and cleanup save as they change.
+ * Story download settings (Manage on the media card): cache level, cleanup, keep-all,
+ * clear local downloads, and remove from library. Download itself stays on the media card.
  */
 @Composable
-internal fun PartialDownloadCard(
+internal fun StoryManageCard(
     visible: Boolean,
     ui: PluginTabUi,
     onDismiss: () -> Unit,
     onCacheLevel: (String) -> Unit,
     onCleanup: (Boolean) -> Unit,
-    onDownload: () -> Unit,
+    onKeepAll: (Boolean) -> Unit,
+    onClearDownloads: () -> Unit,
+    onRemove: () -> Unit,
 ) {
     val story = ui.story
+    var confirmClear by remember(visible, story?.bookId) { mutableStateOf(false) }
+    var confirmRemove by remember(visible, story?.bookId) { mutableStateOf(false) }
+    val downloading = story != null && ui.downloadProgress != null && ui.downloadBookId == story.bookId
     FlowFullscreenCard(
         visible = visible && story != null,
         onDismiss = onDismiss,
-        title = "Partial download",
+        title = "Manage",
         variant = FlowCardVariant.Compact,
         footer = { FlowActionRow { FlowTextAction("Close", onDismiss) } },
     ) {
         if (story == null) return@FlowFullscreenCard
-        val downloading = ui.downloadProgress != null && ui.downloadBookId == story.bookId
         val title = story.toc.getOrNull(story.chapterIndex)?.title.orEmpty()
         FlowHint(
-            "From chapter ${story.chapterIndex + 1}" + (if (title.isNotBlank()) " — $title" else "") +
+            "Downloads start from chapter ${story.chapterIndex + 1}" +
+                (if (title.isNotBlank()) " — $title" else "") +
                 " (saved position). Tap the progress bar on the card to change it.",
         )
         OutlinedFieldWithInfo(
             value = ui.cacheLevelDraft,
             onValueChange = onCacheLevel,
-            enabled = !downloading,
+            enabled = !downloading && !ui.busy,
             label = "Cache level",
             info = "How many chapters after your reading position to keep downloaded. Reading " +
-                "and listening download ahead by this many as you go.",
+                "and listening download ahead by this many as you go. Ignored while Keep all " +
+                "chapters is on.",
         )
         FlowToggleRow(
             title = "Clean up old chapters",
             subtitle = "Delete chapters more than ${story.cacheLevel} behind your position. " +
-                "Download all chapters are kept.",
+                "Kept-all stories are not cleaned.",
             checked = story.cleanup,
             onCheckedChange = onCleanup,
-            enabled = !downloading,
+            enabled = !downloading && !ui.busy,
+        )
+        FlowToggleRow(
+            title = "Keep all chapters",
+            subtitle = "Download every chapter and keep them even when cleanup is on. " +
+                "The Download button on the card fetches the full story.",
+            checked = story.keepAll,
+            onCheckedChange = onKeepAll,
+            enabled = !downloading && !ui.busy,
+        )
+        FlowHint(
+            if (story.downloadedCount > 0) {
+                "${story.downloadedCount} / ${story.chapterCount} chapters on this device"
+            } else {
+                "No chapters downloaded yet"
+            },
         )
         FlowPrimaryButton(
-            "Download next ${story.cacheLevel}",
-            onDownload,
-            enabled = !downloading && !ui.busy && story.chapterCount > 0,
+            "Clear local downloads",
+            { confirmClear = true },
+            enabled = !downloading && !ui.busy && story.downloadedCount > 0,
+        )
+        FlowTextAction(
+            label = "Remove from library",
+            onClick = { confirmRemove = true },
+            enabled = !downloading && !ui.busy,
+            destructive = true,
         )
         if (downloading) ui.downloadProgress?.let { (done, total) -> FlowHint("Downloading $done / $total") }
         ui.error?.let { FlowHint(it, error = true) }
     }
+    FlowConfirmCard(
+        visible = confirmClear && story != null,
+        title = "Clear local downloads?",
+        message = "Deletes downloaded chapter files for this story. The library entry, reading " +
+            "position, and download settings stay. You can download again anytime.",
+        confirmLabel = "Clear",
+        onConfirm = {
+            confirmClear = false
+            onClearDownloads()
+        },
+        onDismiss = { confirmClear = false },
+    )
+    FlowConfirmCard(
+        visible = confirmRemove && story != null,
+        title = "Remove from library?",
+        message = "Removes “${story?.title.orEmpty()}” from this device. Site lists are unchanged.",
+        confirmLabel = "Remove",
+        onConfirm = {
+            confirmRemove = false
+            onRemove()
+        },
+        onDismiss = { confirmRemove = false },
+    )
 }
 
 /**

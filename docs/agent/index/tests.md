@@ -52,6 +52,7 @@ Paths relative to `app/src/test/java/com/personal/flowreader/`. Router: [../inde
 - `tts/provider/TtsEngineIdsTest.kt`
 - `tts/RaceScheduleTest.kt`
 - `tts/SpeechTextTest.kt`
+- `tts/TtsVoicePickTest.kt`
 - `tts/UnderlayRouteTest.kt`
 - `tts/VoiceGenderTest.kt`
 - `tts/WordHighlightTest.kt`

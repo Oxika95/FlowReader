@@ -285,6 +285,20 @@ class PluginBookStore(
         stories(r).setCachePolicy(bookId, cacheLevel.coerceAtLeast(0), cleanup)
     }
 
+    suspend fun setKeepAll(bookId: String, on: Boolean) {
+        val r = ref(bookId)
+        story(r, bookId)
+        stories(r).setKeepAll(bookId, on)
+    }
+
+    /** Delete every cached chapter body for [bookId]; keeps the library row and settings. */
+    suspend fun clearLocalDownloads(bookId: String): Int {
+        val r = ref(bookId)
+        val session = read(r) ?: return 0
+        if (session.toc.isEmpty()) return 0
+        return PluginSessionStore.deleteChapters(r.dir, session.toc, session.toc.indices.toList())
+    }
+
     suspend fun setNotify(bookId: String, on: Boolean) {
         val r = ref(bookId)
         story(r, bookId)

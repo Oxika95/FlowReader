@@ -38,7 +38,7 @@ Lists pad by the dock height, so the card never covers the last row.
 | Element | Behavior |
 |---------|----------|
 | Empty copy | “No books yet…” |
-| Book card tap | Files splash (media card): Open / Share / Remove |
+| Book card tap | Files splash (media card): rail Share / Remove / Folder / Contents; footer **Read** |
 | Double-tap | Open `reader/{id}` |
 | FAB **+** “Add file” | “Add a book” → Import a copy / Reference in place → system picker |
 | Card layout | Title; author (or source · last read when author unknown); **Chapter n/total** chip (primary if unstarted, secondary if in progress, muted grey if complete). No **"N new"** chip on Files |

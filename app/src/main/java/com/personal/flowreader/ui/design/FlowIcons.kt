@@ -3,14 +3,17 @@ package com.personal.flowreader.ui.design
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.Toc
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
@@ -35,7 +38,7 @@ object FlowIcons {
     val tokens: List<String> = listOf(
         "add", "favorite", "schedule", "bookmark", "star", "check", "visibility", "list", "flag",
         "download", "eye", "pages", "clock", "user", "heart", "followers", "comment", "like", "link", "share",
-        "notifications", "bell", "lock", "edit",
+        "notifications", "bell", "lock", "edit", "delete", "folder", "toc",
     )
 
     fun forToken(token: String?): ImageVector = when (token?.lowercase()) {
@@ -58,6 +61,9 @@ object FlowIcons {
         "notifications", "bell" -> Icons.Filled.Notifications
         "lock" -> Icons.Filled.Lock
         "edit" -> Icons.Filled.Edit
+        "delete" -> Icons.Filled.Delete
+        "folder" -> Icons.Filled.Folder
+        "toc" -> Icons.AutoMirrored.Filled.Toc
         else -> Icons.Filled.Bookmark
     }
 }

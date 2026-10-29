@@ -76,6 +76,8 @@ data class PluginStory(
     val hasSavedPosition: Boolean = false,
     val cacheLevel: Int = PluginCachePolicy.DEFAULT_LEVEL,
     val cleanup: Boolean = false,
+    /** Download-all / keep every chapter on disk. */
+    val keepAll: Boolean = false,
     /** Plugin list ids this story is tagged with. */
     val listedIn: Set<String> = emptySet(),
     /** Media card slots; null when the plugin fills none. */
@@ -116,10 +118,10 @@ data class PluginTabUi(
     val searchPage: Int = 0,
     val searchHasMore: Boolean = false,
     val story: PluginStory? = null,
-    /** "Download all N chapters?" confirm is showing. */
-    val confirmDownloadAll: Boolean = false,
-    /** Partial download card (long-press Download) is showing. */
-    val showPartial: Boolean = false,
+    /** Story Manage card (download settings / clear / remove) is showing. */
+    val showManage: Boolean = false,
+    /** Contents overlay from the media card ToC rail. */
+    val showToc: Boolean = false,
     /** Reading-position card (−/+ steps) is showing. */
     val showPosition: Boolean = false,
     val showRename: Boolean = false,
@@ -746,8 +748,8 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         _ui.update {
             it.copy(
                 story = null,
-                confirmDownloadAll = false,
-                showPartial = false,
+                showManage = false,
+                showToc = false,
                 showPosition = false,
                 showRename = false,
                 storyRefreshing = false,
@@ -789,6 +791,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             hasSavedPosition = progress?.hasProgress == true,
             cacheLevel = session.cacheLevel,
             cleanup = session.cleanup,
+            keepAll = session.keepAll,
             listedIn = listedIn,
             card = splash?.card,
             notify = UpdateDiff.notifyOn(session.notify, listedIn, UpdateDiff.notifyLists(manifest.lists)),
@@ -1188,7 +1191,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
 
     // --- Downloads --------------------------------------------------------------------------
 
-    /** Tap Download: confirm Download all, or cancel the running download. */
+    /**
+     * Tap Download: cancel if this story is downloading; else keep-all → full download,
+     * otherwise cache level ahead of the saved position.
+     */
     fun onDownloadTap() {
         val story = _ui.value.story ?: return
         if (downloadJob?.isActive == true) {
@@ -1199,30 +1205,41 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             }
             return
         }
-        _ui.update { it.copy(confirmDownloadAll = true, error = null) }
-    }
-
-    fun dismissDownloadAll() = _ui.update { it.copy(confirmDownloadAll = false) }
-
-    fun downloadAllChapters() {
-        val story = _ui.value.story ?: return
-        _ui.update { it.copy(confirmDownloadAll = false) }
-        runDownload(story, "Download failed") { onProgress ->
-            val count = books.downloadAllChapters(story.bookId, story.chapterIndex, onProgress)
-            "Downloaded $count / ${story.chapterCount} chapters"
+        if (story.keepAll) {
+            runDownload(story, "Download failed") { onProgress ->
+                val count = books.downloadAllChapters(story.bookId, story.chapterIndex, onProgress)
+                "Downloaded $count / ${story.chapterCount} chapters"
+            }
+        } else {
+            runDownload(story, "Download failed") { onProgress ->
+                val count = books.downloadAhead(story.bookId, story.chapterIndex, onProgress)
+                "Cached $count / ${story.chapterCount} chapters"
+            }
         }
     }
 
-    /** Long-press Download: the partial download card. */
-    fun openPartial() {
+    fun openManage() {
         val story = _ui.value.story ?: return
-        _ui.update { it.copy(showPartial = true, cacheLevelDraft = story.cacheLevel.toString(), error = null) }
+        _ui.update {
+            it.copy(
+                showManage = true,
+                showToc = false,
+                cacheLevelDraft = story.cacheLevel.toString(),
+                error = null,
+            )
+        }
     }
 
-    /** A blank cache level field goes back to the saved level. */
-    fun closePartial() = _ui.update {
-        it.copy(showPartial = false, cacheLevelDraft = it.story?.cacheLevel?.toString() ?: it.cacheLevelDraft)
+    fun closeManage() = _ui.update {
+        it.copy(
+            showManage = false,
+            cacheLevelDraft = it.story?.cacheLevel?.toString() ?: it.cacheLevelDraft,
+        )
     }
+
+    fun openToc() = _ui.update { it.copy(showToc = it.story != null, error = null) }
+
+    fun closeToc() = _ui.update { it.copy(showToc = false) }
 
     fun setCacheLevelDraft(value: String) {
         val digits = value.filter { c -> c.isDigit() }.take(4)
@@ -1235,6 +1252,46 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     fun setCleanup(on: Boolean) {
         val story = _ui.value.story ?: return
         saveCachePolicy(story, story.cacheLevel, on)
+    }
+
+    fun setKeepAll(on: Boolean) {
+        val story = _ui.value.story ?: return
+        _ui.update { ui -> ui.copy(story = ui.story?.copy(keepAll = on)) }
+        viewModelScope.launch {
+            try {
+                val refreshed = withContext(Dispatchers.IO) {
+                    books.setKeepAll(story.bookId, on)
+                    loadStory(story.bookId)
+                }
+                refreshLocal()
+                _ui.update { ui -> if (ui.story?.bookId == story.bookId) ui.copy(story = refreshed) else ui }
+            } catch (t: Throwable) {
+                fail(t, "Could not update keep-all")
+            }
+        }
+    }
+
+    fun clearLocalDownloads() {
+        val story = _ui.value.story ?: return
+        viewModelScope.launch {
+            _ui.update { it.copy(busy = true, error = null) }
+            try {
+                val removed = withContext(Dispatchers.IO) {
+                    books.clearLocalDownloads(story.bookId)
+                    loadStory(story.bookId)
+                }
+                refreshLocal()
+                _ui.update {
+                    it.copy(
+                        busy = false,
+                        story = removed,
+                        message = "Cleared downloads for ${story.title}",
+                    )
+                }
+            } catch (t: Throwable) {
+                fail(t, "Could not clear downloads")
+            }
+        }
     }
 
     private fun saveCachePolicy(story: PluginStory, level: Int, cleanup: Boolean) {
@@ -1251,19 +1308,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             } catch (t: Throwable) {
                 fail(t, "Could not update cache settings")
             }
-        }
-    }
-
-    /** Download the saved position and the cache level of chapters after it. */
-    fun downloadAhead() {
-        val story = _ui.value.story ?: return
-        if (downloadJob?.isActive == true) {
-            _ui.update { it.copy(message = "A download is already running") }
-            return
-        }
-        runDownload(story, "Partial download failed") { onProgress ->
-            val count = books.downloadAhead(story.bookId, story.chapterIndex, onProgress)
-            "Cached $count / ${story.chapterCount} chapters"
         }
     }
 
@@ -1297,7 +1341,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             it.copy(
                 downloadProgress = null,
                 downloadBookId = null,
-                showPartial = if (message != null) false else it.showPartial,
                 story = if (it.story?.bookId == story.bookId) refreshed ?: it.story else it.story,
                 message = message ?: it.message,
             )

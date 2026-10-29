@@ -17,9 +17,10 @@ import com.personal.flowreader.ui.library.LibraryRowText
 import com.personal.flowreader.ui.theme.FlowTokens
 
 /**
- * Story media card shared by every plugin. Host actions (list toggles, new-chapter bell, Share, Rename, Download,
- * Delete, Read) are always present; pull-to-refresh reloads the ToC. Plugins add stats, badges, links and
- * up to 2 rail + 2 footer actions, routed to `cardAction`.
+ * Story media card shared by every plugin. Host actions (list toggles, new-chapter bell, Share,
+ * Contents, Download, Manage, Read) are always present; rename is inline on the title;
+ * pull-to-refresh reloads the ToC. Plugins add stats, badges, links and up to 2 rail + 2 footer
+ * actions, routed to `cardAction`.
  */
 @Composable
 internal fun StoryMediaCard(
@@ -28,10 +29,10 @@ internal fun StoryMediaCard(
     onDismiss: () -> Unit,
     onRead: () -> Unit,
     onDownload: () -> Unit,
-    onDownloadOptions: () -> Unit,
+    onManage: () -> Unit,
+    onToc: () -> Unit,
     onOpenPosition: () -> Unit,
     onRefreshToc: () -> Unit,
-    onDelete: () -> Unit,
     onToggleList: (String) -> Unit,
     onToggleNotify: () -> Unit,
     onRename: () -> Unit,
@@ -42,7 +43,7 @@ internal fun StoryMediaCard(
     val context = LocalContext.current
     val book = story?.let { s -> ui.books.find { it.bookId == s.bookId } }
     val cover by rememberBookCover(book, maxEdge = FlowTokens.CoverEdge.Hero)
-    val overlayOpen = ui.showPartial || ui.showPosition || ui.showRename
+    val overlayOpen = ui.showManage || ui.showPosition || ui.showRename || ui.showToc
     val model = remember(story, ui.busy, ui.downloadProgress, ui.downloadBookId, ui.error, overlayOpen, hiddenActions) {
         story?.let { s ->
             val progress = ui.downloadProgress?.takeIf { ui.downloadBookId == s.bookId }
@@ -62,6 +63,7 @@ internal fun StoryMediaCard(
                     listedIn = s.listedIn,
                     card = s.card,
                     cleanup = s.cleanup,
+                    keepAll = s.keepAll,
                     notify = s.notify,
                     hasPosition = s.hasSavedPosition,
                     locusTitle = s.toc.getOrNull(s.chapterIndex)?.title.orEmpty(),
@@ -82,8 +84,8 @@ internal fun StoryMediaCard(
         model = model,
         art = cover,
         onDismiss = onDismiss,
-        onLongAction = { action -> if (action.id == MediaActionIds.DOWNLOAD) onDownloadOptions() },
         onOpenPosition = onOpenPosition.takeIf { story != null && (story.chapterCount > 1) },
+        onRename = onRename.takeIf { story != null },
         onRefresh = onRefreshToc.takeIf { story != null },
         refreshing = ui.storyRefreshing,
         onAction = { action ->
@@ -103,9 +105,9 @@ internal fun StoryMediaCard(
                     context.startActivity(Intent.createChooser(send, "Share story"))
                 }
                 MediaActionIds.NOTIFY -> onToggleNotify()
-                MediaActionIds.RENAME -> onRename()
+                MediaActionIds.TOC -> onToc()
                 MediaActionIds.DOWNLOAD -> onDownload()
-                MediaActionIds.DELETE -> onDelete()
+                MediaActionIds.MANAGE -> onManage()
                 MediaActionIds.READ -> onRead()
             }
         },

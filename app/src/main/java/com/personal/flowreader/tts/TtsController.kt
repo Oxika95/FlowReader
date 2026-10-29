@@ -305,11 +305,7 @@ class TtsController(
             val prefs = settings.ttsOnce()
             val reader = settings.readerOnce()
             val voices = voicesFor(prefs.engineKey)
-            val voiceId = when {
-                voices.any { it.id == prefs.voiceId } -> prefs.voiceId
-                usesClipAudio(prefs.engineKey) -> TtsPrefs.DEFAULT_EDGE_VOICE
-                else -> voices.firstOrNull()?.id.orEmpty()
-            }
+            val voiceId = coerceVoiceId(prefs.engineKey, prefs.voiceId, voices)
             SynthDebugLog.setEnabled(reader.debugEnabled)
             underlayBt.setTargetAddress(prefs.underlayBtAddress)
             underlayBt.start()
@@ -1211,11 +1207,15 @@ class TtsController(
         engineKey: String,
         preferred: String,
         voices: List<TtsVoiceOption>,
-    ): String = when {
-        preferred.isNotBlank() && voices.any { it.id == preferred } -> preferred
-        providers.get(engineKey) is PluginTtsProvider -> TtsPrefs.DEFAULT_EDGE_VOICE
-        else -> voices.firstOrNull()?.id.orEmpty()
-    }
+    ): String = TtsVoicePick.coerce(
+        preferred = preferred,
+        voices = voices,
+        pluginDefault = if (providers.get(engineKey) is PluginTtsProvider) {
+            TtsPrefs.DEFAULT_EDGE_VOICE
+        } else {
+            null
+        },
+    )
 
     private fun systemBoundMatches(engineKey: String): Boolean {
         if (!systemReady || systemTts == null) return false
@@ -2345,10 +2345,7 @@ class TtsController(
                 boundEnginePackage = enginePackage
                 if (!usesClipAudio()) {
                     val voices = systemVoices(engine)
-                    val voiceId = when {
-                        voices.any { it.id == _state.value.voiceId } -> _state.value.voiceId
-                        else -> voices.firstOrNull()?.id.orEmpty()
-                    }
+                    val voiceId = TtsVoicePick.coerce(_state.value.voiceId, voices)
                     _state.update { it.copy(voices = voices, voiceId = voiceId) }
                 }
                 if (cont.isActive) cont.resume(engine)
