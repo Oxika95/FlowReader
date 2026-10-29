@@ -904,6 +904,9 @@ class TtsController(
             appendLine("sampleRate=${audioEngine.sampleRateHz()}")
             appendLine("pendingSeedSec=${audioEngine.peekPendingMediaSeedSec()}")
             appendLine("pendingRemainder=${audioEngine.hasPendingRemainder()}")
+            appendLine(
+                "pendingPath=${audioEngine.pendingRemainderPath()?.substringAfterLast('/') ?: "-"}",
+            )
             appendLine("underruns=${audioEngine.underrunCount()}")
             appendLine("ready=${s.readySentenceIndices.sorted()}")
             appendLine("generating=${s.generatingSentenceIndices.sorted()}")
@@ -928,7 +931,9 @@ class TtsController(
         scope.launch {
             pausePlayback(PlaybackState.STATE_PAUSED)
             edgeJobs[i]?.cancel()
-            cacheFile(i).delete()
+            val clip = cacheFile(i)
+            audioEngine.invalidateDecode(clip)
+            clip.delete()
             wordsCacheFile(i).delete()
             wordBoundariesBySentence.remove(i)
             cuesBySentence.remove(i)
@@ -1455,6 +1460,9 @@ class TtsController(
                 if (SpeechText.isSpeakable(speechText(s.text))) {
                     speak(s, generation)
                 } else {
+                    // Crossfade may already have armed leftover PCM for this index; drop it
+                    // so the next spoken sentence does not drain the wrong clip.
+                    audioEngine.clearPendingRemainder()
                     SynthDebugLog.append("skip i=$index nothing to say text=\"${s.text}\"")
                 }
                 networkFailures = 0
@@ -1462,6 +1470,7 @@ class TtsController(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: EdgeContentException) {
+                audioEngine.clearPendingRemainder()
                 reportSkippedSentence(index, s.text, e.message ?: "Edge rejected text")
             } catch (e: EdgeServiceException) {
                 awaitServiceRetry(e)
@@ -2034,6 +2043,7 @@ class TtsController(
             return true
         }
         if (force) {
+            audioEngine.invalidateDecode(f)
             f.delete()
             wordsFile.delete()
             wordBoundariesBySentence.remove(i)
@@ -2052,6 +2062,7 @@ class TtsController(
                     "textHash=$textHash fileHash=$fileHash bytes=${audio.mp3.size}",
             )
             writeAtomically(f, audio.mp3)
+            audioEngine.invalidateDecode(f)
             SynthDebugLog.append(
                 "tts assign write i=$i connectId=${audio.connectId.ifBlank { "-" }} " +
                     "textHash=$textHash file=${f.name} fileHash=$fileHash bytes=${audio.mp3.size}",
@@ -2558,6 +2569,7 @@ class TtsController(
             val i = cachedSentenceIndex(file.name) ?: return@forEach
             if (i !in window) {
                 edgeJobs.remove(i)?.cancel()
+                audioEngine.invalidateDecode(file)
                 file.delete()
             }
         }
@@ -2577,6 +2589,7 @@ class TtsController(
     private suspend fun clearEdgeCache() {
         cancelEdgeJobs()
         prefetchFailed.clear()
+        audioEngine.clearPendingRemainder()
         audioEngine.clearDecodeCache()
         clearAudioStatus()
         wordBoundariesBySentence.clear()

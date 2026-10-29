@@ -33,6 +33,8 @@ class TtsAudioEngine {
     private var trackChannels = 0
     private var framesWritten: Long = 0L
     private var pendingRemainder: PcmClip? = null
+    /** Absolute path of the clip file [pendingRemainder] was decoded from; null when empty. */
+    private var pendingPath: String? = null
     private var pendingMediaSeedSec: Double = 0.0
 
     /** Decode-ahead cache keyed by absolute path. */
@@ -64,6 +66,16 @@ class TtsAudioEngine {
     /** True when a prior crossfade left PCM that must keep feeding the track. */
     fun hasPendingRemainder(): Boolean = pendingRemainder != null
 
+    /** Path the leftover PCM belongs to, or null when there is none. */
+    fun pendingRemainderPath(): String? = pendingPath
+
+    /** Drop leftover PCM (e.g. playhead skipped the sentence that owned it). */
+    fun clearPendingRemainder() {
+        pendingRemainder = null
+        pendingPath = null
+        pendingMediaSeedSec = 0.0
+    }
+
     /** App-level AudioTrack underruns since this track was created (API 24+). */
     fun underrunCount(): Int {
         val t = track ?: return 0
@@ -72,14 +84,12 @@ class TtsAudioEngine {
 
     fun cancel() {
         cancelled.set(true)
-        pendingRemainder = null
-        pendingMediaSeedSec = 0.0
+        clearPendingRemainder()
     }
 
     fun release() {
         cancelled.set(true)
-        pendingRemainder = null
-        pendingMediaSeedSec = 0.0
+        clearPendingRemainder()
         framesWritten = 0L
         clearDecodeCache()
         val t = track
@@ -99,6 +109,13 @@ class TtsAudioEngine {
     /** Decoded clips are keyed by path; call when cached files are deleted or rewritten. */
     fun clearDecodeCache() {
         synchronized(decodeCacheLock) { decodeCache.clear() }
+    }
+
+    /** Drop a single path after rewrite/delete so the next play re-decodes from disk. */
+    fun invalidateDecode(file: File) {
+        val key = file.absolutePath
+        synchronized(decodeCacheLock) { decodeCache.remove(key) }
+        if (pendingPath == key) clearPendingRemainder()
     }
 
     /** Warm the decode cache for [file] without playing. */
@@ -129,21 +146,29 @@ class TtsAudioEngine {
         cancelled.set(false)
         if (!generationActive() || cancelled.get()) return@withContext
 
-        val fromPending = pendingRemainder != null
+        val expectedPath = file.absolutePath
+        val pendingOk = pendingMatchesExpected(pendingPath, expectedPath) && pendingRemainder != null
+        if (pendingRemainder != null && !pendingOk) {
+            SynthDebugLog.append(
+                "engine.play pendingDrop expected=${file.name} had=${pendingPath?.substringAfterLast('/')}",
+            )
+            clearPendingRemainder()
+        }
         SynthDebugLog.append(
-            "engine.play pending=$fromPending overlapMs=$overlapMs " +
+            "engine.play pending=$pendingOk overlapMs=$overlapMs " +
                 "nextKnown=${nextFile != null} resolve=${resolveNext != null} " +
                 "written=$framesWritten head=${playbackHeadFrames()} " +
                 "underruns=${underrunCount()}",
         )
-        val seed = if (fromPending) pendingMediaSeedSec else 0.0
-        val current = pendingRemainder?.also {
-            pendingRemainder = null
-            pendingMediaSeedSec = 0.0
-        } ?: (decodeCached(file) ?: run {
-            SynthDebugLog.append("engine.play decodeMiss path=${file.name}")
-            return@withContext
-        })
+        val seed = if (pendingOk) pendingMediaSeedSec else 0.0
+        val current = if (pendingOk) {
+            pendingRemainder!!.also { clearPendingRemainder() }
+        } else {
+            decodeCached(file) ?: run {
+                SynthDebugLog.append("engine.play decodeMiss path=${file.name}")
+                return@withContext
+            }
+        }
         ensureTrack(current.sampleRate, current.channels)
         onHearableStart?.invoke(seed)
         playClipCrossfading(
@@ -206,13 +231,14 @@ class TtsAudioEngine {
 
         if (!generationActive() || cancelled.get()) return
 
-        if (next == null ||
-            next.sampleRate != current.sampleRate ||
-            next.channels != current.channels
+        val nextClip = next?.clip
+        if (nextClip == null ||
+            nextClip.sampleRate != current.sampleRate ||
+            nextClip.channels != current.channels
         ) {
             SynthDebugLog.append(
                 "engine.buttJoinTail samples=${current.samples.size - bodyLen} " +
-                    "reason=${if (next == null) "nextLate" else "formatMismatch"}",
+                    "reason=${if (nextClip == null) "nextLate" else "formatMismatch"}",
             )
             writeSamples(
                 current.samples,
@@ -226,7 +252,7 @@ class TtsAudioEngine {
         val effectiveMs = Crossfade.clampOverlapMs(
             requestedMs = overlapMs,
             currentSampleCount = current.samples.size,
-            nextSampleCount = next.samples.size,
+            nextSampleCount = nextClip.samples.size,
             sampleRate = current.sampleRate,
             channels = current.channels,
         )
@@ -250,12 +276,12 @@ class TtsAudioEngine {
         }
 
         if (overlapSamplesDesired <= 0) {
-            writeSamples(next.samples, generationActive)
+            writeSamples(nextClip.samples, generationActive)
             return
         }
 
         val mixFrom = current.samples.size - overlapSamplesDesired
-        val overlapSamples = overlapSamplesDesired.coerceAtMost(next.samples.size)
+        val overlapSamples = overlapSamplesDesired.coerceAtMost(nextClip.samples.size)
         if (overlapSamples < overlapSamplesDesired) {
             val unmatched = overlapSamplesDesired - overlapSamples
             writeSamples(current.samples, generationActive, from = mixFrom, length = unmatched)
@@ -275,19 +301,20 @@ class TtsAudioEngine {
                 val idx = frame * ch + c
                 mixed[idx] = Crossfade.mixSample(
                     current.samples[mixStart + idx],
-                    next.samples[idx],
+                    nextClip.samples[idx],
                     progress,
                 )
             }
         }
         writeSamples(mixed, generationActive)
 
-        if (overlapSamples < next.samples.size) {
+        if (overlapSamples < nextClip.samples.size) {
             pendingRemainder = PcmClip(
-                samples = next.samples.copyOfRange(overlapSamples, next.samples.size),
-                sampleRate = next.sampleRate,
-                channels = next.channels,
+                samples = nextClip.samples.copyOfRange(overlapSamples, nextClip.samples.size),
+                sampleRate = nextClip.sampleRate,
+                channels = nextClip.channels,
             )
+            pendingPath = next.path
             pendingMediaSeedSec = effectiveMs / 1000.0
         }
     }
@@ -319,6 +346,8 @@ class TtsAudioEngine {
         }
     }
 
+    private data class DecodedNext(val clip: PcmClip, val path: String)
+
     /**
      * Prefer an already-known [known] path; otherwise call [resolveNext]. Decode into the
      * PCM cache. Returns null when the next clip is late or missing (caller butt-joins).
@@ -326,7 +355,7 @@ class TtsAudioEngine {
     private suspend fun resolveAndDecodeNext(
         known: File?,
         resolveNext: (suspend () -> File?)?,
-    ): PcmClip? {
+    ): DecodedNext? {
         val file = when {
             known != null && known.exists() && known.length() > 0L -> known
             resolveNext != null -> {
@@ -340,7 +369,8 @@ class TtsAudioEngine {
             }
             else -> null
         } ?: return null
-        return decodeCached(file)
+        val clip = decodeCached(file) ?: return null
+        return DecodedNext(clip, file.absolutePath)
     }
 
     private fun decodeCached(file: File): PcmClip? {
@@ -554,5 +584,9 @@ class TtsAudioEngine {
 
     companion object {
         private const val DECODE_CACHE_MAX = 4
+
+        /** Leftover PCM may only continue the same clip file the next [play] expects. */
+        internal fun pendingMatchesExpected(pendingPath: String?, expectedPath: String): Boolean =
+            pendingPath != null && pendingPath == expectedPath
     }
 }

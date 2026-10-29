@@ -102,6 +102,11 @@ of an item in the stream synthesizes fresh clips (cache key is the stream, not t
 - Synth log lines use `tts synth[…]` and `edge race[…]` (source `pre` / `play` / `next` / `regen` /
   `preview`). `tts assign …` lines add sentence index `i`, Edge `connectId` when present, `textHash`,
   and `fileHash` so dumps can match clips to sentences (no enforce yet).
+- Crossfade leaves the tail of the next MP3 in a short leftover buffer so the track never gaps.
+  That buffer is tagged with the next clip’s file path: play only drains it when the path matches
+  the sentence about to speak; otherwise it is dropped and the file is decoded again. Skipped
+  sentences clear the buffer. Rewriting or deleting a clip file also drops any decoded copy of it
+  (and leftover PCM for that path) so stale audio cannot outlive the file on disk.
 
 ## Debug
 
