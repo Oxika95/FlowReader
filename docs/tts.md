@@ -100,7 +100,8 @@ of an item in the stream synthesizes fresh clips (cache key is the stream, not t
   playback waits until a network is usable, backs off 1/2/4/8 s, clears failed lookahead, and
   retries. Session and media card stay up.
 - Synth log lines use `tts synth[…]` and `edge race[…]` (source `pre` / `play` / `next` / `regen` /
-  `preview`).
+  `preview`). `tts assign …` lines add sentence index `i`, Edge `connectId` when present, `textHash`,
+  and `fileHash` so dumps can match clips to sentences (no enforce yet).
 
 ## Debug
 

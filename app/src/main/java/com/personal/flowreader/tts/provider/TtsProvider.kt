@@ -27,6 +27,8 @@ data class TtsSynthRequest(
 data class TtsClipAudio(
     val mp3: ByteArray,
     val boundaries: List<EdgeWordBoundary> = emptyList(),
+    /** Edge WebSocket turn id when the plugin returns one; empty for other engines. */
+    val connectId: String = "",
 )
 
 /**

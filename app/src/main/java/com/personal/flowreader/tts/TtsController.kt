@@ -1746,9 +1746,15 @@ class TtsController(
         }
 
         val armOverlap = if (wantFade) overlapMs else 0
+        val playText = speechText(sentences.getOrNull(i)?.text.orEmpty())
         SynthDebugLog.append(
             "play i=$i overlapMs=$armOverlap nextKnown=${nextReadyNow != null} " +
                 "resolve=${resolveNext != null} slack=${slackMs()} " +
+                "pending=${audioEngine.hasPendingRemainder()}",
+        )
+        SynthDebugLog.append(
+            "tts assign play i=$i textHash=${assignTextHash(playText)} " +
+                "file=${f.name} fileHash=${assignFileHash(f)} bytes=${f.length()} " +
                 "pending=${audioEngine.hasPendingRemainder()}",
         )
         audioEngine.play(
@@ -1841,7 +1847,7 @@ class TtsController(
             } else {
                 provider.synthesize(request)
             }
-            return EdgeAudio(clip.mp3, clip.boundaries)
+            return EdgeAudio(clip.mp3, clip.boundaries, clip.connectId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: com.personal.flowreader.plugin.api.PluginException) {
@@ -2016,7 +2022,13 @@ class TtsController(
         val s = sentences.getOrNull(i) ?: return false
         val f = cacheFile(i)
         val wordsFile = wordsCacheFile(i)
+        val text = speechText(s.text)
+        val textHash = assignTextHash(text)
         if (!force && f.exists() && f.length() > 0L) {
+            SynthDebugLog.append(
+                "tts assign hit i=$i textHash=$textHash file=${f.name} " +
+                    "fileHash=${assignFileHash(f)} bytes=${f.length()}",
+            )
             ensureWordBoundariesLoaded(i)
             publishReady(i)
             return true
@@ -2027,7 +2039,6 @@ class TtsController(
             wordBoundariesBySentence.remove(i)
             cuesBySentence.remove(i)
         }
-        val text = speechText(s.text)
         if (!SpeechText.isSpeakable(text)) {
             prefetchFailed.add(i)
             return false
@@ -2035,7 +2046,16 @@ class TtsController(
         publishGenerating(i)
         return try {
             val audio = synthesizeEdge(text, tag = "$source i=$i")
+            val fileHash = assignFileHash(audio.mp3)
+            SynthDebugLog.append(
+                "tts assign synth i=$i source=$source connectId=${audio.connectId.ifBlank { "-" }} " +
+                    "textHash=$textHash fileHash=$fileHash bytes=${audio.mp3.size}",
+            )
             writeAtomically(f, audio.mp3)
+            SynthDebugLog.append(
+                "tts assign write i=$i connectId=${audio.connectId.ifBlank { "-" }} " +
+                    "textHash=$textHash file=${f.name} fileHash=$fileHash bytes=${audio.mp3.size}",
+            )
             writeWordBoundaries(wordsFile, audio.boundaries)
             wordBoundariesBySentence[i] = audio.boundaries
             val sentence = sentences.getOrNull(i)
@@ -2570,6 +2590,31 @@ class TtsController(
     private fun ratePercent(): Int = ((_state.value.speed - 1f) * 100f).toInt()
 
     private fun pitchPercent(): Int = ((_state.value.pitch - 1f) * 50f).toInt()
+
+    /** Short hex fingerprint of speakable sentence text for assign logs. */
+    private fun assignTextHash(text: String): String =
+        Integer.toUnsignedString(text.hashCode(), 16)
+
+    /** Short CRC hex of clip bytes for assign logs. */
+    private fun assignFileHash(bytes: ByteArray): String {
+        val crc = java.util.zip.CRC32()
+        crc.update(bytes)
+        return java.lang.Long.toUnsignedString(crc.value, 16)
+    }
+
+    /** Stream CRC of an on-disk clip (cache hit / play). */
+    private fun assignFileHash(file: File): String {
+        val crc = java.util.zip.CRC32()
+        file.inputStream().use { input ->
+            val buf = ByteArray(8 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n <= 0) break
+                crc.update(buf, 0, n)
+            }
+        }
+        return java.lang.Long.toUnsignedString(crc.value, 16)
+    }
 
     companion object {
         /** Max concurrent Edge lookahead synths; nearest gaps fill first. */

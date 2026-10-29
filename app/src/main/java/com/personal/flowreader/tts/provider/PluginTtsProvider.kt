@@ -108,7 +108,11 @@ class PluginTtsProvider(
                     )
                 }
             }
-            return TtsClipAudio(mp3, boundaries)
+            return TtsClipAudio(
+                mp3 = mp3,
+                boundaries = boundaries,
+                connectId = raw.optString("connectId").trim(),
+            )
         }
     }
 }

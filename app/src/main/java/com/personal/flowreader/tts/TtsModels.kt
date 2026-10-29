@@ -13,6 +13,8 @@ data class EdgeWordBoundary(
 data class EdgeAudio(
     val mp3: ByteArray,
     val boundaries: List<EdgeWordBoundary> = emptyList(),
+    /** Edge WebSocket turn id when present; empty for system / non-Edge clips. */
+    val connectId: String = "",
 )
 
 /** Provider refused this text (empty, too long, or no audio); retrying won't help. */
