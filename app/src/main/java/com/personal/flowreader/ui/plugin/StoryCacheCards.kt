@@ -25,6 +25,7 @@ import com.personal.flowreader.ui.design.card.FlowCardVariant
 import com.personal.flowreader.ui.design.card.FlowConfirmCard
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowTextAction
+import com.personal.flowreader.ui.design.controls.FlowChoiceChips
 import com.personal.flowreader.ui.design.controls.FlowHint
 import com.personal.flowreader.ui.design.controls.FlowIconButton
 import com.personal.flowreader.ui.design.controls.FlowPrimaryButton
@@ -34,9 +35,13 @@ import com.personal.flowreader.ui.design.surface.FlowProgressBar
 import com.personal.flowreader.ui.design.surface.FlowProgressTrack
 import com.personal.flowreader.ui.theme.FlowType
 
+/** Download policy mode on [StoryManageCard]; maps to persisted `keepAll`. */
+private enum class ManageDownloadMode { All, Partial }
+
 /**
- * Story download settings (Manage on the media card): cache level, cleanup, keep-all,
- * clear local downloads, and remove from library. Download itself stays on the media card.
+ * Story download settings (Manage on the media card): Download All vs Partial mode,
+ * mode-specific sub-settings, clear local downloads, and remove from library.
+ * Download itself stays on the media card.
  */
 @Composable
 internal fun StoryManageCard(
@@ -61,37 +66,49 @@ internal fun StoryManageCard(
         footer = { FlowActionRow { FlowTextAction("Close", onDismiss) } },
     ) {
         if (story == null) return@FlowFullscreenCard
-        val title = story.toc.getOrNull(story.chapterIndex)?.title.orEmpty()
-        FlowHint(
-            "Downloads start from chapter ${story.chapterIndex + 1}" +
-                (if (title.isNotBlank()) " — $title" else "") +
-                " (saved position). Tap the progress bar on the card to change it.",
+        val editable = !downloading && !ui.busy
+        val mode = if (story.keepAll) ManageDownloadMode.All else ManageDownloadMode.Partial
+        val chapterTitle = story.toc.getOrNull(story.chapterIndex)?.title.orEmpty()
+        FlowChoiceChips(
+            options = ManageDownloadMode.entries,
+            selected = mode,
+            optionLabel = {
+                when (it) {
+                    ManageDownloadMode.All -> "Download All"
+                    ManageDownloadMode.Partial -> "Partial Download"
+                }
+            },
+            onSelect = { onKeepAll(it == ManageDownloadMode.All) },
+            enabled = editable,
         )
-        OutlinedFieldWithInfo(
-            value = ui.cacheLevelDraft,
-            onValueChange = onCacheLevel,
-            enabled = !downloading && !ui.busy,
-            label = "Cache level",
-            info = "How many chapters after your reading position to keep downloaded. Reading " +
-                "and listening download ahead by this many as you go. Ignored while Keep all " +
-                "chapters is on.",
-        )
-        FlowToggleRow(
-            title = "Clean up old chapters",
-            subtitle = "Delete chapters more than ${story.cacheLevel} behind your position. " +
-                "Kept-all stories are not cleaned.",
-            checked = story.cleanup,
-            onCheckedChange = onCleanup,
-            enabled = !downloading && !ui.busy,
-        )
-        FlowToggleRow(
-            title = "Keep all chapters",
-            subtitle = "Download every chapter and keep them even when cleanup is on. " +
-                "The Download button on the card fetches the full story.",
-            checked = story.keepAll,
-            onCheckedChange = onKeepAll,
-            enabled = !downloading && !ui.busy,
-        )
+        when (mode) {
+            ManageDownloadMode.All -> FlowHint(
+                "The Download button on the card fetches every chapter and keeps them on " +
+                    "this device. Cleanup never deletes kept-all chapters.",
+            )
+            ManageDownloadMode.Partial -> {
+                FlowHint(
+                    "Downloads start from the last saved position" +
+                        (if (chapterTitle.isNotBlank()) " ($chapterTitle)" else "") +
+                        ". Tap the progress bar on the story card to change it.",
+                )
+                OutlinedFieldWithInfo(
+                    value = ui.cacheLevelDraft,
+                    onValueChange = onCacheLevel,
+                    enabled = editable,
+                    label = "Cache level",
+                    info = "How many chapters to download ahead of the last saved position, " +
+                        "and how many to keep behind it before clearing.",
+                )
+                FlowToggleRow(
+                    title = "Clean up old chapters",
+                    subtitle = "Delete chapters more than ${story.cacheLevel} behind your position.",
+                    checked = story.cleanup,
+                    onCheckedChange = onCleanup,
+                    enabled = editable,
+                )
+            }
+        }
         FlowHint(
             if (story.downloadedCount > 0) {
                 "${story.downloadedCount} / ${story.chapterCount} chapters on this device"
@@ -102,12 +119,12 @@ internal fun StoryManageCard(
         FlowPrimaryButton(
             "Clear local downloads",
             { confirmClear = true },
-            enabled = !downloading && !ui.busy && story.downloadedCount > 0,
+            enabled = editable && story.downloadedCount > 0,
         )
-        FlowTextAction(
-            label = "Remove from library",
-            onClick = { confirmRemove = true },
-            enabled = !downloading && !ui.busy,
+        FlowPrimaryButton(
+            "Remove from library",
+            { confirmRemove = true },
+            enabled = editable,
             destructive = true,
         )
         if (downloading) ui.downloadProgress?.let { (done, total) -> FlowHint("Downloading $done / $total") }
@@ -135,6 +152,7 @@ internal fun StoryManageCard(
             onRemove()
         },
         onDismiss = { confirmRemove = false },
+        destructive = true,
     )
 }
 

@@ -16,6 +16,7 @@ import com.personal.flowreader.data.BookSource
 import com.personal.flowreader.data.BookItem
 import com.personal.flowreader.data.ChapterSource
 import com.personal.flowreader.ui.common.rememberBookCover
+import com.personal.flowreader.ui.design.card.FlowConfirmCard
 import com.personal.flowreader.ui.design.card.media.FileMediaCardAdapter
 import com.personal.flowreader.ui.design.card.media.FileMediaInfo
 import com.personal.flowreader.ui.design.card.media.FlowMediaCard
@@ -46,6 +47,7 @@ fun FilesBookSplash(
         book?.let { FileMediaCardAdapter.model(fileMediaInfo(it), busy).withoutHostActions(hiddenActions) }
     }
     var showToc by remember(book?.bookId) { mutableStateOf(false) }
+    var confirmRemove by remember(book?.bookId) { mutableStateOf(false) }
     var tocEntries by remember(book?.bookId) { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
     var tocRow by remember(book?.bookId) { mutableStateOf(0) }
     LaunchedEffect(book?.bookId, showToc) {
@@ -72,10 +74,7 @@ fun FilesBookSplash(
             val row = book ?: return@FlowMediaCard
             when (action.id) {
                 MediaActionIds.SHARE -> shareBook(context, row)
-                MediaActionIds.REMOVE -> {
-                    onRemove(row.bookId)
-                    onDismiss()
-                }
+                MediaActionIds.REMOVE -> confirmRemove = true
                 MediaActionIds.FOLDER -> {
                     if (!openContainingFolder(context, row)) {
                         folderError("Could not open the containing folder")
@@ -88,6 +87,20 @@ fun FilesBookSplash(
                 }
             }
         },
+    )
+    FlowConfirmCard(
+        visible = confirmRemove && book != null,
+        title = "Remove from library?",
+        message = "Removes “${book?.title.orEmpty()}” from this device.",
+        confirmLabel = "Remove",
+        onConfirm = {
+            confirmRemove = false
+            val id = book?.bookId ?: return@FlowConfirmCard
+            onRemove(id)
+            onDismiss()
+        },
+        onDismiss = { confirmRemove = false },
+        destructive = true,
     )
     TocOverlay(
         visible = showToc && book != null,

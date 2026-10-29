@@ -49,7 +49,7 @@ selected tab in view.
 
 | Component | Where |
 | --- | --- |
-| `FlowPrimaryButton(label)` | One per card: the main action (full width, `Comp.ButtonPrimary`) |
+| `FlowPrimaryButton(label, destructive)` | Main action (full width, `Comp.ButtonPrimary`); `destructive` fills with `error` |
 | `RowScope.FlowSecondaryButton(label, destructive)` | Equal-width outlined buttons in a `Row` |
 | `FlowTextAction(label, destructive)` | Card footers (`FlowActionRow`) |
 | `FlowIconButton(icon, cd)` | Toolbar/header icons |

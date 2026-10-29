@@ -190,13 +190,17 @@ fun RowScope.FlowSecondaryButton(
     }
 }
 
-/** Card-footer primary button (filled, full width, 48dp). One per card. */
+/**
+ * Card-footer primary button (filled, full width, 48dp). Usually one per card; a second
+ * [destructive] primary is allowed for rare remove/delete actions stacked under the main one.
+ */
 @Composable
 fun FlowPrimaryButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    destructive: Boolean = false,
 ) {
     Button(
         onClick = onClick,
@@ -204,6 +208,14 @@ fun FlowPrimaryButton(
         modifier = modifier
             .fillMaxWidth()
             .height(FlowTokens.Comp.ButtonPrimary),
+        colors = if (destructive) {
+            ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            )
+        } else {
+            ButtonDefaults.buttonColors()
+        },
         contentPadding = PaddingValues(horizontal = FlowTokens.Space.L, vertical = FlowTokens.Space.None),
     ) {
         Text(label, style = FlowType.action)

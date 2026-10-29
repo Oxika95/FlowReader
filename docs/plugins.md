@@ -78,8 +78,9 @@ opened) and the newest post date. Sync never adds or deletes stories for a brows
   position card (− / +); Save writes the start of that chapter, then downloads ahead from it
 - **Download:** tap runs Manage settings — keep-all → every chapter; otherwise the saved position
   plus cache level ahead. While running the button reads **Cancel download**
-- **Manage** (footer): cache level, clean up old chapters, keep all chapters, clear local
-  downloads, remove from library. Keep-all downloads every chapter (including ones added later)
+- **Manage** (footer): **Download All** / **Partial Download** chips (persisted as `keepAll`).
+  All → keep-all copy only; Partial → cache level + clean up old chapters. Also clear local
+  downloads and remove from library. Keep-all downloads every chapter (including ones added later)
   and skips cleanup. With cleanup off (and keep-all off), chapters stay until cleared or removed
 - **Contents** (rail ToC): chapter list; tap opens Read at that chapter. Rename is an inline edit
   icon on the title (not a rail bubble)
