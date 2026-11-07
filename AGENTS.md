@@ -17,7 +17,6 @@ files, the emulator or adb. Start work with `/task <request>`.
 .\gradlew.bat :app:testDebugUnitTest      # JVM unit tests (app/src/test)
 .\gradlew.bat :app:installDebug           # device; bundles ../flow-reader-plugins when present
 .\scripts\verify.ps1 [-Full]              # build/tests if code changed, rules, duplicates, notes, couplings; -Full adds smoke check
-.\scripts\graph.ps1                       # refresh the code graphs of both repos (verify runs it when they changed)
 .\scripts\setup-emulator.ps1              # boot windowed AVD flowreader_api36 + push Gutenberg test books
 .\scripts\setup-emulator.ps1 -Recreate -Install -Import   # fresh AVD, app installed, books in library
 ```
@@ -27,23 +26,37 @@ If the Kotlin compiler crashes with `NotImplementedError: Unknown file` after de
 
 ## Lookup order
 
-Use the owner's words, not your own names. Start with the code graphs ([`docs/agent/graph.md`](docs/agent/graph.md));
-the registry and couplings list cover what the graph can't see, and `rg` confirms names and callers.
+Use the owner's words, not your own names.
 
-1. Graph: `graphify query "<owner's words or a symbol>"`, `graphify explain "<Symbol>"` (one symbol's edges),
-   `graphify affected "<Symbol>"` (what reaches it), `graphify path "<A>" "<B>"`. For plugin code add
-   `--graph ../flow-reader-plugins/graphify-out/graph.json`. The `graphify` MCP server offers the same lookups
-   (`query_graph`, `get_neighbors`, `shortest_path`; `project_path` for the plugins repo).
-2. `rg -n -i "<owner's words>" docs/agent/registry.md`, then read the matching entries.
-3. For each file in play: `rg -n "<FileName>" docs/agent/seams.md` (changes that must be matched elsewhere).
-4. `rg` for the symbols, related literals and `FlowApp` properties in `app/src`, and in `../flow-reader-plugins/`
-   when the change is plugin-visible. Callers always need this step: the graph has no edge for calls through an
-   instance (every `flow.x.y()`), flows and properties, string ids, or the app-to-plugin boundary.
+1. Registry: `rg -n -i "<owner's words>" docs/agent/registry.md`, then read the matching entries (feature,
+   owner files, tests, pitfalls).
+2. Couplings: for each file in play, `rg -n "<FileName>" docs/agent/seams.md` (places that must change together).
+3. Code: `rg` for the symbols, related literals and `FlowApp` properties in `app/src`, and in
+   `../flow-reader-plugins/` when the change is plugin-visible. Find callers with the steps below.
 
-Every plan for a change, with or without `/task`, has these sections: **Existing code found** (graph queries,
-entries, paths, symbols, and searches that found nothing), **Affected code** (`affected` results, seams lines,
-callers confirmed with `rg`, covering tests), **Rules that apply** (from `.cursor/rules/*.mdc` whose globs match),
-**Device checks**.
+Every plan for a change, with or without `/task`, has these sections: **Existing code found** (registry entries,
+paths, symbols, and searches that found nothing), **Affected code** (seams lines, callers found with the steps
+below, covering tests), **Rules that apply** (from `.cursor/rules/*.mdc` whose globs match), **Device checks**.
+
+## Finding callers
+
+Most calls here go through an object kept somewhere else (`flow.pluginSync.run(...)`, `lists.dropUnlisted(...)`),
+so search by the name first, then by the names that object goes by:
+
+1. Count the definitions: `rg -n 'fun <name>\b' app/src/main`.
+2. If there is one definition, `rg -n '\b<name>\(|::<name>\b' app/src` lists every call, including functions
+   passed by name (`vm::closeRename`).
+3. If several classes define the name (`get`, `run`, `submit`):
+   - Find where the class's object is kept: `rg -n ':\s*<Class>\b|=\s*<Class>\(' app/src/main`. This gives
+     `FlowApp` fields (`lateinit var pluginSync: TwoWaySync`), constructor parameters and other fields.
+   - Find shortcuts to those fields: `rg -n 'get\(\) = .*\b<field>\b' app/src/main` (for example
+     `private val sync get() = app.pluginSync`).
+   - Search the calls through those names: `rg -n '\b(<field>|<shortcut>)\.<name>\(' app/src`. For a
+     constructor parameter or field, only hits in the file that declares it count.
+4. Properties and flows have no brackets: `rg -n '\.<prop>\b' app/src`.
+5. Names plugins can see (host API, manifest fields, string ids): search both repos. In the plugins repo,
+   search one plugin folder at a time, because every plugin defines `pathOf`, `search` and `loadChapter`.
+6. Tests that cover it: `rg -n '<name>' app/src/test`.
 
 ## Search rules
 
@@ -55,9 +68,6 @@ callers confirmed with `rg`, covering tests), **Rules that apply** (from `.curso
   Quote Gradle `-P` arguments: `"-Pkotlin.incremental=false"`.
 - Don't create files with Shell redirects (`>`); use the file tools.
 - Never read a large file whole. Find the place with `rg -n`, then read a line range (over-limit files: `scripts/size-baseline.json`).
-- Graph queries: keep the default budget; when output says TRUNCATED, narrow (a symbol, `--context call`, the
-  file-qualified name it lists) instead of raising it. Don't read `graphify-out/graph.json`; read `GRAPH_REPORT.md`
-  only for a broad architecture review.
 - Match repo roots with a trailing slash: `c:/git/flow-reader` is a prefix of `c:/git/flow-reader-plugins`.
 
 ## Definition of done
@@ -69,10 +79,8 @@ callers confirmed with `rg`, covering tests), **Rules that apply** (from `.curso
 
 ## Where knowledge lives
 
-- Code graphs (setup, freshness, commands, blind spots): `docs/agent/graph.md`.
 - Vocabulary, owner files, tests, pitfalls: `docs/agent/registry.md`. Couplings: `docs/agent/seams.md`.
-- Feature rules by file glob: `.cursor/rules/*.mdc`; always-on rules: `working-agreement.mdc`, `graphify.mdc`
-  (Graphify's own; rewritten on reinstall).
+- Feature rules by file glob: `.cursor/rules/*.mdc`; always-on rule: `working-agreement.mdc`.
 - Runtime shape and plugin-visible changes: `docs/agent/architecture.md`, `docs/agent/cross-repo.md`.
 - Behavior for people: `docs/`. Plugin contract: `docs/plugins/api.md`.
 - Backlog, saved plans and handoffs, decisions as history: `../flow-reader-chats/` (`backlog.md`, `tasks/`, `decisions/`).

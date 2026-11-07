@@ -2,8 +2,7 @@
 Verify the working tree: build and unit tests (when code changed), then the repo checks in scripts/agent.
 Usage: powershell -NoProfile -File scripts\verify.ps1 [-Full]
   fast (default): gradle only when a changed path isn't docs/scripts-only; rules, duplicate, notes (changed notes only)
-                  and completeness checks always; plugins repo tests and version-bump check when it changed;
-                  code graphs refreshed by scripts\graph.ps1 (warnings only) when the app or plugins repo changed.
+                  and completeness checks always; plugins repo tests and version-bump check when it changed.
   -Full:          also every note, plugins `npm run check`, API version and host parity, and scripts\smoke.ps1
                   when app code changed.
 Changed paths = content map now vs the last passing stamp (or the merge-base with origin/master when none).
@@ -156,12 +155,6 @@ try {
             $ran.chats += 'notes-check'
             $n = Invoke-Native $nodeExe (@((Join-Path $agent 'notes-check.mjs'), '--repo', $chatsRoot) + $(if ($Full) { @('--full') } else { @() })) $root
             if ($n.Code -ne 0) { Add-Failure 'chats' 'notes-check' $n.Text }
-        }
-
-        # Code graphs: refreshed when the app or plugins repo changed; warnings only, never a failure.
-        if (($appPlan -and $appPlan.changed -gt 0) -or ($pp -and $pp.changed -gt 0)) {
-            $gr = Invoke-Native 'powershell.exe' @('-NoProfile', '-File', (Join-Path $root 'scripts\graph.ps1')) $root
-            foreach ($line in ($gr.Out -split "`r?`n" | Where-Object { $_.Trim() -ne '' -and $_ -notmatch ' ok$' })) { Write-Output $line }
         }
 
         # -Full extras.

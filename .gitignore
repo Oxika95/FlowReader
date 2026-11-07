@@ -27,6 +27,3 @@ brand/trace/out/
 report/
 scripts/tools/node_modules/
 
-# Code graph (Graphify), built locally
-graphify-out/
-
