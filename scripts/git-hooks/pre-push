@@ -1,0 +1,26 @@
+#!/bin/sh
+# Flow Reader pre-push: full verify (or skip when stamp matches) + secret scan.
+# Enable once (owner): git config core.hooksPath scripts/git-hooks
+set -e
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+# Capture ref lines before any child can drain stdin.
+PUSH_LINES=$(cat)
+
+if command -v powershell.exe >/dev/null 2>&1; then
+  PS=powershell.exe
+elif command -v pwsh >/dev/null 2>&1; then
+  PS=pwsh
+else
+  PS=powershell
+fi
+
+if node scripts/git-hooks/stamp-fresh.mjs; then
+  :
+else
+  echo "pre-push: running scripts/verify.ps1 -Full"
+  "$PS" -NoProfile -File scripts/verify.ps1 -Full
+fi
+
+printf '%s\n' "$PUSH_LINES" | node scripts/git-hooks/secret-scan.mjs --pre-push

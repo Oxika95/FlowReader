@@ -1,0 +1,44 @@
+---
+description: Working rules for every Flow Reader task
+alwaysApply: true
+---
+
+# Working agreement
+
+**Setup**
+- Open `flow-reader.code-workspace` (all three repos); a repo's rules load only when it is open.
+- Local desktop chats only. One task per chat; at a compaction notice, finish the step and suggest `/handoff`.
+- Agent files (`AGENTS.md`, `docs/agent/`, `.cursor/`, chats `backlog.md`, `tasks/`) carry full detail. Replies, plans, other `docs/`, READMEs, release notes and in-app text are for people.
+
+**Scope**
+- Plan before non-trivial edits. A question is not a request to change code.
+- Keep to the literal request. Reviews report findings only. List other problems instead of fixing them.
+
+**Fixing**
+- Fix the cause: no band-aids, polling or backstops; remove the patch a fix replaces. Minimal code; a rare delayed edge case beats a convoluted fix.
+- After two failed fixes, stop and re-read the added code and the logs.
+- Measure before changing performance or audio behavior.
+- Before changing a hard-coded number, run `git log -S '<value>' -- <file>`; record tuned values in a comment beside the constant.
+- One implementation per job: extend the existing owner; never add a second path.
+- Given example logic, build from its intent. Told of a deviation, fix it.
+
+**Words and product**
+- Use the owner's labels; don't invent names. Leave the root README's wording alone.
+- Don't build one plugin (Royal Road) into generic options or editors.
+- Readest (TTS, sync): code may be adapted (both AGPL-3.0); keep the credit header. QuickNovel (library, splash, table of contents): copy behavior, not code.
+- Be gentle with sites: no bulk fetching without a user action.
+- Alpha: no old-data compatibility code unless asked.
+
+**Devices**
+- Say before using the emulator or a device.
+- Check a UI fix visually before claiming it: at most 3 screenshots.
+- Ask before changing data on a physical device.
+
+**Git, files, security**
+- Push only with the owner's go-ahead; plugin pushes reach users at once.
+- Commit only with commit-mine (`AGENTS.md`); `git add` and `git commit` are blocked.
+- Files changed through Shell aren't in the edit log; pass them with `--also`.
+- If an edit or command is refused, don't work around it; tell the user.
+- Unfixed security problems: public files cite the backlog id only until the fix ships.
+
+**Done** means all of: verify passed for the current files; device checks ran or are listed in the commit's `Device-check:` line; docs, registry, couplings and rules are updated; the handoff quotes the "Rules changed" block. "Installed" alone is not done.

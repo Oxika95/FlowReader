@@ -34,9 +34,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -194,6 +196,7 @@ fun FlowTextField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     trailingIcon: (@Composable () -> Unit)? = null,
+    colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
 ) {
     OutlinedTextField(
         value = value,
@@ -213,6 +216,7 @@ fun FlowTextField(
         keyboardActions = keyboardActions,
         trailingIcon = trailingIcon,
         shape = FlowTokens.Shape.Field,
+        colors = colors,
     )
 }
 
@@ -388,21 +392,32 @@ fun FlowCollapsibleBox(visible: Boolean, modifier: Modifier = Modifier, content:
     ) { content() }
 }
 
-/** Header row that expands/collapses [content]. */
+/**
+ * Header row that expands/collapses [content]. By default it owns the state (starting at
+ * [initiallyExpanded]); pass [expanded] with [onExpandedChange] when the caller owns it, for example
+ * to open a section from a search hit.
+ */
 @Composable
 fun FlowCollapsible(
     title: String,
     modifier: Modifier = Modifier,
     initiallyExpanded: Boolean = false,
     subtitle: String = "",
+    expanded: Boolean? = null,
+    onExpandedChange: ((Boolean) -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
+    var ownExpanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
+    val open = expanded ?: ownExpanded
+    val setExpanded: (Boolean) -> Unit = { next ->
+        ownExpanded = next
+        onExpandedChange?.invoke(next)
+    }
     Column(modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clickable(onClickLabel = if (expanded) "Collapse" else "Expand") { expanded = !expanded }
+                .clickable(onClickLabel = if (open) "Collapse" else "Expand") { setExpanded(!open) }
                 .padding(vertical = FlowTokens.Space.S),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -411,12 +426,12 @@ fun FlowCollapsible(
                 if (subtitle.isNotBlank()) FlowHint(subtitle)
             }
             Icon(
-                if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                 contentDescription = null,
                 modifier = Modifier.padding(start = FlowTokens.Space.S),
             )
         }
-        AnimatedVisibility(expanded, enter = FlowMotion.expandEnter(), exit = FlowMotion.expandExit()) {
+        AnimatedVisibility(open, enter = FlowMotion.expandEnter(), exit = FlowMotion.expandExit()) {
             Column(verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S), content = content)
         }
     }

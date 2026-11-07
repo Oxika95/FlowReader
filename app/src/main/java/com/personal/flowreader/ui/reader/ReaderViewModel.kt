@@ -21,6 +21,8 @@ import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.ResumeLocus
 import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.data.TextFilters
+import com.personal.flowreader.ui.settings.FilterEdits
+import com.personal.flowreader.ui.settings.FilterRuleEditing
 import com.personal.flowreader.debug.DebugLog
 import com.personal.flowreader.plugin.updates.UpdateNotifier
 import com.personal.flowreader.tts.SynthDebugLog
@@ -79,7 +81,7 @@ data class ReaderUi(
 class ReaderViewModel(
     app: Application,
     savedStateHandle: SavedStateHandle,
-) : AndroidViewModel(app) {
+) : AndroidViewModel(app), FilterRuleEditing {
     private val flow = app as FlowApp
     val bookId: String = savedStateHandle["bookId"] ?: ""
     val queId: String? = savedStateHandle["queId"]
@@ -382,7 +384,7 @@ class ReaderViewModel(
         show(_ui.value.locus, TextFilters.merge(global, groups, local), reuse = null, invalidateCache = true)
     }
 
-    private fun editFilters(scope: FilterScope, edit: (List<FilterRule>) -> List<FilterRule>) {
+    override fun editFilters(scope: FilterScope, edit: (List<FilterRule>) -> List<FilterRule>) {
         viewModelScope.launch {
             val ui = _ui.value
             when (scope) {
@@ -393,47 +395,13 @@ class ReaderViewModel(
         }
     }
 
-    fun addFilter(scope: FilterScope, rule: FilterRule) =
-        editFilters(scope) { it + rule.copy(order = nextOrder(it)) }
-
-    fun updateFilter(scope: FilterScope, rule: FilterRule) =
-        editFilters(scope) { list -> list.map { if (it.id == rule.id) rule else it } }
-
-    fun setFilterEnabled(scope: FilterScope, id: String, enabled: Boolean) =
-        editFilters(scope) { list -> list.map { if (it.id == id) it.copy(enabled = enabled) else it } }
-
-    fun deleteFilters(scope: FilterScope, ids: Set<String>) =
-        editFilters(scope) { list -> list.filterNot { it.id in ids } }
-
-    fun reorderFilters(scope: FilterScope, ids: List<String>) =
-        editFilters(scope) { list -> TextFilters.reorder(list, ids) }
-
     fun previewApply(
         sample: String,
         draft: FilterRule,
         scope: FilterScope,
         mode: FilterPreviewMode,
-    ): FilterApplyResult {
-        val rules = when (mode) {
-            FilterPreviewMode.Original -> emptyList()
-            FilterPreviewMode.ThisRule -> listOf(draft.copy(enabled = true, order = 0))
-            FilterPreviewMode.AllEnabled -> {
-                val global = _ui.value.filtersGlobal
-                val groups = _ui.value.filtersGroups
-                val local = _ui.value.filtersLocal
-                val withDraft: (List<FilterRule>) -> List<FilterRule> = { list ->
-                    list.map { if (it.id == draft.id) draft else it }.let { mapped ->
-                        if (mapped.any { it.id == draft.id }) mapped else mapped + draft
-                    }
-                }
-                when (scope) {
-                    FilterScope.Global -> TextFilters.merge(withDraft(global), groups, local)
-                    FilterScope.Groups -> TextFilters.merge(global, withDraft(groups), local)
-                    FilterScope.Local -> TextFilters.merge(global, groups, withDraft(local))
-                }
-            }
-        }
-        return TextFilters.apply(sample, rules)
+    ): FilterApplyResult = with(_ui.value) {
+        FilterEdits.preview(sample, draft, scope, mode, filtersGlobal, filtersGroups, filtersLocal)
     }
 
     fun currentBlockSample(): String {
@@ -454,9 +422,6 @@ class ReaderViewModel(
         if (key.isBlank()) return
         withContext(Dispatchers.IO) { flow.catalog.setLocalFilters(domain, key, json) }
     }
-
-    private fun nextOrder(rules: List<FilterRule>): Int =
-        (rules.maxOfOrNull { it.order } ?: -1) + 1
 
     /** Jump to ToC row [row]; chapters outside the window open a new one around them. */
     suspend fun jumpToChapter(row: Int) {

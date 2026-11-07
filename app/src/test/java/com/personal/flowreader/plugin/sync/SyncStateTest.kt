@@ -40,11 +40,77 @@ class SyncStateTest {
     }
 
     @Test
+    fun settlingAPositionPushAdvancesTheBaseline() {
+        val s = SyncState(positions = mapOf("3" to "https://s/c/8")).enqueue(pos)
+        val settled = s.settle(pos)
+        assertEquals("https://s/c/9", settled.positions["3"])
+        assertEquals(emptyList<SyncOp>(), settled.outbox)
+    }
+
+    @Test
+    fun settlingAReplacedPositionPushStillRecordsWhatTheSiteHolds() {
+        val newer = pos.copy(chapterUrl = "https://s/c/10")
+        val settled = SyncState().enqueue(pos).enqueue(newer).settle(pos)
+        assertEquals("https://s/c/9", settled.positions["3"])
+        assertEquals(listOf(newer), settled.outbox)
+    }
+
+    @Test
+    fun settlingAMembershipPushLeavesPositionsAlone() {
+        val s = SyncState(positions = mapOf("1" to "https://s/c/1")).enqueue(add)
+        assertEquals(s.positions, s.settle(add).positions)
+    }
+
+    @Test
+    fun queuingAPositionKeepsTheBaselineAndClearsTheConflict() {
+        val s = SyncState(
+            positions = mapOf("3" to "https://s/c/8"),
+            conflicts = mapOf("3" to PositionConflict("3", "https://s/c/9", "https://s/c/12")),
+        ).enqueuePosition(pos)
+        assertEquals("https://s/c/8", s.positions["3"])
+        assertEquals(emptyMap<String, PositionConflict>(), s.conflicts)
+        assertEquals(listOf(pos), s.outbox)
+    }
+
+    @Test
+    fun aDroppedPushLeavesTheOldBaselineSoItIsNotReadAsAnAgreement() {
+        val last = pos.copy(attempts = 4)
+        val s = SyncState(positions = mapOf("3" to "https://s/c/8"), outbox = listOf(last)).retry(last, maxAttempts = 5)
+        assertEquals(emptyList<SyncOp>(), s.outbox)
+        assertEquals("https://s/c/8", s.positions["3"])
+    }
+
+    @Test
     fun retryCountsAttemptsThenDrops() {
         val once = SyncState().enqueue(pos).retry(pos, maxAttempts = 3)
         assertEquals(listOf(pos.copy(attempts = 1)), once.outbox)
         val last = pos.copy(attempts = 2)
         assertEquals(emptyList<SyncOp>(), SyncState(outbox = listOf(last)).retry(last, maxAttempts = 3).outbox)
+    }
+
+    @Test
+    fun forgettingAStoryDropsItsListBaselinesAndQueuedListChangesOnly() {
+        val other = SyncOp.Membership("7", "follow", on = true)
+        val s = SyncState(
+            lists = mapOf("follow" to setOf("1", "2"), "favorite" to setOf("1"), "readlater" to emptySet()),
+            positions = mapOf("1" to "https://s/c/1"),
+            outbox = listOf(add, other, pos.copy(workId = "1")),
+        ).forgetStoryLists("1")
+        assertEquals(mapOf("follow" to setOf("2"), "favorite" to emptySet(), "readlater" to emptySet<String>()), s.lists)
+        assertEquals(listOf(other, pos.copy(workId = "1")), s.outbox)
+        assertEquals(mapOf("1" to "https://s/c/1"), s.positions)
+    }
+
+    @Test
+    fun aStoryRemovedFromTheLibraryIsNotPushedAsARemovalOnTheNextSync() {
+        val s = SyncState(lists = mapOf("follow" to setOf("1", "2"))).forgetStoryLists("1")
+        val plan = ListReconcile.plan(
+            local = setOf("2"),
+            remote = setOf("1", "2"),
+            baseline = s.lists["follow"],
+        )
+        assertEquals(emptySet<String>(), plan.pushRemove)
+        assertEquals(setOf("1"), plan.addLocal)
     }
 
     @Test

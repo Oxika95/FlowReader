@@ -11,13 +11,15 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.personal.flowreader.share.ParseRule
 import com.personal.flowreader.share.ParseRules
+import com.personal.flowreader.plugin.api.PluginManifest
 import com.personal.flowreader.share.RouterRule
+import com.personal.flowreader.share.RouterRuleEdit
 import com.personal.flowreader.share.RouterRules
 import com.personal.flowreader.share.ShareAskMode
 import com.personal.flowreader.share.SharePrefs
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.coroutines.flow.map
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -448,16 +450,35 @@ class SettingsStore(context: Context) {
         return decoded.ifEmpty { RouterRules.seed() }
     }
 
-    suspend fun setShareRouterRules(rules: List<RouterRule>) {
-        store.edit { it[KEY_SHARE_ROUTER_RULES] = RouterRules.encode(rules) }
+    /** Live router rules; same fallback as [shareRouterRulesOnce]. */
+    fun shareRouterRulesFlow(): Flow<List<RouterRule>> =
+        store.data.map { RouterRules.decode(it[KEY_SHARE_ROUTER_RULES]).ifEmpty { RouterRules.seed() } }
+
+    /**
+     * Applies [edit] to the stored router rules inside one DataStore edit, so rules written by
+     * another writer since the caller last read the list are kept. Use this, never a whole-list write.
+     */
+    suspend fun editShareRouterRules(edit: RouterRuleEdit) {
+        store.edit { prefs ->
+            val current = RouterRules.decode(prefs[KEY_SHARE_ROUTER_RULES]).ifEmpty { RouterRules.seed() }
+            prefs[KEY_SHARE_ROUTER_RULES] = RouterRules.encode(RouterRuleEdit.apply(current, edit))
+        }
     }
 
-    /** Router rule ids already seeded from plugin `shareHosts` (so user deletions stick). */
-    suspend fun seededPluginShareRuleIdsOnce(): Set<String> =
-        decodeIdSet(store.data.first()[KEY_SEEDED_PLUGIN_SHARE_RULES])
-
-    suspend fun setSeededPluginShareRuleIds(ids: Set<String>) {
-        store.edit { it[KEY_SEEDED_PLUGIN_SHARE_RULES] = ids.sorted().joinToString(",") }
+    /**
+     * Adds Plugin URL rules for installed plugins' `shareHosts` ([RouterRules.withPluginHosts]).
+     * Rules and the seeded-id set (so user deletions stick) change in the same edit.
+     */
+    suspend fun seedPluginShareRules(manifests: List<PluginManifest>) {
+        store.edit { prefs ->
+            val current = RouterRules.decode(prefs[KEY_SHARE_ROUTER_RULES]).ifEmpty { RouterRules.seed() }
+            val seeded = decodeIdSet(prefs[KEY_SEEDED_PLUGIN_SHARE_RULES])
+            val (next, nextSeeded) = RouterRules.withPluginHosts(current, manifests, seeded)
+            if (next != current) prefs[KEY_SHARE_ROUTER_RULES] = RouterRules.encode(next)
+            if (nextSeeded != seeded) {
+                prefs[KEY_SEEDED_PLUGIN_SHARE_RULES] = nextSeeded.sorted().joinToString(",")
+            }
+        }
     }
 
     /** Plugin repository index URLs; null until the user first edits the list. */
@@ -664,57 +685,5 @@ class SettingsStore(context: Context) {
                 this[KEY_TTS_CLIP_FLEX_CHARS] ?: TtsPrefs.DEFAULT_CLIP_FLEX_CHARS,
             ),
         )
-
-        private fun encodeCustomTabs(tabs: List<CustomLibraryTab>): String {
-            val arr = JSONArray()
-            tabs.sortedBy { it.order }.forEach { tab ->
-                arr.put(
-                    JSONObject()
-                        .put("id", tab.id)
-                        .put("title", tab.title)
-                        .put("order", tab.order),
-                )
-            }
-            return arr.toString()
-        }
-
-        private fun decodeCustomTabs(raw: String?): List<CustomLibraryTab> {
-            if (raw.isNullOrBlank()) return emptyList()
-            return runCatching {
-                val arr = JSONArray(raw)
-                buildList {
-                    for (i in 0 until arr.length()) {
-                        val o = arr.optJSONObject(i) ?: continue
-                        val id = o.optString("id").trim()
-                        val title = o.optString("title").trim()
-                        if (id.isEmpty() || title.isEmpty()) continue
-                        add(
-                            CustomLibraryTab(
-                                id = id,
-                                title = title,
-                                order = o.optInt("order", i),
-                            ),
-                        )
-                    }
-                }.sortedBy { it.order }
-            }.getOrDefault(emptyList())
-        }
-
-        /** `tabKey=ModeName` pairs joined by commas. */
-        private fun encodeLibrarySorts(map: Map<String, String>): String =
-            map.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
-
-        private fun decodeLibrarySorts(raw: String?): Map<String, String> {
-            if (raw.isNullOrBlank()) return emptyMap()
-            return raw.split(',')
-                .mapNotNull { part ->
-                    val i = part.indexOf('=')
-                    if (i <= 0) return@mapNotNull null
-                    val key = part.substring(0, i).trim()
-                    val value = part.substring(i + 1).trim()
-                    if (key.isEmpty() || value.isEmpty()) null else key to value
-                }
-                .toMap()
-        }
     }
 }

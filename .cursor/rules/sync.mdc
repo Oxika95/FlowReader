@@ -1,0 +1,24 @@
+---
+description: Flow Reader plugin two-way sync (TwoWaySync, baselines, outbox, list and position reconcile)
+globs: app/src/main/java/com/personal/flowreader/plugin/sync/**/*.kt
+alwaysApply: false
+---
+
+# Plugin sync
+
+- `ListReconcile`, `ProgressReconcile` and `SyncPullKind` are pure and JVM-tested; change decisions
+  there and add a test case.
+- `TwoWaySync.lock` is one global, non-reentrant `Mutex`. Holders: `run`, `ingestCrawledLists`,
+  `pullPositions`, `UpdateChecker.run`, `PluginDataEraser.erase`. Never call one holder from another.
+- `tocStored` stays lock-free. `ProgressWriter`'s `onWritten` hook must not call `drain`.
+- `sync.json` changes go through `SyncStateStore.update` (locked read-modify-write); list files
+  `_lists/*.txt` have no lock of their own.
+- Baselines record what both sides last agreed on. Check the order of baseline writes against
+  `docs/agent/seams.md` before moving any of them.
+- Position writes go through `data/ProgressWriter.kt`; logging through `debug/DebugLog.kt`.
+- Plugin-visible changes follow `docs/agent/cross-repo.md` and `.cursor/rules/plugin-api.mdc`.
+
+Before changing a file here, run `rg -n '<FileName>' docs/agent/seams.md`.
+
+Entry: `docs/agent/registry.md` (Plugin two-way sync). History:
+`../flow-reader-chats/areas/plugins.md`.

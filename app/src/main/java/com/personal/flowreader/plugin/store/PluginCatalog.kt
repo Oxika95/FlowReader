@@ -4,7 +4,6 @@ import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.BookItem
 import com.personal.flowreader.data.PositionSource
 import com.personal.flowreader.data.ProgressUpdate
-import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.PositionDomain
 import com.personal.flowreader.data.savedChapterOrNone
 import java.io.File
@@ -87,21 +86,28 @@ class PluginCatalog(private val app: FlowApp) {
         dest.writeText(text)
         val row = ensureRow(pluginId, bookId, title, sourceUri, dest)
         if (startChapter != null && startChapter != row.position.chapterIndex) {
-            val update = ProgressUpdate(
-                session = ReadingSessionId(PositionDomain.Plugin, bookId),
-                rowKey = bookId,
-                chapterIndex = startChapter,
-                blockIndex = 0,
-                charOffset = 0,
-                fraction = if (chapterCount > 0) startChapter.toFloat() / chapterCount else 0f,
-                at = System.currentTimeMillis(),
-                chapterHref = chapterHref,
-                source = PositionSource.PluginSeek,
+            app.progress.submitAndDrain(
+                ProgressUpdate.chapterSeek(
+                    domain = PositionDomain.Plugin,
+                    rowKey = bookId,
+                    chapterIndex = startChapter,
+                    chapterCount = chapterCount,
+                    source = PositionSource.PluginSeek,
+                    chapterHref = chapterHref,
+                ),
             )
-            app.positionLog.position(update, writePosition(update))
             return dao(pluginId).get(bookId) ?: row
         }
         return row
+    }
+
+    /**
+     * Saves [update] (a chapter seek) through the progress writer and waits for the write. The writer
+     * drops updates for a story without a catalog row, so [createRow] runs first when there is none.
+     */
+    suspend fun seekChapter(update: ProgressUpdate, createRow: suspend () -> Unit) {
+        if (get(update.rowKey) == null) createRow()
+        app.progress.submitAndDrain(update)
     }
 
     /** The plugin's [title] for an existing row (after a ToC refresh). */
@@ -138,6 +144,7 @@ class PluginCatalog(private val app: FlowApp) {
         return dao.get(bookId) ?: error("Could not store $bookId")
     }
 
+    /** The plugin-domain write of [AppPositionStore]; everything else goes through `app.progress`. */
     suspend fun writePosition(update: ProgressUpdate): Boolean {
         val pluginId = pluginIdFor(update.rowKey) ?: return false
         val p = update.toPosition()

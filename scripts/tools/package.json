@@ -1,0 +1,8 @@
+{
+  "name": "flow-reader-agent-tools",
+  "private": true,
+  "description": "Pinned tools for scripts/agent (duplicate-code check)",
+  "devDependencies": {
+    "jscpd": "5.4.2"
+  }
+}

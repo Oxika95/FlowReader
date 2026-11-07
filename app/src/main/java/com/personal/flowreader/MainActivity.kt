@@ -26,6 +26,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.personal.flowreader.data.ReaderOrientation
 import com.personal.flowreader.plugin.updates.ActiveChapterNotifications
+import com.personal.flowreader.ui.debug.DebugRoute
 import com.personal.flowreader.ui.debug.DebugSynthDumpFab
 import com.personal.flowreader.ui.design.layer.FlowOverlayHost
 import com.personal.flowreader.ui.library.LibraryScreen
@@ -38,10 +39,13 @@ import com.personal.flowreader.ui.reader.QueueBook
 import com.personal.flowreader.ui.reader.ReaderScreen
 import com.personal.flowreader.ui.reader.ReaderViewModel
 import com.personal.flowreader.ui.theme.FlowTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val pendingIncoming = MutableStateFlow<Intent?>(null)
+    private val pendingDebugRoute = MutableStateFlow<DebugRoute?>(null)
     private var pendingNotificationCallback: (() -> Unit)? = null
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -53,6 +57,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) readDebugRoute(intent)
         if (isIncomingIntent(intent)) {
             val recreated = savedInstanceState != null
             logIncoming("onCreate", intent, recreated = recreated)
@@ -144,6 +149,19 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    val debugRoute by pendingDebugRoute.collectAsState()
+                    LaunchedEffect(debugRoute) {
+                        val route = debugRoute ?: return@LaunchedEffect
+                        nav.popBackStack("library", inclusive = false)
+                        if (route is DebugRoute.FirstBook) {
+                            pendingDebugRoute.value = null
+                            val id = withContext(Dispatchers.IO) {
+                                (application as FlowApp).catalog.list().firstOrNull()?.bookId
+                            }
+                            if (id != null) nav.navigate("reader/$id") { launchSingleTop = true }
+                        }
+                    }
+
                     FlowOverlayHost(
                         system = {
                             if (openUi.debugEnabled || tts.debugEnabled) {
@@ -164,6 +182,8 @@ class MainActivity : ComponentActivity() {
                                     vm = libraryVm,
                                     appearance = AppearanceSettingsState(openUi),
                                     appearanceCallbacks = AppearanceSettingsCallbacks(openVm),
+                                    debugRoute = debugRoute,
+                                    onDebugRouteHandled = { pendingDebugRoute.value = null },
                                     onOpenBook = { id -> nav.navigate("reader/$id") },
                                     onOpenQue = { bookId, queId, chapter ->
                                         nav.navigate("reader/$bookId/que/$queId" + (chapter?.let { "?chapter=$it" } ?: ""))
@@ -220,10 +240,16 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        readDebugRoute(intent)
         if (isIncomingIntent(intent)) {
             logIncoming("onNewIntent", intent, recreated = false)
             pendingIncoming.value = Intent(intent)
         }
+    }
+
+    private fun readDebugRoute(intent: Intent?) {
+        if (!BuildConfig.DEBUG) return
+        DebugRoute.parse(intent?.getStringExtra(DebugRoute.EXTRA))?.let { pendingDebugRoute.value = it }
     }
 
     private fun logIncoming(from: String, intent: Intent, recreated: Boolean) {

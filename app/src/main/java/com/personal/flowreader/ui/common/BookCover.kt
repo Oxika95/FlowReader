@@ -1,17 +1,16 @@
 package com.personal.flowreader.ui.common
 
-import android.graphics.BitmapFactory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.personal.flowreader.data.EpubCover
 import com.personal.flowreader.data.BookItem
+import com.personal.flowreader.data.ScaledBitmap
+import com.personal.flowreader.net.HttpClients
 import java.io.File
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /** Shared cover remember helper for library cards, reader banner, and splashes. */
@@ -43,7 +42,7 @@ fun loadBookCoverBitmap(book: BookItem, maxEdge: Int): android.graphics.Bitmap? 
     // Plugin stories keep a downloaded cover next to their text snapshot.
     if (!file.name.endsWith(".epub", ignoreCase = true)) {
         val sidecar = sidecarCoverFile(file.parentFile)
-        if (sidecar != null) return decodeScaled(sidecar, maxEdge)
+        if (sidecar != null) return ScaledBitmap.decodeFile(sidecar, maxEdge)
     }
     return EpubCover.loadBitmap(file, maxEdge)
 }
@@ -52,7 +51,7 @@ fun loadBookCoverBitmap(storedPath: String, maxEdge: Int): android.graphics.Bitm
     if (storedPath.isBlank()) return null
     val file = File(storedPath)
     val sidecar = sidecarCoverFile(file.parentFile)
-    if (sidecar != null) return decodeScaled(sidecar, maxEdge)
+    if (sidecar != null) return ScaledBitmap.decodeFile(sidecar, maxEdge)
     return EpubCover.loadBitmap(file, maxEdge)
 }
 
@@ -71,12 +70,7 @@ private object RemoteCovers {
     private val cache = object : LinkedHashMap<String, ImageBitmap>(MAX_ENTRIES, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>?) = size > MAX_ENTRIES
     }
-    private val http by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .build()
-    }
+    private val http by lazy { HttpClients.create(connectSeconds = 15, readSeconds = 20, callSeconds = 40) }
 
     private fun key(url: String, maxEdge: Int) = "$maxEdge|$url"
 
@@ -86,15 +80,7 @@ private object RemoteCovers {
         http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
             val body = resp.body ?: return null
             if (!resp.isSuccessful || body.contentLength() > MAX_BYTES) return null
-            val bytes = body.bytes()
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-            var sample = 1
-            val longest = maxOf(bounds.outWidth, bounds.outHeight)
-            while (longest / sample > maxEdge) sample *= 2
-            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
-                ?: return null
+            val bmp = ScaledBitmap.decodeBytes(body.bytes(), maxEdge) ?: return null
             bmp.asImageBitmap().also { synchronized(cache) { cache[key(url, maxEdge)] = it } }
         }
     }.getOrNull()
@@ -104,14 +90,3 @@ private fun sidecarCoverFile(dir: File?): File? =
     listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp")
         .mapNotNull { name -> dir?.let { File(it, name) } }
         .firstOrNull { it.exists() && it.length() > 0L }
-
-private fun decodeScaled(file: File, maxEdge: Int): android.graphics.Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(file.absolutePath, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    var sample = 1
-    val longest = maxOf(bounds.outWidth, bounds.outHeight)
-    while (longest / sample > maxEdge) sample *= 2
-    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-    return BitmapFactory.decodeFile(file.absolutePath, opts)
-}

@@ -1,0 +1,67 @@
+# Tokens that notes-check.mjs accepts even though they don't resolve in app/src or the plugins repo.
+# One token per line, exactly as the check prints it. Group by reason; a token should be removed
+# when the note stops quoting it. A chats-only token belongs in flow-reader-chats/scripts/notes-allow.txt.
+
+# Tool and framework names
+AskQuestion
+setTimeout
+versionCode
+CloudUpload
+application/epub+zip
+rg
+uv
+beforeSubmitPrompt
+
+# Git ranges, stamps and build outputs (not in the source tree)
+origin/master..HEAD
+origin/main..HEAD
+stamp.json
+app/build/outputs/apk/debug/app-debug.apk
+
+# Graphify trial (dropped); names from that write-up only
+affected
+readStdin
+graphify-out/
+scripts/graph.ps1
+
+# Banned UI components, named in the rules on purpose
+Dialog
+ModalBottomSheet
+Scaffold
+
+# Plugin contract names (docs/plugins): JS-side types and fields, no Kotlin declaration
+ChapterRef.locked
+SourceCategory
+currentTime
+durationMs
+ebookLocation
+ebookProgress
+isFinished
+lastUpdate
+serverSetting
+timeMs
+
+# Files the app writes at runtime
+filesDir/logs/positions.log
+meta.txt
+sync.json
+toc.txt
+
+# Names that live in brand/ tooling, outside the indexed source
+LAYOUT
+TUNING
+TUNING.rollSeeds
+hole
+rollSeeds
+
+# Slash shorthand for several names, in the UI system docs
+FlowMotion.dockEnter/Exit
+MediaActionIds.READ/OPEN/DOWNLOAD/DELETE/REMOVE/SHARE/NOTIFY/RENAME/FOLDER/MANAGE/TOC
+dockEnter/Exit
+expandEnter/Exit
+fullscreenEnter/Exit
+popEnter/Exit
+scrimEnter/Exit
+
+# Stale in the notes (name no longer in the code); fix the note, then delete the line
+LibraryViewModel.executeShareIntent

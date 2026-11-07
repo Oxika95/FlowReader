@@ -6,9 +6,14 @@ alwaysApply: false
 
 # Reader
 
-- `ReaderScreen.kt` is large: find members in `docs/agent/index/ui-reader.md` and Read by offset.
-- Touch routing is pure (`ReaderTouchPolicy.resolveTouch`) with `ReaderTouchPolicyTest`; change the
-  policy there, not in gesture modifiers.
-- Floating chrome goes in the reader's `FlowDock`s; modals are `FlowFullscreenCard` (UI system rule).
-- Where to edit: `docs/agent/map.md` `## reader`. Behavior: `docs/reader.md`. History and open
-  threads: `../flow-reader-chats/areas/reader.md`.
+- Entries: `docs/agent/registry.md` `## Reader` (screen, media card, rail, home line, ToC, Queue,
+  loading). Couplings: `docs/agent/seams.md` `## Reader and Queue`.
+- `ReaderScreen.kt` is large: find members with `rg -n` and Read by offset.
+- The body is a RecyclerView (`ReaderBodyList`), not a lazy list. Move it only through
+  `scrollToHome`; adapter calls take adapter indices, not composition `items` indices.
+- Pure and tested: `resolveTouch`, `ReaderHome`, `mayPersist`. Change them there, not in modifiers.
+- Positions are written only by `ReaderViewModel.persist` (through `ProgressWriter`), never from
+  list or gesture code.
+- List callbacks are captured once; read live values through `rememberUpdatedState`.
+- Floating chrome goes in the reader's `FlowDock`s; modals are `FlowFullscreenCard`.
+- Behavior: `docs/reader.md`. History and open threads: `../flow-reader-chats/areas/reader.md`.

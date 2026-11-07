@@ -86,18 +86,16 @@ internal class PluginSyncController(
             DebugLog.plugins("$pluginId Sync now — pulling ${manifest.name} lists + positions…")
             try {
                 val report = withContext(Dispatchers.IO) { sync.run(pluginId) }
-                if (report.signedOut) throw PluginException(PluginErrorCode.AuthRequired, "Sign in to ${manifest.name} to sync")
-                val failedTitles = report.failedLists.mapNotNull { manifest.list(it)?.title ?: it }
+                val problem = report.problem(manifest.name) { manifest.list(it)?.title ?: it }
+                if (problem?.code == PluginErrorCode.AuthRequired) throw problem
                 val body = summary(report)
-                if (failedTitles.isNotEmpty()) {
-                    val miss =
-                        "Could not load ${failedTitles.joinToString(" and ")}. " +
-                            "Open site from Account to refresh the session, then Sync now."
+                if (problem != null) {
+                    val miss = problem.message.orEmpty()
                     // Lists that did load were already applied; don't discard that work as a hard fail.
                     if (report.added == 0 && report.removed == 0 && report.pushed == 0 &&
                         report.positionsPulled == 0 && report.conflicts == 0
                     ) {
-                        throw PluginException(PluginErrorCode.Network, miss)
+                        throw problem
                     }
                     DebugLog.plugins("$pluginId Sync now partial — $body; $miss")
                     ui.update { it.copy(message = "$body. $miss", showAccount = true, error = miss) }

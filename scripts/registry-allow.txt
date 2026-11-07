@@ -1,0 +1,2 @@
+# Files and plugin folders that no Owner:/Changes with: line in docs/agent/registry.md covers yet.
+# Entries only leave this list. A file is a path under app/src/main/java/com/personal/flowreader/.

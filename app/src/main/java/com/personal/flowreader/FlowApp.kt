@@ -13,7 +13,6 @@ import com.personal.flowreader.data.PositionLog
 import com.personal.flowreader.data.PositionSource
 import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.data.ProgressWriter
-import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.data.SettingsStore
 import com.personal.flowreader.plugin.PluginManager
 import com.personal.flowreader.plugin.PluginShareRequest
@@ -27,7 +26,6 @@ import com.personal.flowreader.plugin.store.TocRemap
 import com.personal.flowreader.plugin.store.PluginStorageMigrator
 import com.personal.flowreader.plugin.sync.TwoWaySync
 import com.personal.flowreader.plugin.updates.UpdateScheduler
-import com.personal.flowreader.share.RouterRules
 import com.personal.flowreader.share.ShareAction
 import com.personal.flowreader.share.ShareInbox
 import com.personal.flowreader.tts.TtsController
@@ -118,7 +116,18 @@ class FlowApp : Application() {
         pluginBooks.tocRemapped = ::remapSavedPosition
         pluginRepos = RepoManager(settings)
         pluginInstaller = PluginInstaller(pluginManager, pluginRepos)
-        progress = ProgressWriter(AppPositionStore(this), appScope, log = positionLog::position) { update ->
+        progress = ProgressWriter(
+            AppPositionStore(this),
+            appScope,
+            log = positionLog::position,
+            onFailed = { update, error ->
+                positionLog.event(
+                    "WRITE_FAILED",
+                    "row" to "${update.domain.name.lowercase()}:${update.rowKey}",
+                    "error" to error.toString(),
+                )
+            },
+        ) { update ->
             if (update.domain == PositionDomain.Plugin) {
                 pluginBooks.scheduleMaintain(update.rowKey, update.chapterHref)
             }
@@ -133,11 +142,7 @@ class FlowApp : Application() {
         appScope.launch { catalog.fillMissingRowMeta() }
         appScope.launch {
             pluginManager.installed.collect { list ->
-                val current = settings.shareRouterRulesOnce()
-                val seeded = settings.seededPluginShareRuleIdsOnce()
-                val (next, nextSeeded) = RouterRules.withPluginHosts(current, list.map { it.manifest }, seeded)
-                if (next != current) settings.setShareRouterRules(next)
-                if (nextSeeded != seeded) settings.setSeededPluginShareRuleIds(nextSeeded)
+                settings.seedPluginShareRules(list.map { it.manifest })
             }
         }
     }
@@ -191,21 +196,20 @@ class FlowApp : Application() {
             "to" to moved.chapterIndex,
             "same" to moved.sameChapter,
         )
-        progress.submit(
-            ProgressUpdate(
-                session = ReadingSessionId(PositionDomain.Plugin, session.bookId),
+        progress.submitAndDrain(
+            ProgressUpdate.chapterSeek(
+                domain = PositionDomain.Plugin,
                 rowKey = session.bookId,
                 chapterIndex = moved.chapterIndex,
+                chapterCount = newUrls.size,
+                source = PositionSource.Sync,
+                chapterHref = moved.chapterHref,
+                at = maxOf(System.currentTimeMillis(), position.positionAt + 1),
                 blockIndex = if (moved.sameChapter) position.blockIndex else 0,
                 charOffset = if (moved.sameChapter) position.charOffset else 0,
-                fraction = moved.chapterIndex.toFloat() / newUrls.size,
-                at = maxOf(System.currentTimeMillis(), position.positionAt + 1),
                 anchorText = if (moved.sameChapter) position.anchorText else "",
-                chapterHref = moved.chapterHref,
-                source = PositionSource.Sync,
             ),
         )
-        progress.drain()
     }
 
     /** Drop crashed import temps and leftover filter preview clips. */

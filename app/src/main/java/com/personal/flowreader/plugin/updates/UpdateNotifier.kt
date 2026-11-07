@@ -8,14 +8,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.personal.flowreader.MainActivity
 import com.personal.flowreader.R
+import com.personal.flowreader.data.ScaledBitmap
 import com.personal.flowreader.plugin.repo.PluginVersionUpdate
+import java.io.File
 
 /** Posts one notification per story with new chapters (grouped under a summary), and plugin updates. */
 object UpdateNotifier {
@@ -137,15 +138,10 @@ object UpdateNotifier {
         }
 
     /** Cover decoded at about large-icon size; null when missing or unreadable. */
-    private fun coverBitmap(context: Context, path: String): Bitmap? = runCatching {
+    private fun coverBitmap(context: Context, path: String): Bitmap? {
         val maxEdge = context.resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_height) * 2
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxEdge) sample *= 2
-        BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
-    }.getOrNull()
+        return ScaledBitmap.decodeFile(File(path), maxEdge)
+    }
 
     fun notificationId(bookId: String): Int = 7_000_000 + (bookId.hashCode() and 0xFFFFF)
 

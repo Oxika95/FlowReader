@@ -10,7 +10,7 @@ Full reference: `docs/ui-system/` (README, tokens, layers, cards, elements, reci
 
 ## Pick the component by role
 
-- Modal content → `FlowFullscreenCard(visible, onDismiss, title, variant, height, tabs, footer) { body }`
+- Modal content → `FlowFullscreenCard(visible, onDismiss, title, variant, tabs, footer) { body }`
 - Confirm/info → `FlowConfirmCard` (never `AlertDialog`)
 - Item metadata → `FlowMediaCard(model = XMediaCardAdapter.model(...))`, route `MediaAction.id`
 - List/grid item → `FlowDisplayCard` in `FlowDisplayList` / `FlowDisplayGrid`
@@ -37,7 +37,7 @@ values). Also no new tab-bar composables and no per-feature enter/exit animation
 - Fullscreen card height always wraps content and scrolls on overflow.
 - Body with a `LazyColumn`: `scrollable = false`, list gets `Modifier.weight(1f, fill = false)`.
 - Dock items declared top to bottom; content pads by `FlowScreenPadding`.
-- Tap a display card = primary action; long-press = media card.
+- Display card: tap = media card, double-tap = reader (cards.md).
 - New media source = new pure-Kotlin adapter + unit test, not new `FlowMediaCard` params.
 
 When adding a token or component, update `docs/ui-system/`.

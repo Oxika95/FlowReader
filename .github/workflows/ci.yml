@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@v4
+
+      - name: Checkout plugins (sibling for notes-check)
+        uses: actions/checkout@v4
+        with:
+          repository: Oxika95/flow-reader-plugins
+          path: _plugins
+
+      - name: Link plugins as sibling
+        run: ln -sfn "$GITHUB_WORKSPACE/_plugins" "$(dirname "$GITHUB_WORKSPACE")/flow-reader-plugins"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Compile and unit test
+        run: ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest --console=plain
+
+      - name: Rules and notes checks
+        run: |
+          node scripts/agent/rules-check.mjs
+          node scripts/agent/notes-check.mjs --app-only --full

@@ -50,6 +50,7 @@ internal fun SettingsOverlay(
     onDebugEnabled: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onRefreshEngines: () -> Unit = {},
+    requestedTab: Int? = null,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val ruleEditor = remember { DomainRuleEditorState() }
@@ -63,6 +64,11 @@ internal fun SettingsOverlay(
     val prefs by (LocalContext.current.applicationContext as FlowApp).chrome.collectAsState()
     val textTabs = prefs.settingsTabs == TabStyle.Text
     val chrome = remember(textTabs) { SettingsChrome(textTabs) }
+    androidx.compose.runtime.LaunchedEffect(requestedTab) {
+        val index = requestedTab?.takeIf { it in SettingsSections.indices } ?: return@LaunchedEffect
+        if (index != tab) chrome.subTab = null
+        tab = index
+    }
 
     FlowFullscreenCard(
         visible = visible,
@@ -235,10 +241,12 @@ private fun SharingSettingsHost(
     }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         prefs = withContext(Dispatchers.IO) { app.settings.shareOnce() }
-        routerRules = withContext(Dispatchers.IO) { app.settings.shareRouterRulesOnce() }
         parseRules = withContext(Dispatchers.IO) { app.settings.shareParseRulesOnce() }
         customTabs = withContext(Dispatchers.IO) { app.settings.customLibraryTabsOnce() }
         overlayOk = com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context)
+    }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        app.settings.shareRouterRulesFlow().collect { routerRules = it }
     }
     androidx.compose.runtime.LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -279,9 +287,8 @@ private fun SharingSettingsHost(
             }
             overlayOk = com.personal.flowreader.share.ShareOverlayPermission.canDrawOverlays(context)
         },
-        onSaveRouterRules = { next ->
-            routerRules = next
-            app.appScope.launch { app.settings.setShareRouterRules(next) }
+        onChangeRouterRules = { edit ->
+            app.appScope.launch { app.settings.editShareRouterRules(edit) }
         },
         onSaveParseRules = { next ->
             parseRules = com.personal.flowreader.share.ParseRules.withDefault(next)

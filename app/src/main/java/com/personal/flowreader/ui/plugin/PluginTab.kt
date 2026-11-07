@@ -96,11 +96,13 @@ fun PluginTabContent(
         actions.showMessage(msg)
         vm.consumeMessage()
     }
-    LaunchedEffect(ui.error) {
+    LaunchedEffect(ui.error, ui.anyOverlay) {
         val err = ui.error ?: return@LaunchedEffect
-        // Always toast; Account sheet also shows the hint when open (errors used to be silent under overlays).
+        // The snackbar draws under card scrims, so an open card shows the error as its own hint.
+        // Toast (and clear) it once no card is open.
+        if (ui.anyOverlay) return@LaunchedEffect
         actions.showError(err)
-        if (!ui.showAccount) vm.consumeError()
+        vm.consumeError()
     }
 
     Column(modifier.fillMaxSize()) {
@@ -371,11 +373,12 @@ fun PluginStoryOverlays(
         ui = ui,
         onDismiss = vm::closeManage,
         onCacheLevel = vm::setCacheLevelDraft,
+        onCacheLevelDone = vm::commitCacheLevel,
         onCleanup = vm::setCleanup,
         onKeepAll = vm::setKeepAll,
         onClearDownloads = vm::clearLocalDownloads,
         onRemove = {
-            vm.closeManage()
+            vm.closeManage(commitLevel = false)
             vm.deleteStory()
         },
     )

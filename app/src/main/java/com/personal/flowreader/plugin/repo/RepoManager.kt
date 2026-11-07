@@ -1,7 +1,7 @@
 package com.personal.flowreader.plugin.repo
 
 import com.personal.flowreader.data.SettingsStore
-import java.util.concurrent.TimeUnit
+import com.personal.flowreader.net.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -9,7 +9,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /** A configured repository and the result of its last fetch. */
@@ -27,10 +26,7 @@ data class PluginRepo(
  * URL; the official repo is pre-added and can be removed like any other.
  */
 class RepoManager(private val settings: SettingsStore) {
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    private val http = HttpClients.create()
 
     private val _repos = MutableStateFlow<List<PluginRepo>>(emptyList())
     val repos: StateFlow<List<PluginRepo>> = _repos

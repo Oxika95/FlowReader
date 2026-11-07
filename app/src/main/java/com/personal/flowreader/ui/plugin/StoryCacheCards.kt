@@ -2,6 +2,7 @@ package com.personal.flowreader.ui.plugin
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -18,6 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import com.personal.flowreader.ui.design.card.FlowActionRow
@@ -49,6 +52,7 @@ internal fun StoryManageCard(
     ui: PluginTabUi,
     onDismiss: () -> Unit,
     onCacheLevel: (String) -> Unit,
+    onCacheLevelDone: () -> Unit,
     onCleanup: (Boolean) -> Unit,
     onKeepAll: (Boolean) -> Unit,
     onClearDownloads: () -> Unit,
@@ -95,6 +99,7 @@ internal fun StoryManageCard(
                 OutlinedFieldWithInfo(
                     value = ui.cacheLevelDraft,
                     onValueChange = onCacheLevel,
+                    onDone = onCacheLevelDone,
                     enabled = editable,
                     label = "Cache level",
                     info = "How many chapters to download ahead of the last saved position, " +
@@ -246,18 +251,25 @@ internal fun PositionSliderCard(
 internal fun OutlinedFieldWithInfo(
     value: String,
     onValueChange: (String) -> Unit,
+    onDone: () -> Unit,
     enabled: Boolean,
     label: String,
     info: String,
     keyboardType: KeyboardType = KeyboardType.Number,
 ) {
     var showInfo by remember { mutableStateOf(false) }
+    var hadFocus by remember { mutableStateOf(false) }
     FlowTextField(
         value = value,
         onValueChange = onValueChange,
+        modifier = Modifier.onFocusChanged { focus ->
+            if (hadFocus && !focus.isFocused) onDone()
+            hadFocus = focus.isFocused
+        },
         enabled = enabled,
         label = label,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
         trailingIcon = {
             IconButton(onClick = { showInfo = true }) {
                 Icon(Icons.Outlined.Info, contentDescription = "About ${label.substringBefore(':')}")

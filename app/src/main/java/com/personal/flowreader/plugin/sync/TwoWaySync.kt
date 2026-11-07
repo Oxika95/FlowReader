@@ -4,8 +4,6 @@ import android.util.Log
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.PositionDomain
 import com.personal.flowreader.data.PositionSource
-import com.personal.flowreader.data.ReadingSessionId
-import com.personal.flowreader.plugin.store.PluginBookEntity
 import com.personal.flowreader.data.ProgressUpdate
 import com.personal.flowreader.plugin.api.PluginCapability
 import com.personal.flowreader.plugin.api.PluginChapterRef
@@ -171,67 +169,21 @@ class TwoWaySync(private val app: FlowApp) {
     }
 
     private suspend fun syncLists(pluginId: String, manifest: PluginManifest): SyncReport {
-        val dir = dataDir(pluginId)
-        val planned = HashMap<String, Set<String>>()
-        val dropped = LinkedHashSet<String>()
-        val guarded = LinkedHashSet<String>()
+        val remotes = LinkedHashMap<String, List<PluginWork>>()
         val failed = LinkedHashSet<String>()
-        var added = 0
-        var pushed = 0
         for (list in manifest.lists.filter { it.syncable && !it.isBrowse }) {
             currentCoroutineContext().ensureActive()
-            val remote = try {
-                lists.fetchList(pluginId, list.id)
+            try {
+                remotes[list.id] = lists.fetchList(pluginId, list.id)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: PluginException) {
                 if (e.code == PluginErrorCode.AuthRequired) throw e
                 Log.w(TAG, "Could not read ${list.id} for $pluginId", e)
                 failed += list.id
-                continue
             }
-            val state = SyncStateStore.read(dir)
-            val pending = state.outbox.filterIsInstance<SyncOp.Membership>().filter { it.listId == list.id }
-            val plan = ListReconcile.plan(
-                local = PluginMembershipStore.workIds(dir, list.id),
-                remote = remote.map { it.id }.toSet(),
-                baseline = state.lists[list.id],
-                pendingAdd = pending.filter { it.on }.map { it.workId }.toSet(),
-                pendingRemove = pending.filterNot { it.on }.map { it.workId }.toSet(),
-            )
-            if (plan.guarded) {
-                Log.w(TAG, "$pluginId ${list.id}: site list looks truncated (${remote.size}); skipped its removals")
-                guarded += list.id
-            }
-            lists.mergeList(pluginId, list.id, remote, skip = plan.pushRemove, remove = plan.removeLocal)
-            SyncStateStore.update(dir) { s ->
-                var next = s
-                plan.pushAdd.forEach { next = next.enqueue(SyncOp.Membership(it, list.id, on = true)) }
-                plan.pushRemove.forEach { next = next.enqueue(SyncOp.Membership(it, list.id, on = false)) }
-                next
-            }
-            planned[list.id] = plan.baseline
-            dropped += plan.removeLocal
-            added += plan.addLocal.size
-            pushed += plan.pushAdd.size + plan.pushRemove.size
         }
-        if (planned.isNotEmpty()) {
-            flush(pluginId)
-            SyncStateStore.update(dir) { s ->
-                s.copy(
-                    lists = s.lists + planned.mapValues { (id, p) -> s.listBaseline(id, p) },
-                    guardedLists = (s.guardedLists - planned.keys) + guarded,
-                )
-            }
-            lists.dropUnlisted(pluginId, dropped)
-        }
-        return SyncReport(
-            added = added,
-            removed = dropped.size,
-            pushed = pushed,
-            guardedLists = guarded,
-            failedLists = failed,
-        )
+        return mergeLists(pluginId, remotes).copy(failedLists = failed)
     }
 
     /**
@@ -256,7 +208,7 @@ class TwoWaySync(private val app: FlowApp) {
             resetListBaselines(pluginId, remotes.keys)
             SyncReport(added = count, initialPull = true)
         } else {
-            ingestMerged(pluginId, remotes)
+            mergeLists(pluginId, remotes)
         }
         if (report.failedLists.isEmpty() && manifest.has(PluginCapability.ProgressSync)) {
             report = syncPositions(pluginId, manifest, report, overwrite = force)
@@ -269,14 +221,17 @@ class TwoWaySync(private val app: FlowApp) {
         report.copy(queued = queued, conflicts = state(pluginId).conflicts.size)
     }
 
-    /** Progressive list merge using already-crawled [remotes] (keys = list ids). */
-    private suspend fun ingestMerged(
+    /**
+     * Three-way list merge of fetched or crawled [remotes] (keys = list ids). A story the site
+     * dropped leaves the app's lists but keeps its library row, downloads, Queue entries and rename.
+     */
+    private suspend fun mergeLists(
         pluginId: String,
         remotes: Map<String, List<PluginWork>>,
     ): SyncReport {
         val dir = dataDir(pluginId)
         val planned = HashMap<String, Set<String>>()
-        val dropped = LinkedHashSet<String>()
+        val removedLocally = LinkedHashSet<String>()
         val guarded = LinkedHashSet<String>()
         var added = 0
         var pushed = 0
@@ -292,7 +247,7 @@ class TwoWaySync(private val app: FlowApp) {
                 pendingRemove = pending.filterNot { it.on }.map { it.workId }.toSet(),
             )
             if (plan.guarded) {
-                Log.w(TAG, "$pluginId $listId: crawled list looks truncated (${remote.size}); skipped its removals")
+                Log.w(TAG, "$pluginId $listId: site list looks truncated (${remote.size}); skipped its removals")
                 guarded += listId
             }
             lists.mergeList(pluginId, listId, remote, skip = plan.pushRemove, remove = plan.removeLocal)
@@ -303,7 +258,7 @@ class TwoWaySync(private val app: FlowApp) {
                 next
             }
             planned[listId] = plan.baseline
-            dropped += plan.removeLocal
+            removedLocally += plan.removeLocal
             added += plan.addLocal.size
             pushed += plan.pushAdd.size + plan.pushRemove.size
         }
@@ -315,11 +270,10 @@ class TwoWaySync(private val app: FlowApp) {
                     guardedLists = (s.guardedLists - planned.keys) + guarded,
                 )
             }
-            lists.dropUnlisted(pluginId, dropped)
         }
         return SyncReport(
             added = added,
-            removed = dropped.size,
+            removed = removedLocally.size,
             pushed = pushed,
             guardedLists = guarded,
         )
@@ -420,12 +374,11 @@ class TwoWaySync(private val app: FlowApp) {
             }
             is ProgressAction.ApplyRemote -> {
                 saveBaseline(dir, workId, action.chapterUrl)
-                indexOf(action.chapterUrl)?.let { applyPosition(pluginId, session, it, row) }
+                indexOf(action.chapterUrl)?.let { applyPosition(pluginId, session, it) }
             }
             is ProgressAction.PushLocal -> {
-                saveBaseline(dir, workId, action.chapterUrl)
                 val title = session.toc.getOrNull(urls.indexOf(action.chapterUrl))?.title.orEmpty()
-                SyncStateStore.update(dir) { it.enqueue(SyncOp.Position(workId, action.chapterUrl, title)) }
+                SyncStateStore.update(dir) { it.enqueuePosition(SyncOp.Position(workId, action.chapterUrl, title)) }
             }
             ProgressAction.NoOp -> saveBaseline(dir, workId, decision.baseline)
         }
@@ -473,29 +426,23 @@ class TwoWaySync(private val app: FlowApp) {
     }
 
     /** Writes chapter [index] through the progress writer, whose hook downloads ahead. */
-    private suspend fun applyPosition(pluginId: String, session: PluginReadSession, index: Int, row: PluginBookEntity?) {
-        if (row == null) {
+    private suspend fun applyPosition(pluginId: String, session: PluginReadSession, index: Int) {
+        app.pluginCatalog.seekChapter(
+            ProgressUpdate.chapterSeek(
+                domain = PositionDomain.Plugin,
+                rowKey = session.bookId,
+                chapterIndex = index,
+                chapterCount = session.toc.size,
+                source = PositionSource.Sync,
+                chapterHref = session.toc[index].url,
+            ),
+        ) {
             val cover = PluginSessionStore.readSplash(PluginSessionStore.dir(dataDir(pluginId), session.workId))?.cover.orEmpty()
             lists.upsertWork(
                 pluginId,
                 PluginWork(id = session.workId, title = session.title, url = session.workUrl, author = session.author, cover = cover),
             )
         }
-        app.progress.submit(
-            ProgressUpdate(
-                session = ReadingSessionId(PositionDomain.Plugin, session.bookId),
-                rowKey = session.bookId,
-                chapterIndex = index,
-                blockIndex = 0,
-                charOffset = 0,
-                fraction = index.toFloat() / session.toc.size,
-                at = System.currentTimeMillis(),
-                anchorText = "",
-                chapterHref = session.toc[index].url,
-                source = PositionSource.Sync,
-            ),
-        )
-        app.progress.drain()
     }
 
     /**
@@ -531,6 +478,11 @@ class TwoWaySync(private val app: FlowApp) {
         }
     }
 
+    /** A story was removed from the library only: the site's lists stay as they are. */
+    fun storyRemovedLocally(pluginId: String, workId: String) {
+        SyncStateStore.update(dataDir(pluginId)) { it.forgetStoryLists(workId) }
+    }
+
     /** "Use Royal Road": take the site's chapter; "Keep mine": push the app's. */
     suspend fun resolveConflict(pluginId: String, workId: String, useRemote: Boolean) {
         val dir = dataDir(pluginId)
@@ -541,12 +493,11 @@ class TwoWaySync(private val app: FlowApp) {
         if (useRemote) {
             saveBaseline(dir, workId, conflict.remoteUrl)
             ProgressReconcile.tocIndex(urls, conflict.remoteUrl)?.let {
-                applyPosition(pluginId, session, it, app.pluginCatalog.get(bookId))
+                applyPosition(pluginId, session, it)
             }
         } else {
-            saveBaseline(dir, workId, conflict.localUrl)
             val title = session.toc.getOrNull(urls.indexOf(conflict.localUrl))?.title.orEmpty()
-            SyncStateStore.update(dir) { it.enqueue(SyncOp.Position(workId, conflict.localUrl, title)) }
+            SyncStateStore.update(dir) { it.enqueuePosition(SyncOp.Position(workId, conflict.localUrl, title)) }
             flush(pluginId)
         }
         _changes.tryEmit(pluginId)

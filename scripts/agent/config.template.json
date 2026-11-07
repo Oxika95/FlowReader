@@ -1,0 +1,9 @@
+{
+  "roots": { "app": "", "plugins": "", "chats": "" },
+  "identity": { "name": "Bryce Oakes", "email": "bryce@sdc.local" },
+  "lockTimeoutMinutes": 30,
+  "subagentIdleMinutes": 10,
+  "loopLimit": 20,
+  "releaseOnReasons": ["user_close", "window_close"],
+  "shellHook": "preToolUse"
+}

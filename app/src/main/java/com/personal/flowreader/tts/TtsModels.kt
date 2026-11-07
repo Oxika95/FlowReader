@@ -1,7 +1,6 @@
 package com.personal.flowreader.tts
 
 import java.io.IOException
-import okhttp3.OkHttpClient
 
 /** Word boundary cue (offsets in 100-ns ticks) from a clip-audio provider. */
 data class EdgeWordBoundary(
@@ -27,12 +26,11 @@ class EdgeServiceException(message: String, val status: Int) : IllegalStateExcep
 class EdgeNetworkException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 /**
- * One race attempt: sent [startMs] after the race begins, over [http] / [network]
- * (bound to [lane]). [network] is used by raw WebSocket collects; [http] by OkHttp callers.
+ * One race attempt: sent [startMs] after the race begins, over [network] (bound to [lane]; null =
+ * system default route). Used by raw WebSocket collects.
  */
 class RaceLane(
     val startMs: Long,
     val lane: NetLane,
-    val http: OkHttpClient,
     val network: android.net.Network? = null,
 )

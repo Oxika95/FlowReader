@@ -22,4 +22,4 @@ Routes and Back behavior: [navigation.md](../navigation.md).
 | --- | --- |
 | `flow-reader` (this) | Android app, plugin contract (`docs/plugins/`) |
 | `../flow-reader-plugins` | Public plugin sources, Node test host, index build, Pages publish |
-| `../flow-reader-chats` | Private: workflow stages, area history, decisions, transcripts |
+| `../flow-reader-chats` | Private: backlog, saved plans, area history, decisions, transcripts |

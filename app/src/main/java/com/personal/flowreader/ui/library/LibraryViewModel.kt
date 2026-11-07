@@ -15,7 +15,6 @@ import com.personal.flowreader.data.LibraryTabId
 import com.personal.flowreader.data.BookItem
 import com.personal.flowreader.data.QueueItemEntity
 import com.personal.flowreader.data.TextIngestResult
-import com.personal.flowreader.data.TextFilters
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.PluginShareRequest
@@ -23,6 +22,7 @@ import com.personal.flowreader.plugin.updates.UpdateNotifier
 import com.personal.flowreader.share.ParseRule
 import com.personal.flowreader.share.ParseRules
 import com.personal.flowreader.share.RouterLanding
+import com.personal.flowreader.share.RouterRuleEdit
 import com.personal.flowreader.share.ShareParseMode
 import com.personal.flowreader.share.WebCrawl
 import com.personal.flowreader.share.ShareAction
@@ -32,6 +32,8 @@ import com.personal.flowreader.share.SharePayload
 import com.personal.flowreader.share.ShareRouter
 import com.personal.flowreader.share.WebPageIngest
 import com.personal.flowreader.ui.reader.FilterPreviewMode
+import com.personal.flowreader.ui.settings.FilterEdits
+import com.personal.flowreader.ui.settings.FilterRuleEditing
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -79,7 +81,7 @@ data class CrawlProgress(
     val stopping: Boolean = false,
 )
 
-class LibraryViewModel(app: Application) : AndroidViewModel(app) {
+class LibraryViewModel(app: Application) : AndroidViewModel(app), FilterRuleEditing {
     private val flow = app as FlowApp
     val tts = flow.tts
     val plugins: StateFlow<List<InstalledPlugin>> =
@@ -214,14 +216,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) {
                 flow.catalog.clearLibraryTab(tabId)
                 flow.settings.setCustomLibraryTabs(next)
-                val rules = flow.settings.shareRouterRulesOnce().map { rule ->
-                    if (rule.destination.id == tabId) {
-                        rule.copy(destination = RouterLanding.Files)
-                    } else {
-                        rule
-                    }
-                }
-                flow.settings.setShareRouterRules(rules)
+                flow.settings.editShareRouterRules(RouterRuleEdit.RedirectTabToFiles(tabId))
             }
             val tab = when (val cur = _ui.value.tab) {
                 is LibraryTabId.Custom ->
@@ -727,22 +722,15 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     val entity = flow.db.library().get(bookId) ?: return@withContext
                     val count = entity.chapterCount.coerceAtLeast(1)
                     val index = chapterIndex.coerceIn(0, count - 1)
-                    flow.progress.submit(
-                        com.personal.flowreader.data.ProgressUpdate(
-                            session = com.personal.flowreader.data.ReadingSessionId(
-                                com.personal.flowreader.data.PositionDomain.Library,
-                                bookId,
-                            ),
+                    flow.progress.submitAndDrain(
+                        com.personal.flowreader.data.ProgressUpdate.chapterSeek(
+                            domain = com.personal.flowreader.data.PositionDomain.Library,
                             rowKey = bookId,
                             chapterIndex = index,
-                            blockIndex = 0,
-                            charOffset = 0,
-                            fraction = index.toFloat() / count,
-                            at = System.currentTimeMillis(),
+                            chapterCount = count,
                             source = com.personal.flowreader.data.PositionSource.PluginSeek,
                         ),
                     )
-                    flow.progress.drain()
                 }
                 _ui.value = _ui.value.copy(pendingOpenBookId = bookId, error = null)
             } catch (t: Throwable) {
@@ -751,73 +739,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addFilter(scope: FilterScope, rule: FilterRule) {
+    /** The Library has no Local scope, so Local edits do nothing. */
+    override fun editFilters(scope: FilterScope, edit: (List<FilterRule>) -> List<FilterRule>) {
         viewModelScope.launch {
             when (scope) {
-                FilterScope.Global -> {
-                    val next = _ui.value.filtersGlobal + rule.copy(order = nextOrder(_ui.value.filtersGlobal))
-                    persistGlobal(next)
-                }
-                FilterScope.Groups -> {
-                    val next = _ui.value.filtersGroups + rule.copy(order = nextOrder(_ui.value.filtersGroups))
-                    persistGroups(next)
-                }
-                FilterScope.Local -> Unit
-            }
-        }
-    }
-
-    fun updateFilter(scope: FilterScope, rule: FilterRule) {
-        viewModelScope.launch {
-            when (scope) {
-                FilterScope.Global -> {
-                    val next = _ui.value.filtersGlobal.map { if (it.id == rule.id) rule else it }
-                    persistGlobal(next)
-                }
-                FilterScope.Groups -> {
-                    val next = _ui.value.filtersGroups.map { if (it.id == rule.id) rule else it }
-                    persistGroups(next)
-                }
-                FilterScope.Local -> Unit
-            }
-        }
-    }
-
-    fun setFilterEnabled(scope: FilterScope, id: String, enabled: Boolean) {
-        viewModelScope.launch {
-            when (scope) {
-                FilterScope.Global -> {
-                    val next = _ui.value.filtersGlobal.map {
-                        if (it.id == id) it.copy(enabled = enabled) else it
-                    }
-                    persistGlobal(next)
-                }
-                FilterScope.Groups -> {
-                    val next = _ui.value.filtersGroups.map {
-                        if (it.id == id) it.copy(enabled = enabled) else it
-                    }
-                    persistGroups(next)
-                }
-                FilterScope.Local -> Unit
-            }
-        }
-    }
-
-    fun deleteFilters(scope: FilterScope, ids: Set<String>) {
-        viewModelScope.launch {
-            when (scope) {
-                FilterScope.Global -> persistGlobal(_ui.value.filtersGlobal.filterNot { it.id in ids })
-                FilterScope.Groups -> persistGroups(_ui.value.filtersGroups.filterNot { it.id in ids })
-                FilterScope.Local -> Unit
-            }
-        }
-    }
-
-    fun reorderFilters(scope: FilterScope, ids: List<String>) {
-        viewModelScope.launch {
-            when (scope) {
-                FilterScope.Global -> persistGlobal(TextFilters.reorder(_ui.value.filtersGlobal, ids))
-                FilterScope.Groups -> persistGroups(TextFilters.reorder(_ui.value.filtersGroups, ids))
+                FilterScope.Global -> persistGlobal(edit(_ui.value.filtersGlobal))
+                FilterScope.Groups -> persistGroups(edit(_ui.value.filtersGroups))
                 FilterScope.Local -> Unit
             }
         }
@@ -828,26 +755,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         draft: FilterRule,
         scope: FilterScope,
         mode: FilterPreviewMode,
-    ): FilterApplyResult {
-        val rules = when (mode) {
-            FilterPreviewMode.Original -> emptyList()
-            FilterPreviewMode.ThisRule -> listOf(draft.copy(enabled = true, order = 0))
-            FilterPreviewMode.AllEnabled -> {
-                val global = _ui.value.filtersGlobal
-                val groups = _ui.value.filtersGroups
-                val withDraft: (List<FilterRule>) -> List<FilterRule> = { list ->
-                    list.map { if (it.id == draft.id) draft else it }.let { mapped ->
-                        if (mapped.any { it.id == draft.id }) mapped else mapped + draft
-                    }
-                }
-                when (scope) {
-                    FilterScope.Global -> TextFilters.merge(withDraft(global), groups, emptyList())
-                    FilterScope.Groups -> TextFilters.merge(global, withDraft(groups), emptyList())
-                    FilterScope.Local -> TextFilters.merge(global, groups, listOf(draft))
-                }
-            }
-        }
-        return TextFilters.apply(sample, rules)
+    ): FilterApplyResult = with(_ui.value) {
+        FilterEdits.preview(sample, draft, scope, mode, filtersGlobal, filtersGroups, emptyList())
     }
 
     private suspend fun persistGlobal(rules: List<FilterRule>) {
@@ -861,9 +770,6 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(filtersGroups = rules)
         tts.setSpeechFilters(_ui.value.filtersGlobal, rules)
     }
-
-    private fun nextOrder(rules: List<FilterRule>): Int =
-        (rules.maxOfOrNull { it.order } ?: -1) + 1
 
     fun add(uri: Uri, source: BookSource) {
         viewModelScope.launch {

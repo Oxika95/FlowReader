@@ -1,0 +1,2 @@
+# Couplings in the code that docs/agent/seams.md doesn't cover yet. Entries only leave this list.
+# Format: <kind>: <name>, as printed by scripts/agent/seams-check.mjs.

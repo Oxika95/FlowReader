@@ -122,7 +122,7 @@ Sub-tabs: **Router | Parser**.
 | Manual Override | `share_ask_mode` — Ask vs Auto; Ask needs display-over permission |
 | Auto Play on Share | `tts_auto_play_on_share` — default Off; a share saved to Library or Queue opens in the reader and starts TTS when nothing is playing ([tts.md](tts.md#playback-behavior)) |
 | Interrupt Playback | `tts_share_interrupts` — default Off; shown only with Auto Play on Share; the share also replaces current playback |
-| Rules list | Enable switch; hold for edit mode (drag reorder, multi-select, Delete) like Filters → `share_router_rules` |
+| Rules list | Enable switch; hold for edit mode (drag reorder, multi-select, Delete) like Filters → `share_router_rules`; each change (add, replace, toggle, delete, reorder) is applied to the stored list atomically, and the list updates live when a plugin install seeds a rule |
 | Rule editor | Content (Book files / Raw text / URL), URL match, Parse page, Destination (Files / Queue / shelves / Plugin) |
 
 Default idea: EPUB → Files; raw text / most URLs → Queue; plugin domains → plugin.

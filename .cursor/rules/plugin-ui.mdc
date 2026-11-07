@@ -1,0 +1,22 @@
+---
+description: Flow Reader plugin tab UI (PluginTabViewModel, story cards, account, creator page)
+globs: app/src/main/java/com/personal/flowreader/ui/plugin/**/*.kt,app/src/main/java/com/personal/flowreader/ui/library/PluginNewChapters.kt,app/src/main/java/com/personal/flowreader/ui/library/PluginTabIcons.kt
+alwaysApply: false
+---
+
+# Plugin UI
+
+- Entries: `docs/agent/registry.md` `## Plugin UI`. Couplings: `docs/agent/seams.md`
+  `## Plugin UI and runtime`. The plugin-facing contract is the `plugin-api` rule.
+- `PluginTabViewModel.kt` is very large: find members with `rg -n` and Read by
+  offset. Up to three instances per plugin exist (Library, reader card, Settings).
+- Position writes go through `ProgressWriter`, with the catalog row created first; never write a
+  plugin position table directly.
+- Build book ids with `PluginManager.bookIdFor`; never write a plugin id or a `rr:`/`pt:` prefix as a
+  literal in app code.
+- Story actions are `MediaCardModel` content from `PluginMediaCardAdapter`; the reader reuses the same
+  overlays, so hide actions it cannot do through `ReaderHiddenActions`.
+- Sign-in is the site's own page in a WebView; the plugin never sees a password. Cookie handling is
+  process-wide (`CookieManager`).
+- Sync, erase and update code share `TwoWaySync.lock`; see the `sync` rule.
+- History: `../flow-reader-chats/areas/plugins.md`.

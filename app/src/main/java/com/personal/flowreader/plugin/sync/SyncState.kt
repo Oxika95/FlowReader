@@ -56,8 +56,24 @@ data class SyncState(
 ) {
     fun enqueue(op: SyncOp): SyncState = copy(outbox = outbox.filter { it.key != op.key } + op)
 
-    /** Drops [op] unless a newer op replaced it meanwhile. */
-    fun settle(op: SyncOp): SyncState = copy(outbox = outbox.filter { it != op })
+    /**
+     * Queues a position push and clears the story's open conflict. The baseline stays put until
+     * the push succeeds ([settle]); saving it now would let a dropped push read as a site change.
+     */
+    fun enqueuePosition(op: SyncOp.Position): SyncState = copy(conflicts = conflicts - op.workId).enqueue(op)
+
+    /**
+     * Drops [op] unless a newer op replaced it meanwhile. A pushed position means the site now
+     * holds that chapter, so it becomes the baseline even if a newer op replaced the queued one.
+     */
+    fun settle(op: SyncOp): SyncState {
+        val settled = copy(outbox = outbox.filter { it != op })
+        return if (op is SyncOp.Position) {
+            settled.copy(positions = settled.positions + (op.workId to op.chapterUrl))
+        } else {
+            settled
+        }
+    }
 
     fun retry(op: SyncOp, maxAttempts: Int): SyncState = copy(
         outbox = outbox.mapNotNull {
@@ -78,6 +94,15 @@ data class SyncState(
         return planned - pending.filter { it.on }.map { it.workId }.toSet() +
             pending.filterNot { it.on }.map { it.workId }
     }
+
+    /**
+     * The story was removed from this device only. Its list baselines and queued list changes go
+     * too, so the next sync reads the site's lists as unchanged instead of pushing a removal.
+     */
+    fun forgetStoryLists(workId: String): SyncState = copy(
+        lists = lists.mapValues { (_, works) -> works - workId },
+        outbox = outbox.filterNot { it is SyncOp.Membership && it.workId == workId },
+    )
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("lists", JSONObject().apply { lists.forEach { (id, works) -> put(id, JSONArray(works.sorted())) } })

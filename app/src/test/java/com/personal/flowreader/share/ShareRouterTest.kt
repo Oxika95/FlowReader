@@ -452,6 +452,36 @@ class DefaultParseRuleTest {
         assertEquals("site", ShareUrlMatch.matchParse("https://example.com/ch/1", rules)?.id)
         assertEquals(ParseRules.DEFAULT_ID, ShareUrlMatch.matchParse("https://other.net/a", rules)?.id)
     }
+
+    private val customDefault = ParseRule(
+        id = ParseRules.DEFAULT_ID,
+        hostPattern = "*",
+        parseMode = ShareParseMode.Custom,
+        titleCss = "h1.title",
+        contentCss = "div.body",
+        removeCss = ".ads",
+    )
+    private val other = ParseRule(id = "other", hostPattern = "other.net")
+
+    @Test
+    fun reorderKeepsCustomizedDefault() {
+        val stored = ParseRules.withDefault(listOf(site, other, customDefault))
+        // The list only drags unlocked rows, so the Default id is absent from the new order.
+        val reordered = ParseRules.withDefault(ParseRules.reordered(stored, listOf("other", "site")))
+        assertEquals(listOf("other", "site", ParseRules.DEFAULT_ID), reordered.map { it.id })
+        val default = reordered.last()
+        assertEquals(ShareParseMode.Custom, default.parseMode)
+        assertEquals("h1.title", default.titleCss)
+        assertEquals("div.body", default.contentCss)
+        assertEquals(".ads", default.removeCss)
+    }
+
+    @Test
+    fun reorderKeepsRulesMissingFromIds() {
+        val stored = ParseRules.withDefault(listOf(site, other, customDefault))
+        val reordered = ParseRules.reordered(stored, listOf("other", "unknown"))
+        assertEquals(listOf("other", "site", ParseRules.DEFAULT_ID), reordered.map { it.id })
+    }
 }
 
 class HtmlParagraphsTest {

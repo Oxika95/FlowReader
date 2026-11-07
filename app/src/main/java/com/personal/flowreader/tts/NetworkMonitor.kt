@@ -8,20 +8,15 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.telephony.TelephonyManager
-import java.net.InetAddress
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
-import okhttp3.Dns
-import okhttp3.OkHttpClient
 
 /**
- * Tracks the default, Wi-Fi and cellular networks, reads signal strength on demand, and hands out
- * OkHttp clients whose sockets and DNS are bound to one network. Holding a cellular request keeps
- * mobile data up while Wi-Fi is the default network.
+ * Tracks the default, Wi-Fi and cellular networks and reads signal strength on demand. Holding a
+ * cellular request keeps mobile data up while Wi-Fi is the default network.
  */
-class NetworkMonitor(context: Context, private val base: OkHttpClient) {
+class NetworkMonitor(context: Context) {
     private val app = context.applicationContext
     private val cm = app.getSystemService(ConnectivityManager::class.java)
     private val wifiManager = app.getSystemService(WifiManager::class.java)
@@ -31,8 +26,6 @@ class NetworkMonitor(context: Context, private val base: OkHttpClient) {
     @Volatile private var defaultCaps: NetworkCapabilities? = null
     @Volatile private var wifiNet: Network? = null
     @Volatile private var cellNet: Network? = null
-    private val clients = ConcurrentHashMap<Network, OkHttpClient>()
-
     private val _changes = MutableStateFlow(0)
     /** Bumped on every network callback. */
     val changes: StateFlow<Int> = _changes
@@ -87,7 +80,6 @@ class NetworkMonitor(context: Context, private val base: OkHttpClient) {
         defaultCaps = null
         wifiNet = null
         cellNet = null
-        clients.clear()
     }
 
     /** Request (or release) cellular so it can carry traffic while Wi-Fi is the default. */
@@ -141,22 +133,6 @@ class NetworkMonitor(context: Context, private val base: OkHttpClient) {
         NetLane.CELL -> cellNet
     }
 
-    /** Client bound to [lane]'s network; the shared default client when that network is down. */
-    fun clientFor(lane: NetLane): OkHttpClient {
-        val net = networkFor(lane) ?: return base
-        return clients.getOrPut(net) {
-            base.newBuilder()
-                .socketFactory(net.socketFactory)
-                .dns(
-                    object : Dns {
-                        override fun lookup(hostname: String): List<InetAddress> =
-                            net.getAllByName(hostname).toList()
-                    },
-                )
-                .build()
-        }
-    }
-
     private fun wifiRssi(): Int? {
         val net = wifiNet ?: return null
         @Suppress("DEPRECATION")
@@ -185,7 +161,6 @@ class NetworkMonitor(context: Context, private val base: OkHttpClient) {
 
         override fun onLost(network: Network) {
             if (current() == network) set(null)
-            clients.remove(network)
             bump()
         }
     }

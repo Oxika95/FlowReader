@@ -75,3 +75,34 @@ Details: [layers.md](layers.md).
    `icon.png`; Filters scopes stay text. Settings › Layout › UI switches Library or Settings bars to
    text (`ChromePrefs`, `FlowApp.chrome`); action tabs stay icons. Every icon/image tab passes a
    `contentDescription`; long-press shows it as a tooltip.
+
+## Use this instead
+
+Raw Material or hand-built UI in feature code usually has a design-system replacement. Look here
+before writing a row, button, list or loader.
+
+| Instead of | Use |
+| --- | --- |
+| `AlertDialog`, `Dialog`, `ModalBottomSheet` | `FlowConfirmCard` (confirm, info) or `FlowFullscreenCard` (everything else) |
+| M3 `Card`, a hand-built panel | `FlowFullscreenCard`, `FlowFloatingCard` in a `FlowDock`, `FlowDisplayCard` in a list, or `FlowSurface` inside the design system |
+| `Scaffold`, hand-padded screen | `FlowScreen(kind, topDock, bottomDock, fab, snackbar)`; pad by `FlowScreenPadding` |
+| `PrimaryTabRow`, `Tab`, a new bar | `FlowTabBar` with `FlowTab` entries; in Settings, `SettingsSubTabBar` |
+| Material `Switch` in a row | `FlowToggleRow` (subtitle is required) |
+| raw `Slider` with captions | `FlowSliderRow` |
+| `OutlinedTextField` | `FlowTextField` (extend it if it lacks a parameter) |
+| `ExposedDropdownMenuBox` | `FlowDropdownRow` |
+| `FilterChip` rows | `FlowChoiceChips` |
+| `TextButton`, `IconButton` | `FlowTextAction`, `FlowIconButton` |
+| `Button`, `FilledIconButton`, a hand-sized floating button | `FlowPrimaryButton`, `FlowSecondaryButton`, `FlowFab`, `FlowCircleButton` |
+| a clickable title with expand arrows, bare `AnimatedVisibility` | `FlowCollapsible`, or `FlowCollapsibleBox` when the caller owns the state |
+| a row with title, meta and action buttons | `FlowListRow`, `FlowSectionRow` |
+| a "?" button that opens help | `FlowInfoButton` |
+| a drag-to-reorder or multi-select list | `EditableRuleList` (five callers; check all) |
+| a badge, "N new" chip or dot | `FlowBadge`, `newChaptersLabel`, `FlowDot` |
+| a progress bar | `FlowProgressBar` |
+| pull-to-refresh | `FlowPullRefresh`; an empty list message that still scrolls is `FlowEmptyState` |
+| item metadata card for a new source | `FlowMediaCard` with a new pure adapter, not new parameters |
+| decoding a cover bitmap | `rememberBookCover`, `rememberRemoteCover`, `FlowCover` |
+| `MaterialTheme.typography.*` | `FlowType` roles |
+| literal `dp`, alpha, `zIndex` | `FlowTokens`, `FlowLayer`; add a token if one is missing |
+| a Material icon import | `FlowIcons.forToken` (the same tokens plugins use) |

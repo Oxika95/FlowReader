@@ -11,3 +11,16 @@ Portions Copyright (C) 2005 by Philip Koehn and Josh Schroeder (used with permis
 
 Licensed under the GNU Lesser General Public License, version 3 or later.
 See https://www.gnu.org/licenses/lgpl-3.0.html
+
+## Readest (Edge TTS WebSocket and plugin)
+
+The following are adapted from Readest (https://github.com/readest/readest), licensed under the
+GNU Affero General Public License v3.0 or later:
+
+- `app/src/main/java/com/personal/flowreader/plugin/runtime/PluginWs.kt`, from
+  `apps/readest-app/src/libs/workersWebSocket.ts`
+- The EdgeTts plugin bundled in debug APKs, from
+  `apps/readest-app/src/libs/edgeTTS.ts`. Plugin source:
+  https://github.com/Oxika95/flow-reader-plugins (`EdgeTts/`)
+
+See LICENSE for the AGPL-3.0 text.

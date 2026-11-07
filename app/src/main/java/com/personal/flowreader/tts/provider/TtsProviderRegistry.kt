@@ -1,6 +1,5 @@
 package com.personal.flowreader.tts.provider
 
-import android.speech.tts.TextToSpeech
 import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.plugin.PluginManager
 import java.io.File
@@ -11,7 +10,7 @@ import kotlinx.coroutines.sync.withLock
 class TtsProviderRegistry(
     private val plugins: PluginManager,
     private val systemTempDir: () -> File,
-    private val obtainSystemTts: suspend (enginePackage: String?) -> TextToSpeech,
+    private val systemEngine: SystemTtsEngine,
 ) {
     private val mutex = Mutex()
     private var cache: Map<String, TtsProvider> = emptyMap()
@@ -22,7 +21,7 @@ class TtsProviderRegistry(
             TtsEngineIds.SYSTEM_DEFAULT,
             "Default (system TTS)",
             systemTempDir,
-            obtainSystemTts,
+            systemEngine,
         )
         for (p in plugins.ttsPlugins()) {
             val provider = PluginTtsProvider(plugins, p.manifest)
@@ -33,7 +32,7 @@ class TtsProviderRegistry(
             if (TtsEngineIds.isPlugin(e.key)) continue
             map.putIfAbsent(
                 e.key,
-                SystemTtsProvider(e.key, e.label, systemTempDir, obtainSystemTts),
+                SystemTtsProvider(e.key, e.label, systemTempDir, systemEngine),
             )
         }
         cache = map

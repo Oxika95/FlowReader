@@ -1,14 +1,23 @@
 ---
-description: Flow Reader import/share routing (ShareIngress, router and parse rules, chooser, crawl)
-globs: app/src/main/java/com/personal/flowreader/share/**/*.kt,app/src/main/java/com/personal/flowreader/ui/settings/SharingSettingsTab.kt
+description: Flow Reader import/share (ShareIngress, router and parse rules, chooser, web import, crawl)
+globs: app/src/main/java/com/personal/flowreader/share/**/*.kt,app/src/main/java/com/personal/flowreader/ui/settings/SharingSettingsTab.kt,app/src/main/java/com/personal/flowreader/ui/settings/ImportRouterRules.kt,app/src/main/java/com/personal/flowreader/ui/settings/ImportParseRules.kt
 alwaysApply: false
 ---
 
 # Import and share
 
-- Rule matching lives in `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`, `UrlDetector`) and is
-  covered by `ShareRouterTest`; add a test case for every matching change.
-- Alpha: stored rule JSON has no legacy readers; unset router rules fall back to `RouterRules.seed()`.
-- Plugins may own domains (seeded plugin rules); keep `withPluginHosts` behavior intact.
-- Where to edit: `docs/agent/map.md` `## import`. Behavior: `docs/import-share.md`. History:
-  `../flow-reader-chats/areas/import.md`.
+- Rule matching lives in `share/ShareDomainRules.kt` (`RouterRules`, `ParseRules`, `UrlDetector`);
+  add a `ShareRouterTest` case for every matching change.
+- Rule JSON is hand-rolled (`ShareJson`). A new rule field needs the model, encode, decode and the
+  editor; read new fields with defaults. Alpha: no legacy readers.
+- Keep `RouterRules.withPluginHosts` behavior (plugin rules before `seed-url-any`).
+- `ShareRouter.decide` stays pure. Import execution is in `LibraryViewModel`, not `share/`.
+- Shares reach the Library only through `FlowApp.shareInbox`; never put them in intents.
+- HTML to paragraphs: `share/HtmlParagraphs.kt` is the owner; don't add another extractor.
+- Owners: positions `data/ProgressWriter.kt`; logging `debug/DebugLog.kt`; settings keys
+  `data/SettingsStore.kt`.
+
+Before changing a file here, run `rg -n '<FileName>' docs/agent/seams.md`.
+
+Entries: `docs/agent/registry.md` (Import). Behavior: `docs/import-share.md`. History:
+`../flow-reader-chats/areas/import.md`.

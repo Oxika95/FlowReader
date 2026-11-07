@@ -29,6 +29,7 @@ import com.personal.flowreader.share.ParseRules
 import com.personal.flowreader.share.RouterContentKind
 import com.personal.flowreader.share.RouterLanding
 import com.personal.flowreader.share.RouterRule
+import com.personal.flowreader.share.RouterRuleEdit
 import com.personal.flowreader.share.ShareAskMode
 import com.personal.flowreader.share.SharePrefs
 import com.personal.flowreader.ui.theme.FlowTokens
@@ -100,7 +101,7 @@ fun SharingSettingsTab(
     onManualOverride: (Boolean) -> Unit,
     onAutoPlayOnShare: (Boolean) -> Unit,
     onShareInterruptsPlayback: (Boolean) -> Unit,
-    onSaveRouterRules: (List<RouterRule>) -> Unit,
+    onChangeRouterRules: (RouterRuleEdit) -> Unit,
     onSaveParseRules: (List<ParseRule>) -> Unit,
 ) {
     var subTab by remember { mutableIntStateOf(0) }
@@ -127,7 +128,7 @@ fun SharingSettingsTab(
                 onManualOverride = onManualOverride,
                 onAutoPlayOnShare = onAutoPlayOnShare,
                 onShareInterruptsPlayback = onShareInterruptsPlayback,
-                onSaveRules = onSaveRouterRules,
+                onChangeRules = onChangeRouterRules,
                 onAdd = {
                     editorState.request = ImportRuleEditRequest.Router(
                         initial = RouterRule(
@@ -141,11 +142,8 @@ fun SharingSettingsTab(
                         plugins = plugins,
                         customTabs = customTabs,
                         onSave = { saved ->
-                            onSaveRouterRules(
-                                routerRules + saved.copy(
-                                    id = UUID.randomUUID().toString(),
-                                    order = routerRules.size,
-                                ),
+                            onChangeRouterRules(
+                                RouterRuleEdit.Add(saved.copy(id = UUID.randomUUID().toString())),
                             )
                         },
                     )
@@ -157,7 +155,7 @@ fun SharingSettingsTab(
                         plugins = plugins,
                         customTabs = customTabs,
                         onSave = { saved ->
-                            onSaveRouterRules(routerRules.map { if (it.id == saved.id) saved else it })
+                            onChangeRouterRules(RouterRuleEdit.Replace(saved))
                         },
                     )
                 },
@@ -205,7 +203,7 @@ private fun RouterPane(
     onManualOverride: (Boolean) -> Unit,
     onAutoPlayOnShare: (Boolean) -> Unit,
     onShareInterruptsPlayback: (Boolean) -> Unit,
-    onSaveRules: (List<RouterRule>) -> Unit,
+    onChangeRules: (RouterRuleEdit) -> Unit,
     onAdd: () -> Unit,
     onEdit: (RouterRule) -> Unit,
 ) {
@@ -256,7 +254,7 @@ private fun RouterPane(
         rules = rules,
         plugins = plugins,
         customTitles = customTitles,
-        onSave = onSaveRules,
+        onChange = onChangeRules,
         onAdd = onAdd,
         onEdit = onEdit,
     )

@@ -1,8 +1,8 @@
 package com.personal.flowreader.plugin.runtime
 
 import com.personal.flowreader.debug.DebugLog
+import com.personal.flowreader.net.HttpClients
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -30,12 +30,10 @@ class PluginHttp(
 ) {
     private val allowedHostsList = allowedHosts.map { it.trim() }.filter { it.isNotEmpty() }
     private val allowed = allowedHostsList.map { it.lowercase().removePrefix("www.") }
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .cookieJar(cookieJar)
-        .build()
+    private val client: OkHttpClient = HttpClients.create {
+        followRedirects(true)
+        cookieJar(cookieJar)
+    }
     /** `cookies: false`: clearance cookies only (Anubis / CF), not session cookies. */
     private val clearanceClient: OkHttpClient =
         client.newBuilder().cookieJar(ClearanceOnlyCookieJar(cookieJar)).build()

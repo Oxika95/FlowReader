@@ -15,7 +15,6 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import androidx.core.content.ContextCompat
 import com.personal.flowreader.FlowApp
@@ -36,7 +35,6 @@ import com.personal.flowreader.data.UnderlayMode
 import com.personal.flowreader.debug.DebugLog
 import java.io.File
 import java.util.Locale
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -66,6 +64,7 @@ import kotlinx.coroutines.yield
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import com.personal.flowreader.tts.provider.PluginTtsProvider
+import com.personal.flowreader.tts.provider.SystemTtsEngine
 import com.personal.flowreader.tts.provider.SystemTtsProvider
 import com.personal.flowreader.tts.provider.TtsCapability
 import com.personal.flowreader.tts.provider.TtsSynthRequest
@@ -138,11 +137,12 @@ class TtsController(
     private val plugins: com.personal.flowreader.plugin.PluginManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val cacheDir = File(context.cacheDir, "tts").apply { mkdirs() }
+    private val clipCache = TtsClipCache(File(context.cacheDir, "tts"))
+    private val systemEngine = SystemTtsEngine(context, onBound = this::onSystemEngineBound)
     private val providers = com.personal.flowreader.tts.provider.TtsProviderRegistry(
         plugins = plugins,
-        systemTempDir = { File(cacheDir, "sys-synth") },
-        obtainSystemTts = { pkg -> ensureSystemForPackage(pkg) },
+        systemTempDir = { File(clipCache.dir, "sys-synth") },
+        systemEngine = systemEngine,
     )
     private val edgeNet = EdgeNetwork(context)
     /** Cached voices per clip-audio engine key (`tts:{id}`). */
@@ -210,9 +210,6 @@ class TtsController(
     private var playGeneration = 0
     /** In-flight Edge synthesize/prefetch jobs keyed by sentence index; touched from IO too. */
     private val edgeJobs = ConcurrentHashMap<Int, Job>()
-    private var systemTts: TextToSpeech? = null
-    private var systemReady = false
-    private var boundEnginePackage: String? = null
     private var session: MediaSession? = null
     /** Suppress MediaSession onPlay while we push PLAYING ourselves. */
     private var suppressSessionPlay = false
@@ -422,7 +419,7 @@ class TtsController(
         playJob = null
         cancelPreview()
         stopSessionAudio()
-        systemTts?.stop()
+        systemEngine.stop()
         cancelEdgeJobs()
         focusResume.clear()
         abandonAudioFocus()
@@ -474,8 +471,7 @@ class TtsController(
             val center = index
             // Disk work for the rail (drop other books, trim to window, rescan) stays off main.
             val ready = withContext(Dispatchers.IO) {
-                dropForeignBookCache()
-                deleteCacheOutsideWindow(cacheWindow(center))
+                deleteStaleCache(cacheWindow(center))
                 scanReadySentenceIndices()
             }
             if (attachedBookId != bookId) return@launch
@@ -494,7 +490,7 @@ class TtsController(
     }
 
     private fun cacheKeyFor(session: ReadingSession): String =
-        sanitizeBookKey(session.bookId) + ".o" + session.window.value.origin
+        ClipCacheNames.bookKey(session.bookId, session.window.value.origin)
 
     /**
      * Load chapters after the window until one adds sentences, so playback continues past empty
@@ -572,8 +568,8 @@ class TtsController(
 
     private suspend fun previewWithEdge(text: String) {
         val audio = withContext(Dispatchers.IO) { synthesizeEdge(text, tag = "preview") }
-        val file = File(cacheDir, "filter_preview.mp3")
-        withContext(Dispatchers.IO) { writeAtomically(file, audio.mp3) }
+        val file = File(clipCache.dir, "filter_preview.mp3")
+        withContext(Dispatchers.IO) { clipCache.writeAtomically(file, audio.mp3) }
         playPreviewFile(file)
     }
 
@@ -616,7 +612,7 @@ class TtsController(
         releasePreviewPlayer()
         // Stop leftover system preview utterances without tearing down the engine.
         if (!usesClipAudio()) {
-            systemTts?.stop()
+            systemEngine.stop()
         }
     }
 
@@ -977,12 +973,8 @@ class TtsController(
                     runCatching { clipVoicesByEngine[key] = provider.listVoices() }
                 }
             } else {
-                systemTts?.shutdown()
-                systemTts = null
-                systemReady = false
-                boundEnginePackage = null
                 val pkg = if (key == TtsEngines.SYSTEM_DEFAULT) null else key
-                runCatching { ensureSystemForPackage(pkg) }
+                runCatching { systemEngine.ensure(pkg, rebind = true) }
             }
             val voices = voicesFor(key)
             val voiceId = coerceVoiceId(key, preferred, voices)
@@ -1062,9 +1054,7 @@ class TtsController(
         stopSessionAudio()
         underlayBt.stop()
         edgeNet.stop()
-        systemTts?.stop()
-        systemTts?.shutdown()
-        systemTts = null
+        systemEngine.shutdown()
         abandonAudioFocus()
         unregisterNoisyReceiver()
         TtsPlaybackService.stop()
@@ -1092,7 +1082,7 @@ class TtsController(
         playJob = null
         previous?.cancelAndJoin()
         interruptClipPlayback()
-        systemTts?.stop()
+        systemEngine.stop()
         _state.update {
             it.copy(
                 playing = true,
@@ -1122,7 +1112,7 @@ class TtsController(
         playJob = null
         previous?.cancelAndJoin()
         stopSessionAudio()
-        systemTts?.stop()
+        systemEngine.stop()
         _state.update {
             it.copy(
                 playing = false,
@@ -1151,8 +1141,8 @@ class TtsController(
     private suspend fun refreshCatalog() {
         val systemExtras = ArrayList<TtsEngineOption>()
         runCatching {
-            val probe = ensureSystemForPackage(null)
-            probe.engines
+            val probed = systemEngine.use(null) { it.engines }
+            probed
                 ?.mapNotNull { info ->
                     val pkg = info.name ?: return@mapNotNull null
                     if (pkg.isBlank()) return@mapNotNull null
@@ -1177,7 +1167,7 @@ class TtsController(
         // System clip engines still need a bound TextToSpeech for synthesizeToFile / voices.
         if (providers.get(key) is SystemTtsProvider) {
             val pkg = if (key == TtsEngines.SYSTEM_DEFAULT) null else key
-            runCatching { ensureSystemForPackage(pkg) }
+            runCatching { systemEngine.ensure(pkg) }
         }
         val voices = voicesFor(key)
         val voiceId = coerceVoiceId(key, _state.value.voiceId, voices)
@@ -1222,12 +1212,6 @@ class TtsController(
         },
     )
 
-    private fun systemBoundMatches(engineKey: String): Boolean {
-        if (!systemReady || systemTts == null) return false
-        val expected = if (engineKey == TtsEngines.SYSTEM_DEFAULT) null else engineKey
-        return boundEnginePackage == expected
-    }
-
     private fun voicesFor(engineKey: String): List<TtsVoiceOption> {
         val provider = providers.get(engineKey)
         if (provider != null && provider.has(TtsCapability.ClipAudio)) {
@@ -1239,9 +1223,8 @@ class TtsController(
                 FALLBACK_CLIP_VOICES
             }
         }
-        val tts = systemTts
-        return if (tts != null && systemBoundMatches(engineKey)) systemVoices(tts)
-        else listOf(TtsVoiceOption("default", "Default"))
+        val tts = systemEngine.peek(if (engineKey == TtsEngines.SYSTEM_DEFAULT) null else engineKey)
+        return if (tts != null) systemVoices(tts) else listOf(TtsVoiceOption("default", "Default"))
     }
 
     private fun systemVoices(tts: TextToSpeech): List<TtsVoiceOption> {
@@ -1275,7 +1258,7 @@ class TtsController(
         session = MediaSession(context, "flow-tts").apply {
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() {
-                    // Readest media bridge: only start when paused — never re-enter while playing.
+                    // Readest media bridge: only start when paused â€” never re-enter while playing.
                     if (suppressSessionPlay) return
                     if (_state.value.playing) return
                     play()
@@ -1445,7 +1428,7 @@ class TtsController(
     private suspend fun loop(generation: Int) {
         while (scope.isActive && _state.value.playing && generation == playGeneration) {
             val s = sentences.getOrNull(index) ?: break
-            // Edge UI follows heard clock; System has no PCM buffer lag — publish write index.
+            // Edge UI follows heard clock; System has no PCM buffer lag â€” publish write index.
             if (usesClipAudio()) {
                 pruneCacheToWindow(index)
             } else {
@@ -1487,7 +1470,7 @@ class TtsController(
                 SynthDebugLog.requestOpen()
                 playGeneration++
                 stopSessionAudio()
-                systemTts?.stop()
+                systemEngine.stop()
                 _state.update { it.copy(playing = false) }
                 setSessionState(PlaybackState.STATE_PAUSED)
                 TtsPlaybackService.refresh()
@@ -1691,7 +1674,7 @@ class TtsController(
             "speakEdge i=$i gen=$generation slack=${slackMs()} " +
                 "pending=${audioEngine.hasPendingRemainder()} underruns=${audioEngine.underrunCount()}",
         )
-        // Current sentence must be on disk before we can write — this is the only
+        // Current sentence must be on disk before we can write â€” this is the only
         // ensure allowed to gate play (cold start / first clip).
         ensureSentenceCached(i, generation)
         if (generation != playGeneration) return
@@ -1706,7 +1689,7 @@ class TtsController(
         // Nearest-first lookahead; keep in-flight ahead jobs.
         scheduleAheadPrefetch(i)
 
-        // Instant peek only — never join Edge synth before play while the track is live.
+        // Instant peek only â€” never join Edge synth before play while the track is live.
         val nextReadyNow = peekReadyCacheFile(i + 1)
         if (nextReadyNow != null) {
             audioEngine.prefetchDecode(nextReadyNow)
@@ -1714,7 +1697,7 @@ class TtsController(
         }
 
         val wantFade = overlapMs > 0 && i < sentences.lastIndex
-        // Resolve during body write inside the engine — never before play (FOSS sink rule).
+        // Resolve during body write inside the engine â€” never before play (FOSS sink rule).
         val resolveNext: (suspend () -> File?)? = if (wantFade && nextReadyNow == null) {
             resolve@{
                 val waitStart = System.currentTimeMillis()
@@ -2061,7 +2044,7 @@ class TtsController(
                 "tts assign synth i=$i source=$source connectId=${audio.connectId.ifBlank { "-" }} " +
                     "textHash=$textHash fileHash=$fileHash bytes=${audio.mp3.size}",
             )
-            writeAtomically(f, audio.mp3)
+            clipCache.writeAtomically(f, audio.mp3)
             audioEngine.invalidateDecode(f)
             SynthDebugLog.append(
                 "tts assign write i=$i connectId=${audio.connectId.ifBlank { "-" }} " +
@@ -2091,7 +2074,7 @@ class TtsController(
         audioEngine.cancel()
         stopPcmWordTracking()
         clearWordHighlight()
-        systemTts?.stop()
+        systemEngine.stop()
     }
 
     private fun stopSessionAudio() {
@@ -2229,7 +2212,7 @@ class TtsController(
     }
 
     private fun wordsCacheFile(i: Int): File =
-        File(cacheDir, "b${bookKey}_s${i}_${voiceCacheKey()}.words.json")
+        clipCache.wordsFile(cacheBase(i))
 
     private fun writeWordBoundaries(file: File, boundaries: List<EdgeWordBoundary>) {
         val json = buildString {
@@ -2245,7 +2228,7 @@ class TtsController(
             }
             append(']')
         }
-        writeAtomically(file, json.toByteArray(Charsets.UTF_8))
+        clipCache.writeAtomically(file, json.toByteArray(Charsets.UTF_8))
     }
 
     private fun readWordBoundaries(file: File): List<EdgeWordBoundary> {
@@ -2298,95 +2281,40 @@ class TtsController(
             TtsEngines.SYSTEM_DEFAULT -> null
             else -> key
         }
-        val tts = ensureSystemForPackage(enginePkg)
-        tts.setSpeechRate(_state.value.speed)
-        tts.setPitch(_state.value.pitch)
-        val voiceId = _state.value.voiceId
-        if (voiceId.isNotBlank() && voiceId != "default") {
-            tts.voices?.firstOrNull { it.name == voiceId }?.let { tts.voice = it }
-        }
-        val voices = systemVoices(tts)
-        if (voices != _state.value.voices) {
-            _state.update { it.copy(voices = voices) }
-        }
         val spokenSentence = sentenceIndex?.let { sentences.getOrNull(it) }
-        suspendCancellableCoroutine { cont ->
-            val id = UUID.randomUUID().toString()
-            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
-                override fun onDone(utteranceId: String?) {
-                    if (utteranceId == id) {
-                        clearWordHighlight()
-                        if (cont.isActive) cont.resume(Unit)
-                    }
-                }
-                @Deprecated("deprecated")
-                override fun onError(utteranceId: String?) {
-                    if (utteranceId == id && cont.isActive) {
-                        cont.resumeWithException(IllegalStateException("System TTS error"))
-                    }
-                }
-                override fun onRangeStart(
-                    utteranceId: String?,
-                    start: Int,
-                    end: Int,
-                    frame: Int,
-                ) {
-                    if (utteranceId != id || spokenSentence == null) return
-                    val range = WordHighlight.rangeFromUtteranceChars(spokenSentence, start, end)
-                        ?: return
-                    val current = _state.value.wordHighlight
-                    if (range != current) {
-                        _state.update { it.copy(wordHighlight = range) }
-                    }
-                }
-            })
-            val code = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
-            if (code != TextToSpeech.SUCCESS && cont.isActive) {
-                cont.resumeWithException(IllegalStateException("System TTS unavailable"))
+        systemEngine.use(enginePkg) { tts ->
+            tts.setSpeechRate(_state.value.speed)
+            tts.setPitch(_state.value.pitch)
+            val voiceId = _state.value.voiceId
+            if (voiceId.isNotBlank() && voiceId != "default") {
+                tts.voices?.firstOrNull { it.name == voiceId }?.let { tts.voice = it }
             }
-            cont.invokeOnCancellation {
-                tts.stop()
+            val voices = systemVoices(tts)
+            if (voices != _state.value.voices) {
+                _state.update { it.copy(voices = voices) }
+            }
+            try {
+                systemEngine.utterance(
+                    tts,
+                    onRange = { start, end ->
+                        val range = spokenSentence?.let { WordHighlight.rangeFromUtteranceChars(it, start, end) }
+                        if (range != null && range != _state.value.wordHighlight) {
+                            _state.update { it.copy(wordHighlight = range) }
+                        }
+                    },
+                ) { id -> tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) }
+            } finally {
                 clearWordHighlight()
             }
         }
     }
 
-    private suspend fun ensureSystemForPackage(enginePackage: String?): TextToSpeech {
-        val bound = systemTts
-        if (bound != null && systemReady && boundEnginePackage == enginePackage) {
-            return bound
-        }
-        systemTts?.shutdown()
-        systemTts = null
-        systemReady = false
-        return suspendCancellableCoroutine { cont ->
-            var created: TextToSpeech? = null
-            val listener = TextToSpeech.OnInitListener { status ->
-                val engine = created
-                if (status != TextToSpeech.SUCCESS || engine == null) {
-                    if (cont.isActive) {
-                        cont.resumeWithException(IllegalStateException("System TTS init failed"))
-                    }
-                    return@OnInitListener
-                }
-                engine.language = Locale.getDefault()
-                systemTts = engine
-                systemReady = true
-                boundEnginePackage = enginePackage
-                if (!usesClipAudio()) {
-                    val voices = systemVoices(engine)
-                    val voiceId = TtsVoicePick.coerce(_state.value.voiceId, voices)
-                    _state.update { it.copy(voices = voices, voiceId = voiceId) }
-                }
-                if (cont.isActive) cont.resume(engine)
-            }
-            created = if (enginePackage.isNullOrBlank()) {
-                TextToSpeech(context, listener)
-            } else {
-                TextToSpeech(context, listener, enginePackage)
-            }
-        }
+    /** Runs for each newly bound system engine; without clip audio the controller lists its voices. */
+    private fun onSystemEngineBound(engine: TextToSpeech) {
+        if (usesClipAudio()) return
+        val voices = systemVoices(engine)
+        val voiceId = TtsVoicePick.coerce(_state.value.voiceId, voices)
+        _state.update { it.copy(voices = voices, voiceId = voiceId) }
     }
 
     private suspend fun ensureNotificationPermission() {
@@ -2474,44 +2402,17 @@ class TtsController(
     private fun cacheExtension(): String =
         if (providers.get(_state.value.engineKey) is PluginTtsProvider) "mp3" else "wav"
 
-    private fun cacheFile(i: Int): File {
-        val base = "b${bookKey}_s${i}_${voiceCacheKey()}"
-        val preferred = File(cacheDir, "$base.${cacheExtension()}")
-        if (preferred.exists()) return preferred
-        val mp3 = File(cacheDir, "$base.mp3")
-        if (mp3.exists()) return mp3
-        val wav = File(cacheDir, "$base.wav")
-        if (wav.exists()) return wav
-        return preferred
-    }
+    /** Includes the sentence text, so a clip is only reused for the text it was made from. */
+    private fun cacheBase(i: Int): String =
+        ClipCacheNames.base(bookKey, i, voiceCacheKey(), sentences.getOrNull(i)?.text.orEmpty())
+
+    private fun cacheFile(i: Int): File = clipCache.hit(cacheBase(i), cacheExtension())
 
     private fun voiceCacheKey(): String =
-        "${_state.value.engineKey}_${edgeVoiceId()}_${ratePercent()}_${pitchPercent()}"
-            .plus(if (speechFilterKey.isEmpty()) "" else "_f$speechFilterKey")
-            .replace(VOICE_KEY_UNSAFE, "_")
-
-    private fun sanitizeBookKey(bookId: String): String = bookId.replace(BOOK_KEY_UNSAFE, "-")
-
-    /** Sentence index of a cache file belonging to the attached book, or null for anything else. */
-    private fun cachedSentenceIndex(name: String): Int? {
-        val match = SENTENCE_CACHE_NAME.matchEntire(name) ?: return null
-        if (match.groupValues[1] != bookKey) return null
-        return match.groupValues[2].toIntOrNull()
-    }
-
-    /** Write via temp + rename so a failed synthesize never leaves a truncated MP3 behind. */
-    private fun writeAtomically(target: File, bytes: ByteArray) {
-        val tmp = File(cacheDir, "${target.name}.part")
-        try {
-            tmp.writeBytes(bytes)
-            if (!tmp.renameTo(target)) {
-                target.delete()
-                if (!tmp.renameTo(target)) throw IllegalStateException("Unable to cache audio")
-            }
-        } finally {
-            if (tmp.exists()) tmp.delete()
-        }
-    }
+        ClipCacheNames.voiceKey(
+            "${_state.value.engineKey}_${edgeVoiceId()}_${ratePercent()}_${pitchPercent()}" +
+                if (speechFilterKey.isEmpty()) "" else "_f$speechFilterKey",
+        )
 
     /** Rebuild ready set from on-disk Edge MP3s for the current engine/voice/rate/pitch. */
     private fun scanReadySentenceIndices(): Set<Int> {
@@ -2560,25 +2461,19 @@ class TtsController(
         }
         // Re-read the window on the IO thread: by the time this runs the playhead may have
         // moved on, and a stale window would delete the clip we just prefetched.
-        scope.launch(Dispatchers.IO) { deleteCacheOutsideWindow(cacheWindow()) }
+        scope.launch(Dispatchers.IO) { deleteStaleCache(cacheWindow()) }
     }
 
-    /** Disk only: drop this book's clips outside [window] and cancel the jobs that fed them. */
-    private fun deleteCacheOutsideWindow(window: IntRange) {
-        cacheDir.listFiles()?.forEach { file ->
-            val i = cachedSentenceIndex(file.name) ?: return@forEach
-            if (i !in window) {
-                edgeJobs.remove(i)?.cancel()
-                audioEngine.invalidateDecode(file)
-                file.delete()
-            }
-        }
-    }
-
-    /** Disk only: clips from other books (and any `.part` leftovers) can never serve this rail. */
-    private fun dropForeignBookCache() {
-        cacheDir.listFiles()?.forEach { file ->
-            if (cachedSentenceIndex(file.name) == null) file.delete()
+    /**
+     * Disk only: drop every cache file that can't serve the attached book's [window] (other books,
+     * indices outside it, text that changed at an index) and cancel the jobs that fed them.
+     * Clips and their word-timing sidecars go together; in-flight `.part` files stay.
+     */
+    private fun deleteStaleCache(window: IntRange) {
+        val key = bookKey
+        clipCache.sweep(key, window, { sentences.getOrNull(it)?.text }) { file, entry ->
+            entry?.takeIf { it.bookKey == key }?.let { edgeJobs.remove(it.index)?.cancel() }
+            audioEngine.invalidateDecode(file)
         }
     }
 
@@ -2594,9 +2489,7 @@ class TtsController(
         clearAudioStatus()
         wordBoundariesBySentence.clear()
         cuesBySentence.clear()
-        withContext(Dispatchers.IO) {
-            cacheDir.listFiles()?.forEach { it.delete() }
-        }
+        withContext(Dispatchers.IO) { clipCache.clear() }
         clearAudioStatus()
     }
 
@@ -2642,11 +2535,6 @@ class TtsController(
 
         /** Playhead retry after Edge rejected the handshake; the last value repeats. */
         private val SERVICE_RETRY_MS = longArrayOf(2_000L, 5_000L, 15_000L, 30_000L, 60_000L)
-
-        /** `b<bookKey>_s<sentenceIndex>_<voiceKey>.(mp3|wav)` */
-        private val SENTENCE_CACHE_NAME = Regex("""^b([A-Za-z0-9.-]*)_s(\d+)_.*\.(mp3|wav)$""")
-        private val BOOK_KEY_UNSAFE = Regex("[^A-Za-z0-9.-]")
-        private val VOICE_KEY_UNSAFE = Regex("[^A-Za-z0-9._-]")
 
         /** Used only while a clip-audio plugin voice list is still loading. */
         private val FALLBACK_CLIP_VOICES = listOf(

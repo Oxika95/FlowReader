@@ -86,7 +86,8 @@ of an item in the stream synthesizes fresh clips (cache key is the stream, not t
   is the source of truth for GEC, URL, headers, and framing; host `PluginWs` follows Readest’s
   [raw-socket upgrade](https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWebSocket.ts)
   (OkHttp’s WebSocket upgrade gets HTTP 200 from Edge). Port Readest; do not invent a parallel
-  handshake. Cursor rule: `flow-reader-plugins/.cursor/rules/edgetts.mdc`.
+  handshake. Files adapted from Readest keep their credit header. Cursor rule:
+  `flow-reader-plugins/.cursor/rules/edgetts.mdc`.
 
 - **Synth path:** System engines synthesize once to a file on one `TextToSpeech` — exclusive
   (prefetch still queues ahead clips; engine calls never overlap). Network plugins

@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.personal.flowreader.share.RouterContentKind
 import com.personal.flowreader.share.RouterLanding
 import com.personal.flowreader.share.RouterRule
+import com.personal.flowreader.share.RouterRuleEdit
 import com.personal.flowreader.share.ShareUrlMatch
 import com.personal.flowreader.ui.theme.FlowTokens
 
@@ -66,13 +67,10 @@ internal fun RouterRuleList(
     rules: List<RouterRule>,
     plugins: List<SharePluginOption>,
     customTitles: Map<String, String>,
-    onSave: (List<RouterRule>) -> Unit,
+    onChange: (RouterRuleEdit) -> Unit,
     onAdd: () -> Unit,
     onEdit: (RouterRule) -> Unit,
 ) {
-    fun saveOrdered(list: List<RouterRule>) {
-        onSave(list.mapIndexed { index, rule -> rule.copy(order = index) })
-    }
     EditableRuleList(
         rules = rules,
         idOf = { it.id },
@@ -84,16 +82,13 @@ internal fun RouterRuleList(
         ),
         onAdd = onAdd,
         onEdit = onEdit,
-        onReorder = { ids ->
-            val byId = rules.associateBy { it.id }
-            saveOrdered(ids.mapNotNull(byId::get))
-        },
-        onDelete = { ids -> saveOrdered(rules.filterNot { it.id in ids }) },
+        onReorder = { ids -> onChange(RouterRuleEdit.Reorder(ids)) },
+        onDelete = { ids -> onChange(RouterRuleEdit.Delete(ids)) },
         trailing = { rule ->
             Switch(
                 checked = rule.enabled,
                 onCheckedChange = { enabled ->
-                    onSave(rules.map { if (it.id == rule.id) it.copy(enabled = enabled) else it })
+                    onChange(RouterRuleEdit.SetEnabled(rule.id, enabled))
                 },
             )
         },

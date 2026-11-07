@@ -110,6 +110,91 @@ class ProgressWriterTest {
     }
 
     @Test
+    fun storeFailureIsReportedAndOtherUpdatesStillWrite() = runBlocking {
+        store.rows[PositionDomain.Library to "ok"] = ReadingPosition()
+        store.failFor = "bad"
+        val failed = ArrayList<Pair<ProgressUpdate, Throwable>>()
+        val w = ProgressWriter(
+            store,
+            scope,
+            debounceMs = 60_000L,
+            log = { u, ok -> logged += u to ok },
+            onFailed = { u, e -> failed += u to e },
+            onWritten = { written += it },
+        )
+        w.submit(update(library, "bad", 2, at = 10L))
+        w.submit(update(library, "ok", 3, at = 11L))
+        w.drain()
+        assertEquals(listOf("bad"), failed.map { it.first.rowKey })
+        assertEquals(3, store.rows.getValue(PositionDomain.Library to "ok").chapterIndex)
+        assertEquals(listOf("ok"), written.map { it.rowKey })
+        assertEquals(listOf("ok"), logged.map { it.first.rowKey })
+    }
+
+    @Test
+    fun writerKeepsWritingAfterAFailure() = runBlocking {
+        store.rows[PositionDomain.Library to "b"] = ReadingPosition()
+        store.failFor = "b"
+        val w = writer()
+        w.submit(update(library, "b", 2, at = 10L))
+        w.drain()
+        store.failFor = null
+        w.submit(update(library, "b", 4, at = 11L))
+        w.drain()
+        assertEquals(4, store.rows.getValue(PositionDomain.Library to "b").chapterIndex)
+    }
+
+    @Test
+    fun failingOnFailedHookDoesNotEscape() = runBlocking {
+        store.failFor = "b"
+        val w = ProgressWriter(store, scope, debounceMs = 60_000L, onFailed = { _, _ -> error("hook") })
+        w.submit(update(library, "b", 2, at = 10L))
+        w.drain()
+    }
+
+    @Test
+    fun submitAndDrainWritesBeforeReturning() = runBlocking {
+        store.rows[PositionDomain.Library to "b"] = ReadingPosition()
+        writer().submitAndDrain(update(library, "b", 6, at = 10L))
+        assertEquals(6, store.rows.getValue(PositionDomain.Library to "b").chapterIndex)
+    }
+
+    @Test
+    fun chapterSeekSetsFractionFromChapterCount() {
+        val u = ProgressUpdate.chapterSeek(
+            PositionDomain.Plugin, "rr:1", chapterIndex = 3, chapterCount = 12,
+            source = PositionSource.PluginSeek, chapterHref = "u3", at = 7L,
+        )
+        assertEquals("rr:1", u.rowKey)
+        assertEquals(PositionDomain.Plugin, u.domain)
+        assertEquals("rr:1", u.session.key)
+        assertEquals(0.25f, u.fraction, 0f)
+        assertEquals(0, u.blockIndex)
+        assertEquals(0, u.charOffset)
+        assertEquals("", u.anchorText)
+        assertEquals("u3", u.chapterHref)
+        assertEquals(PositionSource.PluginSeek, u.source)
+        assertEquals(7L, u.at)
+    }
+
+    @Test
+    fun chapterSeekWithUnknownCountHasZeroFraction() {
+        val u = ProgressUpdate.chapterSeek(PositionDomain.Plugin, "rr:1", 3, 0, PositionSource.Sync)
+        assertEquals(0f, u.fraction, 0f)
+    }
+
+    @Test
+    fun chapterSeekKeepsInChapterOffsets() {
+        val u = ProgressUpdate.chapterSeek(
+            PositionDomain.Plugin, "rr:1", 3, 12, PositionSource.Sync,
+            blockIndex = 5, charOffset = 9, anchorText = "text",
+        )
+        assertEquals(5, u.blockIndex)
+        assertEquals(9, u.charOffset)
+        assertEquals("text", u.anchorText)
+    }
+
+    @Test
     fun fractionIsClamped() {
         val p = update(library, "b", 0, at = 1L).copy(fraction = 1.4f).toPosition()
         assertEquals(1f, p.fraction, 0f)
@@ -119,7 +204,10 @@ class ProgressWriterTest {
 private class FakePositionStore : PositionStore {
     val rows = LinkedHashMap<Pair<PositionDomain, String>, ReadingPosition>()
 
+    var failFor: String? = null
+
     override suspend fun write(update: ProgressUpdate): Boolean {
+        if (update.rowKey == failFor) error("disk full")
         val key = update.domain to update.rowKey
         if (key !in rows) return false
         rows[key] = update.toPosition()

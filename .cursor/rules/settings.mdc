@@ -1,0 +1,23 @@
+---
+description: Flow Reader settings UI and SettingsStore (tabs, wiring, stored keys)
+globs: app/src/main/java/com/personal/flowreader/ui/settings/**/*.kt,app/src/main/java/com/personal/flowreader/data/SettingsStore.kt,app/src/main/java/com/personal/flowreader/data/ChromePrefs.kt
+alwaysApply: false
+---
+
+# Settings
+
+- New setting: key and setter in `SettingsStore.kt`, wire it through `ui/settings/SettingsState.kt`,
+  document it in `docs/settings.md` and `docs/data.md`. An Audio setting also touches
+  `TtsController`, both screens and `SettingsOverlay.kt`.
+- Tabs route by integer index and `else` means Layout/Font; update every `when` when adding a tab.
+- Sub-tab bars go through `SettingsSubTabBar`. Tab icons are PNG silhouettes in `drawable-nodpi`.
+- Never nest `verticalScroll` in the settings card. Editors are stacked `FlowFullscreenCard`s
+  hosted by `SettingsOverlay`; confirmations use `FlowConfirmCard`.
+- Use `FlowSettingsRows` components (slider, dropdown, toggle, choice chips) before building one.
+- `EditableRuleList` serves five screens (Filters, Router, Parser, Queue lists); check all.
+- Owners: `data/SettingsStore.kt` for keys; `data/ProgressWriter.kt` for positions.
+
+Before changing a file here, run `rg -n '<FileName>' docs/agent/seams.md`.
+
+Entries: `docs/agent/registry.md` (Settings overlay). Behavior: `docs/settings.md`. History:
+`../flow-reader-chats/areas/settings.md`.

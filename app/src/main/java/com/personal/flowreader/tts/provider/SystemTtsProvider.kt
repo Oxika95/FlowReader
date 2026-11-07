@@ -1,47 +1,37 @@
 package com.personal.flowreader.tts.provider
 
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.tts.VoiceGender
 import java.io.File
 import java.util.Locale
 import java.util.UUID
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * Android [TextToSpeech] engine that writes clips to a temp WAV for the host cache /
  * [com.personal.flowreader.tts.TtsAudioEngine] path (same rail / prefetch as plugins).
  *
- * [TextToSpeech] is exclusive: one listener and one utterance at a time. Prefetch may
+ * The engine is exclusive and shared with live speech through [SystemTtsEngine]. Prefetch may
  * queue multiple [synthesize] callers; they run one after another, never overlapping.
  */
 class SystemTtsProvider(
     override val id: String,
     override val label: String,
     private val tempDir: () -> File,
-    private val obtainEngine: suspend (enginePackage: String?) -> TextToSpeech,
+    private val engine: SystemTtsEngine,
 ) : TtsProvider {
     override val capabilities: Set<TtsCapability> = setOf(
         TtsCapability.ClipAudio,
         TtsCapability.Prefetch,
     )
 
-    /** One in-flight [synthesizeToFile] per provider — matches the engine contract. */
-    private val synthMutex = Mutex()
-
     private val enginePackage: String?
         get() = if (id == TtsEngineIds.SYSTEM_DEFAULT) null else id
 
-    override suspend fun listVoices(): List<TtsVoiceOption> {
-        val tts = obtainEngine(enginePackage)
+    override suspend fun listVoices(): List<TtsVoiceOption> = engine.use(enginePackage) { tts ->
         val voices = tts.voices?.toList().orEmpty()
-        if (voices.isEmpty()) return listOf(TtsVoiceOption("default", "Default"))
-        return voices
+        if (voices.isEmpty()) return@use listOf(TtsVoiceOption("default", "Default"))
+        voices
             .sortedWith(
                 compareBy<android.speech.tts.Voice> { it.locale.toLanguageTag() }
                     .thenBy { it.name },
@@ -57,8 +47,7 @@ class SystemTtsProvider(
     }
 
     override suspend fun synthesize(request: TtsSynthRequest): TtsClipAudio =
-        synthMutex.withLock {
-            val tts = obtainEngine(enginePackage)
+        engine.use(enginePackage) { tts ->
             val rate = 1f + request.ratePercent / 100f
             val pitch = 1f + request.pitchPercent / 50f
             tts.setSpeechRate(rate.coerceIn(0.5f, 2.5f))
@@ -71,46 +60,12 @@ class SystemTtsProvider(
             val dir = tempDir().apply { mkdirs() }
             val out = File(dir, "sys-${UUID.randomUUID()}.wav")
             try {
-                synthesizeToFile(tts, request.text, out)
+                engine.utterance(tts) { utteranceId -> tts.synthesizeToFile(request.text, null, out, utteranceId) }
                 val bytes = out.readBytes()
                 require(bytes.isNotEmpty()) { "System TTS returned empty audio" }
                 TtsClipAudio(bytes, emptyList())
             } finally {
                 runCatching { out.delete() }
             }
-        }
-
-    /**
-     * Runs only under [synthMutex]. Cancel stops this utterance (the mutex holder).
-     * Waiters cancelled while acquiring the mutex never enter here, so they never
-     * call [TextToSpeech.stop] on a sibling synth.
-     */
-    private suspend fun synthesizeToFile(tts: TextToSpeech, text: String, file: File): Unit =
-        suspendCancellableCoroutine { cont ->
-            val id = UUID.randomUUID().toString()
-            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
-                override fun onDone(utteranceId: String?) {
-                    if (utteranceId == id && cont.isActive) cont.resume(Unit)
-                }
-                @Deprecated("deprecated")
-                override fun onError(utteranceId: String?) {
-                    if (utteranceId == id && cont.isActive) {
-                        cont.resumeWithException(IllegalStateException("System TTS error"))
-                    }
-                }
-                override fun onError(utteranceId: String?, errorCode: Int) {
-                    if (utteranceId == id && cont.isActive) {
-                        cont.resumeWithException(
-                            IllegalStateException("System TTS error code=$errorCode"),
-                        )
-                    }
-                }
-            })
-            val code = tts.synthesizeToFile(text, null, file, id)
-            if (code != TextToSpeech.SUCCESS && cont.isActive) {
-                cont.resumeWithException(IllegalStateException("System TTS unavailable"))
-            }
-            cont.invokeOnCancellation { tts.stop() }
         }
 }

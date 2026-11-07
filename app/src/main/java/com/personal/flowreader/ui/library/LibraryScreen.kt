@@ -38,9 +38,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.personal.flowreader.FlowApp
 import com.personal.flowreader.data.BookSource
 import com.personal.flowreader.data.FileAccessAdvice
-import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
 import com.personal.flowreader.data.LibraryTabId
+import com.personal.flowreader.ui.debug.DebugRoute
 import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowEmptyState
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
@@ -91,6 +91,8 @@ fun LibraryScreen(
     vm: LibraryViewModel,
     appearance: AppearanceSettingsState,
     appearanceCallbacks: AppearanceSettingsCallbacks,
+    debugRoute: DebugRoute? = null,
+    onDebugRouteHandled: () -> Unit = {},
     onOpenBook: (String) -> Unit,
     onOpenQue: (bookId: String, queId: String, chapter: Int?) -> Unit,
 ) {
@@ -100,6 +102,7 @@ fun LibraryScreen(
     val chrome by (LocalContext.current.applicationContext as FlowApp).chrome.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var settingsOpen by remember { mutableStateOf(false) }
+    var settingsTabRequest by remember { mutableStateOf<Int?>(null) }
     var addDialog by remember { mutableStateOf(false) }
     var addTabOpen by remember { mutableStateOf(false) }
     var filterEditor by remember { mutableStateOf<FilterEditorSession?>(null) }
@@ -126,6 +129,27 @@ fun LibraryScreen(
     }
     val context = LocalContext.current
     val activePlugin = (ui.tab as? LibraryTabId.Plugin)?.let { t -> installedPlugins.firstOrNull { it.id == t.pluginId } }
+
+    LaunchedEffect(debugRoute, installedPlugins) {
+        when (val route = debugRoute) {
+            null, DebugRoute.FirstBook -> return@LaunchedEffect
+            DebugRoute.Library -> settingsOpen = false
+            is DebugRoute.Settings -> {
+                settingsTabRequest = route.tab
+                settingsOpen = true
+            }
+            is DebugRoute.Plugin -> {
+                settingsOpen = false
+                if (installedPlugins.none { it.id == route.id }) {
+                    // The plugin list loads after launch; keep waiting while it is still empty.
+                    if (installedPlugins.isEmpty()) return@LaunchedEffect
+                } else {
+                    vm.setTab(LibraryTabId.Plugin(route.id))
+                }
+            }
+        }
+        onDebugRouteHandled()
+    }
 
     FlowScreen(
         kind = FlowScreenKind.Library,
@@ -317,71 +341,19 @@ fun LibraryScreen(
 
     SettingsOverlay(
         visible = settingsOpen,
+        requestedTab = settingsTabRequest,
         appearance = appearance,
         appearanceCallbacks = appearanceCallbacks,
         onRefreshEngines = { vm.tts.refreshEngines() },
-        tts = TtsSettingsState(
-            engineKey = tts.engineKey,
-            voiceId = tts.voiceId,
-            engines = tts.engines,
-            voices = tts.voices,
-            speed = tts.speed,
-            pitch = tts.pitch,
-            prefetchCount = tts.prefetchCount,
-            clipTargetChars = tts.clipTargetChars,
-            clipFlexChars = tts.clipFlexChars,
-            showClipSettings = tts.showClipSettings,
-            showNetworkLanes = tts.showNetworkLanes,
-            doubleTapPlay = tts.doubleTapPlay,
-            mobileDataFallback = tts.mobileDataFallback,
-            autoPlayOnShare = tts.autoPlayOnShare,
-            shareInterruptsPlayback = tts.shareInterruptsPlayback,
-            autoScrollWithTts = tts.autoScrollWithTts,
-            underlayMode = tts.underlayMode,
-            minSignal = tts.minSignal,
-            underlayBtAddress = tts.underlayBtAddress,
-            underlayBtName = tts.underlayBtName,
-            underlayBtActive = tts.underlayBtActive,
-            sentenceGapMs = tts.sentenceGapMs,
-            highlightSyncMs = tts.highlightSyncMs,
-        ),
-        ttsCallbacks = TtsSettingsCallbacks(
-            onEngine = { vm.tts.setEngine(it) },
-            onVoice = { vm.tts.setVoice(it) },
-            onSpeed = { vm.tts.setSpeed(it) },
-            onPitch = { vm.tts.setPitch(it) },
-            onPrefetchCount = { vm.tts.setPrefetchCount(it) },
-            onClipTargetChars = { vm.tts.setClipTargetChars(it) },
-            onClipFlexChars = { vm.tts.setClipFlexChars(it) },
-            onDoubleTapPlay = { vm.tts.setDoubleTapPlay(it) },
-            onMobileDataFallback = { vm.tts.setMobileDataFallback(it) },
-            onAutoPlayOnShare = { vm.tts.setAutoPlayOnShare(it) },
-            onShareInterruptsPlayback = { vm.tts.setShareInterruptsPlayback(it) },
-            onAutoScrollWithTts = { vm.tts.setAutoScrollWithTts(it) },
-            onUnderlayMode = { vm.tts.setUnderlayMode(it) },
-            onMinSignal = { level, persist -> vm.tts.setMinSignal(level, persist) },
-            onUnderlayBtDevice = { address, name -> vm.tts.setUnderlayBtDevice(address, name) },
-            underlayBondedDevices = { vm.tts.underlayBondedDevices() },
-            onSentenceGapMs = { vm.tts.setSentenceGapMs(it) },
-            onHighlightSyncMs = { vm.tts.setHighlightSyncMs(it) },
-        ),
+        tts = TtsSettingsState(tts),
+        ttsCallbacks = TtsSettingsCallbacks(vm.tts),
         filters = FilterSettingsState(
             filtersGlobal = ui.filtersGlobal,
             filtersGroups = ui.filtersGroups,
             filtersLocal = emptyList(),
             filterScopes = listOf(FilterScope.Global, FilterScope.Groups),
         ),
-        filterCallbacks = FilterSettingsCallbacks(
-            onAddFilter = { scope ->
-                filterEditor = FilterEditorSession(scope = scope, rule = FilterRule(), isNew = true)
-            },
-            onEditFilter = { scope, rule ->
-                filterEditor = FilterEditorSession(scope = scope, rule = rule, isNew = false)
-            },
-            onSetFilterEnabled = { scope, id, enabled -> vm.setFilterEnabled(scope, id, enabled) },
-            onReorderFilters = { scope, ids -> vm.reorderFilters(scope, ids) },
-            onDeleteFilters = { scope, ids -> vm.deleteFilters(scope, ids) },
-        ),
+        filterCallbacks = FilterSettingsCallbacks(vm) { filterEditor = it },
         debugEnabled = appearance.debugEnabled,
         onDebugEnabled = appearanceCallbacks.onDebugEnabled,
         onDismiss = { settingsOpen = false },

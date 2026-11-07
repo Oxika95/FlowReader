@@ -9,6 +9,8 @@ import com.personal.flowreader.data.TtsEngineOption
 import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.data.UnderlayMode
 import com.personal.flowreader.tts.PairedBtDevice
+import com.personal.flowreader.tts.TtsController
+import com.personal.flowreader.tts.TtsUiState
 import com.personal.flowreader.ui.open.OpenBookViewModel
 import com.personal.flowreader.ui.open.OpenUi
 
@@ -146,6 +148,53 @@ data class TtsSettingsCallbacks(
     val onHighlightSyncMs: (Int) -> Unit,
     val onClipTargetChars: (Int) -> Unit,
     val onClipFlexChars: (Int) -> Unit,
+)
+
+fun TtsSettingsState(tts: TtsUiState) = TtsSettingsState(
+    engineKey = tts.engineKey,
+    voiceId = tts.voiceId,
+    engines = tts.engines,
+    voices = tts.voices,
+    speed = tts.speed,
+    pitch = tts.pitch,
+    prefetchCount = tts.prefetchCount,
+    doubleTapPlay = tts.doubleTapPlay,
+    mobileDataFallback = tts.mobileDataFallback,
+    autoPlayOnShare = tts.autoPlayOnShare,
+    shareInterruptsPlayback = tts.shareInterruptsPlayback,
+    autoScrollWithTts = tts.autoScrollWithTts,
+    underlayMode = tts.underlayMode,
+    minSignal = tts.minSignal,
+    underlayBtAddress = tts.underlayBtAddress,
+    underlayBtName = tts.underlayBtName,
+    underlayBtActive = tts.underlayBtActive,
+    sentenceGapMs = tts.sentenceGapMs,
+    highlightSyncMs = tts.highlightSyncMs,
+    clipTargetChars = tts.clipTargetChars,
+    clipFlexChars = tts.clipFlexChars,
+    showClipSettings = tts.showClipSettings,
+    showNetworkLanes = tts.showNetworkLanes,
+)
+
+fun TtsSettingsCallbacks(tts: TtsController) = TtsSettingsCallbacks(
+    onEngine = { tts.setEngine(it) },
+    onVoice = { tts.setVoice(it) },
+    onSpeed = { tts.setSpeed(it) },
+    onPitch = { tts.setPitch(it) },
+    onPrefetchCount = { tts.setPrefetchCount(it) },
+    onClipTargetChars = { tts.setClipTargetChars(it) },
+    onClipFlexChars = { tts.setClipFlexChars(it) },
+    onDoubleTapPlay = { tts.setDoubleTapPlay(it) },
+    onMobileDataFallback = { tts.setMobileDataFallback(it) },
+    onAutoPlayOnShare = { tts.setAutoPlayOnShare(it) },
+    onShareInterruptsPlayback = { tts.setShareInterruptsPlayback(it) },
+    onAutoScrollWithTts = { tts.setAutoScrollWithTts(it) },
+    onUnderlayMode = { tts.setUnderlayMode(it) },
+    onMinSignal = { level, persist -> tts.setMinSignal(level, persist) },
+    onUnderlayBtDevice = { address, name -> tts.setUnderlayBtDevice(address, name) },
+    underlayBondedDevices = { tts.underlayBondedDevices() },
+    onSentenceGapMs = { tts.setSentenceGapMs(it) },
+    onHighlightSyncMs = { tts.setHighlightSyncMs(it) },
 )
 
 data class FilterSettingsState(

@@ -4,6 +4,7 @@ import com.personal.flowreader.data.Block
 import com.personal.flowreader.data.BlockKind
 import com.personal.flowreader.data.Chapter
 import com.personal.flowreader.data.PluginCacheDefaults
+import com.personal.flowreader.net.HttpClients
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.PluginManager
 import com.personal.flowreader.plugin.PluginSource
@@ -15,7 +16,6 @@ import com.personal.flowreader.plugin.api.PluginException
 import com.personal.flowreader.plugin.api.PluginWorkDetail
 import com.personal.flowreader.share.HtmlParagraphs
 import java.io.File
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 
@@ -42,10 +41,7 @@ class PluginBookStore(
     private val scope: CoroutineScope,
     private val cacheDefaults: suspend () -> PluginCacheDefaults,
 ) {
-    private val coverHttp = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    private val coverHttp = HttpClients.create()
 
     private data class Ref(val plugin: InstalledPlugin, val workId: String, val root: File) {
         val dir: File get() = PluginSessionStore.dir(root, workId)

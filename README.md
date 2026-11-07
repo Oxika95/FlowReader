@@ -29,3 +29,8 @@ Feature and UI map: [docs/](docs/README.md)
 ## Notes
 
 Readest source is kept as a protocol reference at `C:\Git\readest-personal-fork`. This app does not fork it.
+
+## License
+
+Flow Reader is licensed under the GNU Affero General Public License v3.0 or later (see LICENSE).
+Parts are adapted from Readest, also AGPL-3.0-or-later; see NOTICE.md.

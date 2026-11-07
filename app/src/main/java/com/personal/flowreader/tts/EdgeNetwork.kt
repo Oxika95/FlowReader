@@ -3,21 +3,16 @@ package com.personal.flowreader.tts
 import android.content.Context
 import android.net.Network
 import android.os.SystemClock
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.OkHttpClient
 import kotlin.math.abs
 
 /**
  * Picks network race lanes from live state ([NetworkMonitor]) and race history
  * ([NetworkLanePolicy]). Used by clip-audio providers that advertise `networkLanes`.
  */
-class EdgeNetwork(
-    context: Context,
-    base: OkHttpClient = defaultHttp(),
-) {
-    private val monitor = NetworkMonitor(context, base)
+class EdgeNetwork(context: Context) {
+    private val monitor = NetworkMonitor(context)
     private val policy = NetworkLanePolicy()
     private val lock = Any()
     private var lastSnap = NetSnapshot()
@@ -46,7 +41,7 @@ class EdgeNetwork(
             policy.plan()
         }
         return plan.map {
-            RaceLane(it.startMs, it.lane, monitor.clientFor(it.lane), monitor.networkFor(it.lane))
+            RaceLane(it.startMs, it.lane, monitor.networkFor(it.lane))
         }
     }
 
@@ -101,11 +96,5 @@ class EdgeNetwork(
     private companion object {
         const val RECHECK_MS = 5_000L
         const val RSSI_LOG_STEP = 3
-
-        fun defaultHttp(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(6, TimeUnit.SECONDS)
-            .readTimeout(6, TimeUnit.SECONDS)
-            .writeTimeout(6, TimeUnit.SECONDS)
-            .build()
     }
 }

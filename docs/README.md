@@ -53,7 +53,7 @@ DataStore keys, Room tables, and on-disk layout.
 
 ### [Agent reference](agent/CONTEXT.md)
 
-Where code lives ([map](agent/map.md)), runtime shape, the [cross-repo checklist](agent/cross-repo.md), and the generated [code index](agent/index.md).
+Where code lives ([registry](agent/registry.md)), runtime shape, and the [cross-repo checklist](agent/cross-repo.md).
 
 ---
 

@@ -22,3 +22,8 @@ brand/trace/out/
 
 # Kotlin/IDE incremental cache
 .kotlin/
+
+# Agent checks: jscpd reports and pinned tool deps
+report/
+scripts/tools/node_modules/
+

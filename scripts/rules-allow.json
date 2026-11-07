@@ -1,0 +1,74 @@
+{
+  "entries": [
+    {
+      "rule": "layering",
+      "file": "app/src/main/java/com/personal/flowreader/data/BookCatalog.kt",
+      "count": 1
+    },
+    {
+      "rule": "literals",
+      "file": "app/src/main/java/com/personal/flowreader/ui/debug/DebugSynthDumpFab.kt",
+      "count": 1
+    },
+    {
+      "rule": "literals",
+      "file": "app/src/main/java/com/personal/flowreader/ui/reader/ReaderBodyRow.kt",
+      "count": 3
+    },
+    {
+      "rule": "literals",
+      "file": "app/src/main/java/com/personal/flowreader/ui/reader/ReaderChrome.kt",
+      "count": 3
+    },
+    {
+      "rule": "literals",
+      "file": "app/src/main/java/com/personal/flowreader/ui/reader/ReaderRail.kt",
+      "count": 2
+    },
+    {
+      "rule": "literals",
+      "file": "app/src/main/java/com/personal/flowreader/ui/reader/ReaderScreen.kt",
+      "count": 7
+    },
+    {
+      "rule": "literals",
+      "file": "app/src/main/java/com/personal/flowreader/ui/settings/AudioSettingsControls.kt",
+      "count": 4
+    },
+    {
+      "rule": "plugin-names",
+      "file": "app/src/main/java/com/personal/flowreader/data/SettingsStore.kt",
+      "count": 1
+    },
+    {
+      "rule": "plugin-names",
+      "file": "app/src/main/java/com/personal/flowreader/plugin/runtime/PluginResponseProbe.kt",
+      "count": 2
+    },
+    {
+      "rule": "plugin-names",
+      "file": "app/src/main/java/com/personal/flowreader/plugin/runtime/PluginSessionSeed.kt",
+      "count": 1
+    },
+    {
+      "rule": "plugin-names",
+      "file": "app/src/main/java/com/personal/flowreader/tts/provider/TtsProviderRegistry.kt",
+      "count": 1
+    },
+    {
+      "rule": "plugin-names",
+      "file": "app/src/main/java/com/personal/flowreader/ui/settings/ImportRuleControls.kt",
+      "count": 1
+    },
+    {
+      "rule": "plugin-names",
+      "file": "app/src/main/res/xml/data_extraction_rules.xml",
+      "count": 6
+    },
+    {
+      "rule": "plugin-names",
+      "file": "app/src/main/res/xml/full_backup_content.xml",
+      "count": 3
+    }
+  ]
+}

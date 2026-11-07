@@ -33,6 +33,7 @@ import com.personal.flowreader.share.ParseRules
 import com.personal.flowreader.share.ShareParseMode
 import com.personal.flowreader.share.ShareUrlMatch
 import com.personal.flowreader.share.WebPageIngest
+import com.personal.flowreader.share.reordered
 import com.personal.flowreader.ui.theme.FlowTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -57,10 +58,7 @@ internal fun ParseRuleList(
         ),
         onAdd = onAdd,
         onEdit = onEdit,
-        onReorder = { ids ->
-            val byId = rules.associateBy { it.id }
-            onSave(ids.mapNotNull(byId::get))
-        },
+        onReorder = { ids -> onSave(ParseRules.reordered(rules, ids)) },
         onDelete = { ids -> onSave(rules.filterNot { it.id in ids && !ParseRules.isProtected(it) }) },
         locked = ParseRules::isProtected,
         trailing = { rule ->

@@ -11,7 +11,6 @@ import com.personal.flowreader.data.BookItem
 import com.personal.flowreader.data.PositionDomain
 import com.personal.flowreader.data.PositionSource
 import com.personal.flowreader.data.ProgressUpdate
-import com.personal.flowreader.data.ReadingSessionId
 import com.personal.flowreader.plugin.store.toItem
 import com.personal.flowreader.library.plugin.LibraryPluginActions
 import com.personal.flowreader.plugin.PluginSource
@@ -447,14 +446,17 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         _ui.update { it.copy(refreshing = true, error = null) }
         viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    when {
-                        !loggedIn && manifest.auth != null -> Unit
-                        list.isBrowse -> if (list.syncable) reimportBrowse(listId)
+                val report = withContext(Dispatchers.IO) {
+                    val report = when {
+                        !loggedIn && manifest.auth != null -> null
+                        list.isBrowse -> { if (list.syncable) reimportBrowse(listId); null }
                         flow.pluginSync.supports(manifest) -> flow.pluginSync.run(pluginId)
+                        else -> null
                     }
                     UpdateChecker(flow).run(pluginId)
+                    report
                 }
+                report?.problem(manifest.name) { manifest.list(it)?.title ?: it }?.let { throw it }
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
@@ -1177,9 +1179,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                     flow.pluginCatalog.removeMembership(story.bookId)
                     PluginMembershipStore.removeFromAll(dataDir, listIds, story.workId)
                     books.deleteLocalSession(story.bookId)
-                    story.listedIn.filter { manifest.list(it)?.syncable == true }.forEach { listId ->
-                        flow.pluginSync.membershipChanged(pluginId, story.workId, listId, on = false)
-                    }
+                    flow.pluginSync.storyRemovedLocally(pluginId, story.workId)
                 }
                 refreshLocal()
                 _ui.update { it.copy(busy = false, story = null, message = "Removed ${story.title}") }
@@ -1230,23 +1230,27 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         }
     }
 
-    fun closeManage() = _ui.update {
-        it.copy(
-            showManage = false,
-            cacheLevelDraft = it.story?.cacheLevel?.toString() ?: it.cacheLevelDraft,
-        )
+    fun closeManage(commitLevel: Boolean = true) {
+        if (commitLevel) commitCacheLevel()
+        _ui.update { it.copy(showManage = false) }
     }
 
     fun openToc() = _ui.update { it.copy(showToc = it.story != null, error = null) }
 
     fun closeToc() = _ui.update { it.copy(showToc = false) }
 
-    fun setCacheLevelDraft(value: String) {
-        val digits = value.filter { c -> c.isDigit() }.take(4)
-        _ui.update { it.copy(cacheLevelDraft = digits) }
-        val story = _ui.value.story ?: return
-        val level = digits.toIntOrNull() ?: return
-        saveCachePolicy(story, level, story.cleanup)
+    fun setCacheLevelDraft(value: String) = _ui.update { it.copy(cacheLevelDraft = CacheLevelDraft.digits(value)) }
+
+    /** Saves the typed cache level; a blank field goes back to the saved level. */
+    fun commitCacheLevel() {
+        val ui = _ui.value
+        val story = ui.story ?: return
+        val level = CacheLevelDraft.toSave(ui.cacheLevelDraft, story.cacheLevel)
+        if (level != null) {
+            saveCachePolicy(story, level, story.cleanup)
+        } else {
+            _ui.update { it.copy(cacheLevelDraft = story.cacheLevel.toString()) }
+        }
     }
 
     fun setCleanup(on: Boolean) {
@@ -1365,7 +1369,16 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             _ui.update { it.copy(busy = true, error = null) }
             try {
                 val refreshed = withContext(Dispatchers.IO) {
-                    if (flow.pluginCatalog.get(story.bookId) == null) {
+                    flow.pluginCatalog.seekChapter(
+                        ProgressUpdate.chapterSeek(
+                            domain = PositionDomain.Plugin,
+                            rowKey = story.bookId,
+                            chapterIndex = index,
+                            chapterCount = story.chapterCount,
+                            source = PositionSource.PluginSeek,
+                            chapterHref = story.toc.getOrNull(index)?.url.orEmpty(),
+                        ),
+                    ) {
                         upsertWork(
                             PluginWork(
                                 id = story.workId,
@@ -1376,21 +1389,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                             ),
                         )
                     }
-                    flow.progress.submit(
-                        ProgressUpdate(
-                            session = ReadingSessionId(PositionDomain.Plugin, story.bookId),
-                            rowKey = story.bookId,
-                            chapterIndex = index,
-                            blockIndex = 0,
-                            charOffset = 0,
-                            fraction = if (story.chapterCount > 0) index.toFloat() / story.chapterCount else 0f,
-                            at = System.currentTimeMillis(),
-                            anchorText = "",
-                            chapterHref = story.toc.getOrNull(index)?.url.orEmpty(),
-                            source = PositionSource.PluginSeek,
-                        ),
-                    )
-                    flow.progress.drain()
                     chapterFocus = null
                     loadStory(story.bookId)
                 }

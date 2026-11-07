@@ -1,7 +1,6 @@
 package com.personal.flowreader.data
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import java.io.File
 import java.util.zip.ZipFile
 import org.jsoup.Jsoup
@@ -18,10 +17,10 @@ object EpubCover {
      */
     fun loadBitmap(epub: File, maxEdge: Int = 512): Bitmap? {
         if (!epub.exists()) return null
-        siblingCover(epub)?.let { return decodeScaled(it, maxEdge) }
+        siblingCover(epub)?.let { return ScaledBitmap.decodeFile(it, maxEdge) }
         if (!epub.extension.equals("epub", ignoreCase = true)) return null
         val cached = ensureCached(epub) ?: return null
-        return decodeScaled(cached, maxEdge)
+        return ScaledBitmap.decodeFile(cached, maxEdge)
     }
 
     fun ensureCached(epub: File): File? {
@@ -151,21 +150,5 @@ object EpubCover {
             return "gif"
         }
         return "jpg"
-    }
-
-    private fun decodeScaled(file: File, maxEdge: Int): Bitmap? {
-        return try {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(file.absolutePath, bounds)
-            val w = bounds.outWidth
-            val h = bounds.outHeight
-            if (w <= 0 || h <= 0) return null
-            var sample = 1
-            while (w / sample > maxEdge || h / sample > maxEdge) sample *= 2
-            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-            BitmapFactory.decodeFile(file.absolutePath, opts)
-        } catch (_: Throwable) {
-            null
-        }
     }
 }

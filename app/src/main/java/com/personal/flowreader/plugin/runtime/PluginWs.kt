@@ -1,3 +1,6 @@
+// Adapted from Readest workersWebSocket.ts
+// (https://github.com/readest/readest/blob/main/apps/readest-app/src/libs/workersWebSocket.ts),
+// AGPL-3.0-or-later.
 package com.personal.flowreader.plugin.runtime
 
 import android.net.Network

@@ -6,14 +6,18 @@ alwaysApply: false
 
 # Data and storage
 
+- Entries: `docs/agent/registry.md` `## Data`. Keys, files, order: `docs/agent/seams.md`
+  `## Settings keys` and `## Data and storage`.
 - Room schema change = version bump plus a `Migration` (keep user data); commit the exported
   schema JSON in `app/schemas/`. Pure row mapping goes in a JVM-tested function.
 - Positions: one table per domain (Library, Queue, each plugin's own DB). Every write goes through
   `ProgressWriter` with a `ReadingSessionId` and row key, and updates only that row's position
-  columns. Never share a position between domains.
-- New setting = field in `ReaderPrefs`/`TtsPrefs` (or a `*Once` getter) + setter in `SettingsStore.kt`,
-  wired through `ui/settings/SettingsState.kt`; document the key in `docs/data.md` / `docs/settings.md`.
+  columns. Never share a position between domains. Build seeks with `ProgressUpdate.chapterSeek`; no direct
+  `.writePosition(` or new `ProgressUpdate(` outside the files `rules-check` allows.
+- New setting = field in `ReaderPrefs`/`TtsPrefs` (or a `*Once` getter) + setter + wiring through
+  `ui/settings/SettingsState.kt`; `SettingsStore.kt` is near its size limit, so put new groups in a new
+  file. Document the key in `docs/data.md` / `docs/settings.md`.
 - Book ids are SHA-256 of file bytes; don't change id derivation (keys progress, filters, queue).
+- `data/` never imports `ui/` or `FlowApp` (rules-check layering rule).
 - Parsers/splitters (`SentenceSplitter`, `TextFilters`, `Ingest`) are pure and JVM-tested.
-- Where to edit: `docs/agent/map.md` `## shared`, `## library`. Reference: `docs/data.md`.
-  History: `../flow-reader-chats/areas/library.md`.
+- History: `../flow-reader-chats/areas/library.md`.

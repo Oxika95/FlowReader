@@ -29,7 +29,7 @@ Docs: `docs/plugins/api.md` (router to manifest, functions, features, host pages
   `PluginReadPosition[]` (progressSync); `setMembership(..., false)` removes on the site;
   `flow.fetch(url, { cookies: false })` sends clearance cookies only (Anubis / CF), not session.
 - `ChapterRef.locked` persists as a third `toc.txt` column; downloads skip locked chapters.
-- ToC refresh reconciles by chapter URL (`PluginSessionStore.chapterMoves` / `reconcileChapterFiles`).
+- ToC refresh reconciles by chapter URL (`TocRemap.chapterMoves`).
 
 ## Media card
 
@@ -47,5 +47,5 @@ Docs: `docs/plugins/api.md` (router to manifest, functions, features, host pages
 2. Update `MediaCardAdapters.kt` + `MediaCardAdaptersTest`.
 3. Follow `docs/agent/cross-repo.md` (version sync, contract docs, host mirror, release order).
 
-Where to edit: `docs/agent/map.md` `## plugins`. History and open threads:
+Where to edit: `docs/agent/registry.md` `## Plugin runtime and store`. History and open threads:
 `../flow-reader-chats/areas/plugins.md`.

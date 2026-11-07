@@ -1,0 +1,98 @@
+{
+  "app:0d2cf73f811847db": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/settings/AppearanceSettings.kt:109-149 ~ java/com/personal/flowreader/ui/settings/FiltersSettings.kt:111-151 (41 lines)"
+  },
+  "app:0ffdc051d7f1c4b2": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/settings/PlaybackSettingsTab.kt:24-34 ~ java/com/personal/flowreader/ui/settings/VoiceSettingsTab.kt:26-36 (11 lines)"
+  },
+  "app:2942875f90f91f71": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/data/SettingsStore.kt:27-35 ~ java/com/personal/flowreader/ui/open/OpenBookViewModel.kt:20-28 (9 lines)"
+  },
+  "app:2fc318853d2d1ef8": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/data/TextFilters.kt:267-275 ~ java/com/personal/flowreader/data/TextFilters.kt:282-290 (9 lines)"
+  },
+  "app:3101846c83a62e47": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/settings/AppearanceSettings.kt:19-109 ~ java/com/personal/flowreader/ui/settings/FiltersSettings.kt:20-110 (91 lines)"
+  },
+  "app:36574f7b0d53269b": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/library/LibraryScreen.kt:397-407 ~ java/com/personal/flowreader/ui/reader/ReaderScreen.kt:978-991 (11 lines)"
+  },
+  "app:3e3dd0c096040f5c": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/settings/AboutSettingsTab.kt:1-18 ~ java/com/personal/flowreader/ui/settings/AppearanceSettings.kt:1-19 (18 lines)"
+  },
+  "app:42f95da0175f4c0e": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/settings/AudioSettings.kt:45-53 ~ java/com/personal/flowreader/ui/settings/VoiceSettingsTab.kt:62-70 (9 lines)"
+  },
+  "app:5595f8eec3d6688f": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/settings/PlaybackSettingsTab.kt:25-34 ~ java/com/personal/flowreader/ui/settings/ThemeSettingsPane.kt:13-22 (10 lines)"
+  },
+  "app:ada6ceaa6645caaa": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/plugin/PluginListCrawlCard.kt:4-19 ~ java/com/personal/flowreader/ui/plugin/WebLoginOverlay.kt:5-20 (16 lines)"
+  },
+  "app:b60272e7b7809f38": {
+    "count": 2,
+    "sample": "java/com/personal/flowreader/ui/plugin/ClearanceOverlay.kt:1-11 ~ java/com/personal/flowreader/ui/plugin/PluginListCrawlCard.kt:1-11 (11 lines)"
+  },
+  "app:b916db9ea84afb49": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/settings/ThemeSettingsPane.kt:14-23 ~ java/com/personal/flowreader/ui/settings/VoiceSettingsTab.kt:28-37 (10 lines)"
+  },
+  "app:ba306e87fd2e0a07": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/data/TextFilters.kt:184-195 ~ java/com/personal/flowreader/share/ShareDomainRules.kt:468-479 (12 lines)"
+  },
+  "app:bab7d2cf437558bb": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/plugin/sync/TwoWaySync.kt:125-136 ~ java/com/personal/flowreader/plugin/sync/TwoWaySync.kt:262-272 (12 lines)"
+  },
+  "app:be84d5f608e0a952": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/reader/ReaderRail.kt:231-244 ~ java/com/personal/flowreader/ui/reader/ReaderRail.kt:264-277 (14 lines)"
+  },
+  "app:c40bbfcbb3f2a1de": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/settings/AppearanceSettings.kt:155-181 ~ java/com/personal/flowreader/ui/settings/FiltersSettings.kt:155-181 (27 lines)"
+  },
+  "app:c5e1cfc5b4a37363": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/settings/AudioSettings.kt:52-62 ~ java/com/personal/flowreader/ui/settings/PlaybackSettingsTab.kt:64-74 (11 lines)"
+  },
+  "app:d54da16cb2e1d57f": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/debug/DebugSynthDumpFab.kt:3-16 ~ java/com/personal/flowreader/ui/settings/AboutSettingsTab.kt:3-16 (14 lines)"
+  },
+  "app:df59bd0d433fb932": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/library/WebCrawlCards.kt:3-11 ~ java/com/personal/flowreader/ui/plugin/StoryRenameCard.kt:3-11 (9 lines)"
+  },
+  "app:e5027b4a763f77c7": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/data/EpubCover.kt:107-116 ~ java/com/personal/flowreader/data/Ingest.kt:64-73 (10 lines)"
+  },
+  "app:e86f7c53aff6c39c": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/debug/DebugSynthDumpFab.kt:7-16 ~ java/com/personal/flowreader/ui/settings/FiltersSettings.kt:8-17 (10 lines)"
+  },
+  "app:ed91587d57fe2e7a": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/data/TextFilters.kt:197-208 ~ java/com/personal/flowreader/share/ShareDomainRules.kt:481-492 (12 lines)"
+  },
+  "app:f6b5b0211dd668c0": {
+    "count": 2,
+    "sample": "java/com/personal/flowreader/ui/plugin/PluginSettingsSheet.kt:10-19 ~ java/com/personal/flowreader/ui/plugin/StoryCacheCards.kt:12-21 (10 lines)"
+  },
+  "app:fa0102cf73de0a40": {
+    "count": 1,
+    "sample": "java/com/personal/flowreader/ui/design/controls/FlowSettingsRows.kt:108-121 ~ java/com/personal/flowreader/ui/design/controls/FlowSettingsRows.kt:322-335 (14 lines)"
+  }
+}

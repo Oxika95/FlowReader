@@ -1,0 +1,19 @@
+---
+description: Flow Reader Library screen (tabs, shelves, sort, Queue tab, book cards)
+globs: app/src/main/java/com/personal/flowreader/ui/library/**/*.kt,app/src/main/java/com/personal/flowreader/library/**/*.kt
+alwaysApply: false
+---
+
+# Library
+
+- Entries: `docs/agent/registry.md` `## Library` (screen and tabs, sort, Queue tab, book files).
+  Behavior: `docs/library.md`.
+- `LibraryViewModel.kt` is large: find members with `rg -n` and Read by offset.
+- Tab ids: `LibraryTabId` (`files`, `que`, a plugin id, a custom tab id). A shelf id is also a router
+  landing id and `library_books.shelfId`; removing a shelf must rewrite every place that holds it.
+- Row subtitles are pure (`LibraryRowText`) with a JVM test; keep new row text logic there.
+- Display card: tap = media card, double-tap = reader. Media card content comes from an adapter.
+- The Queue tab and the reader's Queue Contents both use `EditableRuleList`; check both.
+- Library actions for the plugin tab go through `LibraryPluginActions`; plugin overlays are hoisted
+  to the Library root, not drawn inside the tab.
+- Where to edit: `docs/agent/registry.md` `## Library`. History: `../flow-reader-chats/areas/library.md`.

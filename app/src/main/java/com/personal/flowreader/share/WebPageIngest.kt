@@ -1,12 +1,11 @@
 package com.personal.flowreader.share
 
-import okhttp3.OkHttpClient
+import com.personal.flowreader.net.HttpClients
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.select.Selector
-import java.util.concurrent.TimeUnit
 
 data class WebArticle(
     val title: String,
@@ -97,11 +96,7 @@ object WebPageIngest {
 
     fun userAgent(desktop: Boolean) = if (desktop) DESKTOP_USER_AGENT else USER_AGENT
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val client = HttpClients.create { followRedirects(true) }
 
     fun fetchHtml(url: String, desktop: Boolean = false): String {
         val request = Request.Builder()
