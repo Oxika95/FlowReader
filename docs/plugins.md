@@ -157,7 +157,7 @@ before each new-chapter check. Quiet OkHttp `list()` pulls. Code:
 - **Pending positions:** "Last read: {chapter}" until ToC is stored; RR Follow positions from
   Follows pages (cached); no per-story page during sync.
 - **Guard / Replace:** skip site removals when the list looks truncated; Overwrite resets baseline.
-- **Removals:** a story gone from a site list leaves the app's lists but keeps its library row, downloads, Queue entries and custom title (same as unfollowing in the app). Only Overwrite deletes them. Removing a story from the library never changes site lists.
+- **Removals:** a story gone from a site list (or unfollowed in the app) leaves that list; local library row, downloads, Queue entries and rename are deleted only when the story is on none of the plugin's tracked story lists. Still on Favorite or Read Later → keep local data. Site reading progress is untouched. Overwrite (Replace with site lists) uses the same rule. Removing a story from the library never changes site lists.
 - **Positions / Offline / RR:** conflict card when both moved; outbox in `sync.json`; chapter
   downloads use `cookies: false`; backwards push via rewind form; `minRequestIntervalMs: 700`.
 

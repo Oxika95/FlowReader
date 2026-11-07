@@ -1,0 +1,5 @@
+# Graphify also reads .gitignore. Extra exclusions: data, assets and non-app tooling.
+app/schemas/
+docs/
+brand/
+scripts/*.json

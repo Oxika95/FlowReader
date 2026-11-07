@@ -68,7 +68,7 @@ Format: `- <kind>: <name> [rg: <pattern>] -> <files>; <note>`. The file list aft
 - lock: SyncStateStore monitor; every sync.json change is a locked read-modify-write per data dir (SyncState.kt); list files under _lists have no lock of their own
 - order: baseline saved before applyPosition; TwoWaySync saves the site chapter as the baseline before applying it locally so the progress hook does not push it back; the same order is used when a conflict is resolved
 - order: a local chapter is never saved as the baseline before its push; PushLocal and "Keep mine" only enqueue (SyncState.enqueuePosition), and the baseline moves to the pushed chapter when the push succeeds (SyncState.settle)
-- order: list sync is lists written, then flushed, then baselines saved; sync and Merge no longer call PluginListWriter.dropUnlisted (only Overwrite does)
+- order: list sync is lists written, then flushed, then baselines saved, then PluginListWriter.dropUnlisted for stories removed from a list (deletes local data only when on no story list); Overwrite and local unfollow use the same dropUnlisted path
 - order: tocStored must stay lock-free and ProgressWriter onWritten must never call drain; UpdateChecker holds the sync lock and calls tocStored
 - order: PluginDataEraser.erase cancels upkeep, removes rows, deletes the database, deletes the data dir, then emits the change; it holds the sync lock throughout
 - order: startup; pluginManager.initialize() is synchronous so PluginStorageMigrator sees installed plugins; PluginCatalog.markMigrated runs even if the migration fails and every catalog DAO call waits for it
@@ -153,7 +153,7 @@ Format: `- <kind>: <name> [rg: <pattern>] -> <files>; <note>`. The file list aft
 - id: SYNC_ALL_LISTS = "*" in SyncTargets.kt shares the list-id namespace with real list ids through syncListId
 - id: plugin book ids `{bookIdPrefix}:{workId}` built by PluginManager.bookIdFor; sync state is keyed by workId, database rows by bookId, folders by a sanitized bookId
 - order: plugin sign-in; web sign-in or site-browser completion imports cookies, stamps `cookiesImportedAt`, calls `session()`, then emits sessionChanged
-- order: plugin story save; the catalog row must exist before a position is submitted; `drain()` runs before the story loads; `toggleList` writes the list file before it pushes to the site; `deleteStory` removes the catalog row, list files and local session, then clears the story from the sync baselines and outbox (`storyRemovedLocally`); it never pushes a removal to the site
+- order: plugin story save; the catalog row must exist before a position is submitted; `drain()` runs before the story loads; `toggleList` writes the list file, then on remove calls `dropUnlisted`, then pushes to the site; `deleteStory` removes the catalog row, list files and local session, then clears the story from the sync baselines and outbox (`storyRemovedLocally`); it never pushes a removal to the site
 - order: plugin ToC store; `readBook` stores the ToC before it starts reading, which applies any site position that was waiting for the ToC
 - bridge: WebView cookies; the Android CookieManager is process-wide; the sign-in overlay clears it before loading, `seed()` clears then writes the plugin jar's cookies, and the bot-check solver clears Anubis cookies when it starts
 - bridge: PluginClearanceGate.handler; one global handler installed by PluginClearanceHost; a plugin request that hits a bot check waits for it

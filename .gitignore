@@ -13,7 +13,7 @@ local.properties
 *.ap_
 *.aab
 /app/release
-# Gutenberg EPUBs for wiki screenshots only — do not commit
+# Gutenberg EPUBs for wiki screenshots only â€” do not commit
 docs/_sample_books/
 
 # Brand tracing tool: deps and mask/overlay previews
@@ -26,4 +26,7 @@ brand/trace/out/
 # Agent checks: jscpd reports and pinned tool deps
 report/
 scripts/tools/node_modules/
+
+# Code graph (Graphify), built locally
+graphify-out/
 

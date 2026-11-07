@@ -10,10 +10,9 @@ import java.io.File
 enum class SyncMode { Merge, Overwrite }
 
 /**
- * Writes plugin list membership and the catalog rows behind it. Only Overwrite (Replace with site
- * lists) deletes a story's library row and downloads, once it is on none of the plugin's story
- * lists. Sync and Merge that find a story gone from the site leave its local data, like unfollowing
- * in the app.
+ * Writes plugin list membership and the catalog rows behind it. A story's library row and downloads
+ * are removed only when it is on none of the plugin's story lists ([dropUnlisted]): after Overwrite,
+ * after sync/Merge drops it from a site list, and after a local unfollow that leaves no other list.
  */
 class PluginListWriter(private val app: FlowApp) {
     private val manager get() = app.pluginManager

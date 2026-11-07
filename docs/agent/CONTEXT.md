@@ -1,12 +1,13 @@
 # Agent hub
 
 Start here for where code lives and which rules apply. Follow the lookup order in `../../AGENTS.md`
-(registry, then couplings, then `rg`). Load only the file and section that answers the question.
+(code graph, then registry, then couplings, then `rg`). Load only the file and section that answers the question.
 
 ## Knowledge files
 
 | Question | File | Scope |
 | --- | --- | --- |
+| What calls or reaches a symbol, how two symbols connect | Code graphs: [graph.md](graph.md) | `graphify query`, `explain`, `affected`, `path`; confirm callers with `rg` (Blind spots) |
 | Which feature, owner file, tests and pitfalls match the owner's words | [registry.md](registry.md) | `rg -n -i` the words, read matching `###` entries |
 | Which other places must change with this file | [seams.md](seams.md) | `rg -n "<FileName>"`, read matching lines |
 | App singletons, screen flow, repo roles | [architecture.md](architecture.md) | Full |
@@ -16,11 +17,12 @@ Start here for where code lives and which rules apply. Follow the lookup order i
 
 ## Rule files (`.cursor/rules/`)
 
-`working-agreement.mdc` is always on. The others load when a file matching their glob is touched.
+`working-agreement.mdc` and `graphify.mdc` are always on. The others load when a file matching their glob is touched.
 
 | Rule file | Covers |
 | --- | --- |
 | `working-agreement.mdc` | Planning, fixing, scope, devices, git, definition of done |
+| `graphify.mdc` | Graphify's own rule: query the graph before exploring code. Written by `graphify cursor install`, which overwrites it; local wording goes in `AGENTS.md` |
 | `ui-system.mdc` | UI files: design system, tokens, forbidden components |
 | `plugin-api.mdc` | Plugin runtime and contract files |
 | `tts.mdc` | Text to speech |

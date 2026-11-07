@@ -223,7 +223,8 @@ class TwoWaySync(private val app: FlowApp) {
 
     /**
      * Three-way list merge of fetched or crawled [remotes] (keys = list ids). A story the site
-     * dropped leaves the app's lists but keeps its library row, downloads, Queue entries and rename.
+     * dropped leaves that list; [dropUnlisted] clears its library row and downloads only when it is
+     * on none of the plugin's story lists (site reading progress is untouched).
      */
     private suspend fun mergeLists(
         pluginId: String,
@@ -271,6 +272,7 @@ class TwoWaySync(private val app: FlowApp) {
                 )
             }
         }
+        if (removedLocally.isNotEmpty()) lists.dropUnlisted(pluginId, removedLocally)
         return SyncReport(
             added = added,
             removed = removedLocally.size,

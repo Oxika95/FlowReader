@@ -898,6 +898,8 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                         )
                     } else {
                         PluginMembershipStore.remove(dataDir, listId, story.workId)
+                        // Clears local data only when the story is on no other story list.
+                        lists.dropUnlisted(pluginId, listOf(story.workId))
                     }
                     if (list.syncable) flow.pluginSync.membershipChanged(pluginId, story.workId, listId, on) else PushResult.LocalOnly
                 }

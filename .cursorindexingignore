@@ -11,3 +11,4 @@ app/build/
 gradlew
 gradlew.bat
 gradle/wrapper/
+graphify-out/

@@ -17,6 +17,7 @@ files, the emulator or adb. Start work with `/task <request>`.
 .\gradlew.bat :app:testDebugUnitTest      # JVM unit tests (app/src/test)
 .\gradlew.bat :app:installDebug           # device; bundles ../flow-reader-plugins when present
 .\scripts\verify.ps1 [-Full]              # build/tests if code changed, rules, duplicates, notes, couplings; -Full adds smoke check
+.\scripts\graph.ps1                       # refresh the code graphs of both repos (verify runs it when they changed)
 .\scripts\setup-emulator.ps1              # boot windowed AVD flowreader_api36 + push Gutenberg test books
 .\scripts\setup-emulator.ps1 -Recreate -Install -Import   # fresh AVD, app installed, books in library
 ```
@@ -26,16 +27,23 @@ If the Kotlin compiler crashes with `NotImplementedError: Unknown file` after de
 
 ## Lookup order
 
-Use the owner's words, not your own names.
+Use the owner's words, not your own names. Start with the code graphs ([`docs/agent/graph.md`](docs/agent/graph.md));
+the registry and couplings list cover what the graph can't see, and `rg` confirms names and callers.
 
-1. `rg -n -i "<owner's words>" docs/agent/registry.md`, then read the matching entries.
-2. For each file in play: `rg -n "<FileName>" docs/agent/seams.md` (changes that must be matched elsewhere).
-3. `rg` for the symbols, related literals and `FlowApp` properties in `app/src`, and in `../flow-reader-plugins/`
-   when the change is plugin-visible.
+1. Graph: `graphify query "<owner's words or a symbol>"`, `graphify explain "<Symbol>"` (one symbol's edges),
+   `graphify affected "<Symbol>"` (what reaches it), `graphify path "<A>" "<B>"`. For plugin code add
+   `--graph ../flow-reader-plugins/graphify-out/graph.json`. The `graphify` MCP server offers the same lookups
+   (`query_graph`, `get_neighbors`, `shortest_path`; `project_path` for the plugins repo).
+2. `rg -n -i "<owner's words>" docs/agent/registry.md`, then read the matching entries.
+3. For each file in play: `rg -n "<FileName>" docs/agent/seams.md` (changes that must be matched elsewhere).
+4. `rg` for the symbols, related literals and `FlowApp` properties in `app/src`, and in `../flow-reader-plugins/`
+   when the change is plugin-visible. Callers always need this step: the graph has no edge for calls through an
+   instance (every `flow.x.y()`), flows and properties, string ids, or the app-to-plugin boundary.
 
-Every plan for a change, with or without `/task`, has these sections: **Existing code found** (entries, paths,
-symbols, and searches that found nothing), **Affected code** (seams lines, callers, covering tests), **Rules that
-apply** (from `.cursor/rules/*.mdc` whose globs match), **Device checks**.
+Every plan for a change, with or without `/task`, has these sections: **Existing code found** (graph queries,
+entries, paths, symbols, and searches that found nothing), **Affected code** (`affected` results, seams lines,
+callers confirmed with `rg`, covering tests), **Rules that apply** (from `.cursor/rules/*.mdc` whose globs match),
+**Device checks**.
 
 ## Search rules
 
@@ -47,6 +55,9 @@ apply** (from `.cursor/rules/*.mdc` whose globs match), **Device checks**.
   Quote Gradle `-P` arguments: `"-Pkotlin.incremental=false"`.
 - Don't create files with Shell redirects (`>`); use the file tools.
 - Never read a large file whole. Find the place with `rg -n`, then read a line range (over-limit files: `scripts/size-baseline.json`).
+- Graph queries: keep the default budget; when output says TRUNCATED, narrow (a symbol, `--context call`, the
+  file-qualified name it lists) instead of raising it. Don't read `graphify-out/graph.json`; read `GRAPH_REPORT.md`
+  only for a broad architecture review.
 - Match repo roots with a trailing slash: `c:/git/flow-reader` is a prefix of `c:/git/flow-reader-plugins`.
 
 ## Definition of done
@@ -58,8 +69,10 @@ apply** (from `.cursor/rules/*.mdc` whose globs match), **Device checks**.
 
 ## Where knowledge lives
 
+- Code graphs (setup, freshness, commands, blind spots): `docs/agent/graph.md`.
 - Vocabulary, owner files, tests, pitfalls: `docs/agent/registry.md`. Couplings: `docs/agent/seams.md`.
-- Feature rules by file glob: `.cursor/rules/*.mdc`; always-on rules: `working-agreement.mdc`.
+- Feature rules by file glob: `.cursor/rules/*.mdc`; always-on rules: `working-agreement.mdc`, `graphify.mdc`
+  (Graphify's own; rewritten on reinstall).
 - Runtime shape and plugin-visible changes: `docs/agent/architecture.md`, `docs/agent/cross-repo.md`.
 - Behavior for people: `docs/`. Plugin contract: `docs/plugins/api.md`.
 - Backlog, saved plans and handoffs, decisions as history: `../flow-reader-chats/` (`backlog.md`, `tasks/`, `decisions/`).

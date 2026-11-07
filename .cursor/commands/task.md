@@ -3,16 +3,19 @@
 Arguments: the request, in the owner's words. Use those words for searching and in the plan; don't rename things.
 Follow `AGENTS.md` (lookup order, search rules, hooks) throughout. One task per chat.
 
-1. **Find existing code** with the lookup order in `AGENTS.md`:
-   `rg -n -i "<words>" docs/agent/registry.md`, then `rg -n "<FileName>" docs/agent/seams.md` for each file in play,
-   then `rg` for symbols, related literals and `FlowApp` properties in `app/src` (and `../flow-reader-plugins/` when
-   the change is plugin-visible).
-   Output an **Existing code found** block listing the entries, paths and symbols found, and every search that
-   found nothing, so the owner can spot vocabulary gaps. If the words matched no registry entry, propose one in the plan.
+1. **Find existing code** with the lookup order in `AGENTS.md`: run `.\scripts\graph.ps1` (refreshes both graphs),
+   then `graphify query` / `graphify explain` on the owner's words and the symbols they name (plugin code:
+   `--graph ../flow-reader-plugins/graphify-out/graph.json`), then `rg -n -i "<words>" docs/agent/registry.md`, then
+   `rg -n "<FileName>" docs/agent/seams.md` for each file in play, then `rg` for symbols, related literals and
+   `FlowApp` properties in `app/src` (and `../flow-reader-plugins/` when the change is plugin-visible).
+   Output an **Existing code found** block listing the graph queries, entries, paths and symbols found, and every
+   search that found nothing, so the owner can spot vocabulary gaps. If the words matched no registry entry, propose
+   one in the plan.
 2. **For bugs**, find the cause from logs or code. Where the logic is pure or can be made pure, write a failing JVM
    test first, using constructor seams, a fake clock or a log wrapper.
 3. **Affected code.** For each file to change, list: its `seams.md` lines; the callers of each changed symbol
-   (`rg`); the tests that cover them; `git log -S '<value>' -- <file>` results for any hard-coded value being
+   (`graphify affected "<Symbol>"`, then `rg`, which also finds the calls through an instance that the graph has no
+   edge for); the tests that cover them; `git log -S '<value>' -- <file>` results for any hard-coded value being
    changed.
 4. **Write the plan** with these sections: Goal (owner's words), Existing code found, Affected code, Rules that
    apply (from the `.cursor/rules/*.mdc` files whose globs match the files to change), Approach, Tests, Device
