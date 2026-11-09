@@ -27,3 +27,6 @@ brand/trace/out/
 report/
 scripts/tools/node_modules/
 
+# Local device-check dumps / scratch
+tmp/
+
