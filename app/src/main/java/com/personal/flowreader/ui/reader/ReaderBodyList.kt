@@ -1,33 +1,37 @@
 package com.personal.flowreader.ui.reader
 
-import android.content.Context
-import android.view.MotionEvent
-import android.view.ViewGroup
-import android.widget.FrameLayout
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.AbstractComposeView
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.updatePadding
-import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.ListAdapter
-import androidx.recyclerview.widget.RecyclerView
+import androidx.compose.ui.unit.Velocity
 import com.personal.flowreader.data.BookPlace
 import com.personal.flowreader.data.ReaderItem
 import com.personal.flowreader.debug.DebugLog
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,138 +40,166 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Reader body list: RecyclerView + DiffUtil so prepend/trim keep the on-screen text put.
- * Scroll identity for the app is [BookPlace], not adapter row numbers.
+ * Reader body list: Compose [LazyColumn] keyed by block id so prepend/trim can keep the
+ * on-screen paragraph put. Scroll identity for the app is [BookPlace], not row numbers.
+ * Sentence boxes and the home bar share this viewport (top = 0).
  */
 internal class ReaderBodyController {
-    var recycler: RecyclerView? = null
+    var listState: LazyListState? = null
         private set
-    var layoutManager: LinearLayoutManager? = null
-        private set
-    private var adapter: ListAdapter<ReaderItem, *>? = null
     var items: List<ReaderItem> = emptyList()
         private set
-    private var pendingEpoch: Int = 0
-    private val _listEpoch = MutableStateFlow(0)
-    /** DiffUtil commit generation — collect to wait until the adapter matches [items]. */
-    val listEpoch: StateFlow<Int> = _listEpoch.asStateFlow()
-    /** When false, touch is ignored so scroll-lock cannot be dragged. */
+    /** When false, user drag/fling is ignored (scroll lock). */
     var userScrollEnabled: Boolean = true
-    /** Top content padding (px) applied to the RecyclerView — LM offset is from this edge. */
+    /** Top content padding (px). */
     var padTopPx: Int = 0
         private set
+    /** Viewport height in px (the box that holds the list + home bar). */
+    @Volatile
+    var viewportHeightPx: Float = 0f
+        private set
+    /** Layout coordinates of the viewport box; sentence spans report into this space. */
+    @Volatile
+    var viewportCoords: LayoutCoordinates? = null
 
-    fun attach(recycler: RecyclerView, lm: LinearLayoutManager, adapter: ListAdapter<ReaderItem, *>) {
-        this.recycler = recycler
-        this.adapter = adapter
-        this.layoutManager = lm
+    private var pendingEpoch: Int = 0
+    private val _listEpoch = MutableStateFlow(0)
+    /** Bumps when [items] are applied and the first frame after has layout info. */
+    val listEpoch: StateFlow<Int> = _listEpoch.asStateFlow()
+
+    private var anchorKey: String? = null
+    private var anchorOffset: Int = 0
+
+    /** Sentence line boxes in viewport coordinates (top = 0). */
+    private val sentenceSpans = ConcurrentHashMap<Int, SentenceSpan>()
+
+    /** Bumped when spans change so pin-edge derived state can recompute. */
+    private val _spanEpoch = MutableStateFlow(0)
+    val spanEpoch: StateFlow<Int> = _spanEpoch.asStateFlow()
+
+    fun attach(state: LazyListState) {
+        listState = state
     }
 
     fun setPadTopPx(px: Int) {
         padTopPx = px.coerceAtLeast(0)
     }
 
-    fun submitItems(newItems: List<ReaderItem>) {
-        if (newItems === items || (newItems.size == items.size && newItems == items)) {
-            return
-        }
-        items = newItems
-        val epoch = ++pendingEpoch
-        adapter?.submitList(newItems) {
-            if (epoch == pendingEpoch) _listEpoch.value = epoch
-        } ?: run { _listEpoch.value = epoch }
+    fun setViewportHeight(px: Float) {
+        viewportHeightPx = px.coerceAtLeast(0f)
     }
 
-    /** True when the RecyclerView adapter matches the latest [items] snapshot. */
+    /**
+     * Capture the first visible keyed row before [newItems] replace the list so a prepend
+     * can restore scroll.
+     */
+    fun prepareItems(newItems: List<ReaderItem>) {
+        if (newItems === items || (newItems.size == items.size && newItems == items)) return
+        val first = listState?.layoutInfo?.visibleItemsInfo?.firstOrNull()
+        if (first != null) {
+            anchorKey = first.key as? String
+            anchorOffset = first.offset
+        } else {
+            anchorKey = null
+            anchorOffset = 0
+        }
+        items = newItems
+        pendingEpoch++
+    }
+
+    /** After composition with the new [items], restore the anchored row if needed. */
+    suspend fun settleAfterItemsChange() {
+        val key = anchorKey
+        val offset = anchorOffset
+        val state = listState
+        if (key != null && state != null) {
+            val idx = items.indexOfFirst { it.block.id == key }
+            if (idx >= 0) {
+                val visible = state.layoutInfo.visibleItemsInfo.firstOrNull()
+                if (visible == null || visible.key != key || visible.offset != offset) {
+                    state.scrollToItem(idx, offset)
+                }
+            }
+        }
+        anchorKey = null
+        withFrameNanos { }
+        _listEpoch.value = pendingEpoch
+    }
+
     fun isListCommitted(): Boolean = _listEpoch.value == pendingEpoch
 
-    /** Suspend until DiffUtil has applied the latest [submitItems] call. */
     suspend fun awaitListCommitted() {
         if (isListCommitted()) return
         val want = pendingEpoch
         listEpoch.first { it >= want && isListCommitted() }
     }
 
-    /** Adapter list currently laid out — never the pending [items] mid-DiffUtil. */
-    fun committedItems(): List<ReaderItem> = adapter?.currentList ?: items
+    fun committedItems(): List<ReaderItem> = items
 
     fun adapterIndexOf(place: BookPlace): Int =
-        ReaderHome.placeToAdapterIndex(committedItems(), place)
+        ReaderHome.placeToAdapterIndex(items, place)
 
     fun blockIdAt(adapterIndex: Int): String? =
-        committedItems().getOrNull(adapterIndex)?.block?.id
+        items.getOrNull(adapterIndex)?.block?.id
 
     fun placeAt(adapterIndex: Int): BookPlace? {
-        val item = committedItems().getOrNull(adapterIndex) ?: return null
+        val item = items.getOrNull(adapterIndex) ?: return null
         return BookPlace(item.chapterIndex, item.blockIndex, 0)
     }
 
     fun firstVisibleAdapterIndex(): Int =
-        layoutManager?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+        listState?.firstVisibleItemIndex ?: -1
 
     fun lastVisibleAdapterIndex(): Int =
-        layoutManager?.findLastVisibleItemPosition() ?: RecyclerView.NO_POSITION
+        listState?.layoutInfo?.visibleItemsInfo?.lastOrNull()?.index ?: -1
 
     fun firstVisibleBlockId(): String? {
         val i = firstVisibleAdapterIndex()
-        if (i == RecyclerView.NO_POSITION) return null
+        if (i < 0) return null
         return blockIdAt(i)
     }
 
     fun visibleBlockIds(): List<String> {
-        val lm = layoutManager ?: return emptyList()
-        val first = lm.findFirstVisibleItemPosition()
-        val last = lm.findLastVisibleItemPosition()
-        if (first == RecyclerView.NO_POSITION || last == RecyclerView.NO_POSITION) return emptyList()
-        return (first..last).mapNotNull { blockIdAt(it) }
+        val info = listState?.layoutInfo?.visibleItemsInfo ?: return emptyList()
+        return info.mapNotNull { blockIdAt(it.index) }
     }
 
-    /** Chapter index by block id for the committed list (viewport reporting). */
     fun chapterByBlockId(): Map<String, Int> =
-        committedItems().associate { it.block.id to it.chapterIndex }
+        items.associate { it.block.id to it.chapterIndex }
 
-    /** Kill fling/drag so a location jump is not overwritten by leftover momentum. */
-    fun stopScroll() {
-        recycler?.stopScroll()
+    /** Cancel in-flight user fling; programmatic scrolls use awaitScrollIdle. */
+    suspend fun stopScroll() {
+        if (listState?.isScrollInProgress == true) {
+            listState?.scrollBy(0f)
+        }
     }
 
     /**
-     * Bring [place]'s row into layout ([offsetPx] from the padding edge). Home parking prefers
-     * [scrollBy] from sentence span; this is only for unbound rows.
+     * Bring [place]'s row into view with [offsetPx] from the padding edge (list-local).
+     * Used only to compose a far row before reading its sentence box.
      */
-    fun scrollToPlace(place: BookPlace, offsetPx: Int = 0) {
-        stopScroll()
-        val committed = committedItems()
-        val index = ReaderHome.placeToAdapterIndex(committed, place)
+    suspend fun scrollToPlace(place: BookPlace, offsetPx: Int = 0) {
+        val index = ReaderHome.placeToAdapterIndex(items, place)
         if (index < 0) {
             DebugLog.reader(
                 "bodyScroll miss c=${place.chapterIndex} b=${place.blockIndex} committed=${isListCommitted()}",
             )
             return
         }
-        layoutManager?.scrollToPositionWithOffset(index, offsetPx)
+        listState?.scrollToItem(index, offsetPx)
         DebugLog.reader(
             "bodyScroll c=${place.chapterIndex} b=${place.blockIndex} index=$index offset=$offsetPx",
         )
     }
 
-    fun scrollBy(dyPx: Int) {
-        recycler?.scrollBy(0, dyPx)
+    suspend fun scrollBy(dyPx: Int) {
+        if (dyPx == 0) return
+        listState?.scrollBy(dyPx.toFloat())
     }
 
-    fun smoothScrollBy(dyPx: Int) {
-        recycler?.smoothScrollBy(0, dyPx)
-    }
+    fun isScrollInProgress(): Boolean =
+        listState?.isScrollInProgress == true
 
-    fun isScrollInProgress(): Boolean {
-        val rv = recycler ?: return false
-        return rv.scrollState != RecyclerView.SCROLL_STATE_IDLE
-    }
-
-    /**
-     * Wait until the RecyclerView is idle. Polls each frame — [scrollState] is not Compose
-     * snapshot state, so [snapshotFlow] would hang forever after the first "still scrolling" sample.
-     */
     suspend fun awaitScrollIdle(timeoutMs: Long = 750L): Boolean {
         if (!isScrollInProgress()) return true
         val done = withTimeoutOrNull(timeoutMs) {
@@ -179,138 +211,38 @@ internal class ReaderBodyController {
         return done == true
     }
 
-    fun viewTopInWindow(): Int {
-        val loc = IntArray(2)
-        recycler?.getLocationInWindow(loc)
-        return loc[1]
+    /** Top/bottom of a row in viewport coordinates, or null if not composed. */
+    fun rowViewportBounds(adapterIndex: Int): Pair<Float, Float>? {
+        val info = listState?.layoutInfo?.visibleItemsInfo?.firstOrNull { it.index == adapterIndex }
+            ?: return null
+        val top = info.offset.toFloat()
+        return top to (top + info.size)
     }
 
-    fun viewHeight(): Int = recycler?.height ?: 0
-
-    /**
-     * Top/bottom of an adapter row in window coordinates, or null if not laid out.
-     */
-    fun rowWindowBounds(adapterIndex: Int): Pair<Float, Float>? {
-        val lm = layoutManager ?: return null
-        val child = lm.findViewByPosition(adapterIndex) ?: return null
-        val loc = IntArray(2)
-        child.getLocationInWindow(loc)
-        val top = loc[1].toFloat()
-        return top to (top + child.height)
-    }
-
-}
-
-private class ReaderBodyAdapter(
-    private val content: @Composable (ReaderItem) -> Unit,
-) : ListAdapter<ReaderItem, ReaderBodyAdapter.Holder>(Diff) {
-
-    init {
-        setHasStableIds(true)
-    }
-
-    override fun getItemId(position: Int): Long =
-        getItem(position).block.id.hashCode().toLong()
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-        val frame = HeightStickyFrame(parent.context)
-        frame.layoutParams = RecyclerView.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-        val composeView = ReaderBodyComposeView(parent.context)
-        frame.addView(
-            composeView,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ),
-        )
-        return Holder(frame, composeView)
-    }
-
-    override fun onBindViewHolder(holder: Holder, position: Int) {
-        holder.bind(getItem(position), content)
-    }
-
-    override fun onViewRecycled(holder: Holder) {
-        // Keep last composition so recycled rows do not collapse to height 0 before rebind
-        // (zero-height inserts above the viewport shift the camera on prepend).
-        super.onViewRecycled(holder)
-    }
-
-    class Holder(
-        private val frame: HeightStickyFrame,
-        private val composeView: ReaderBodyComposeView,
-    ) : RecyclerView.ViewHolder(frame) {
-        fun bind(item: ReaderItem, content: @Composable (ReaderItem) -> Unit) {
-            frame.onBindBlockId(item.block.id)
-            composeView.setRow(item, content)
+    fun putSentenceSpan(span: SentenceSpan) {
+        val prev = sentenceSpans.put(span.sentenceIndex, span)
+        if (prev == null ||
+            prev.blockId != span.blockId ||
+            kotlin.math.abs(prev.top - span.top) > 0.5f ||
+            kotlin.math.abs(prev.bottom - span.bottom) > 0.5f
+        ) {
+            _spanEpoch.value++
         }
     }
 
-    private object Diff : DiffUtil.ItemCallback<ReaderItem>() {
-        override fun areItemsTheSame(a: ReaderItem, b: ReaderItem): Boolean =
-            a.block.id == b.block.id
-
-        override fun areContentsTheSame(a: ReaderItem, b: ReaderItem): Boolean =
-            a == b
-    }
-}
-
-/**
- * Holds last non-zero height so DiffUtil prepend does not treat rows as zero-tall while Compose
- * catches up (zero-height inserts shift the camera). Resets when rebound to a different block.
- */
-private class HeightStickyFrame(context: Context) : FrameLayout(context) {
-    private var lastHeight = 0
-    private var boundBlockId: String? = null
-
-    fun onBindBlockId(blockId: String) {
-        if (boundBlockId != null && boundBlockId != blockId) lastHeight = 0
-        boundBlockId = blockId
+    fun clearSentenceSpansForBlock(blockId: String) {
+        val stale = sentenceSpans.filterValues { it.blockId == blockId }.keys
+        if (stale.isEmpty()) return
+        stale.forEach { sentenceSpans.remove(it) }
+        _spanEpoch.value++
     }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-        if (measuredHeight > 0) {
-            lastHeight = measuredHeight
-        } else if (lastHeight > 0) {
-            setMeasuredDimension(measuredWidth, lastHeight)
-        }
-    }
-}
-
-private class ReaderBodyComposeView(context: Context) : AbstractComposeView(context) {
-    private var row by mutableStateOf<ReaderItem?>(null)
-    private var rowContent by mutableStateOf<(@Composable (ReaderItem) -> Unit)?>(null)
-
-    init {
-        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
-    }
-
-    fun setRow(item: ReaderItem, content: @Composable (ReaderItem) -> Unit) {
-        row = item
-        rowContent = content
-        if (isAttachedToWindow) {
-            // Compose before the next measure so WRAP_CONTENT is not 0 on first prepend layout.
-            createComposition()
-        }
-    }
-
-    @Composable
-    override fun Content() {
-        val item = row
-        val content = rowContent
-        if (item != null && content != null) {
-            content(item)
-        }
-    }
+    fun sentenceSpan(sentenceIndex: Int): SentenceSpan? = sentenceSpans[sentenceIndex]
 }
 
 /**
  * Full-bleed reader body. [content] paints one [ReaderItem] row (rail + text).
- * DiffUtil keeps the viewport stable when [items] grow or shrink at the front.
+ * Keys keep the viewport stable when [items] grow or shrink at the front.
  */
 @Composable
 internal fun ReaderBodyList(
@@ -324,94 +256,107 @@ internal fun ReaderBodyList(
     onViewPlace: (BookPlace) -> Unit,
     onVisibleChapters: (IntRange) -> Unit,
     modifier: Modifier = Modifier,
+    /** Drawn in the same box as the list (home bar). */
+    homeOverlay: @Composable () -> Unit = {},
     content: @Composable (ReaderItem) -> Unit,
 ) {
     val density = LocalDensity.current
     val padTop = with(density) { contentPaddingTop.roundToPx() }
-    val padBottom = with(density) { contentPaddingBottom.roundToPx() }
-    val padEnd = with(density) { contentPaddingEnd.roundToPx() }
-    val contentState = rememberUpdatedContent(content)
+    val listState = rememberLazyListState()
+    val onUserScrollState = rememberUpdatedState(onUserScroll)
+    val onViewPlaceState = rememberUpdatedState(onViewPlace)
+    val onVisibleState = rememberUpdatedState(onVisibleChapters)
 
-    AndroidView(
-        modifier = modifier.fillMaxSize(),
-        factory = { context ->
-            val lm = LinearLayoutManager(context)
-            val adapter = ReaderBodyAdapter { item -> contentState.value(item) }
-            val rv = RecyclerView(context).apply {
-                layoutManager = lm
-                this.adapter = adapter
-                itemAnimator = null
-                clipToPadding = false
-                overScrollMode = RecyclerView.OVER_SCROLL_NEVER
-                updatePadding(top = padTop, bottom = padBottom, right = padEnd)
-                isNestedScrollingEnabled = true
+    val lockScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (controller.userScrollEnabled) return Offset.Zero
+                return available
             }
-            controller.attach(rv, lm, adapter)
-            controller.setPadTopPx(padTop)
-            rv.addOnItemTouchListener(
-                object : RecyclerView.SimpleOnItemTouchListener() {
-                    override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean =
-                        !controller.userScrollEnabled
-                },
-            )
-            rv.addOnScrollListener(
-                object : RecyclerView.OnScrollListener() {
-                    override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
-                        if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
-                            onUserScroll()
-                        }
-                    }
 
-                    override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                        // Pending DiffUtil list must not drive viewport — positions still match the old rows.
-                        if (!controller.isListCommitted()) return
-                        val first = controller.firstVisibleAdapterIndex()
-                        if (first != RecyclerView.NO_POSITION) {
-                            controller.placeAt(first)?.let(onViewPlace)
-                        }
-                        val ids = controller.visibleBlockIds()
-                        ReaderHome.visibleChapterRange(ids, controller.chapterByBlockId())
-                            ?.let(onVisibleChapters)
-                    }
-                },
-            )
-            rv
-        },
-        update = { rv ->
-            controller.userScrollEnabled = userScrollEnabled
-            controller.setPadTopPx(padTop)
-            rv.updatePadding(top = padTop, bottom = padBottom, right = padEnd)
-            controller.submitItems(items)
-            if (!userScrollEnabled && rv.scrollState != RecyclerView.SCROLL_STATE_IDLE) {
-                rv.stopScroll()
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (controller.userScrollEnabled) return Velocity.Zero
+                return available
             }
-        },
-    )
-
-    // When scroll lock toggles, stop coasting.
-    LaunchedEffect(userScrollEnabled) {
-        if (!userScrollEnabled) {
-            controller.recycler?.stopScroll()
         }
     }
 
-    // Report viewport once the committed list is on screen (before first user scroll).
+    LaunchedEffect(Unit) {
+        controller.attach(listState)
+    }
+
+    SideEffect {
+        controller.userScrollEnabled = userScrollEnabled
+        controller.setPadTopPx(padTop)
+    }
+    // Capture the on-screen key before LazyColumn applies a prepend/trim.
+    controller.prepareItems(items)
+
     LaunchedEffect(items) {
+        controller.settleAfterItemsChange()
+    }
+
+    LaunchedEffect(userScrollEnabled) {
+        if (!userScrollEnabled && listState.isScrollInProgress) {
+            listState.scrollBy(0f)
+        }
+    }
+
+    LaunchedEffect(listState, items) {
         snapshotFlow {
             if (!controller.isListCommitted()) return@snapshotFlow null
+            val first = listState.firstVisibleItemIndex
+            if (first !in items.indices) return@snapshotFlow null
+            val place = controller.placeAt(first)
             val ids = controller.visibleBlockIds()
-            ReaderHome.visibleChapterRange(ids, controller.chapterByBlockId())
-        }.distinctUntilChanged().collect { range ->
-            range?.let(onVisibleChapters)
+            val range = ReaderHome.visibleChapterRange(ids, controller.chapterByBlockId())
+            Triple(place, range, listState.isScrollInProgress)
+        }.distinctUntilChanged().collect { triple ->
+            if (triple == null) return@collect
+            val (place, range, _) = triple
+            place?.let { onViewPlaceState.value(it) }
+            range?.let { onVisibleState.value(it) }
         }
     }
-}
 
-@Composable
-private fun rememberUpdatedContent(
-    content: @Composable (ReaderItem) -> Unit,
-): MutableState<@Composable (ReaderItem) -> Unit> {
-    val state = remember { mutableStateOf(content) }
-    state.value = content
-    return state
+    // Detect user drag via scroll-in-progress rising while enabled.
+    var wasDragging by remember { mutableStateOf(false) }
+    LaunchedEffect(listState, userScrollEnabled) {
+        snapshotFlow { listState.isScrollInProgress to controller.userScrollEnabled }
+            .collect { (scrolling, enabled) ->
+                if (enabled && scrolling && !wasDragging) {
+                    onUserScrollState.value()
+                }
+                wasDragging = scrolling
+            }
+    }
+
+    Box(
+        modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coords ->
+                controller.viewportCoords = coords
+                controller.setViewportHeight(coords.size.height.toFloat())
+            }
+            .nestedScroll(lockScroll),
+    ) {
+        LazyColumn(
+            state = listState,
+            userScrollEnabled = userScrollEnabled,
+            contentPadding = PaddingValues(
+                top = contentPaddingTop,
+                bottom = contentPaddingBottom,
+                end = contentPaddingEnd,
+            ),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            itemsIndexed(
+                items = items,
+                key = { _, item -> item.block.id },
+            ) { _, item ->
+                content(item)
+            }
+        }
+        homeOverlay()
+    }
 }

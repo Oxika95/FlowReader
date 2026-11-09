@@ -9,6 +9,6 @@
   "app/src/main/java/com/personal/flowreader/tts/TtsController.kt": 2547,
   "app/src/main/java/com/personal/flowreader/ui/library/LibraryViewModel.kt": 831,
   "app/src/main/java/com/personal/flowreader/ui/plugin/PluginTabViewModel.kt": 1505,
-  "app/src/main/java/com/personal/flowreader/ui/reader/ReaderScreen.kt": 1058,
+  "app/src/main/java/com/personal/flowreader/ui/reader/ReaderScreen.kt": 1034,
   "app/src/main/java/com/personal/flowreader/ui/reader/ReaderViewModel.kt": 514
 }

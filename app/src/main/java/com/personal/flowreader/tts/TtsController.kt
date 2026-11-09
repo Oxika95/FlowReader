@@ -63,6 +63,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import com.personal.flowreader.plugin.runtime.PluginClipOwnership
 import com.personal.flowreader.tts.provider.PluginTtsProvider
 import com.personal.flowreader.tts.provider.SystemTtsEngine
 import com.personal.flowreader.tts.provider.SystemTtsProvider
@@ -1812,7 +1813,7 @@ class TtsController(
             ?: throw IllegalStateException("No TTS provider for ${_state.value.engineKey}")
         val voice = edgeVoiceId()
         val langTag = voice.split('-').take(2).joinToString("-").ifBlank { "en-US" }
-        val request = TtsSynthRequest(
+        val base = TtsSynthRequest(
             text = text,
             voice = voice,
             lang = langTag,
@@ -1821,9 +1822,14 @@ class TtsController(
         )
         SynthDebugLog.append("tts synth[$tag] provider=${provider.id} voice=$voice")
         return if (provider is PluginTtsProvider && provider.has(TtsCapability.NetworkLanes)) {
-            racePluginSynth(provider, request, tag)
+            racePluginSynth(provider, base, tag)
         } else {
-            synthOnce(provider, request)
+            val requestId = if (provider is PluginTtsProvider) {
+                PluginClipOwnership.newRequestId()
+            } else {
+                ""
+            }
+            synthOnce(provider, base.copy(requestId = requestId))
         }
     }
 
@@ -1839,7 +1845,7 @@ class TtsController(
             } else {
                 provider.synthesize(request)
             }
-            return EdgeAudio(clip.mp3, clip.boundaries, clip.connectId)
+            return EdgeAudio(clip.mp3, clip.boundaries, clip.requestId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: com.personal.flowreader.plugin.api.PluginException) {
@@ -1884,7 +1890,10 @@ class TtsController(
             inFlight.incrementAndGet()
             attempts += launch(Dispatchers.IO) {
                 try {
-                    val audio = synthOnce(provider, request, raceSlot = idx, network = lane.network)
+                    val attempt = request.copy(
+                        requestId = PluginClipOwnership.newRequestId(),
+                    )
+                    val audio = synthOnce(provider, attempt, raceSlot = idx, network = lane.network)
                     hasAudio.set(true)
                     winner.complete(idx to audio)
                 } catch (e: CancellationException) {
@@ -2039,15 +2048,24 @@ class TtsController(
         publishGenerating(i)
         return try {
             val audio = synthesizeEdge(text, tag = "$source i=$i")
+            val still = sentences.getOrNull(i)?.let { speechText(it.text) }
+            if (still != text) {
+                SynthDebugLog.append(
+                    "tts assign reject i=$i source=$source reason=text-drift " +
+                        "requestId=${audio.requestId.ifBlank { "-" }} textHash=$textHash",
+                )
+                publishUnmarkGenerating(i)
+                return false
+            }
             val fileHash = assignFileHash(audio.mp3)
             SynthDebugLog.append(
-                "tts assign synth i=$i source=$source connectId=${audio.connectId.ifBlank { "-" }} " +
+                "tts assign synth i=$i source=$source requestId=${audio.requestId.ifBlank { "-" }} " +
                     "textHash=$textHash fileHash=$fileHash bytes=${audio.mp3.size}",
             )
             clipCache.writeAtomically(f, audio.mp3)
             audioEngine.invalidateDecode(f)
             SynthDebugLog.append(
-                "tts assign write i=$i connectId=${audio.connectId.ifBlank { "-" }} " +
+                "tts assign write i=$i requestId=${audio.requestId.ifBlank { "-" }} " +
                     "textHash=$textHash file=${f.name} fileHash=$fileHash bytes=${audio.mp3.size}",
             )
             writeWordBoundaries(wordsFile, audio.boundaries)

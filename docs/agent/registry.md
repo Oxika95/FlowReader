@@ -191,9 +191,9 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Tests: ReaderTouchPolicyTest, ReaderHomeTest, ReaderProgressPolicyTest
 - Rules: .cursor/rules/reader.mdc, .cursor/rules/ui-system.mdc
 - Pitfalls:
-  - The body is a RecyclerView with DiffUtil (`ReaderBodyController`), not a lazy list. Each row hosts its own Compose view. The list adapter's committed items can differ from the `items` the composition holds, so an adapter call needs the adapter's own index.
-  - Every explicit scroll goes through `scrollToHome` (restore, follow, jump back, scroll lock, home marker, ToC, title and body double-tap). A new reason for moving the list goes through the same function.
-  - The list factory captures its scroll callbacks once; values they read live must come through `rememberUpdatedState`.
+  - The body is a keyed Compose `LazyColumn` (`ReaderBodyController`). Prepend/trim keeps the on-screen paragraph put via key + scroll anchor; `listEpoch` marks when that settle finished.
+  - Every explicit scroll goes through `scrollToHome` → `placeSentenceAtHome` (restore, follow, jump back, scroll lock, home marker, ToC, title and body double-tap). Sentence boxes are list-local from body text layout.
+  - List callbacks are captured once; values they read live must come through `rememberUpdatedState`.
   - Touch routing is `resolveTouch`; the body double-tap is handled inside `ReaderBodyRow` and does not pass through it.
   - `Locus` is a typealias of `BookPlace`. Chapter-title rows carry `blockIndex` -1.
   - The TTS settings state and callbacks are assembled by hand in both `ReaderScreen` and `LibraryScreen`; a new TTS setting needs both.
@@ -225,7 +225,7 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Tests: ReaderHomeTest
 - Rules: .cursor/rules/reader.mdc
 - Pitfalls:
-  - The rail reports the current sentence's span (`SentenceSpan`) back to the screen; home and pin-edge geometry use it.
+  - The rail is visual only (cache dots, current bar, hold-to-regenerate). Sentence boxes for home and pin-edge come from body text layout in `ReaderBodyRow`, not the rail.
   - Cache dots reflect the TTS clip cache; a 3 second hold on the bar forces that clip to regenerate.
   - The rail sits in a fixed gutter shared with highlight padding (`ReaderLayout.kt` constants); changing the width moves the text column.
   - Rail segments are equal-weight per sentence, not weighted by character count.
@@ -241,6 +241,7 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Rules: .cursor/rules/reader.mdc, .cursor/rules/settings.mdc
 - Pitfalls:
   - `ReaderHome` is pure math (home pixel, edge, index lookup) and is tested; keep new geometry there.
+  - The home marker is drawn in the same box as the body list so bar Y and sentence Y share one origin.
   - Settings keys are `home_position` (a fraction of the viewport height) and `show_home_marker`; the marker bar writes the position back through a callback.
   - Follow, restore, jump back and ToC all anchor a sentence at the home line, so a change to home math moves all of them.
 - Rejected: absolute pin insets of 128/132dp and `Modifier.offset` stacking (left a hole; the media card jumped). From areas/reader.md.
@@ -325,7 +326,7 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Rules: .cursor/rules/tts.mdc
 - Pitfalls:
   - `TtsClipCache` owns the `cacheDir/tts` folder: `hit` (engine extension, then `mp3`, then `wav`), `wordsFile`, `writeAtomically` (temp file then rename), `sweep` and `clear`. `ClipCacheNames` owns the pure parts: `bookKey`, `voiceKey`, `base`, `parse`, `isStale`. Nothing else builds or parses these names; `rules-check` rule `clip-cache` fails on `ClipCacheNames.parse` / `isStale` calls, or on the word-timing and temp-file name suffixes written as string literals, outside those two files.
-  - A clip name is `b<bookKey>_s<index>_<voiceKey>_t<textKey>.<ext>`. `textKey` fingerprints the sentence text, so a clip is only reused for the text it was made from. Speech filters are part of `voiceKey`.
+  - A clip name is `b<bookKey>_s<index>_<voiceKey>_t<textKey>.<ext>`. `textKey` fingerprints the clip-unit text (Clip Size join/split), so a clip is only reused for the text it was made from. Speech filters are part of `voiceKey`. Plugin synth ownership is `requestId` (see Edge WebSocket entry), not the index alone.
   - Word-timing sidecars share the clip's base name and are swept with it. In-flight `.part` files of the attached book are never swept.
   - `sweep` only deletes files. The caller passes `onRemove` to cancel the synthesis job and drop decoded audio for each file (`TtsController.deleteStaleCache`). `clear` is the controller's `clearEdgeCache`, which also resets job and UI state first.
   - The folder also holds `filter_preview.mp3` and the `sys-synth` subfolder; a sweep removes the preview, `clear` removes everything directly in it.
@@ -351,16 +352,17 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Known issues: none recorded
 
 ### Edge TTS plugin and raw WebSocket
-- Words: Edge TTS, edgetts, handshake, GEC, Readest, raw socket, WebSocket upgrade
+- Words: Edge TTS, edgetts, handshake, GEC, Readest, raw socket, WebSocket upgrade, requestId
 - Owner: plugin/runtime/PluginWs.kt
-- Changes with: plugin/runtime/EdgeAudioFrames.kt, ../flow-reader-plugins/EdgeTts, tts/provider/PluginTtsProvider.kt
-- Tests: EdgeAudioFramesTest
+- Changes with: plugin/runtime/EdgeAudioFrames.kt, plugin/runtime/PluginClipOwnership.kt, ../flow-reader-plugins/EdgeTts, tts/provider/PluginTtsProvider.kt
+- Tests: EdgeAudioFramesTest, PluginClipOwnershipTest
 - Rules: .cursor/rules/tts.mdc, ../flow-reader-plugins/.cursor/rules/edgetts.mdc
 - Pitfalls:
   - Readest's `edgeTTS.ts` is the upstream for the handshake and headers; do not invent a parallel one.
   - The WebSocket must be a raw TLS socket speaking RFC 6455 (`PluginWs`); an OkHttp upgrade gets HTTP 200 back.
   - Frame parsing for audio and word boundaries is `EdgeAudioFrames`; the plugin returns clip audio and boundaries to `PluginTtsProvider`.
-- Rejected: OkHttp `newWebSocket` for the Edge speech socket; keeping `speech.platform.bing.com` as a fallback host (it rejects every handshake). From areas/tts.md.
+  - Each synth attempt mints a 32-hex `requestId`; Edge uses it as ConnectionId; host writes `ws-audio/<requestId>.mp3` (exclusive create). Provider rejects mismatched echo or foreign `audioPath`. Clip Size re-split that changes text at index `i` rejects the late write.
+- Rejected: OkHttp `newWebSocket` for the Edge speech socket; keeping `speech.platform.bing.com` as a fallback host (it rejects every handshake); `clip-${nanoTime()}` temp names. From areas/tts.md.
 - Device check: with Edge selected, play a sentence on Wi-Fi; turn the network off mid-clip and confirm playback waits and retries.
 - Known issues: none recorded
 
@@ -415,7 +417,7 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Rules: .cursor/rules/tts.mdc, .cursor/rules/data.mdc
 - Pitfalls:
   - Splitting then length normalizing (join short, split long toward the clip size setting); a changed setting re-splits and must clear the Edge cache.
-  - Sentence indices are relative to the origin chapter of the window; a re-split renumbers all of them.
+  - Sentence indices are relative to the origin chapter of the window; a re-split renumbers all of them. In-flight plugin synth must still match the speakable clip text at write time (`requestId` + text-drift reject).
   - `Sentence.text` must equal the block text from `start` to `end`; word highlight and body rows rely on it.
   - Sentence highlight shows for every engine; word highlight only when boundaries exist.
 - Rejected: the full upstream `en.txt` abbreviation list (blocked too many real breaks); dual highlights. From areas/tts.md.
@@ -683,13 +685,14 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Known issues: none recorded
 
 ### Edge TTS plugin
-- Words: Edge TTS plugin, EdgeTts, synthesize, voices, kind tts
+- Words: Edge TTS plugin, EdgeTts, synthesize, voices, kind tts, requestId
 - Owner: ../flow-reader-plugins/EdgeTts
 - Changes with: ../flow-reader-plugins/test/edgetts.test.mjs
 - Tests: edgetts.test.mjs (plugins repo)
 - Rules: ../flow-reader-plugins/.cursor/rules/edgetts.mdc
 - Pitfalls:
   - `kind: "tts"`: it returns clip audio and word boundaries; the app owns the socket (`PluginWs`) and all playback.
+  - `synthesize` takes app `requestId`, uses it as Edge turn id, passes it to `flow.ws.collect`, and echoes it.
   - Readest is upstream; keep the credit header in `index.js`. See "Edge TTS plugin and raw WebSocket".
 - Rejected: none recorded
 - Device check: install the plugin, pick it in Settings > Audio > Voice, and play.

@@ -101,8 +101,9 @@ of an item in the stream synthesizes fresh clips (cache key is the stream, not t
   playback waits until a network is usable, backs off 1/2/4/8 s, clears failed lookahead, and
   retries. Session and media card stay up.
 - Synth log lines use `tts synth[…]` and `edge race[…]` (source `pre` / `play` / `next` / `regen` /
-  `preview`). `tts assign …` lines add sentence index `i`, Edge `connectId` when present, `textHash`,
-  and `fileHash` so dumps can match clips to sentences (no enforce yet).
+  `preview`). `tts assign …` lines add clip index `i`, app `requestId`, `textHash`, and `fileHash`.
+  Plugin synth requires matching `requestId` and audio path; text-at-index drift (Clip Size re-split)
+  rejects the write.
 - Crossfade leaves the tail of the next MP3 in a short leftover buffer so the track never gaps.
   That buffer is tagged with the next clip’s file path: play only drains it when the path matches
   the sentence about to speak; otherwise it is dropped and the file is decoded again. Skipped

@@ -62,10 +62,9 @@ Place in the book is **BookPlace**: chapter + paragraph (block) + character, res
   follow, ToC, open, and any other home jump so the page locks to the reading place again. While
   follow (or scroll-lock) is on, view stays cleared: screen and reading place move together.
 
-The reader body is a **RecyclerView-style** list (`ListAdapter` + DiffUtil): when chapters are
-added or removed above, what you see stays put. A flick is free scroll — coast, stop, stay there
-(same as a drag). A location jump (Contents, home, jump-back, double-tap, restore) stops that
-momentum first, then parks in one move.
+The reader body is a **keyed Compose list**: when chapters are added or removed above, what you see
+stays put. A flick is free scroll — coast, stop, stay there (same as a drag). A location jump
+(Contents, home, jump-back, double-tap, restore) stops that momentum first, then parks in one move.
 
 The **current position** for chips and home is always a sentence: the spoken one while TTS plays,
 otherwise the saved reading sentence. The **home position** is a horizontal line in the viewport
@@ -77,13 +76,13 @@ A sentence taller than the screen starts at the top instead.
 Opening the book, Contents, jump-back, double-tap, and the home marker each do **one** jump to the
 target and then stop. Loading nearby chapters in the background must not drag the screen.
 
-With **Show home marker** on, the reader draws a solid bar across the text column at home; its
-thickness follows the text size. Drag the bar anywhere along its length to move home (a "Home N%"
-label shows while dragging); on release, if the current sentence is on-screen it settles onto the
-new line.
+With **Show home marker** on, the reader draws a solid bar in the **same box** as the body list at
+home; its thickness follows the text size. Drag the bar anywhere along its length to move home (a
+"Home N%" label shows while dragging); on release, if the current sentence is on-screen it settles
+onto the new line. Sentence line boxes come from the body text layout in that same coordinate space.
 
 Math lives in [`ReaderHome.kt`](../app/src/main/java/com/personal/flowreader/ui/reader/ReaderHome.kt)
-(unit-tested); the rail reports the current sentence's line bounds (`SentenceSpan`).
+(unit-tested).
 
 ### Pin / jump
 
@@ -102,10 +101,10 @@ Opening a book reads only the saved chapter, plus following chapters while it ha
 title pages). The neighbouring chapters load right after first paint. Scrolling or playback into
 the first or last loaded chapter loads the next one; chapters far from both the viewport and the
 TTS playhead are dropped (see [data.md](data.md#book-loading)). Visible chapters come from on-screen
-block ids. DiffUtil insert/trim keeps the page still when neighbors load above (viewport reads the
-committed adapter list only, so mid-submit positions cannot lie). Home parking is one `scrollBy` of
-the sentence→bar delta (or one LM place when the row is not composed yet). While a home jump is in
-flight, viewport reports are ignored. The progress bar is whole-book progress by chapter size.
+block ids. Keyed list settle keeps the page still when neighbors load above. Home parking is one
+`scrollBy` of the sentence→bar delta (or compose the row first when it is off-screen). While a home
+jump is in flight, viewport reports are ignored. The progress bar is whole-book progress by chapter
+size.
 
 ### Debug
 

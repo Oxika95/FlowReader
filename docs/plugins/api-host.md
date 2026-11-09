@@ -1,6 +1,6 @@
 # Plugin API: host API, limits, repository index
 
-Part of the [Plugin API](api.md) (apiVersion 5).
+Part of the [Plugin API](api.md) (apiVersion 6).
 
 ## Host API (`flow` global)
 
@@ -45,14 +45,14 @@ A repository is a static `index.json` (GitHub Pages works):
 ```json
 {
   "name": "Flow Reader Official",
-  "apiVersion": 5,
+  "apiVersion": 6,
   "plugins": [
     {
       "id": "royalroad",
       "name": "Royal Road",
       "description": "Your followed and saved serials",
       "version": "1.3.0",
-      "apiVersion": 5,
+      "apiVersion": 6,
       "lang": "en",
       "manifestUrl": "RoyalRoad/plugin.json",
       "pluginUrl": "RoyalRoad/index.js",

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,10 +41,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -111,7 +107,6 @@ private suspend fun PointerInputScope.detectRailHold(
 @Composable
 internal fun LocusRail(
     modifier: Modifier,
-    blockId: String,
     sentences: List<BlockSentence>,
     textLayout: TextLayoutResult?,
     currentSentenceIndex: Int,
@@ -119,8 +114,6 @@ internal fun LocusRail(
     generating: Set<Int>,
     softAccent: Color,
     onForceRegenerate: (Int) -> Unit,
-    /** Root-Y lines of the current sentence; fires on every layout or scroll move. */
-    onCurrentSpan: (SentenceSpan) -> Unit,
 ) {
     if (sentences.isEmpty()) {
         Spacer(modifier)
@@ -207,37 +200,34 @@ internal fun LocusRail(
         },
     ) {
         val layout = textLayout
-        val reportCurrent = rememberUpdatedState(onCurrentSpan)
-        fun Modifier.reportIfCurrent(sentenceIndex: Int): Modifier {
-            if (sentenceIndex != currentSentenceIndex) return this
-            return onGloballyPositioned { coords ->
-                // Window coords — same space as listTopY / home marker.
-                val top = coords.positionInWindow().y
-                reportCurrent.value(SentenceSpan(blockId, sentenceIndex, top, top + coords.size.height))
-            }
-        }
         // Farthest from current drawn first; current gets zIndex 0 (top) when bars lap.
         val drawOrder = remember(sentences, currentSentenceIndex) {
             sentences.sortedByDescending { abs(it.index - currentSentenceIndex) }
+        }
+        @Composable
+        fun segmentMark(s: BlockSentence, modifier: Modifier) {
+            RailSegmentMark(
+                modifier = modifier,
+                isCurrent = s.index == currentSentenceIndex,
+                isGenerating = segmentGenerating(s.index),
+                isReady = segmentReady(s.index),
+                emphasizePulse = s.index == farthestGenerating ||
+                    (segmentGenerating(s.index) && s.index == currentSentenceIndex),
+                pulse = pulse,
+                canForceRegenerate = canForceRegenerate(s.index),
+                onForceRegenerate = { onForceRegenerateState.value(s.index) },
+            )
         }
         if (layout == null || layout.layoutInput.text.isEmpty()) {
             Column(Modifier.fillMaxSize()) {
                 for (s in sentences) {
                     key(s.index) {
-                        RailSegmentMark(
-                            modifier = Modifier
+                        segmentMark(
+                            s,
+                            Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
-                                .zIndex(-abs(s.index - currentSentenceIndex).toFloat())
-                                .reportIfCurrent(s.index),
-                            isCurrent = s.index == currentSentenceIndex,
-                            isGenerating = segmentGenerating(s.index),
-                            isReady = segmentReady(s.index),
-                            emphasizePulse = s.index == farthestGenerating ||
-                                (segmentGenerating(s.index) && s.index == currentSentenceIndex),
-                            pulse = pulse,
-                            canForceRegenerate = canForceRegenerate(s.index),
-                            onForceRegenerate = { onForceRegenerateState.value(s.index) },
+                                .zIndex(-abs(s.index - currentSentenceIndex).toFloat()),
                         )
                     }
                 }
@@ -249,28 +239,20 @@ internal fun LocusRail(
         for (s in drawOrder) {
             val start = s.start.coerceIn(0, lastChar)
             val endInclusive = (s.end - 1).coerceIn(start, lastChar)
-            // Same geometry the amber SpanStyle highlight uses: line boxes for the char range.
+            // Same geometry the amber highlight uses: line boxes for the char range.
             val top = layout.getLineTop(layout.getLineForOffset(start))
             val bottom = layout.getLineBottom(layout.getLineForOffset(endInclusive))
             val heightPx = (bottom - top).coerceAtLeast(1f)
             val dist = abs(s.index - currentSentenceIndex)
             key(s.index) {
-                RailSegmentMark(
-                    modifier = Modifier
+                segmentMark(
+                    s,
+                    Modifier
                         .align(Alignment.TopCenter)
                         .zIndex(-dist.toFloat())
                         .offset { IntOffset(0, top.roundToInt()) }
                         .width(RailGutterWidth)
-                        .height(with(density) { heightPx.toDp() })
-                        .reportIfCurrent(s.index),
-                    isCurrent = s.index == currentSentenceIndex,
-                    isGenerating = segmentGenerating(s.index),
-                    isReady = segmentReady(s.index),
-                    emphasizePulse = s.index == farthestGenerating ||
-                        (segmentGenerating(s.index) && s.index == currentSentenceIndex),
-                    pulse = pulse,
-                    canForceRegenerate = canForceRegenerate(s.index),
-                    onForceRegenerate = { onForceRegenerateState.value(s.index) },
+                        .height(with(density) { heightPx.toDp() }),
                 )
             }
         }

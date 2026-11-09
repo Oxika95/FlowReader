@@ -19,7 +19,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -32,7 +34,7 @@ import com.personal.flowreader.data.Sentence
 import com.personal.flowreader.data.SentenceTable
 import com.personal.flowreader.ui.theme.FlowTokens
 
-/** One reader paragraph/heading row (rail + text) for the RecyclerView body list. */
+/** One reader paragraph/heading row (rail + text) for the Compose body list. */
 @Composable
 internal fun ReaderBodyRow(
     item: ReaderItem,
@@ -55,8 +57,10 @@ internal fun ReaderBodyRow(
     scrollLocked: Boolean,
     overlay: ReaderOverlay,
     selectionActive: Boolean,
-    onTrackedSpan: (SentenceSpan?) -> Unit,
-    onClearTrackedIf: (String) -> Unit,
+    /** Live viewport coords for list-local sentence boxes; null skips reporting. */
+    viewportCoords: () -> androidx.compose.ui.layout.LayoutCoordinates?,
+    onSentenceSpan: (SentenceSpan) -> Unit,
+    onClearSpansForBlock: (String) -> Unit,
     onGapTap: () -> Unit,
     onTextTap: () -> Unit,
     onDoubleTapTitle: () -> Unit,
@@ -91,8 +95,30 @@ internal fun ReaderBodyRow(
     var textLayout by remember(item.block.id, justifyText) {
         mutableStateOf<TextLayoutResult?>(null)
     }
+    var textCoords by remember(item.block.id) {
+        mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null)
+    }
+    fun publishSentenceSpans(
+        layout: TextLayoutResult,
+        coords: androidx.compose.ui.layout.LayoutCoordinates,
+    ) {
+        // Read live: the Box's LayoutCoordinates object is replaced on remasure; a captured
+        // instance can be detached while the controller already holds a new one.
+        val viewport = viewportCoords() ?: return
+        if (!viewport.isAttached || !coords.isAttached) return
+        val lastChar = (layout.layoutInput.text.length - 1).coerceAtLeast(0)
+        for (hit in blockSentences) {
+            val start = hit.start.coerceIn(0, lastChar)
+            val endInclusive = (hit.end - 1).coerceIn(start, lastChar)
+            val lineTop = layout.getLineTop(layout.getLineForOffset(start))
+            val lineBottom = layout.getLineBottom(layout.getLineForOffset(endInclusive))
+            val top = viewport.localPositionOf(coords, Offset(0f, lineTop)).y
+            val bottom = viewport.localPositionOf(coords, Offset(0f, lineBottom)).y
+            onSentenceSpan(SentenceSpan(item.block.id, hit.index, top, bottom))
+        }
+    }
     DisposableEffect(item.block.id) {
-        onDispose { onClearTrackedIf(item.block.id) }
+        onDispose { onClearSpansForBlock(item.block.id) }
     }
     val replacedRanges = replacedRangesByBlockId[item.block.id].orEmpty()
     val sentenceHighlightColor = colors.secondary.copy(alpha = 0.40f)
@@ -130,7 +156,6 @@ internal fun ReaderBodyRow(
                     modifier = Modifier
                         .width(RailGutterWidth)
                         .fillMaxHeight(),
-                    blockId = item.block.id,
                     sentences = blockSentences,
                     textLayout = textLayout,
                     currentSentenceIndex = currentSentenceIndex,
@@ -138,16 +163,23 @@ internal fun ReaderBodyRow(
                     generating = ttsGenerating,
                     softAccent = colors.secondary,
                     onForceRegenerate = onForceRegenerate,
-                    onCurrentSpan = onTrackedSpan,
                 )
                 Text(
                     text,
                     style = style,
                     color = colors.onBackground,
-                    onTextLayout = { textLayout = it },
+                    onTextLayout = { layout ->
+                        textLayout = layout
+                        textCoords?.let { publishSentenceSpans(layout, it) }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
+                        .onGloballyPositioned { coords ->
+                            textCoords = coords
+                            val layout = textLayout ?: return@onGloballyPositioned
+                            publishSentenceSpans(layout, coords)
+                        }
                         .drawBehind {
                             val layout = textLayout ?: return@drawBehind
                             val radius = 6.dp.toPx()

@@ -6,6 +6,7 @@ import com.personal.flowreader.data.TtsVoiceOption
 import com.personal.flowreader.plugin.PluginManager
 import com.personal.flowreader.plugin.api.PluginCapability
 import com.personal.flowreader.plugin.api.PluginManifest
+import com.personal.flowreader.plugin.runtime.PluginClipOwnership
 import com.personal.flowreader.tts.EdgeWordBoundary
 import com.personal.flowreader.tts.VoiceGender
 import java.io.File
@@ -60,6 +61,7 @@ class PluginTtsProvider(
         raceSlot: Int = 0,
         network: Network? = null,
     ): TtsClipAudio {
+        require(request.requestId.isNotBlank()) { "${manifest.name} synthesize needs requestId" }
         val runtime = manager.runtimeForRace(manifest.id, raceSlot)
         if (network != null) runtime.ws.bindNetwork(network)
         val args = JSONArray().put(
@@ -68,23 +70,35 @@ class PluginTtsProvider(
                 .put("voice", request.voice)
                 .put("lang", request.lang)
                 .put("ratePercent", request.ratePercent)
-                .put("pitchPercent", request.pitchPercent),
+                .put("pitchPercent", request.pitchPercent)
+                .put("requestId", request.requestId),
         )
         val raw = runtime.call("synthesize", args) as? JSONObject
             ?: throw IllegalStateException("${manifest.name} returned no audio")
-        return clipFromResult(raw, manifest.name)
+        val audioDir = runtime.ws.audioDirectory
+            ?: throw IllegalStateException("${manifest.name} has no ws-audio directory")
+        return clipFromResult(raw, manifest.name, request.requestId, audioDir)
     }
 
     override suspend fun synthesize(request: TtsSynthRequest): TtsClipAudio =
         synthesize(request, raceSlot = 0, network = null)
 
     companion object {
-        fun clipFromResult(raw: JSONObject, pluginName: String): TtsClipAudio {
+        fun clipFromResult(
+            raw: JSONObject,
+            pluginName: String,
+            requestId: String,
+            audioDir: File,
+        ): TtsClipAudio {
+            val echoed = raw.optString("requestId").trim()
+                .ifBlank { raw.optString("connectId").trim() }
+            require(echoed == requestId) {
+                "$pluginName requestId mismatch (got ${echoed.ifBlank { "-" }}, want $requestId)"
+            }
             val path = raw.optString("audioPath").trim()
             val mp3 = if (path.isNotEmpty()) {
-                val file = File(path)
+                val file = PluginClipOwnership.acceptAudioPath(path, requestId, audioDir)
                 try {
-                    require(file.isFile && file.length() > 0L) { "$pluginName returned empty audio" }
                     file.readBytes()
                 } finally {
                     runCatching { file.delete() }
@@ -111,7 +125,7 @@ class PluginTtsProvider(
             return TtsClipAudio(
                 mp3 = mp3,
                 boundaries = boundaries,
-                connectId = raw.optString("connectId").trim(),
+                requestId = echoed,
             )
         }
     }

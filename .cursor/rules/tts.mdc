@@ -13,6 +13,9 @@ alwaysApply: false
 - Spoken positions are saved by `FlowApp` (`spoken`), not by the reader.
 - Pure helpers (`Crossfade`, `WordHighlight`, `RaceSchedule`, `FocusResume`) have JVM tests; keep
   timing and splitting logic pure and tested. Edge synth lives in the Edge TTS plugin.
+- **Clip ownership:** each plugin synth attempt uses an app-minted `requestId` bound to the
+  speakable Clip Size unit; host temps are named by that id; mismatched echo/path or text-at-index
+  drift rejects the cache write (`PluginClipOwnership`).
 - **Edge TTS upstream is Readest; do not reinvent GEC or the handshake.**
   github.com/readest/readest/blob/main/apps/readest-app/src/libs/edgeTTS.ts, and
   `workersWebSocket.ts` beside it for the raw socket (OkHttp upgrade returns HTTP 200).

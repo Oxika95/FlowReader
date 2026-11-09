@@ -55,10 +55,6 @@
     "count": 1,
     "sample": "java/com/personal/flowreader/plugin/sync/TwoWaySync.kt:125-136 ~ java/com/personal/flowreader/plugin/sync/TwoWaySync.kt:262-272 (12 lines)"
   },
-  "app:be84d5f608e0a952": {
-    "count": 1,
-    "sample": "java/com/personal/flowreader/ui/reader/ReaderRail.kt:231-244 ~ java/com/personal/flowreader/ui/reader/ReaderRail.kt:264-277 (14 lines)"
-  },
   "app:c40bbfcbb3f2a1de": {
     "count": 1,
     "sample": "java/com/personal/flowreader/ui/settings/AppearanceSettings.kt:155-181 ~ java/com/personal/flowreader/ui/settings/FiltersSettings.kt:155-181 (27 lines)"

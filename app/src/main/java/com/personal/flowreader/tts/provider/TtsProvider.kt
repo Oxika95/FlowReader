@@ -22,13 +22,18 @@ data class TtsSynthRequest(
     val lang: String,
     val ratePercent: Int = 0,
     val pitchPercent: Int = 0,
+    /**
+     * App-minted ownership id for this synth attempt (32 lowercase hex). Plugin TTS must echo
+     * it; Edge uses it as ConnectionId. Empty for engines that ignore it (system WAV).
+     */
+    val requestId: String = "",
 )
 
 data class TtsClipAudio(
     val mp3: ByteArray,
     val boundaries: List<EdgeWordBoundary> = emptyList(),
-    /** Edge WebSocket turn id when the plugin returns one; empty for other engines. */
-    val connectId: String = "",
+    /** Echo of [TtsSynthRequest.requestId] when the plugin returns one; empty otherwise. */
+    val requestId: String = "",
 )
 
 /**

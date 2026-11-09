@@ -7,10 +7,10 @@ import org.json.JSONObject
  * Host contract version. Alpha builds support only the current contract: plugins declaring any
  * other `apiVersion` are refused (the official repo is updated in lockstep with the app).
  */
-const val PLUGIN_HOST_API_VERSION = 5
+const val PLUGIN_HOST_API_VERSION = 6
 
 /** Oldest plugin contract this host still runs. */
-const val PLUGIN_MIN_API_VERSION = 5
+const val PLUGIN_MIN_API_VERSION = 6
 
 enum class PluginKind(val key: String) {
     Source("source"),

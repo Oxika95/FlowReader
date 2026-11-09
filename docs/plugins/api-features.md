@@ -1,6 +1,6 @@
 # Plugin API: optional features
 
-Part of the [Plugin API](api.md) (apiVersion 5).
+Part of the [Plugin API](api.md) (apiVersion 6).
 
 ## `cardAction(workId, actionId, on)`
 

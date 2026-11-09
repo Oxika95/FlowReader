@@ -5,17 +5,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,7 +21,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,16 +39,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -67,15 +55,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.recyclerview.widget.RecyclerView
-import com.personal.flowreader.data.BlockKind
 import com.personal.flowreader.data.BookPlace
 import com.personal.flowreader.data.FilterRule
 import com.personal.flowreader.data.FilterScope
-import com.personal.flowreader.data.Locus
 import com.personal.flowreader.debug.DebugLog
 import com.personal.flowreader.data.ReaderFont
-import com.personal.flowreader.data.ThemeMode
 import com.personal.flowreader.ui.settings.AppearanceSettingsCallbacks
 import com.personal.flowreader.ui.settings.AppearanceSettingsState
 import com.personal.flowreader.ui.settings.FilterRuleEditorOverlay
@@ -108,7 +92,7 @@ internal val HighlightSidePad = 4.dp
 private val EdgeBandTopHeight = 56.dp
 private val EdgeBandBottomHeight = 72.dp
 
-/** Give up waiting for the tracked sentence's geometry and fall back to its paragraph. */
+/** Give up waiting for the tracked sentence's list-local box. */
 private const val HomeSpanTimeoutMs = 750L
 
 /** One TTS sentence in a block, with char offsets into the displayed paragraph text. */
@@ -166,10 +150,7 @@ fun ReaderScreen(
     var viewPlace by remember { mutableStateOf<BookPlace?>(null) }
     /** Bumped on body scroll so pin/edge derived state recomputes. */
     var scrollEpoch by remember { mutableIntStateOf(0) }
-    /** Root-Y lines of the tracked sentence, written from layout while its paragraph is composed. */
-    var trackedSpan by remember { mutableStateOf<SentenceSpan?>(null) }
-    var listTopY by remember { mutableFloatStateOf(0f) }
-    var listHeight by remember { mutableFloatStateOf(0f) }
+    val spanEpoch by body.spanEpoch.collectAsState()
     val homePosition by rememberUpdatedState(appearance.homePosition)
     val view = LocalView.current
     DisposableEffect(keepScreenAwake, view) {
@@ -276,9 +257,10 @@ fun ReaderScreen(
      * the tracked sentence is on-screen. Sentence-level: a visible paragraph whose tracked
      * sentence is scrolled past still shows the chip.
      */
-    val pinEdge by remember(doc, items, blockIndexOf, allSentences, scrollEpoch) {
+    val pinEdge by remember(doc, items, blockIndexOf, allSentences, scrollEpoch, spanEpoch) {
         derivedStateOf {
-            scrollEpoch // dependency
+            scrollEpoch
+            spanEpoch
             val si = if (tts.playing) {
                 if (tts.sentence == null) return@derivedStateOf null
                 tts.sentenceIndex
@@ -288,22 +270,23 @@ fun ReaderScreen(
             val s = allSentences.getOrNull(si) ?: return@derivedStateOf null
             val idx = blockIndexOf[s.chapterIndex to s.blockIndex] ?: return@derivedStateOf null
             val key = items.getOrNull(idx)?.block?.id ?: return@derivedStateOf null
+            val height = body.viewportHeightPx
+            if (height <= 0f) return@derivedStateOf null
 
             val first = body.firstVisibleAdapterIndex()
             val last = body.lastVisibleAdapterIndex()
-            if (first == RecyclerView.NO_POSITION || last == RecyclerView.NO_POSITION) {
-                return@derivedStateOf null
+            if (first < 0 || last < 0) return@derivedStateOf null
+
+            val span = body.sentenceSpan(si)?.takeIf { it.blockId == key }
+            if (span != null) {
+                return@derivedStateOf ReaderHome.edgeOf(span.top, span.bottom, 0f, height)
             }
-            val bounds = body.rowWindowBounds(idx)
+            val bounds = body.rowViewportBounds(idx)
             if (bounds == null) {
                 return@derivedStateOf ReaderHome.edgeOfItem(idx, first, last)
             }
-            val span = trackedSpan?.takeIf { it.sentenceIndex == si && it.blockId == key }
-            if (span != null) {
-                ReaderHome.edgeOf(span.top, span.bottom, listTopY, listTopY + listHeight)
-            } else {
-                ReaderHome.edgeOf(bounds.first, bounds.second, listTopY, listTopY + listHeight)
-            }
+            // Row visible but sentence box not yet reported — treat as on-screen until layout.
+            null
         }
     }
 
@@ -314,28 +297,28 @@ fun ReaderScreen(
     val homeLookup = rememberUpdatedState(Triple(allSentences, blockIndexOf, items))
 
     /**
-     * One camera move: put the target sentence center on the home bar Y.
-     * Math first ([ReaderHome.scrollDelta]), then a single [ReaderBodyController.scrollBy].
+     * One camera move: put the target sentence center on the home bar Y (list-local coords).
      */
-    suspend fun anchorPlaceAtHome(
+    suspend fun placeSentenceAtHome(
         place: BookPlace,
         key: String,
         sentenceIndex: Int,
     ): Int {
+        body.stopScroll()
         fun resolveIndex(): Int = body.adapterIndexOf(place)
-        fun refreshListBox() {
-            listTopY = body.viewTopInWindow().toFloat()
-            listHeight = body.viewHeight().toFloat()
-        }
-        /** Span for [sentenceIndex] whose top is unchanged across two frames. */
+
         suspend fun awaitStableSpan(): SentenceSpan? = withTimeoutOrNull(HomeSpanTimeoutMs) {
             var lastTop = Float.NaN
             var stable: SentenceSpan? = null
             while (stable == null) {
                 if (!body.isListCommitted()) body.awaitListCommitted()
-                val span = trackedSpan
-                if (span != null && span.blockId == key && span.sentenceIndex == sentenceIndex) {
-                    if (!lastTop.isNaN() && abs(span.top - lastTop) < 1f) {
+                val span = body.sentenceSpan(sentenceIndex)
+                if (span != null && span.blockId == key) {
+                    // One settled frame is enough after scroll idle; two matching frames
+                    // covers layout that is still catching up.
+                    if (lastTop.isNaN()) {
+                        lastTop = span.top
+                    } else if (abs(span.top - lastTop) < 1f) {
                         stable = span
                     } else {
                         lastTop = span.top
@@ -353,34 +336,35 @@ fun ReaderScreen(
             DebugLog.reader("scrollToHome key=$key miss=noIndexAfterCommit")
             return 0
         }
-        refreshListBox()
-        if (listHeight <= 0f) {
+        val height = body.viewportHeightPx
+        if (height <= 0f) {
             DebugLog.reader("scrollToHome key=$key miss=noViewport")
             return 0
         }
 
-        // Far jump: row not composed — one LM scroll that parks row top on home (single move).
-        // On-screen paths never enter here; they only scrollBy below.
         val index = resolveIndex()
-        if (body.rowWindowBounds(index) == null && trackedSpan?.let {
-                it.blockId == key && it.sentenceIndex == sentenceIndex
-            } == null
+        // LazyList scrollToItem offset is "scroll past item top", not RV's "item top at Y".
+        // Only bring the row into composition here; sentence→home is the scrollBy below.
+        if (body.rowViewportBounds(index) == null &&
+            body.sentenceSpan(sentenceIndex)?.blockId != key
         ) {
-            val offset = ReaderHome.homePadOffset(listHeight, homePosition, body.padTopPx)
-            body.scrollToPlace(place, offsetPx = offset)
+            body.scrollToPlace(place, offsetPx = 0)
             body.awaitScrollIdle(HomeSpanTimeoutMs)
-            DebugLog.reader("scrollToHome park si=$sentenceIndex delta=$offset via=place")
-            return offset
+            withFrameNanos { }
         }
 
-        body.stopScroll()
-        val span = awaitStableSpan()
+        var span = awaitStableSpan()
+        if (span == null) {
+            body.scrollToPlace(place, offsetPx = 0)
+            body.awaitScrollIdle(HomeSpanTimeoutMs)
+            withFrameNanos { }
+            span = awaitStableSpan()
+        }
         if (span == null) {
             DebugLog.reader("scrollToHome key=$key si=$sentenceIndex miss=noSpan")
             return 0
         }
-        refreshListBox()
-        val delta = ReaderHome.scrollDelta(span.top, span.bottom, listTopY, listHeight, homePosition)
+        val delta = ReaderHome.scrollDelta(span.top, span.bottom, 0f, height, homePosition)
         if (abs(delta) > 2f) {
             body.scrollBy(delta.toInt())
             body.awaitScrollIdle(HomeSpanTimeoutMs)
@@ -408,14 +392,14 @@ fun ReaderScreen(
             DebugLog.reader("scrollToHome reason=$reason key=$key miss=noIndex")
             return
         }
-        val wasPlaced = body.rowWindowBounds(startIndex) != null
+        val wasPlaced = body.rowViewportBounds(startIndex) != null
         DebugLog.reader(
             "scrollToHome start reason=$reason si=$sentenceIndex key=$key home=$homePosition placed=$wasPlaced",
         )
         viewPlace = null
         homing = true
         try {
-            val delta = anchorPlaceAtHome(place, key, sentenceIndex)
+            val delta = placeSentenceAtHome(place, key, sentenceIndex)
             DebugLog.reader(
                 "scrollToHome done reason=$reason si=$sentenceIndex key=$key home=$homePosition delta=$delta",
             )
@@ -506,8 +490,6 @@ fun ReaderScreen(
 
     fun onBodyViewPlace(place: BookPlace) {
         scrollEpoch++
-        listTopY = body.viewTopInWindow().toFloat()
-        listHeight = body.viewHeight().toFloat()
         if (!homingForView.value && !followScrollActive) {
             viewPlace = place
         }
@@ -650,10 +632,6 @@ fun ReaderScreen(
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .onGloballyPositioned { coords ->
-                                    listTopY = coords.positionInWindow().y
-                                    listHeight = coords.size.height.toFloat()
-                                }
                                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                                 .drawWithContent {
                                     drawContent()
@@ -686,6 +664,25 @@ fun ReaderScreen(
                                 onViewPlace = { onBodyViewPlace(it) },
                                 onVisibleChapters = { onBodyVisibleChapters(it) },
                                 modifier = Modifier.fillMaxSize(),
+                                homeOverlay = {
+                                    if (appearance.showHomeMarker && !scrollLocked) {
+                                        HomeMarker(
+                                            position = appearance.homePosition,
+                                            textSize = bodyStyle.fontSize,
+                                            onPositionChange = { appearanceCallbacks.onHomePosition(it, false) },
+                                            onPositionCommitted = { position ->
+                                                appearanceCallbacks.onHomePosition(position, true)
+                                                if (pinEdge == null) {
+                                                    val target = trackedSentenceIndex()
+                                                    scope.launch {
+                                                        withFrameNanos { }
+                                                        scrollToHome(target, reason = "homeMarker")
+                                                    }
+                                                }
+                                            },
+                                        )
+                                    }
+                                },
                             ) { item ->
                                 ReaderBodyRow(
                                     item = item,
@@ -708,8 +705,9 @@ fun ReaderScreen(
                                     scrollLocked = scrollLocked,
                                     overlay = overlay,
                                     selectionActive = selectionActive,
-                                    onTrackedSpan = { trackedSpan = it },
-                                    onClearTrackedIf = { id -> if (trackedSpan?.blockId == id) trackedSpan = null },
+                                    viewportCoords = { body.viewportCoords },
+                                    onSentenceSpan = { body.putSentenceSpan(it) },
+                                    onClearSpansForBlock = { body.clearSentenceSpansForBlock(it) },
                                     onGapTap = {
                                         onReaderGesture(ReaderTouchTarget.BodyGap, ReaderGestureKind.SingleTap)
                                     },
@@ -779,25 +777,6 @@ fun ReaderScreen(
                                     },
                                 )
                             },
-                    )
-                }
-
-                if (appearance.showHomeMarker && !scrollLocked) {
-                    HomeMarker(
-                        position = appearance.homePosition,
-                        textSize = bodyStyle.fontSize,
-                        onPositionChange = { appearanceCallbacks.onHomePosition(it, false) },
-                        onPositionCommitted = { position ->
-                            appearanceCallbacks.onHomePosition(position, true)
-                            // Settle the current sentence on the new line if the reader is on it.
-                            if (pinEdge == null) {
-                                val target = trackedSentenceIndex()
-                                scope.launch {
-                                    withFrameNanos { }
-                                    scrollToHome(target, reason = "homeMarker")
-                                }
-                            }
-                        },
                     )
                 }
 

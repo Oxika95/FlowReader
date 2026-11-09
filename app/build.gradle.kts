@@ -13,8 +13,8 @@ android {
         applicationId = "com.personal.flowreader"
         minSdk = 26
         targetSdk = 36
-        versionCode = 119
-        versionName = "1.19-alpha"
+        versionCode = 120
+        versionName = "1.20-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -54,7 +54,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")

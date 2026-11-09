@@ -1,4 +1,4 @@
-# Plugin API (apiVersion 5)
+# Plugin API (apiVersion 6)
 
 Flow Reader plugins are sandboxed JavaScript, loaded from user-added repositories
 (LNReader-style). **Source** plugins fetch and parse a site; **TTS** plugins synthesize
@@ -19,10 +19,11 @@ JSON Schemas: [`schema/plugin.schema.json`](schema/plugin.schema.json),
 | 2 | `WorkDetail.card` (stats, badges, links, actions), `Work.badges`/`Work.stats`, `cardAction()` | Refused |
 | 3 | `updates` capability + `checkUpdates()` for the background new-chapter check; `notify` reserved | Refused |
 | 4 | `auth.web`, `lists[].notifyDefault`, browse lists; ToC refresh by URL | Refused |
-| 5 | `kind` (`source` \| `tts`); TTS plugins (`listVoices` / `synthesize`); `flow.ws.collect`; TTS capabilities | Current (`PLUGIN_HOST_API_VERSION = 5`) |
+| 5 | `kind` (`source` \| `tts`); TTS plugins (`listVoices` / `synthesize`); `flow.ws.collect`; TTS capabilities | Refused |
+| 6 | TTS `synthesize`/`flow.ws.collect` `requestId` ownership (clip text owns audio) | Current (`PLUGIN_HOST_API_VERSION = 6`) |
 
 - While Flow Reader is in alpha the host accepts only the current contract:
-  `PLUGIN_MIN_API_VERSION = PLUGIN_HOST_API_VERSION = 5`. Older plugins are refused ("uses plugin
+  `PLUGIN_MIN_API_VERSION = PLUGIN_HOST_API_VERSION = 6`. Older plugins are refused ("uses plugin
   API N, which is no longer supported"), newer ones too ("needs a newer Flow Reader").
   Repositories list each plugin's `apiVersion`; incompatible entries are not offered.
 - A contract change bumps both constants together; republish every plugin with the new

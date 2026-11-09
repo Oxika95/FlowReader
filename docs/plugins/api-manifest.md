@@ -1,6 +1,6 @@
 # Plugin API: package and manifest
 
-Part of the [Plugin API](api.md) (apiVersion 5).
+Part of the [Plugin API](api.md) (apiVersion 6).
 
 ## Package
 
@@ -20,7 +20,7 @@ A plugin is two files plus an optional icon, installed to `filesDir/plugins/inst
   "name": "Royal Road",
   "description": "Your followed and saved serials",
   "version": "1.3.0",
-  "apiVersion": 5,
+  "apiVersion": 6,
   "kind": "source",
   "site": "https://www.royalroad.com",
   "lang": "en",
@@ -49,7 +49,7 @@ A plugin is two files plus an optional icon, installed to `filesDir/plugins/inst
 | --- | --- |
 | `id` | `[a-z0-9][a-z0-9_-]{1,39}`. Never change it after release: it keys book ids, data, and secrets. |
 | `version` | Dotted numbers. The installer offers an update when the repo version is higher. |
-| `apiVersion` | Must be `5` (see [Versions](api.md#versions)). A missing value reads as `1` and is refused. |
+| `apiVersion` | Must be `6` (see [Versions](api.md#versions)). A missing value reads as `1` and is refused. |
 | `kind` | `source` (default) or `tts`. TTS plugins: [api-tts.md](api-tts.md). |
 | `bookIdPrefix` | Source only. Book ids are `{bookIdPrefix}:{workId}`. Defaults to `id`. |
 | `allowedHosts` | `flow.fetch` / `flow.ws` reject any other host. A listed host also allows its subdomains. |

@@ -30,13 +30,16 @@ import org.json.JSONObject
  * api.msedgeservices.com; a manual handshake gets 101.
  *
  * Optional [audioDir]: when the plugin asks for `binaryFormat: "edge-audio"`, binary frames are
- * stripped of Edge headers and written as one MP3 under that dir; the JSON returns `audioPath`
- * instead of shipping `binariesBase64` into QuickJS.
+ * stripped of Edge headers and written as one MP3 named by `requestId` under that dir; the JSON
+ * returns `audioPath` instead of shipping `binariesBase64` into QuickJS.
  */
 class PluginWs(
     private val allowedHosts: List<String>,
     private val audioDir: File? = null,
 ) {
+    /** Directory used for edge-audio temp clips; exposed so the provider can enforce ownership. */
+    val audioDirectory: File? get() = audioDir
+
     /** Bound Android [Network] for the next collect (race lanes); cleared after each call. */
     private val boundNetwork = AtomicReference<Network?>(null)
 
@@ -54,11 +57,17 @@ class PluginWs(
         val endPath = req.optString("endPath").ifBlank { "turn.end" }
         val timeoutMs = req.optLong("timeoutMs", 15_000L).coerceIn(1_000L, 60_000L)
         val edgeAudio = req.optString("binaryFormat") == BINARY_FORMAT_EDGE_AUDIO
+        val requestId = req.optString("requestId").trim()
+        if (edgeAudio) {
+            require(PluginClipOwnership.isValidRequestId(requestId)) {
+                "flow.ws edge-audio needs requestId (32 lowercase hex)"
+            }
+        }
         val network = boundNetwork.getAndSet(null)
 
         return withTimeout(timeoutMs) {
             withContext(Dispatchers.IO) {
-                collectBlocking(url, headers, messages, endPath, edgeAudio, network)
+                collectBlocking(url, headers, messages, endPath, edgeAudio, requestId, network)
             }
         }
     }
@@ -69,6 +78,7 @@ class PluginWs(
         messages: JSONArray,
         endPath: String,
         edgeAudio: Boolean,
+        requestId: String,
         network: Network?,
     ): String {
         val uri = URI(url)
@@ -115,7 +125,7 @@ class PluginWs(
                     OP_PONG -> Unit
                 }
             }
-            return envelope(texts, binaries, edgeAudio)
+            return envelope(texts, binaries, edgeAudio, requestId)
         } finally {
             runCatching { socket.close() }
         }
@@ -178,6 +188,7 @@ class PluginWs(
         texts: List<String>,
         binaries: List<ByteArray>,
         edgeAudio: Boolean,
+        requestId: String,
     ): String {
         val o = JSONObject()
         o.put("texts", JSONArray(texts))
@@ -185,7 +196,9 @@ class PluginWs(
             val mp3 = EdgeAudioFrames.assembleMp3(binaries)
             val dir = audioDir?.apply { mkdirs() }
             if (dir != null && mp3.isNotEmpty()) {
-                val file = File(dir, "clip-${System.nanoTime()}.mp3")
+                val file = PluginClipOwnership.expectedAudioFile(dir, requestId)
+                // Exclusive create: a colliding requestId must not overwrite another attempt.
+                require(file.createNewFile()) { "edge-audio temp already exists for requestId" }
                 file.writeBytes(mp3)
                 o.put("audioPath", file.absolutePath)
             } else {

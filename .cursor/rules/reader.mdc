@@ -9,8 +9,9 @@ alwaysApply: false
 - Entries: `docs/agent/registry.md` `## Reader` (screen, media card, rail, home line, ToC, Queue,
   loading). Couplings: `docs/agent/seams.md` `## Reader and Queue`.
 - `ReaderScreen.kt` is large: find members with `rg -n` and Read by offset.
-- The body is a RecyclerView (`ReaderBodyList`), not a lazy list. Move it only through
-  `scrollToHome`; adapter calls take adapter indices, not composition `items` indices.
+- The body is a keyed Compose list (`ReaderBodyList` + `LazyColumn`). The home bar is drawn in
+  that same box. Move the list only through `scrollToHome` / `placeSentenceAtHome`; sentence
+  boxes come from body text layout in list coordinates, not the rail.
 - Pure and tested: `resolveTouch`, `ReaderHome`, `mayPersist`. Change them there, not in modifiers.
 - Positions are written only by `ReaderViewModel.persist` (through `ProgressWriter`), never from
   list or gesture code.
