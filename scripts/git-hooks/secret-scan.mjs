@@ -57,6 +57,13 @@ function isAllowlisted(line) {
   if (/\b[A-Z][A-Z0-9_]*PASSWORD\b\s*=\s*["']password["']/i.test(line)) return true;
   // Public Edge TTS client id used in the open-source client.
   if (/6A5AA1D4EAFF4E9FB37E23D68491D6F4/i.test(line)) return true;
+  // Unquoted call: bearerToken = app.pluginManager.bearerToken(plugin.id)
+  if (
+    !/['"]/.test(line) &&
+    /\b[A-Za-z0-9_]*(?:token|secret)[A-Za-z0-9_]*\s*=\s*[A-Za-z_][\w.]*\.[\w.]*\(/i.test(line)
+  ) {
+    return true;
+  }
   return false;
 }
 
