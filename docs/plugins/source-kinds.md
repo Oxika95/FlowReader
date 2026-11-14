@@ -1,16 +1,17 @@
-# Source kinds (design)
+﻿# Source kinds (design)
 
 Status: **design, not implemented.** Today the host infers behaviour from capabilities
 (`progressSync`, `membership`) and per-list `syncable`. This page names the categories those
-combinations already form, fixes the rules for each, and plans the manifest field and the
-Audiobookshelf plugin. Code lands in later tasks (see [Implementation order](#implementation-order)).
+combinations already form, fixes the rules for each, and plans the manifest field.
+Audiobookshelf ebooks ship without that field; audiobook playback is still later
+(see [Implementation order](#implementation-order)).
 
 ## Kinds
 
 | Kind | Examples | Content comes from | Reading position lives | Position authority | Lists |
 | --- | --- | --- | --- | --- | --- |
 | `local` | Files tab, Queue, crawled web pages | A file on the device | App DB (`library_books`, `queue_items`) | Device | Shelves only |
-| `synced` | Royal Road, Audiobookshelf (planned) | Server, cached on device | Plugin DB + server | Server (see conflicts) | Two-way with the site (`syncable` lists) |
+| `synced` | Royal Road, Audiobookshelf (ebooks) | Server, cached on device | Plugin DB + server | Server (see conflicts) | Two-way with the site (`syncable` lists) |
 | `sourced` | Patreon | Server, cached on device | Plugin DB only | Device | Local (`syncable: false`); site-derived browse lists are read-only |
 
 `local` is host-only: plugins are always `synced` or `sourced`.
@@ -58,31 +59,22 @@ Indicators use `FlowCornerBadge` on display cards (rows and tiles) with a `conte
 ("Synced with {site}", "From {site}, progress on this device"). The media card status line repeats
 it in words.
 
-## Audiobookshelf (planned `synced` plugin)
+## Audiobookshelf (`synced`, ebooks shipped)
 
-Scoped as its own task. What it needs from the host:
+Self-hosted EPUB library (`audiobookshelf` / `abs:`). Username/password login stores access and
+refresh tokens (`auth.bearer`); the password is never kept. Manifest `serverSetting` adds that host
+to `flow.fetch` (exact match); cleartext HTTP only for that host. Sub-tabs are Downloaded (local
+shelf) and Catalog (`shelf`: enabled libraries in the tab, with Library / Series / Collections /
+Authors and the server's sort menu). Account → Manage toggles libraries via
+`listLibraries` / `setLibraryEnabled`. Position is `ebookLocation` (CFI) plus `ebookProgress` via
+`locusSync`; patches never send `progress`, `currentTime`, or `isFinished`.
 
-- **Time positions.** Audiobooks are positioned in seconds, not chapters/blocks. Add
-  `ReadingPosition.timeMs: Long = 0` and `durationMs: Long = 0` (Room migration). `fraction`
-  = `timeMs / durationMs`. Text books keep `timeMs = 0`.
-- **Server API.** Progress per library item: `GET /api/me/progress/{itemId}` and
-  `PATCH /api/me/progress/{itemId}` with `currentTime`, `duration`, `progress`, `isFinished`; the
-  server's `lastUpdate` timestamp lets the merge compare sides without a prompt when only one moved.
-  Ebooks in Audiobookshelf report `ebookLocation` (EPUB CFI) and `ebookProgress`; a CFI maps to
-  `chapterHref` + block, so text ebooks fit the existing position model.
-- **User-set host.** Audiobookshelf is self-hosted; `allowedHosts` is static today. Needs a host API
-  addition: a manifest `serverSetting` naming the settings key whose URL is added to the allowed
-  hosts at runtime (cross-repo change, [cross-repo.md](../agent/cross-repo.md)).
-- **Auth.** API token field (`auth.fields`, `secret: true`), sent as `Authorization: Bearer`.
-- **Playback.** Audiobook files need a media player (Media3/ExoPlayer) beside TTS; the reader
-  stays for ebooks. This is the bulk of the work and is out of scope for the source-kind change.
+Audiobook playback (`timeMs` / Media3) stays out of scope.
 
 ## Implementation order
 
-1. `SourceCategory` + `PluginManifest.category` (derived), validation in the host and
-   `scripts/build-index.mjs`; schema and [api-manifest.md](api-manifest.md).
-2. Row indicator (`FlowCornerBadge` per kind) and the media card status line.
-3. Delete-data confirm text per kind (sourced: positions lost).
-4. Audiobookshelf: `timeMs`/`durationMs` migration, user-set host, then the plugin and player.
+1. `SourceCategory` + indicators (design; RR / Patreon behave as synced / sourced today).
+2. Audiobookshelf ebooks: user-set host, bearer, EPUB path, `locusSync` (done).
+3. Audiobook playback: later, separate task.
 
-Decision log: the private context repo's `decisions/plugins.md` (2026-10-11).
+Decision log: the private context repo's `decisions/plugins.md`.

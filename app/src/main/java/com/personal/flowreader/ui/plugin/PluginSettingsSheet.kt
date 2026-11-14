@@ -40,8 +40,10 @@ fun PluginSettingsForm(pluginId: String, modifier: Modifier = Modifier) {
         revision++
     }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(FlowTokens.Space.S)) {
-        if (manifest.settings.isEmpty()) FlowHint("This plugin has no settings.")
-        manifest.settings.forEach { setting ->
+        val hide = setOfNotNull(manifest.serverSettingKey())
+        val rows = manifest.settings.filter { it.key !in hide }
+        if (rows.isEmpty()) FlowHint("This plugin has no settings.")
+        rows.forEach { setting ->
             SettingRow(setting, values.opt(setting.key)?.toString().orEmpty(), save)
         }
     }

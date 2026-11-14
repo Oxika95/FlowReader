@@ -73,7 +73,7 @@ independently. A shared item with Auto Play opens the Queue at that entry. Stora
 ![Add a tab](images/library-add-tab.png)
 
 - **Custom shelf:** name field, “Add shelf”; shelves appear as Import Router destinations
-- **Plugins:** installed plugins (e.g. Royal Road) — Add / Remove to show a library tab; install from Settings → Plugins ([plugins.md](plugins.md))
+- **Plugins:** installed plugins (Royal Road, Patreon, Audiobookshelf) — Add / Remove to show a library tab; install from Settings → Plugins ([plugins.md](plugins.md))
 
 ## Source
 

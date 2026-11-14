@@ -24,6 +24,8 @@ module.exports = {
   async cardAction(workId, actionId, on) {}, // -> CardActionResult (needed if card.actions is used)
   async checkUpdates(works) {},              // -> UpdateInfo[]  (capability: updates)
   async browse(id, page, sort, tab) {},      // -> BrowsePage    (capability: browse)
+  async listLibraries() {},                  // -> Library[]     (optional; Account → Manage toggles)
+  async setLibraryEnabled(id, enabled) {},   //                 (optional; with listLibraries)
 };
 ```
 
@@ -44,6 +46,7 @@ type Work = {
 };
 type Badge = string | { label: string; tone?: 'positive' | 'negative' };  // green / red pill
 type Page = { items: Work[]; hasMore?: boolean };
+type Library = { id: string; title: string; enabled: boolean };
 // locked: the account can't read it (paywall). Unless its body is already cached, the host lists it in
 // the ToC only (lock icon, not tappable), never calls loadChapter for it, skips it in Download all,
 // and stops reading and TTS before it.

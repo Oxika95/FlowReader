@@ -21,7 +21,7 @@
       "uniqueItems": true,
       "items": {
         "enum": [
-          "search", "lists", "auth", "membership", "progressSync", "resolveUrl", "updates", "browse",
+          "search", "lists", "auth", "membership", "progressSync", "locusSync", "resolveUrl", "updates", "browse",
           "clipAudio", "wordBoundaries", "prefetch", "networkLanes"
         ]
       }
@@ -42,6 +42,11 @@
             "enum": ["stories", "browse"],
             "default": "stories",
             "description": "browse: rows are entry points opened with browse(), never library stories; needs the browse capability"
+          },
+          "shelf": {
+            "type": "boolean",
+            "default": false,
+            "description": "browse list shown in the tab via browse() (views and sorts), not as rows that open a card"
           }
         }
       }
@@ -71,8 +76,16 @@
             }
           }
         },
-        "note": { "type": "string" }
+        "note": { "type": "string" },
+        "bearer": {
+          "type": "string",
+          "description": "Optional. Secret key whose value is sent as Authorization: Bearer on this plugin's fetches and cover downloads. apiVersion 6 optional."
+        }
       }
+    },
+    "serverSetting": {
+      "type": "string",
+      "description": "Optional. Settings key whose value is a full base URL; that URL's host is allowed for flow.fetch at runtime. apiVersion 6 optional."
     },
     "sitePages": {
       "type": "array",

@@ -5,12 +5,17 @@ import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.QuickJsException
 import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.function
+import com.personal.flowreader.data.EpubChapterSource
+import com.personal.flowreader.data.EpubCfi
+import com.personal.flowreader.data.EpubIngest
 import com.personal.flowreader.debug.DebugLog
 import com.personal.flowreader.plugin.api.PluginErrorCode
 import com.personal.flowreader.plugin.api.PluginException
 import com.personal.flowreader.plugin.api.PluginManifest
+import java.io.File
 import java.net.URI
 import java.util.concurrent.Executors
+import java.util.zip.ZipFile
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -196,6 +201,69 @@ class JsPluginRuntime(
         engine.function("__html_parent") { args -> html.parent(args.int(0)) }
         engine.function("__html_contains") { args -> html.contains(args.int(0), args.int(1)) }
         engine.function("__html_remove") { args -> html.remove(args.int(0)) }
+
+        engine.function("__epub_spine") { args -> epubSpine(args.str(0)) }
+        engine.function("__epub_html") { args -> epubHtml(args.str(0), args.str(1)) }
+        engine.function("__epub_cfi_write") { args ->
+            val o = runCatching { JSONObject(args.str(0)) }.getOrNull() ?: return@function ""
+            val file = resolvePluginFile(o.optString("file")) ?: return@function ""
+            EpubCfi.write(
+                file,
+                EpubCfi.Locus(
+                    spineIndex = o.optInt("spineIndex"),
+                    blockIndex = o.optInt("blockIndex"),
+                    charOffset = o.optInt("charOffset"),
+                    anchorText = o.optString("anchorText"),
+                    fraction = o.optDouble("fraction", 0.0).toFloat(),
+                ),
+            )
+        }
+        engine.function("__epub_cfi_read") { args ->
+            val file = resolvePluginFile(args.str(0)) ?: return@function "null"
+            val locus = EpubCfi.read(file, args.str(1)) ?: return@function "null"
+            JSONObject()
+                .put("spineIndex", locus.spineIndex)
+                .put("blockIndex", locus.blockIndex)
+                .put("charOffset", locus.charOffset)
+                .put("anchorText", locus.anchorText)
+                .put("fraction", locus.fraction.toDouble())
+                .toString()
+        }
+    }
+
+    private fun resolvePluginFile(relative: String): File? {
+        val cleaned = relative.trim().trimStart('/').replace('\\', '/')
+        if (cleaned.isEmpty() || cleaned.contains("..")) return null
+        val rootDir = http.filesDir ?: return null
+        val dest = File(rootDir, cleaned).canonicalFile
+        val rootCanon = rootDir.canonicalFile
+        if (!dest.path.startsWith(rootCanon.path + File.separator) && dest != rootCanon) return null
+        return dest.takeIf { it.isFile }
+    }
+
+    private fun epubSpine(relative: String): String {
+        val file = resolvePluginFile(relative) ?: return "[]"
+        return runCatching {
+            val source = EpubChapterSource.open(file)
+            val arr = JSONArray()
+            for (i in 0 until source.chapterCount) {
+                arr.put(
+                    JSONObject()
+                        .put("index", i)
+                        .put("href", source.href(i))
+                        .put("title", source.chapterTitle(i))
+                        .put("bytes", source.weight(i)),
+                )
+            }
+            arr.toString()
+        }.getOrDefault("[]")
+    }
+
+    private fun epubHtml(relative: String, href: String): String {
+        val file = resolvePluginFile(relative) ?: return ""
+        return runCatching {
+            ZipFile(file).use { zip -> EpubIngest.entryTextOrNull(zip, href).orEmpty() }
+        }.getOrDefault("")
     }
 
     private fun decodeResult(raw: String): Any? {
@@ -292,6 +360,15 @@ class JsPluginRuntime(
                   },
                   sha256Hex: function (inputHex) {
                     return __sha256_hex(String(inputHex));
+                  }
+                },
+                epub: {
+                  spine: function (file) { return JSON.parse(__epub_spine(String(file || ''))); },
+                  html: function (file, href) { return __epub_html(String(file || ''), String(href || '')); },
+                  cfiWrite: function (opts) { return __epub_cfi_write(JSON.stringify(opts || {})); },
+                  cfiRead: function (file, cfi) {
+                    var raw = __epub_cfi_read(String(file || ''), String(cfi || ''));
+                    return raw === 'null' ? null : JSON.parse(raw);
                   }
                 },
                 error: function (code, message) { var e = new Error(message || code); e.code = code; return e; },

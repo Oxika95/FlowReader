@@ -29,6 +29,11 @@ Docs: `docs/plugins/api.md` (router to manifest, functions, features, host pages
 - Two-way sync (`plugin/sync/`): `syncable` lists and positions; optional `readPositions(works)` →
   `PluginReadPosition[]` (progressSync); `setMembership(..., false)` removes on the site;
   `flow.fetch(url, { cookies: false })` sends clearance cookies only (Anubis / CF), not session.
+- Optional apiVersion 6 keys (no host bump; absent = today's behavior): `serverSetting` (settings
+  key → exact host allowed for fetch), `auth.bearer` (secret → `Authorization: Bearer`),
+  `locusSync` (position outbox carries locus; `syncProgress` third arg; CFI via `flow.epub`),
+  `WorkDetail.file` (relative EPUB under plugin data dir → `EpubChapterSource`), `flow.fetch`
+  `saveAs` (bytes to data dir). Do not bump `PLUGIN_HOST_API_VERSION` for these.
 - `ChapterRef.locked` persists as a third `toc.txt` column; downloads skip locked chapters.
 - ToC refresh reconciles by chapter URL (`TocRemap.chapterMoves`).
 

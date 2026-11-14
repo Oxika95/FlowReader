@@ -21,10 +21,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -76,6 +80,15 @@ fun PluginTabContent(
     val vm = rememberPluginTabViewModel(plugin)
     val ui by vm.ui.collectAsState()
     val app = LocalContext.current.applicationContext as FlowApp
+    DisposableEffect(plugin.id) {
+        onDispose { app.pluginManager.releaseTabRuntime(plugin.id) }
+    }
+    var libraryRevision by remember { mutableIntStateOf(0) }
+    var accountOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.showAccount) {
+        if (accountOpen && !ui.showAccount) libraryRevision++
+        accountOpen = ui.showAccount
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val pendingShare by app.pendingPluginShare.collectAsState()
     val chrome by app.chrome.collectAsState()
@@ -116,8 +129,18 @@ fun PluginTabContent(
         )
         when (val section = ui.section) {
             is PluginSection.Library -> {
-                val isBrowse = ui.manifest.list(section.listId)?.isBrowse == true
-                if (isBrowse) {
+                val list = ui.manifest.list(section.listId)
+                if (list?.shelf == true) {
+                    PluginShelfPane(
+                        pluginId = plugin.id,
+                        listId = list.id,
+                        bearerToken = app.pluginManager.bearerToken(plugin.id),
+                        onOpenBook = vm::openWork,
+                        revision = libraryRevision,
+                        modifier = Modifier.weight(1f),
+                        bottomInset = bottomInset,
+                    )
+                } else if (list?.isBrowse == true) {
                     FlowPullRefresh(
                         refreshing = ui.refreshing,
                         onRefresh = vm::refresh,
@@ -195,6 +218,7 @@ fun PluginTabContent(
                 onSearch = vm::search,
                 onOpen = vm::openWork,
                 modifier = Modifier.weight(1f),
+                bearerToken = app.pluginManager.bearerToken(plugin.id),
             )
         }
     }
@@ -301,10 +325,14 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
         onDismiss = { vm.setShowAccount(false) },
         onShowLogin = { vm.setShowLogin(true) },
         onLogout = vm::logout,
+        onField = vm::setLoginField,
+        onServerChange = vm::setServerDraft,
+        onLogin = vm::login,
         onOpenSite = vm::openSite,
         onSync = { vm.askSync(it) },
         onSyncNow = vm::syncNow,
         onDeleteData = vm::eraseLocalData,
+        onLibrariesChanged = vm::refreshBrowseAfterLibraryChange,
     )
     SiteWebViewCard(
         visible = ui.showSiteWeb,
@@ -327,8 +355,6 @@ fun PluginTabOverlays(plugin: InstalledPlugin, actions: LibraryPluginActions) {
     )
     LoginSheet(
         ui = ui,
-        onField = vm::setLoginField,
-        onSubmit = vm::login,
         onWebSignedIn = vm::completeWebLogin,
         onDismiss = { vm.setShowLogin(false) },
     )

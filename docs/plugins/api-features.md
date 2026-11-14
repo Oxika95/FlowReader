@@ -56,7 +56,10 @@ on **Sync now**:
 ## Browse lists
 
 A list with `"kind": "browse"` holds entry points (for example the creators a user supports), not
-stories:
+stories. `"shelf": true` skips those rows: the tab calls `browse(listId, page, sort, tab)` itself
+and draws that page's `tabs` and `sorts`. A row id of `series:`, `collection:`, or `author:`
+stays in the tab and calls `browse` again for that group's books. `desc` on the page is the
+direction applied; choosing the current sort again sends `!id` (high to low) or `+id` (low to high).
 
 - `list(listId, page)` returns its rows as `Work`s; the host stores only the rows (no library books,
   no catalog entries) and Overwrite never deletes stories. `membershipToggle` and `notifyDefault`

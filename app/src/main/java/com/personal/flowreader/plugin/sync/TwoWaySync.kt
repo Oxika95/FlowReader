@@ -9,7 +9,9 @@ import com.personal.flowreader.plugin.api.PluginCapability
 import com.personal.flowreader.plugin.api.PluginChapterRef
 import com.personal.flowreader.plugin.api.PluginErrorCode
 import com.personal.flowreader.plugin.api.PluginException
+import com.personal.flowreader.plugin.api.PluginJson
 import com.personal.flowreader.plugin.api.PluginManifest
+import com.personal.flowreader.plugin.api.PluginReadPosition
 import com.personal.flowreader.plugin.api.PluginUpdateQuery
 import com.personal.flowreader.plugin.api.PluginWork
 import com.personal.flowreader.plugin.store.PluginListWriter
@@ -44,17 +46,7 @@ data class SyncReport(
 /** Result of pushing one membership change right away. */
 enum class PushResult { Site, LocalOnly, Queued }
 
-/**
- * Two-way sync of a plugin's syncable lists and reading positions (docs/plugins.md).
- *
- * - **Initial pull** (no list baselines and empty local memberships): overwrite local lists from
- *   the site and force site positions; no membership up-pushes.
- * - **Progressive**: flush the outbox, three-way merge every list ([ListReconcile]), then every
- *   known position ([ProgressReconcile]).
- *
- * [lastSyncedAt] advances only when every syncable list fetch succeeded. Runs share [lock] with
- * the new-chapter check.
- */
+/** Two-way sync of syncable lists and reading positions. Runs share [lock] with update checks. */
 class TwoWaySync(private val app: FlowApp) {
     private val manager get() = app.pluginManager
     val lists = PluginListWriter(app)
@@ -316,11 +308,11 @@ class TwoWaySync(private val app: FlowApp) {
             if (workId !in works) continue
             val session = stored[workId]
             if (session == null || ProgressReconcile.tocIndex(session.toc.map { it.url }, position.chapterUrl) == null) {
-                val baseline = SyncStateStore.read(dir).positions[workId]
-                if (!overwrite && baseline == position.chapterUrl) continue
+                val baselineUrl = PositionBaseline.url(SyncStateStore.read(dir).positions[workId])
+                if (!overwrite && baselineUrl == position.chapterUrl) continue
                 SyncStateStore.update(dir) { s ->
                     s.copy(
-                        pending = s.pending + (workId to PendingPosition(workId, position.chapterUrl, position.chapterTitle, overwrite)),
+                        pending = s.pending + (workId to LocusPositionMerge.pendingFrom(position, overwrite)),
                         outbox = if (overwrite) s.outbox.filterNot { it is SyncOp.Position && it.workId == workId } else s.outbox,
                     )
                 }
@@ -328,63 +320,23 @@ class TwoWaySync(private val app: FlowApp) {
                 continue
             }
             SyncStateStore.update(dir) { it.copy(pending = it.pending - workId) }
-            when (mergeSitePosition(pluginId, session, position.chapterUrl, overwrite)) {
+            val localPos = app.pluginCatalog.get(session.bookId)?.position?.takeIf { it.hasProgress }
+            when (
+                SitePositionMerge.merge(
+                    dir,
+                    manager.get(pluginId)?.manifest,
+                    session,
+                    position,
+                    localPos,
+                    overwrite,
+                ) { index, remote -> applyPosition(pluginId, session, index, remote) }
+            ) {
                 is ProgressAction.ApplyRemote -> pulled++
                 is ProgressAction.PushLocal -> pushed++
                 else -> Unit
             }
         }
         return report.copy(positionsPulled = pulled, pushed = report.pushed + pushed)
-    }
-
-    /**
-     * Three-way merge of [session]'s saved chapter with the site's [remoteUrl] (or, with
-     * [overwrite], take the site's), applying or queueing the result. [remoteUrl] must be in the ToC.
-     */
-    private suspend fun mergeSitePosition(
-        pluginId: String,
-        session: PluginReadSession,
-        remoteUrl: String,
-        overwrite: Boolean,
-    ): ProgressAction {
-        val dir = dataDir(pluginId)
-        val workId = session.workId
-        val urls = session.toc.map { it.url }
-        val row = app.pluginCatalog.get(session.bookId)
-        val localUrl = row?.position?.takeIf { it.hasProgress }
-            ?.let { urls[PluginSessionStore.savedChapter(session.toc, it.chapterHref, it.chapterIndex)] }
-        val indexOf = { url: String -> ProgressReconcile.tocIndex(urls, url) }
-        val decision = if (overwrite) {
-            val action = if (localUrl != null && indexOf(localUrl) == indexOf(remoteUrl)) {
-                ProgressAction.NoOp
-            } else {
-                ProgressAction.ApplyRemote(remoteUrl)
-            }
-            SyncStateStore.update(dir) { s -> s.copy(outbox = s.outbox.filterNot { it is SyncOp.Position && it.workId == workId }) }
-            ProgressDecision(action, remoteUrl)
-        } else {
-            ProgressReconcile.decide(
-                local = localUrl,
-                remote = remoteUrl,
-                baseline = SyncStateStore.read(dir).positions[workId],
-                indexOf = indexOf,
-            )
-        }
-        when (val action = decision.action) {
-            is ProgressAction.Conflict -> SyncStateStore.update(dir) {
-                it.copy(conflicts = it.conflicts + (workId to PositionConflict(workId, action.localUrl, action.remoteUrl)))
-            }
-            is ProgressAction.ApplyRemote -> {
-                saveBaseline(dir, workId, action.chapterUrl)
-                indexOf(action.chapterUrl)?.let { applyPosition(pluginId, session, it) }
-            }
-            is ProgressAction.PushLocal -> {
-                val title = session.toc.getOrNull(urls.indexOf(action.chapterUrl))?.title.orEmpty()
-                SyncStateStore.update(dir) { it.enqueuePosition(SyncOp.Position(workId, action.chapterUrl, title)) }
-            }
-            ProgressAction.NoOp -> saveBaseline(dir, workId, decision.baseline)
-        }
-        return decision.action
     }
 
     /**
@@ -398,20 +350,29 @@ class TwoWaySync(private val app: FlowApp) {
         if (!manifest.has(PluginCapability.ProgressSync)) return
         val dir = dataDir(session.pluginId)
         val pending = SyncStateStore.read(dir).pending[session.workId]
-        val remote = siteChapterUrl.ifBlank { pending?.chapterUrl } ?: return
-        if (ProgressReconcile.tocIndex(session.toc.map { it.url }, remote) == null) return
+        val remoteUrl = siteChapterUrl.ifBlank { pending?.chapterUrl } ?: return
+        if (ProgressReconcile.tocIndex(session.toc.map { it.url }, remoteUrl) == null) return
         if (pending != null) SyncStateStore.update(dir) { it.copy(pending = it.pending - session.workId) }
-        mergeSitePosition(session.pluginId, session, remote, overwrite = pending?.overwrite == true)
+        val remote = PluginReadPosition(
+            id = session.workId,
+            chapterUrl = remoteUrl,
+            chapterTitle = pending?.chapterTitle.orEmpty(),
+            blockIndex = pending?.blockIndex ?: 0,
+            charOffset = pending?.charOffset ?: 0,
+            anchorText = pending?.anchorText.orEmpty(),
+            fraction = pending?.fraction ?: 0f,
+            updatedAt = pending?.updatedAt ?: 0L,
+        )
+        val localPos = app.pluginCatalog.get(session.bookId)?.position?.takeIf { it.hasProgress }
+        SitePositionMerge.merge(
+            dir,
+            manager.get(session.pluginId)?.manifest,
+            session,
+            remote,
+            localPos,
+            overwrite = pending?.overwrite == true,
+        ) { index, pos -> applyPosition(session.pluginId, session, index, pos) }
         _changes.tryEmit(session.pluginId)
-    }
-
-    private fun saveBaseline(dir: File, workId: String, url: String?) {
-        SyncStateStore.update(dir) { s ->
-            s.copy(
-                positions = if (url == null) s.positions else s.positions + (workId to url),
-                conflicts = s.conflicts - workId,
-            )
-        }
     }
 
     /** Stories on any story list or in the library: work id → work URL (may be blank). */
@@ -428,17 +389,27 @@ class TwoWaySync(private val app: FlowApp) {
     }
 
     /** Writes chapter [index] through the progress writer, whose hook downloads ahead. */
-    private suspend fun applyPosition(pluginId: String, session: PluginReadSession, index: Int) {
-        app.pluginCatalog.seekChapter(
-            ProgressUpdate.chapterSeek(
-                domain = PositionDomain.Plugin,
-                rowKey = session.bookId,
-                chapterIndex = index,
-                chapterCount = session.toc.size,
-                source = PositionSource.Sync,
-                chapterHref = session.toc[index].url,
-            ),
-        ) {
+    private suspend fun applyPosition(
+        pluginId: String,
+        session: PluginReadSession,
+        index: Int,
+        remote: PluginReadPosition? = null,
+    ) {
+        val href = session.toc[index].url
+        val update = ProgressUpdate.chapterSeek(
+            domain = PositionDomain.Plugin,
+            rowKey = session.bookId,
+            chapterIndex = index,
+            chapterCount = session.toc.size,
+            source = PositionSource.Sync,
+            chapterHref = href,
+            at = remote?.updatedAt?.takeIf { it > 0L } ?: System.currentTimeMillis(),
+            blockIndex = remote?.blockIndex ?: 0,
+            charOffset = remote?.charOffset ?: 0,
+            anchorText = remote?.anchorText.orEmpty(),
+            fraction = remote?.fraction?.takeIf { it > 0f },
+        )
+        app.pluginCatalog.seekChapter(update) {
             val cover = PluginSessionStore.readSplash(PluginSessionStore.dir(dataDir(pluginId), session.workId))?.cover.orEmpty()
             lists.upsertWork(
                 pluginId,
@@ -459,10 +430,29 @@ class TwoWaySync(private val app: FlowApp) {
         val dir = dataDir(session.pluginId)
         val state = SyncStateStore.read(dir)
         if (session.workId in state.conflicts) return
-        val baseline = state.positions[session.workId]
-        if (baseline == null && index == 0) return
-        if (baseline != null && ProgressReconcile.tocIndex(session.toc.map { it.url }, baseline) == index) return
-        SyncStateStore.update(dir) { it.enqueue(SyncOp.Position(session.workId, chapter.url, chapter.title)) }
+        val row = app.pluginCatalog.get(session.bookId)
+        val pos = row?.position
+        if (pos?.positionSource == PositionSource.Sync.name) return
+        val locusSync = manifest.has(PluginCapability.LocusSync)
+        val baselineUrl = PositionBaseline.url(state.positions[session.workId])
+        if (!locusSync) {
+            if (baselineUrl == null && index == 0) return
+            if (baselineUrl != null && ProgressReconcile.tocIndex(session.toc.map { it.url }, baselineUrl) == index) return
+        }
+        SyncStateStore.update(dir) {
+            it.enqueue(
+                SyncOp.Position(
+                    session.workId,
+                    chapter.url,
+                    chapter.title,
+                    blockIndex = pos?.blockIndex ?: 0,
+                    charOffset = pos?.charOffset ?: 0,
+                    anchorText = pos?.anchorText.orEmpty(),
+                    fraction = pos?.fraction ?: 0f,
+                    positionAt = pos?.positionAt ?: System.currentTimeMillis(),
+                ),
+            )
+        }
         flush(session.pluginId)
     }
 
@@ -485,21 +475,36 @@ class TwoWaySync(private val app: FlowApp) {
         SyncStateStore.update(dataDir(pluginId)) { it.forgetStoryLists(workId) }
     }
 
-    /** "Use Royal Road": take the site's chapter; "Keep mine": push the app's. */
+    /** "Use {site}": take the site's chapter; "Keep mine": push the app's. */
     suspend fun resolveConflict(pluginId: String, workId: String, useRemote: Boolean) {
         val dir = dataDir(pluginId)
         val conflict = SyncStateStore.read(dir).conflicts[workId] ?: return
         val bookId = manager.bookIdFor(pluginId, workId)
         val session = app.pluginBooks.session(bookId)?.takeIf { it.toc.isNotEmpty() } ?: return
         val urls = session.toc.map { it.url }
+        SyncStateStore.update(dir) { s -> s.copy(outbox = s.outbox.filterNot { it is SyncOp.Position && it.workId == workId }) }
         if (useRemote) {
-            saveBaseline(dir, workId, conflict.remoteUrl)
+            LocusPositionMerge.saveBaselineUrl(dir, workId, conflict.remoteUrl)
             ProgressReconcile.tocIndex(urls, conflict.remoteUrl)?.let {
                 applyPosition(pluginId, session, it)
             }
         } else {
+            val row = app.pluginCatalog.get(bookId)?.position
             val title = session.toc.getOrNull(urls.indexOf(conflict.localUrl))?.title.orEmpty()
-            SyncStateStore.update(dir) { it.enqueuePosition(SyncOp.Position(workId, conflict.localUrl, title)) }
+            SyncStateStore.update(dir) {
+                it.enqueuePosition(
+                    SyncOp.Position(
+                        workId,
+                        conflict.localUrl,
+                        title,
+                        blockIndex = row?.blockIndex ?: 0,
+                        charOffset = row?.charOffset ?: 0,
+                        anchorText = row?.anchorText.orEmpty(),
+                        fraction = row?.fraction ?: 0f,
+                        positionAt = row?.positionAt ?: System.currentTimeMillis(),
+                    ),
+                )
+            }
             flush(pluginId)
         }
         _changes.tryEmit(pluginId)
@@ -556,7 +561,16 @@ class TwoWaySync(private val app: FlowApp) {
             val site = when (op) {
                 is SyncOp.Membership -> source.setMembership(op.workId, op.listId, op.on)
                 is SyncOp.Position -> {
-                    source.syncProgress(op.workId, PluginChapterRef(title = op.chapterTitle, url = op.chapterUrl))
+                    val locus = if (source.manifest.has(PluginCapability.LocusSync)) {
+                        PluginJson.locus(op.blockIndex, op.charOffset, op.anchorText, op.fraction, op.positionAt)
+                    } else {
+                        null
+                    }
+                    source.syncProgress(
+                        op.workId,
+                        PluginChapterRef(title = op.chapterTitle, url = op.chapterUrl),
+                        locus,
+                    )
                     true
                 }
             }

@@ -42,6 +42,11 @@ enum class PluginCapability(val key: String) {
     Prefetch("prefetch"),
     /** TTS: host may use multi-network race / mobile-data UI. */
     NetworkLanes("networkLanes"),
+    /**
+     * Sync position inside a chapter (block, offset, anchor), not only the chapter URL.
+     * Optional at apiVersion 6; plugins that omit it keep chapter-only sync.
+     */
+    LocusSync("locusSync"),
     ;
 
     companion object {
@@ -74,6 +79,8 @@ data class PluginList(
     /** New-chapter notifications default on for stories on this list (the only lists that do). */
     val notifyDefault: Boolean = false,
     val kind: PluginListKind = PluginListKind.Stories,
+    /** Browse list drawn in the tab (`browse`), not as rows that open a card. */
+    val shelf: Boolean = false,
 ) {
     val isBrowse: Boolean get() = kind == PluginListKind.Browse
 }
@@ -107,6 +114,11 @@ data class PluginAuth(
     val note: String = "",
     /** When set, sign-in opens [PluginWebLogin.url] instead of the field form. */
     val web: PluginWebLogin? = null,
+    /**
+     * Optional secret key whose value is sent as `Authorization: Bearer` on this plugin's
+     * fetches and cover downloads. Ignored when blank. apiVersion 6 optional.
+     */
+    val bearer: String = "",
 )
 
 enum class PluginSettingType(val key: String) {
@@ -160,6 +172,11 @@ data class PluginManifest(
     val sitePages: List<PluginSitePage> = emptyList(),
     val settings: List<PluginSetting> = emptyList(),
     val shareHosts: List<String> = emptyList(),
+    /**
+     * Settings key whose value is a full base URL; that URL's host is allowed for `flow.fetch`
+     * at runtime. Blank = no user-set host. apiVersion 6 optional.
+     */
+    val serverSetting: String = "",
 ) {
     val isTts: Boolean get() = kind == PluginKind.Tts
     val isSource: Boolean get() = kind == PluginKind.Source
@@ -167,6 +184,9 @@ data class PluginManifest(
     fun has(cap: PluginCapability): Boolean = cap in capabilities
 
     fun list(id: String): PluginList? = lists.firstOrNull { it.id == id }
+
+    /** Resolved [serverSetting] key, or null when the setting is missing or blank. */
+    fun serverSettingKey(): String? = serverSetting.trim().takeIf { it.isNotEmpty() }
 
     /** Ordered Site pages for Account (declared [sitePages], or Sign in + home default). */
     fun resolvedSitePages(): List<PluginSitePage> {
@@ -237,6 +257,7 @@ data class PluginManifest(
                             syncable = l.optBoolean("syncable", false),
                             notifyDefault = listKind == PluginListKind.Stories && l.optBoolean("notifyDefault", false),
                             kind = listKind,
+                            shelf = listKind == PluginListKind.Browse && l.optBoolean("shelf", false),
                         )
                     }
                 },
@@ -262,6 +283,7 @@ data class PluginManifest(
                                     url.startsWith("https://") && cookie.isNotEmpty()
                                 }
                             },
+                            bearer = a.optString("bearer").trim(),
                         )
                     }
                 },
@@ -299,6 +321,7 @@ data class PluginManifest(
                 } else {
                     obj.optJSONArray("shareHosts").strings().map { it.lowercase() }
                 },
+                serverSetting = if (kind == PluginKind.Tts) "" else obj.optString("serverSetting").trim(),
             )
         }
     }

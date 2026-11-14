@@ -15,6 +15,7 @@ import com.personal.flowreader.plugin.runtime.PluginCookieJar
 import com.personal.flowreader.plugin.runtime.PluginHttp
 import com.personal.flowreader.plugin.runtime.PluginKvStore
 import com.personal.flowreader.plugin.runtime.PluginSecrets
+import com.personal.flowreader.plugin.runtime.ServerUrl
 import java.io.File
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,15 +94,45 @@ class PluginManager(private val context: Context) {
             ?: throw PluginException(PluginErrorCode.Unsupported, "Plugin $pluginId is not installed")
         val code = File(plugin.dir, CODE_FILE).readText()
         val secrets = PluginSecrets(context, pluginId)
-        val http = PluginHttp(
+        val http = buildHttp(plugin, secrets)
+        val runtime = newRuntime(plugin, code, http, secrets)
+        sources[pluginId] = PluginSource(plugin.manifest, runtime) to runtime
+        runtime
+    }
+
+    /** Server URL typed in the plugin's [PluginManifest.serverSetting], or blank. */
+    fun serverUrl(pluginId: String): String {
+        val key = get(pluginId)?.manifest?.serverSettingKey() ?: return ""
+        return settingsValues(pluginId).optString(key).trim()
+    }
+
+    /** Exact host of [serverUrl], or null when unset / invalid / has userinfo. */
+    fun serverHost(pluginId: String): String? = ServerUrl.host(serverUrl(pluginId))
+
+    fun serverAllowsHttp(pluginId: String): Boolean = ServerUrl.allowsHttp(serverUrl(pluginId))
+
+    /** Bearer token for [pluginId] when the manifest names `auth.bearer`, else null. */
+    fun bearerToken(pluginId: String): String? {
+        val key = get(pluginId)?.manifest?.auth?.bearer?.trim().orEmpty()
+        if (key.isEmpty()) return null
+        return PluginSecrets(context, pluginId).get(key)?.takeIf { it.isNotBlank() }
+    }
+
+    private fun buildHttp(plugin: InstalledPlugin, secrets: PluginSecrets): PluginHttp {
+        val pluginId = plugin.id
+        val bearerKey = plugin.manifest.auth?.bearer?.trim().orEmpty()
+        return PluginHttp(
             pluginId = pluginId,
             allowedHosts = plugin.manifest.allowedHosts,
             minIntervalMs = plugin.manifest.minRequestIntervalMs,
             cookieJar = PluginCookieJar(secrets),
+            serverHost = { serverHost(pluginId) },
+            serverAllowsHttp = { serverAllowsHttp(pluginId) },
+            bearerToken = {
+                if (bearerKey.isEmpty()) null else secrets.get(bearerKey)?.takeIf { it.isNotBlank() }
+            },
+            filesDir = dataDir(pluginId),
         )
-        val runtime = newRuntime(plugin, code, http, secrets)
-        sources[pluginId] = PluginSource(plugin.manifest, runtime) to runtime
-        runtime
     }
 
     /**
@@ -184,9 +215,15 @@ class PluginManager(private val context: Context) {
     }
 
     fun setSetting(pluginId: String, key: String, value: String) {
+        val manifest = get(pluginId)?.manifest
+        val previous = if (manifest?.serverSettingKey() == key) serverUrl(pluginId) else null
         val saved = readSavedSettings(pluginId)
         saved.put(key, value)
         File(dataDir(pluginId), SETTINGS_FILE).writeText(saved.toString())
+        if (previous != null && previous != value.trim()) {
+            PluginSecrets(context, pluginId).clear()
+            sessionChanged(pluginId)
+        }
     }
 
     /** Atomic install/update: write to a temp dir, then swap. Restarts the plugin runtime. */
@@ -276,6 +313,17 @@ class PluginManager(private val context: Context) {
             .orEmpty()
         _installed.value = list
         displayNames = list.associate { it.id to it.name }
+    }
+
+    /**
+     * The library tab left this plugin. Forget the cached runtime so the next visit starts a new
+     * one instead of continuing a browse from the previous tab. Do not close it: close clears the
+     * process-wide JNI cache and breaks every other plugin engine.
+     */
+    fun releaseTabRuntime(pluginId: String) {
+        synchronized(sources) {
+            sources.remove(pluginId)
+        }
     }
 
     private fun closeRuntime(pluginId: String) {

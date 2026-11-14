@@ -6,7 +6,9 @@ alwaysApply: false
 
 # Plugin sync
 
-- `ListReconcile`, `ProgressReconcile` and `SyncPullKind` are pure and JVM-tested; change decisions
+- `ListReconcile`, `ProgressReconcile`, `LocusReconcile` and `SyncPullKind` are pure and JVM-tested; change decisions
+  without `locusSync` stay chapter-URL-only. With `locusSync`, baselines use `PositionBaseline` JSON and same-href
+  still enqueues a locus `pos:` op (see seams).
   there and add a test case.
 - `TwoWaySync.lock` is one global, non-reentrant `Mutex`. Holders: `run`, `ingestCrawledLists`,
   `pullPositions`, `UpdateChecker.run`, `PluginDataEraser.erase`. Never call one holder from another.

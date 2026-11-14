@@ -24,8 +24,9 @@ fun WorkCard(
     enabled: Boolean,
     onOpen: (PluginWork) -> Unit,
     modifier: Modifier = Modifier,
+    bearerToken: String? = null,
 ) {
-    val cover by rememberRemoteCover(work.cover, FlowTokens.CoverEdge.Row)
+    val cover by rememberRemoteCover(work.cover, FlowTokens.CoverEdge.Row, bearerToken)
     FlowDisplayCard(
         title = work.title,
         art = cover,

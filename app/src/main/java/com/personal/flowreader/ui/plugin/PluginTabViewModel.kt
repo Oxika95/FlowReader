@@ -51,14 +51,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 
-/** Splash data for [StoryMediaCard]; built entirely from the app-owned cache. */
+/** App vs site reading position when both moved since the last sync. */
+data class PositionConflictUi(
+    val localIndex: Int,
+    val remoteIndex: Int,
+    val localLabel: String = "",
+    val remoteLabel: String = "",
+)
+
 data class PluginStory(
     val bookId: String,
     val workId: String,
     val workUrl: String,
-    /** Shown title: the user's rename, else [pluginTitle]. */
     val title: String,
-    /** The plugin's title (what list files and library rows store). */
     val pluginTitle: String,
     val author: String,
     val synopsis: String,
@@ -66,32 +71,22 @@ data class PluginStory(
     val cover: String,
     val toc: List<PluginChapterRef>,
     val downloadedCount: Int,
-    /** Absolute ToC indices with bodies on disk. */
     val cachedIndices: Set<Int>,
     val readingProgress: Float,
-    /** Saved reading position (absolute ToC index); the position slider mark and download start. */
     val chapterIndex: Int,
-    /** A position past the start of chapter 1 is saved. */
     val hasSavedPosition: Boolean = false,
     val cacheLevel: Int = PluginCachePolicy.DEFAULT_LEVEL,
     val cleanup: Boolean = false,
-    /** Download-all / keep every chapter on disk. */
     val keepAll: Boolean = false,
-    /** Plugin list ids this story is tagged with. */
     val listedIn: Set<String> = emptySet(),
-    /** Media card slots; null when the plugin fills none. */
     val card: PluginCard? = null,
-    /** New-chapter notifications for this story (bell on the media card). */
     val notify: Boolean = false,
-    /** Reading chapters (app, site) when both moved since the last sync; the user picks one. */
-    val positionConflict: Pair<Int, Int>? = null,
-    /** Chapters added since the story was last opened in the reader. */
+    val positionConflict: PositionConflictUi? = null,
     val newChapters: Int = 0,
 ) {
     val chapterCount: Int get() = toc.size
 }
 
-/** Which sub-tab of the plugin tab is showing. */
 sealed interface PluginSection {
     data class Library(val listId: String) : PluginSection
     data object Search : PluginSection
@@ -101,15 +96,11 @@ data class PluginTabUi(
     val manifest: PluginManifest,
     val books: List<BookItem> = emptyList(),
     val libraryMeta: Map<String, PluginLibraryMeta> = emptyMap(),
-    /** Book id → chapters added since the story was last opened (library badges). */
     val newCounts: Map<String, Int> = emptyMap(),
-    /** Story list id → book ids on it. */
     val listMembers: Map<String, Set<String>> = emptyMap(),
     val section: PluginSection = manifest.lists.firstOrNull()?.let { PluginSection.Library(it.id) }
         ?: PluginSection.Search,
-    /** Book ids in the selected list. */
     val listBookIds: Set<String> = emptySet(),
-    /** Row text from the list file (used before a ToC is cached). */
     val listRows: Map<String, PluginWork> = emptyMap(),
     val query: String = "",
     val urlDraft: String = "",
@@ -117,55 +108,36 @@ data class PluginTabUi(
     val searchPage: Int = 0,
     val searchHasMore: Boolean = false,
     val story: PluginStory? = null,
-    /** Story Manage card (download settings / clear / remove) is showing. */
     val showManage: Boolean = false,
-    /** Contents overlay from the media card ToC rail. */
     val showToc: Boolean = false,
-    /** Reading-position card (−/+ steps) is showing. */
     val showPosition: Boolean = false,
     val showRename: Boolean = false,
-    /** Chapters kept ahead of the reading position; may be blank while editing. */
     val cacheLevelDraft: String = PluginCachePolicy.DEFAULT_LEVEL.toString(),
-    /** Non-null while a download runs. */
     val downloadProgress: Pair<Int, Int>? = null,
-    /** Story the running download belongs to. */
     val downloadBookId: String? = null,
     val session: PluginSession = PluginSession(),
     val loginFields: Map<String, String> = emptyMap(),
+    val serverDraft: String = "",
     val showLogin: Boolean = false,
     val showAdd: Boolean = false,
     val showAccount: Boolean = false,
-    /** Account → Open site WebView. */
     val showSiteWeb: Boolean = false,
-    /** Page title for the Open site WebView. */
     val siteWebTitle: String = "",
-    /** Start URL for the Open site WebView. */
     val siteWebUrl: String = "",
-    /** Jar cookies to seed into the Open site WebView. */
     val siteSeedCookies: List<Cookie> = emptyList(),
-    /** WebView crawl of sitePages with listId (Sync / Replace / Site Done). */
     val listCrawl: PluginListCrawlUi? = null,
-    /** List id awaiting a Merge / Overwrite choice. */
     val syncListId: String? = null,
-    /** Open browse-list entry page (creator page). */
     val browse: PluginBrowseUi? = null,
-    /** Work id → title of the first story list it is on ("In Follow" badges). */
     val storyLists: Map<String, String> = emptyMap(),
     val sync: PluginSyncUi = PluginSyncUi(),
-    /** Book id whose position conflict card was put off ("Later") while its story card is open. */
     val conflictDismissedFor: String? = null,
     val busy: Boolean = false,
-    /** Soft ToC refresh on the open media card (pull or open-in-background); does not block actions. */
     val storyRefreshing: Boolean = false,
-    /** True until the first local membership + catalog paint finishes. */
     val listsLoading: Boolean = true,
-    /** Pull to refresh running on the list. */
     val refreshing: Boolean = false,
     val message: String? = null,
     val error: String? = null,
-    /** Soft re-login nudge when the cookie blob is older than the plugin's soft TTL. */
     val sessionStaleHint: String? = null,
-    /** Card order for story lists (not browse / search). */
     val sortMode: LibrarySortMode = LibrarySort.defaultFor(plugin = true),
 ) {
     val visibleBooks: List<BookItem>
@@ -431,7 +403,23 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
 
     private suspend fun reimportBrowse(listId: String) {
         browseRefreshedAt[listId] = SystemClock.elapsedRealtime()
-        lists.applyLists(pluginId, mapOf(listId to lists.fetchList(pluginId, listId)), SyncMode.Merge)
+        lists.applyLists(pluginId, mapOf(listId to lists.fetchList(pluginId, listId)), SyncMode.Overwrite)
+    }
+
+    fun refreshBrowseAfterLibraryChange() = viewModelScope.launch {
+        try {
+            withContext(Dispatchers.IO) {
+                manifest.lists.filter { it.isBrowse && it.syncable }.forEach { reimportBrowse(it.id) }
+            }
+            refreshLocal()
+            val section = _ui.value.section
+            if (section is PluginSection.Library && manifest.list(section.listId)?.isBrowse == true) {
+                val (ids, rows) = membership(section)
+                _ui.update { it.copy(listBookIds = ids, listRows = rows) }
+            }
+        } catch (t: Throwable) {
+            fail(t, "Could not refresh catalog")
+        }
     }
 
     /**
@@ -474,16 +462,34 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
     fun setLoginField(key: String, value: String) =
         _ui.update { it.copy(loginFields = it.loginFields + (key to value)) }
 
-    fun setShowLogin(show: Boolean) = _ui.update {
-        it.copy(showLogin = show, showAccount = if (show) false else it.showAccount, error = null)
+    fun setServerDraft(value: String) {
+        val key = manifest.serverSettingKey() ?: return
+        _ui.update { it.copy(serverDraft = value) }
+        manager.setSetting(pluginId, key, value.trim())
+    }
+
+    fun setShowLogin(show: Boolean) {
+        val fieldAuth = manifest.auth?.web == null && !manifest.auth?.fields.isNullOrEmpty()
+        if (show && fieldAuth) {
+            setShowAccount(true)
+            return
+        }
+        _ui.update {
+            it.copy(
+                showLogin = show,
+                showAccount = if (show) false else it.showAccount,
+                serverDraft = if (show) manager.serverUrl(pluginId) else it.serverDraft,
+                error = null,
+            )
+        }
     }
 
     fun setShowAdd(show: Boolean) = _ui.update {
         it.copy(showAdd = show, urlDraft = if (show) it.urlDraft else "", error = null)
     }
 
-    /** Open/close Account only — no network (session refresh stays on tab start / sign-in). */
-    fun setShowAccount(show: Boolean) =
+    fun setShowAccount(show: Boolean) {
+        val secretKeys = manifest.auth?.fields?.filter { it.secret }?.map { it.key }.orEmpty()
         _ui.update {
             it.copy(
                 showAccount = show,
@@ -491,9 +497,12 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                 siteWebTitle = if (show) it.siteWebTitle else "",
                 siteWebUrl = if (show) it.siteWebUrl else "",
                 siteSeedCookies = if (show) it.siteSeedCookies else emptyList(),
+                serverDraft = if (show) manager.serverUrl(pluginId) else it.serverDraft,
+                loginFields = if (show) it.loginFields else it.loginFields.filterKeys { k -> k !in secretKeys },
                 error = if (show) null else it.error,
             )
         }
+    }
 
     /** Account → Site page: seed WebView from the jar; no network until the page loads. */
     fun openSite(title: String, url: String) {
@@ -601,6 +610,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
 
     private fun fail(t: Throwable, fallback: String) {
         if (t is PluginException && t.code == PluginErrorCode.AuthRequired && manifest.auth != null) {
+            val fieldAuth = manifest.auth?.web == null && !manifest.auth?.fields.isNullOrEmpty()
             _ui.update {
                 it.copy(
                     busy = false,
@@ -608,8 +618,9 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
                     downloadProgress = null,
                     session = it.session.copy(loggedIn = false),
                     sessionStaleHint = null,
-                    showLogin = true,
-                    showAccount = false,
+                    showLogin = !fieldAuth,
+                    showAccount = fieldAuth,
+                    serverDraft = if (fieldAuth) manager.serverUrl(pluginId) else it.serverDraft,
                     error = t.message ?: "Sign in to ${manifest.name} again.",
                 )
             }
@@ -685,15 +696,17 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         val splash = withContext(Dispatchers.IO) {
             val session = books.fetchAndStoreWork(pluginId, workId)
             val cover = PluginSessionStore.readSplash(PluginSessionStore.dir(dataDir, workId))?.cover
-            upsertWork(
-                PluginWork(
-                    id = workId,
-                    title = session.title,
-                    url = session.workUrl,
-                    author = session.author,
-                    cover = cover?.ifBlank { hint?.cover.orEmpty() } ?: hint?.cover.orEmpty(),
-                ),
+            val work = PluginWork(
+                id = workId,
+                title = session.title,
+                url = session.workUrl,
+                author = session.author,
+                cover = cover?.ifBlank { hint?.cover.orEmpty() } ?: hint?.cover.orEmpty(),
             )
+            upsertWork(work)
+            manifest.lists.filter { !it.isBrowse && !it.syncable && !it.membershipToggle }.forEach { list ->
+                PluginMembershipStore.upsert(dataDir, list.id, work)
+            }
             loadStory(bookId)
         }
         refreshLocal()
@@ -773,7 +786,11 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         val conflict = flow.pluginSync.state(pluginId).conflicts[session.workId]?.let { c ->
             val local = ProgressReconcile.tocIndex(tocUrls, c.localUrl)
             val remote = ProgressReconcile.tocIndex(tocUrls, c.remoteUrl)
-            if (local != null && remote != null) local to remote else null
+            if (local != null && remote != null) {
+                PositionConflictUi(local, remote, c.localLabel, c.remoteLabel)
+            } else {
+                null
+            }
         }
         return PluginStory(
             bookId = bookId,
@@ -1413,6 +1430,11 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
 
     fun login() {
         val auth = manifest.auth ?: return
+        val serverKey = manifest.serverSettingKey()
+        if (serverKey != null && _ui.value.serverDraft.trim().isEmpty()) {
+            val label = manifest.settings.firstOrNull { it.key == serverKey }?.label ?: "Server address"
+            _ui.update { it.copy(error = "$label is required"); return@login }
+        }
         val fields = auth.fields.associate { it.key to _ui.value.loginFields[it.key].orEmpty() }
         if (fields.values.any { it.isBlank() }) {
             _ui.update { it.copy(error = auth.fields.joinToString(" and ") { f -> f.label } + " are required") }
@@ -1421,7 +1443,10 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         viewModelScope.launch {
             _ui.update { it.copy(busy = true, error = null) }
             try {
-                val session = withContext(Dispatchers.IO) { source().login(fields) }
+                val session = withContext(Dispatchers.IO) {
+                    if (serverKey != null) manager.setSetting(pluginId, serverKey, _ui.value.serverDraft.trim())
+                    source().login(fields)
+                }
                 if (!session.loggedIn) throw PluginException(PluginErrorCode.AuthRequired, "Sign in failed")
                 val secretKeys = auth.fields.filter { it.secret }.map { it.key }.toSet()
                 _ui.update {
@@ -1472,7 +1497,6 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
         }
     }
 
-    /** Two-way sync right away; plugins without it get the Merge / Overwrite import choice. */
     private fun syncAfterSignIn() {
         if (flow.pluginSync.supports(manifest)) syncer.syncNow() else _ui.update { it.copy(syncListId = defaultSyncChoice(manifest)) }
     }
@@ -1482,13 +1506,7 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
             withContext(Dispatchers.IO) { runCatching { source().logout() } }
             if (manifest.auth?.web != null) WebLoginCookieStore.clear(manifest.allowedHosts)
             _ui.update {
-                it.copy(
-                    session = PluginSession(),
-                    loginFields = emptyMap(),
-                    syncListId = null,
-                    showAccount = false,
-                    sessionStaleHint = null,
-                )
+                it.copy(session = PluginSession(), loginFields = emptyMap(), syncListId = null, showAccount = false, sessionStaleHint = null)
             }
             manager.sessionChanged(pluginId)
         }

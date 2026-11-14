@@ -56,18 +56,19 @@ internal class ReaderBook(
 
         fun plugin(store: PluginBookStore, story: PluginReadSession): ReaderBook {
             val titles = story.toc.mapIndexed { i, ref -> ref.title.ifBlank { "Chapter ${i + 1}" } }
+            val weights = store.epubWeights(story) ?: LongArray(story.toc.size) { 1L }
             return ReaderBook(
                 title = story.displayTitle,
                 chapterCount = story.toc.size,
                 titles = titles,
                 toc = titles.mapIndexed { i, t -> i to t },
-                meter = BookMeter(LongArray(story.toc.size) { 1L }),
+                meter = BookMeter(weights),
                 hrefs = { story.toc[it].url },
                 hrefIndex = { href -> story.toc.indexOfFirst { it.url == href } },
                 load = { store.chapter(story, it) },
                 readable = story::readable,
                 lockedRows = story.toc.indices.filterNotTo(HashSet(), story::readable),
-                downloadedRows = story.cached,
+                downloadedRows = if (story.hasEpub) story.toc.indices.toSet() else story.cached,
             )
         }
     }

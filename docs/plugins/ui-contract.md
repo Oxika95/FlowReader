@@ -27,7 +27,8 @@ Each enabled plugin adds one library tab (next to Files and Queue).
 | `CreatorPageOverlay` | `FlowFullscreenCard` | Tapping a browse-list row | Row title; pinned secondary `FlowTabBar` (2+ `tabs`); sort chips below the tabs (`FlowChoiceChips`: 2+ `sorts`, or Newest / Oldest first on a story tab). Tab body: text tab (header `FlowDisplayCard` with `cover`/`badges`/`stats`, `text` paragraphs, link buttons, then `sections`: `heading` as `GroupHeader`, or a folded `FlowCollapsible` when `collapsed`; `title`, paragraphs, links); story tab (chapter rows with lock / downloaded icons); items tab (grouped `WorkCard`s, declared `groups` always headed with a `FlowHint` when empty, "In {list}" badge when already on a story list, Load more) | Item tap opens its media card on top; chapter tap opens the story's media card positioned at that chapter |
 | `StoryMediaCard` | `FlowMediaCard` + `PluginMediaCardAdapter` | Opening any story (local cache first; sync/`updates` plugins refresh ToC in the background) | See [Media card](#media-card) | See [Media card](#media-card) |
 | `StoryManageCard` | `FlowFullscreenCard` | Manage on the media card | Download All / Partial chips; Partial → cache level + cleanup; clear downloads; remove | Close; confirms for clear / remove |
-| `LoginSheet` | `FlowFullscreenCard` | Account while signed out, Settings > Plugins > the plugin's Sign in, or `AUTH_REQUIRED` | One field per `auth.fields[]` (secret fields masked), `auth.note` | Sign in, Cancel |
+| `LoginSheet` | `FlowFullscreenCard` + WebView | `auth.web` sign-in, or `AUTH_REQUIRED` for web auth | The site's `auth.web.url` | Cancel |
+| Account → Account (field auth) | Inline in Account hub | `auth.fields` plugins (server address above credentials when `serverSetting`) | `auth.note`; password never persisted | Sign in / Sign out |
 | `WebLoginOverlay` | `FlowFullscreenCard` + WebView | Instead of `LoginSheet` when `auth.web` is set | The site's `auth.web.url`; closes itself once `doneCookie` is set | Cancel |
 | `AccountSheet` | `FlowFullscreenCard` | Account while signed in | Account name; two-way plugins: last synced, conflicts, queued changes, guarded lists | Sync (one action for all `syncable` lists; hidden when none) or, two-way: Sync now + Replace with site lists; Settings, Sign out |
 | `PositionConflictCard` | `FlowConfirmCard` | Story with a **Position conflict** badge (two-way sync conflict) | App vs site chapter titles | Use {site}, Keep mine, Later |
@@ -78,7 +79,7 @@ footer ───── Download, Manage .................. host
    are filled while the story is on that list.
 5. Missing optional fields hide their UI (no badges row, no tags, no synopsis, no links).
 6. Busy state and errors go through the library host (`LibraryPluginActions`); `AUTH_REQUIRED`
-   opens the `LoginSheet`. `cardAction` toasts appear in the library snackbar.
+   opens Account (field auth) or `LoginSheet` (web auth). `cardAction` toasts appear in the library snackbar.
 7. Cache strip colors: gray = cached behind the locus, desaturated accent = cached ahead,
    saturated accent = the locus (reading position or download start).
 8. Links open in the system browser.

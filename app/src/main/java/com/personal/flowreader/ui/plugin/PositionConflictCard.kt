@@ -19,14 +19,16 @@ internal fun PositionConflictCard(
     onLater: () -> Unit,
 ) {
     val story = ui.story ?: return
-    val (local, remote) = story.positionConflict ?: return
-    fun chapter(i: Int): String = story.toc.getOrNull(i)?.title?.trim()?.ifBlank { null } ?: "Chapter ${i + 1}"
+    val conflict = story.positionConflict ?: return
+    fun chapter(i: Int, label: String): String =
+        label.ifBlank { story.toc.getOrNull(i)?.title?.trim()?.ifBlank { null } ?: "Chapter ${i + 1}" }
     val site = ui.manifest.name
     FlowConfirmCard(
         visible = ui.conflictDismissedFor != story.bookId,
         title = "Reading position",
         message = "You read on in both places since the last sync.\n\n" +
-            "Flow Reader: ${chapter(local)}\n$site: ${chapter(remote)}",
+            "Flow Reader: ${chapter(conflict.localIndex, conflict.localLabel)}\n" +
+            "$site: ${chapter(conflict.remoteIndex, conflict.remoteLabel)}",
         confirmLabel = "Use $site",
         onConfirm = { if (!ui.busy) onUseRemote() },
         onDismiss = onLater,

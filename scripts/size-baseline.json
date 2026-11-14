@@ -1,9 +1,8 @@
 {
   "app/src/main/java/com/personal/flowreader/data/BookCatalog.kt": 517,
   "app/src/main/java/com/personal/flowreader/data/SettingsStore.kt": 689,
-  "app/src/main/java/com/personal/flowreader/plugin/api/PluginModels.kt": 528,
-  "app/src/main/java/com/personal/flowreader/plugin/store/PluginBookStore.kt": 514,
-  "app/src/main/java/com/personal/flowreader/plugin/sync/TwoWaySync.kt": 584,
+  "app/src/main/java/com/personal/flowreader/plugin/api/PluginModels.kt": 561,
+  "app/src/main/java/com/personal/flowreader/plugin/sync/TwoWaySync.kt": 600,
   "app/src/main/java/com/personal/flowreader/share/ShareDomainRules.kt": 570,
   "app/src/main/java/com/personal/flowreader/tts/TtsAudioEngine.kt": 592,
   "app/src/main/java/com/personal/flowreader/tts/TtsController.kt": 2547,

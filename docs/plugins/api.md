@@ -39,4 +39,4 @@ JSON Schemas: [`schema/plugin.schema.json`](schema/plugin.schema.json),
 | [api-features.md](api-features.md) | `cardAction`, `checkUpdates`, two-way sync, browse lists, web sign-in, ToC refresh |
 | [api-host.md](api-host.md) | `flow` host API, `Node`, limits, repository index |
 | [api-tts.md](api-tts.md) | TTS provider plugins, `flow.ws`, capability gating |
-| [source-kinds.md](source-kinds.md) | Design: `local` / `synced` / `sourced` categories, planned `category` key, Audiobookshelf |
+| [source-kinds.md](source-kinds.md) | Design: `local` / `synced` / `sourced` categories, planned `category` key; Audiobookshelf ebooks ship |

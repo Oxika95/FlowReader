@@ -39,8 +39,15 @@ data class PluginReadSession(
     val newChapters: Int = 0,
     /** ToC indices whose body was on disk when the story was read. */
     val cached: Set<Int> = emptySet(),
+    /**
+     * Relative path under the plugin data dir to a downloaded EPUB. When set, chapters are read
+     * with EpubChapterSource instead of the HTML chapter cache.
+     */
+    val epubFile: String = "",
 ) {
     val displayTitle: String get() = titleOverride.ifBlank { title }
+
+    val hasEpub: Boolean get() = epubFile.isNotBlank()
 
     /** A locked chapter is readable only when its body was downloaded before it locked. */
     fun readable(index: Int): Boolean = toc.getOrNull(index)?.let { !it.locked || index in cached } ?: false
@@ -121,6 +128,7 @@ object PluginSessionStore {
                 appendLine("workUrl=${escape(session.workUrl)}")
                 appendLine("title=${escape(session.title)}")
                 appendLine("author=${escape(session.author)}")
+                if (session.epubFile.isNotBlank()) appendLine("epubFile=${escape(session.epubFile)}")
             },
         )
         File(dir, "toc.txt").writeText(
@@ -201,6 +209,7 @@ object PluginSessionStore {
             author = fields["author"].orEmpty(),
             toc = toc,
             cached = cachedChapterIndices(dir, toc),
+            epubFile = fields["epubFile"].orEmpty(),
         )
     }
 

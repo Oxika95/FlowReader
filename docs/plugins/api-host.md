@@ -6,7 +6,7 @@ Part of the [Plugin API](api.md) (apiVersion 6).
 
 | Call | Result |
 | --- | --- |
-| `await flow.fetch(url, { method, headers, form, body, contentType, cookies })` | `{ status, url, headers, text }`. `url` is the final URL after redirects; header names are lower-case. Non-2xx statuses are returned, not thrown. Cookies persist per plugin. `cookies: false` omits session cookies but still sends and stores bot-clearance cookies (Anubis auth `techaro.lol-anubis` / `techaro.lol-anubis-*` excluding `cookie-verification` / `original-referer`; Cloudflare `cf_clearance` / `__cf_bm` / `__cfruid`). When the response is an Anubis challenge page and a UI host is present, the app runs the site's check in a WebView once (clears stale Anubis auth cookies first; finishes only after a new auth cookie and the challenge node are gone), imports cookies, and retries the fetch once. |
+| `await flow.fetch(url, { method, headers, form, body, contentType, cookies, auth, saveAs })` | `{ status, url, headers, text }` or, with `saveAs`, `{ status, url, headers, path, bytes }` (bytes written under the plugin data dir; text is omitted). `url` is the final URL after redirects; header names are lower-case. Non-2xx statuses are returned, not thrown. Cookies persist per plugin. `cookies: false` omits session cookies but still sends and stores bot-clearance cookies (Anubis auth `techaro.lol-anubis` / `techaro.lol-anubis-*` excluding `cookie-verification` / `original-referer`; Cloudflare `cf_clearance` / `__cf_bm` / `__cfruid`). When the response is an Anubis challenge page and a UI host is present, the app runs the site's check in a WebView once (clears stale Anubis auth cookies first; finishes only after a new auth cookie and the challenge node are gone), imports cookies, and retries the fetch once. When the manifest names `auth.bearer`, fetches send `Authorization: Bearer` unless `auth: false` or the call already sets that header. Optional `serverSetting` adds that settings URL's host (exact match) to the allowlist; cleartext `http` is accepted only for that host. |
 | `await flow.ws.collect({ url, headers, messages, endPath, timeoutMs, binaryFormat? })` | `{ texts, binariesBase64 }` or, with `binaryFormat: "edge-audio"`, `{ texts, audioPath }` (host-written MP3). See [api-tts.md](api-tts.md). |
 | `flow.crypto.sha256(inputBase64)` | Base64 SHA-256 digest of the decoded bytes (TTS tokens, etc.). |
 | `flow.crypto.sha256Hex(inputHex)` | Hex SHA-256 of even-length hex input bytes (Edge Sec-MS-GEC). |
@@ -20,8 +20,17 @@ Part of the [Plugin API](api.md) (apiVersion 6).
 | `await flow.sleep(ms)` | Delay (max 10 s). |
 | `flow.log(...args)` | Plugins debug channel (bug bubble / `FlowReader.Plugins`) and logcat `FlowPlugin`. |
 | `flow.plugin` | `{ id, version }`. |
+| flow.epub.spine | Spine items for a relative EPUB under the plugin data dir. |
+| flow.epub.html | Raw HTML of one spine item (relative EPUB path, then zip href). |
+| flow.epub.cfiWrite | epub.js-style CFI for an EpubIngest block. |
+| flow.epub.cfiRead | spineIndex, blockIndex, charOffset, anchorText, fraction — or null. |
 
 Throwing `AUTH_REQUIRED` makes the app open its sign-in sheet.
+
+Optional `locusSync` capability: `syncProgress(workId, chapter, locus)` receives a third argument
+`{ blockIndex, charOffset, anchorText, fraction, positionAt }`. `readPositions` may return those
+fields plus `updatedAt`. `WorkDetail.file` is a relative EPUB path; the host reads chapters with
+`EpubChapterSource` and skips the HTML chapter cache.
 
 ### `Node`
 
@@ -36,7 +45,7 @@ Selectors are Jsoup CSS.
 
 - Each call runs with a timeout (60 s; `loadChapter` and `list` included) and a 128 MB heap.
 - No `setTimeout`, DOM, or Node.js APIs. Use `flow.*`.
-- Responses larger than 8 MB are refused.
+- Text responses larger than 8 MB are refused. `saveAs` allows larger bodies (EPUB downloads).
 
 ## Repository index
 

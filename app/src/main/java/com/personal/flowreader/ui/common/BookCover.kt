@@ -57,10 +57,14 @@ fun loadBookCoverBitmap(storedPath: String, maxEdge: Int): android.graphics.Bitm
 
 /** Remote cover (plugin search results) with an in-memory LRU; null while loading or on failure. */
 @Composable
-fun rememberRemoteCover(url: String, maxEdge: Int): androidx.compose.runtime.State<ImageBitmap?> =
-    produceState(initialValue = RemoteCovers.cached(url, maxEdge), url, maxEdge) {
-        if (value == null && url.startsWith("http")) {
-            value = withContext(Dispatchers.IO) { RemoteCovers.load(url, maxEdge) }
+fun rememberRemoteCover(
+    url: String,
+    maxEdge: Int,
+    bearerToken: String? = null,
+): androidx.compose.runtime.State<ImageBitmap?> =
+    produceState(initialValue = RemoteCovers.cached(url, maxEdge, bearerToken), url, maxEdge, bearerToken) {
+        if (value == null && (url.startsWith("http://") || url.startsWith("https://"))) {
+            value = withContext(Dispatchers.IO) { RemoteCovers.load(url, maxEdge, bearerToken) }
         }
     }
 
@@ -72,16 +76,19 @@ private object RemoteCovers {
     }
     private val http by lazy { HttpClients.create(connectSeconds = 15, readSeconds = 20, callSeconds = 40) }
 
-    private fun key(url: String, maxEdge: Int) = "$maxEdge|$url"
+    private fun key(url: String, maxEdge: Int, bearer: String?) = "$maxEdge|${bearer?.take(8).orEmpty()}|$url"
 
-    fun cached(url: String, maxEdge: Int): ImageBitmap? = synchronized(cache) { cache[key(url, maxEdge)] }
+    fun cached(url: String, maxEdge: Int, bearer: String? = null): ImageBitmap? =
+        synchronized(cache) { cache[key(url, maxEdge, bearer)] }
 
-    fun load(url: String, maxEdge: Int): ImageBitmap? = runCatching {
-        http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+    fun load(url: String, maxEdge: Int, bearer: String? = null): ImageBitmap? = runCatching {
+        val builder = Request.Builder().url(url)
+        if (!bearer.isNullOrBlank()) builder.header("Authorization", "Bearer $bearer")
+        http.newCall(builder.build()).execute().use { resp ->
             val body = resp.body ?: return null
             if (!resp.isSuccessful || body.contentLength() > MAX_BYTES) return null
             val bmp = ScaledBitmap.decodeBytes(body.bytes(), maxEdge) ?: return null
-            bmp.asImageBitmap().also { synchronized(cache) { cache[key(url, maxEdge)] = it } }
+            bmp.asImageBitmap().also { synchronized(cache) { cache[key(url, maxEdge, bearer)] = it } }
         }
     }.getOrNull()
 }

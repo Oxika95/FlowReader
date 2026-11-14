@@ -65,8 +65,11 @@ class PluginListWriter(private val app: FlowApp) {
         val manifest = manager.get(pluginId)?.manifest ?: return 0
         val dir = dataDir(pluginId)
         if (mode == SyncMode.Overwrite) {
+            // Browse lists may be empty on purpose (every library toggled off). Story lists still
+            // refuse an empty remote so a failed fetch cannot wipe Follow / etc.
             val wiped = remote.mapNotNull { (listId, items) ->
                 if (items.isNotEmpty()) return@mapNotNull null
+                if (manifest.list(listId)?.isBrowse == true) return@mapNotNull null
                 val local = PluginMembershipStore.workIds(dir, listId)
                 if (local.isEmpty()) null else manifest.list(listId)?.title ?: listId
             }
@@ -136,7 +139,7 @@ class PluginListWriter(private val app: FlowApp) {
                     File(app.booksDir, bookId.replace(Regex("[^A-Za-z0-9._-]"), "_")).apply { mkdirs() },
                     "book.txt",
                 ).absolutePath
-            coverBytes = runCatching { app.pluginBooks.downloadCover(work.cover, path) }.getOrNull()
+            coverBytes = runCatching { app.pluginBooks.downloadCover(work.cover, path, pluginId) }.getOrNull()
         }
         app.pluginCatalog.upsertCatalogEntry(
             pluginId = pluginId,

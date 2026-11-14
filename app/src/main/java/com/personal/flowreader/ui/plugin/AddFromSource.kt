@@ -49,6 +49,7 @@ internal fun PluginSearchPane(
     onSearch: (more: Boolean) -> Unit,
     onOpen: (PluginWork) -> Unit,
     modifier: Modifier = Modifier,
+    bearerToken: String? = null,
 ) {
     Column(modifier.fillMaxWidth()) {
         SearchField(
@@ -59,7 +60,7 @@ internal fun PluginSearchPane(
         )
         FlowDisplayList(contentPadding = flowDisplayListPadding()) {
             items(ui.searchResults, key = { it.id }) { work ->
-                WorkCard(work = work, enabled = !ui.busy, onOpen = onOpen)
+                WorkCard(work = work, enabled = !ui.busy, onOpen = onOpen, bearerToken = bearerToken)
             }
             if (ui.searchHasMore) {
                 item {

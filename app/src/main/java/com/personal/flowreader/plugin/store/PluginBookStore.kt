@@ -1,20 +1,17 @@
 package com.personal.flowreader.plugin.store
 
-import com.personal.flowreader.data.Block
-import com.personal.flowreader.data.BlockKind
 import com.personal.flowreader.data.Chapter
 import com.personal.flowreader.data.PluginCacheDefaults
 import com.personal.flowreader.net.HttpClients
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.PluginManager
 import com.personal.flowreader.plugin.PluginSource
+import com.personal.flowreader.plugin.api.PluginCapability
 import com.personal.flowreader.plugin.api.PluginCard
 import com.personal.flowreader.plugin.api.PluginCardActionResult
-import com.personal.flowreader.plugin.api.PluginChapter
 import com.personal.flowreader.plugin.api.PluginErrorCode
 import com.personal.flowreader.plugin.api.PluginException
 import com.personal.flowreader.plugin.api.PluginWorkDetail
-import com.personal.flowreader.share.HtmlParagraphs
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -27,8 +24,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
-import org.jsoup.Jsoup
 
 /**
  * App-owned story cache for every plugin: ToC + splash on disk, chapter bodies (keyed by chapter
@@ -70,6 +67,10 @@ class PluginBookStore(
     private suspend fun chapterText(r: Ref, session: PluginReadSession, index: Int): Pair<String, String>? {
         val chapterRef = session.toc.getOrNull(index) ?: return null
         val fallbackTitle = chapterRef.title.ifBlank { "Chapter ${index + 1}" }
+        if (session.hasEpub) {
+            val chapter = PluginEpub.loadChapter(r.root, session, index) ?: return null
+            return chapter.title.ifBlank { fallbackTitle } to chapter.blocks.joinToString("\n\n") { it.text }
+        }
         fun stored() = PluginSessionStore.readChapterText(r.dir, chapterRef.url)
             ?.let { (title, text) -> title.ifBlank { fallbackTitle } to text }
         stored()?.let { return it }
@@ -77,10 +78,16 @@ class PluginBookStore(
         return fetchLock(session.bookId).withLock {
             stored()?.let { return@withLock it }
             val fetched = source(r).loadChapter(chapterRef, session.workId, session.workUrl)
-            val titled = titleAndText(fetched, chapterRef.title, r.plugin.manifest.bookIdPrefix, index)
+            val titled = PluginChapterText.titleAndText(fetched, chapterRef.title, r.plugin.manifest.bookIdPrefix, index)
             PluginSessionStore.writeChapter(r.dir, chapterRef.url, titled.first, titled.second)
             titled
         }
+    }
+
+    /** Spine file sizes for [ReaderBook] progress, or null when the session has no EPUB. */
+    fun epubWeights(session: PluginReadSession): LongArray? {
+        val r = runCatching { ref(session.bookId) }.getOrNull() ?: return null
+        return PluginEpub.weights(r.root, session)
     }
 
     /** Rewrites the saved position after a ToC change, old chapter URLs first (set by the app). */
@@ -89,7 +96,6 @@ class PluginBookStore(
     private val upkeepJobs = HashMap<String, Job>()
     private val upkeepHref = HashMap<String, String>()
 
-    /** Stops chapter upkeep (sync push, downloads) for [bookIds] before their data is deleted. */
     fun cancelUpkeep(bookIds: Collection<String>) {
         synchronized(upkeepJobs) {
             bookIds.forEach { id ->
@@ -99,29 +105,29 @@ class PluginBookStore(
         }
     }
 
-    /** Two-way sync's push of a new reading chapter (set by the app). */
     var positionChanged: (suspend (PluginReadSession, Int) -> Unit)? = null
-
-    /** Two-way sync hook: a story's ToC was stored, with the site's reading chapter URL (may be blank). */
     var tocStored: (suspend (PluginReadSession, String) -> Unit)? = null
 
-    /**
-     * The reading position of [bookId] is now the chapter at [chapterHref]: when it changed, sync
-     * it to the site and fetch / clean up around it. A newer chapter cancels the running upkeep.
-     */
+    /** Sync and cache around [chapterHref]. Same href: `locusSync` still pushes locus. */
     fun scheduleMaintain(bookId: String, chapterHref: String) {
         if (chapterHref.isBlank()) return
         synchronized(upkeepJobs) {
-            if (upkeepHref[bookId] == chapterHref) return
-            upkeepHref[bookId] = chapterHref
-            upkeepJobs.remove(bookId)?.cancel()
+            val sameHref = upkeepHref[bookId] == chapterHref
+            val locusSync = runCatching {
+                ref(bookId).plugin.manifest.has(PluginCapability.LocusSync)
+            }.getOrDefault(false)
+            if (sameHref && !locusSync) return
+            if (!sameHref) {
+                upkeepHref[bookId] = chapterHref
+                upkeepJobs.remove(bookId)?.cancel()
+            }
             upkeepJobs[bookId] = scope.launch(Dispatchers.IO) {
                 try {
                     val session = read(ref(bookId)) ?: return@launch
                     val at = session.toc.indexOfFirst { it.url == chapterHref }
                     if (at < 0) return@launch
                     runCatching { positionChanged?.invoke(session, at) }
-                    maintainChapterCache(bookId, at)
+                    if (!sameHref && !session.hasEpub) maintainChapterCache(bookId, at)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Throwable) {
@@ -204,6 +210,7 @@ class PluginBookStore(
                 title = detail.title,
                 author = detail.author,
                 toc = detail.chapters,
+                epubFile = detail.file.ifBlank { existing?.epubFile.orEmpty() },
             ),
         )
         PluginSessionStore.writeSplash(
@@ -417,7 +424,7 @@ class PluginBookStore(
         val start = startIndex.coerceIn(0, existing.toc.lastIndex)
         val session = existing.copy(startIndex = start, loadedThrough = start - 1, chapters = emptyList())
         chapterText(r, session, start)?.let { (title, text) ->
-            session.chapters = listOf(Chapter(title, chapterBlocks(title, text, r.plugin.manifest.bookIdPrefix, start)))
+            session.chapters = listOf(Chapter(title, PluginChapterText.chapterBlocks(title, text, r.plugin.manifest.bookIdPrefix, start)))
             session.loadedThrough = start
         }
         scheduleMaintain(bookId, session.toc[start].url)
@@ -437,12 +444,13 @@ class PluginBookStore(
     suspend fun chapter(session: PluginReadSession, index: Int): Chapter? {
         val r = ref(session.bookId)
         if (index !in session.toc.indices) throw PluginException(PluginErrorCode.Error, "Chapter ${index + 1} missing")
+        if (session.hasEpub) return PluginEpub.loadChapter(r.root, session, index)
         val (title, text) = chapterText(r, session, index) ?: return null
-        return Chapter(title, chapterBlocks(title, text, r.plugin.manifest.bookIdPrefix, index))
+        return Chapter(title, PluginChapterText.chapterBlocks(title, text, r.plugin.manifest.bookIdPrefix, index))
     }
 
     /** Download a cover once; null if blank or the book folder already has one. */
-    suspend fun downloadCover(coverUrl: String, destBookPath: String): ByteArray? {
+    suspend fun downloadCover(coverUrl: String, destBookPath: String, pluginId: String? = null): ByteArray? {
         if (coverUrl.isBlank()) return null
         val dir = File(destBookPath).parentFile ?: return null
         val existing = listOf("cover.jpg", "cover.jpeg", "cover.png", "cover.webp")
@@ -453,62 +461,19 @@ class PluginBookStore(
                 val request = Request.Builder().url(coverUrl)
                     .header("User-Agent", com.personal.flowreader.plugin.runtime.PluginHttp.USER_AGENT)
                     .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-                    .build()
-                coverHttp.newCall(request).execute().use { response ->
+                bearerForCover(pluginId, coverUrl)?.let { request.header("Authorization", "Bearer $it") }
+                coverHttp.newCall(request.build()).execute().use { response ->
                     if (!response.isSuccessful) null else response.body?.bytes()
                 }
             }.getOrNull()
         }
     }
 
-    companion object {
-        /**
-         * Chapter as the reader shows it: a heading with [title] first, as EPUB chapter files
-         * open with their own heading, then the paragraphs of [text] (none when blank).
-         */
-        fun chapterBlocks(title: String, text: String, prefix: String, chapterIndex: Int): List<Block> {
-            val body = if (text.isBlank()) emptyList() else blocksFromPlain(text, prefix, chapterIndex)
-            val heading = title.trim()
-            if (heading.isEmpty()) return body
-            val first = body.firstOrNull()
-            if (first != null && first.text.trim().equals(heading, ignoreCase = true)) {
-                return listOf(first.copy(kind = BlockKind.Heading)) + body.drop(1)
-            }
-            return listOf(Block("$prefix-$chapterIndex-title", BlockKind.Heading, heading)) + body
-        }
-
-        fun blocksFromPlain(text: String, prefix: String, chapterIndex: Int): List<Block> {
-            val paras = text.replace("\r\n", "\n").split(Regex("\\n\\s*\\n"))
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-            if (paras.isEmpty()) {
-                return listOf(Block("$prefix-$chapterIndex-0", BlockKind.Paragraph, text.trim()))
-            }
-            return paras.mapIndexed { i, p -> Block("$prefix-$chapterIndex-$i", BlockKind.Paragraph, p) }
-        }
-
-        fun blocksFor(chapter: PluginChapter, prefix: String, chapterIndex: Int): List<Block> {
-            if (chapter.html.isNotBlank()) {
-                val paras = HtmlParagraphs.of(Jsoup.parseBodyFragment(chapter.html).body())
-                // Chapter index in the id: block ids key the reader list across chapters.
-                if (paras.isNotEmpty()) {
-                    return paras.mapIndexed { i, p -> Block("$prefix-$chapterIndex-$i", BlockKind.Paragraph, p) }
-                }
-            }
-            return blocksFromPlain(chapter.text, prefix, chapterIndex)
-        }
-
-        fun titleAndText(
-            chapter: PluginChapter,
-            fallbackTitle: String,
-            prefix: String,
-            chapterIndex: Int,
-        ): Pair<String, String> {
-            val text = blocksFor(chapter, prefix, chapterIndex).joinToString("\n\n") { it.text }.trim()
-            if (text.isBlank()) {
-                throw PluginException(PluginErrorCode.Parse, "Chapter page had no readable text")
-            }
-            return chapter.title.ifBlank { fallbackTitle.ifBlank { "Chapter ${chapterIndex + 1}" } } to text
-        }
+    private fun bearerForCover(pluginId: String?, coverUrl: String): String? {
+        if (pluginId.isNullOrBlank()) return null
+        val host = coverUrl.toHttpUrlOrNull()?.host?.lowercase()?.removePrefix("www.") ?: return null
+        val server = plugins.serverHost(pluginId) ?: return null
+        if (host != server) return null
+        return plugins.bearerToken(pluginId)
     }
 }

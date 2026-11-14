@@ -3,6 +3,13 @@ package com.personal.flowreader.plugin.api
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** One server library a plugin can toggle on/off in Account → Manage (`listLibraries`). */
+data class PluginLibrary(
+    val id: String,
+    val title: String,
+    val enabled: Boolean = true,
+)
+
 /** List/search row returned by a plugin (`Work` in the JS contract). */
 data class PluginWork(
     val id: String,
@@ -32,8 +39,6 @@ enum class PluginTone(val key: String) {
         fun parse(raw: String?): PluginTone? = entries.firstOrNull { it.key == raw }
     }
 }
-
-// --- Declarative media card slots --------------------------------------------------------------
 
 /** One stat on a media or display card: icon token + value (e.g. `star` / `4.61`). */
 data class PluginStat(
@@ -158,6 +163,8 @@ data class PluginWorkDetail(
     val card: PluginCard? = null,
     /** The site's reading position (chapter URL) when signed in; blank when unknown or unread. */
     val readChapterUrl: String = "",
+    /** Relative EPUB under the plugin data dir (`EpubChapterSource`). apiVersion 6 optional. */
+    val file: String = "",
 ) {
     fun toWork(subtitle: String = ""): PluginWork =
         PluginWork(id = id, title = title, url = url, author = author, cover = cover, subtitle = subtitle)
@@ -221,6 +228,8 @@ data class PluginBrowsePage(
     val groups: List<PluginBrowseGroup> = emptyList(),
     /** Work whose chapters this tab lists (lock / downloaded icons, tap opens its story card). */
     val storyId: String = "",
+    /** High-to-low when the plugin sends `desc`; null when the page doesn't say. */
+    val descending: Boolean? = null,
 ) {
     val isText: Boolean
         get() = items.isEmpty() && storyId.isEmpty() &&
@@ -257,6 +266,11 @@ data class PluginReadPosition(
     val id: String,
     val chapterUrl: String,
     val chapterTitle: String = "",
+    val blockIndex: Int = 0,
+    val charOffset: Int = 0,
+    val anchorText: String = "",
+    val fraction: Float = 0f,
+    val updatedAt: Long = 0L,
 )
 
 enum class PluginErrorCode {
@@ -459,6 +473,7 @@ object PluginJson {
                 if (title.isEmpty()) null else PluginBrowseGroup(title, g.optString("empty").trim())
             }.distinctBy { it.title },
             storyId = o.optString("storyId").trim(),
+            descending = if (o.has("desc")) o.optBoolean("desc") else null,
         )
     }
 
@@ -487,6 +502,7 @@ object PluginJson {
             },
             card = card(o.optJSONObject("card")),
             readChapterUrl = o.optString("readChapterUrl").trim(),
+            file = o.optString("file").trim(),
         )
     }
 
@@ -502,6 +518,16 @@ object PluginJson {
             account = value.optString("account"),
         )
         else -> PluginSession()
+    }
+
+    fun libraries(value: Any?): List<PluginLibrary> = (value as? JSONArray).objects().mapNotNull { o ->
+        val id = o.optString("id").trim()
+        if (id.isEmpty()) null
+        else PluginLibrary(
+            id = id,
+            title = o.optString("title").ifBlank { id },
+            enabled = o.optBoolean("enabled", true),
+        )
     }
 
     fun chapterRef(ref: PluginChapterRef): JSONObject =
@@ -523,6 +549,16 @@ object PluginJson {
     fun readPositions(value: Any?): List<PluginReadPosition> = (value as? JSONArray).objects().mapNotNull { o ->
         val id = o.optString("id").trim()
         val url = o.optString("chapterUrl").trim()
-        if (id.isEmpty() || url.isEmpty()) null else PluginReadPosition(id, url, o.optString("chapterTitle").trim())
+        if (id.isEmpty() || url.isEmpty()) null
+        else PluginReadPosition(
+            id, url, o.optString("chapterTitle").trim(),
+            o.optInt("blockIndex", 0).coerceAtLeast(0), o.optInt("charOffset", 0).coerceAtLeast(0),
+            o.optString("anchorText").trim(), o.optDouble("fraction", 0.0).toFloat().coerceIn(0f, 1f),
+            o.optLong("updatedAt", 0L).coerceAtLeast(0L),
+        )
     }
+
+    fun locus(blockIndex: Int, charOffset: Int, anchorText: String, fraction: Float, positionAt: Long) =
+        JSONObject().put("blockIndex", blockIndex).put("charOffset", charOffset)
+            .put("anchorText", anchorText).put("fraction", fraction.toDouble()).put("positionAt", positionAt)
 }

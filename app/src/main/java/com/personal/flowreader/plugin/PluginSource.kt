@@ -8,6 +8,7 @@ import com.personal.flowreader.plugin.api.PluginChapterRef
 import com.personal.flowreader.plugin.api.PluginErrorCode
 import com.personal.flowreader.plugin.api.PluginException
 import com.personal.flowreader.plugin.api.PluginJson
+import com.personal.flowreader.plugin.api.PluginLibrary
 import com.personal.flowreader.plugin.api.PluginManifest
 import com.personal.flowreader.plugin.api.PluginPage
 import com.personal.flowreader.plugin.api.PluginReadPosition
@@ -100,9 +101,32 @@ class PluginSource(
         return runtime.call("setMembership", JSONArray().put(workId).put(listId).put(on)) as? Boolean ?: false
     }
 
-    suspend fun syncProgress(workId: String, chapter: PluginChapterRef) {
+    /** Optional Account → Manage library toggles (`listLibraries` / `setLibraryEnabled`). */
+    suspend fun supportsLibraries(): Boolean = runtime.hasFunction("listLibraries")
+
+    suspend fun listLibraries(): List<PluginLibrary> {
+        if (!runtime.hasFunction("listLibraries")) return emptyList()
+        return PluginJson.libraries(runtime.call("listLibraries"))
+    }
+
+    suspend fun setLibraryEnabled(id: String, enabled: Boolean) {
+        if (!runtime.hasFunction("setLibraryEnabled")) return
+        runtime.call("setLibraryEnabled", JSONArray().put(id).put(enabled))
+    }
+
+    /**
+     * Pushes the reading chapter. [locus] is sent only when the plugin has `locusSync`
+     * (`blockIndex`, `charOffset`, `anchorText`, `fraction`, `positionAt`).
+     */
+    suspend fun syncProgress(
+        workId: String,
+        chapter: PluginChapterRef,
+        locus: JSONObject? = null,
+    ) {
         if (!manifest.has(PluginCapability.ProgressSync)) return
-        runtime.call("syncProgress", JSONArray().put(workId).put(PluginJson.chapterRef(chapter)))
+        val args = JSONArray().put(workId).put(PluginJson.chapterRef(chapter))
+        if (manifest.has(PluginCapability.LocusSync) && locus != null) args.put(locus)
+        runtime.call("syncProgress", args)
     }
 
     /** The site's last-read chapter for the works it knows; empty when the plugin can't tell. */

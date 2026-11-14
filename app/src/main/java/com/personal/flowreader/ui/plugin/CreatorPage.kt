@@ -82,7 +82,7 @@ internal fun BrowseListPane(
     }
 }
 
-private fun GroupedRow.key(): String = when (this) {
+internal fun GroupedRow.key(): String = when (this) {
     is GroupedRow.Header -> "g:$group"
     is GroupedRow.Empty -> "e:$group"
     is GroupedRow.Row -> "w:${work.id}"

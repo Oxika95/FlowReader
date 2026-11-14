@@ -524,7 +524,7 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 ### Plugin account, sign-in and bot check
 - Words: Account, sign in, web sign-in, cookies, bot check, Anubis, clearance, Open site, site browser
 - Owner: ui/plugin/AccountSheets.kt
-- Changes with: ui/plugin/WebLoginOverlay.kt, ui/plugin/SiteWebViewCard.kt, ui/plugin/ClearanceOverlay.kt, plugin/runtime/PluginClearanceGate.kt, plugin/runtime/AnubisCookies.kt, plugin/runtime/AnubisDetector.kt, plugin/runtime/ClearanceOnlyCookieJar.kt, plugin/runtime/WebLoginCookies.kt, plugin/runtime/PluginSessionSeed.kt, plugin/runtime/PluginSecrets.kt
+- Changes with: ui/plugin/AccountAuthForms.kt, ui/plugin/WebLoginOverlay.kt, ui/plugin/SiteWebViewCard.kt, ui/plugin/ClearanceOverlay.kt, plugin/runtime/PluginClearanceGate.kt, plugin/runtime/AnubisCookies.kt, plugin/runtime/AnubisDetector.kt, plugin/runtime/ClearanceOnlyCookieJar.kt, plugin/runtime/WebLoginCookies.kt, plugin/runtime/PluginSessionSeed.kt, plugin/runtime/PluginSecrets.kt
 - Tests: AnubisCookiesTest, AnubisDetectorTest, ClearanceOnlyCookieJarTest, WebLoginCookiesTest, PluginSessionSeedTest
 - Rules: .cursor/rules/plugin-ui.mdc, .cursor/rules/plugin-api.mdc
 - Pitfalls:
@@ -567,6 +567,17 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 
 ## Plugin runtime and store
 
+### Plugin server URL (ServerUrl)
+- Words: serverSetting, server host, cleartext, user-set host
+- Owner: app/src/main/java/com/personal/flowreader/plugin/runtime/ServerUrl.kt
+- Changes with: PluginHttp.kt, PluginManager.kt, test/host.mjs
+- Tests: ServerUrlTest
+- Rules: plugin-api.mdc
+- Pitfalls: exact host match only; credentials must not appear in the URL; HTTP allowed only when the scheme is http.
+- Rejected: none recorded
+- Device check: none: unit-tested
+- Known issues: none recorded
+
 ### Plugin host runtime (flow.* API)
 - Words: plugin runtime, QuickJS, flow.fetch, flow.html, flow.storage, flow.secrets, host API, allowedHosts, request interval
 - Not the same as: the plugin UI (cards, tabs), which the app draws from JSON the plugin returns
@@ -575,7 +586,7 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Tests: PluginApiVersionTest, PluginResponseProbeTest
 - Rules: .cursor/rules/plugin-api.mdc
 - Pitfalls:
-  - One QuickJS context per plugin on its own thread; calls are serialized and cross the boundary as JSON strings. HTML handles are cleared after every call.
+  - One QuickJS context per plugin on its own thread; calls are serialized and cross the boundary as JSON strings. HTML handles are cleared after every call. Leaving the library tab drops that plugin's cached runtime without closing it, so the next visit starts a new one. Do not `close()` an engine you are dropping: close clears the process-wide JNI cache and breaks every other plugin.
   - Any `flow.*` change starts in the app and is mirrored in the plugins repo's Node host (`test/host.mjs`); follow `docs/agent/cross-repo.md`.
   - Alpha: only the current `apiVersion` is supported; a bump means every plugin is republished.
   - Requests may only go to the manifest's `allowedHosts`, at no faster than `minRequestIntervalMs`.
@@ -583,6 +594,17 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
   - Plugin ids and `bookIdPrefix` are never changed after publishing; they key books, data and sign-in.
 - Rejected: Mihon/Tachiyomi extension APKs and downloaded dex bundles (install prompts per update, host-process privileges, a Gradle build per plugin); androidx.javascriptengine (no host callback bridge for fetch); compile-time Kotlin plugins with plugin-supplied Compose UI (replaced by JS plus app-rendered UI). From areas/plugins.md.
 - Device check: install a plugin from a repo, open its tab, search, open a story and read a chapter; turn on the Plugins debug channel and confirm the response probes appear.
+- Known issues: none recorded
+
+### Plugin EPUB sessions (PluginEpub)
+- Words: epubFile, WorkDetail.file, spine chapter
+- Owner: app/src/main/java/com/personal/flowreader/plugin/store/PluginEpub.kt
+- Changes with: PluginBookStore.kt, PluginChapterText.kt, ReaderBook.kt, EpubChapterSource.kt
+- Tests: EpubCfiTest, PluginChapterBlocksTest
+- Rules: plugin-api.mdc, reader.mdc
+- Pitfalls: relative path under the plugin data dir only; no `..`
+- Rejected: none recorded
+- Device check: none: covered with the Audiobookshelf plugin checks
 - Known issues: none recorded
 
 ### Plugin store, catalog and chapter cache
@@ -696,6 +718,24 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
   - Readest is upstream; keep the credit header in `index.js`. See "Edge TTS plugin and raw WebSocket".
 - Rejected: none recorded
 - Device check: install the plugin, pick it in Settings > Audio > Voice, and play.
+- Known issues: none recorded
+
+### Audiobookshelf plugin
+- Words: Audiobookshelf, ABS, abs, ebook, ebookLocation, ebookProgress, CFI, server address
+- Owner: ../flow-reader-plugins/Audiobookshelf
+- Changes with: ../flow-reader-plugins/test/audiobookshelf.test.mjs, EpubCfi.kt, LocusReconcile.kt, PluginHttp.kt, PluginShelf.kt, TwoWaySync.kt
+- Tests: audiobookshelf.test.mjs; LocusReconcileTest, EpubCfiTest, ServerUrlTest (app)
+- Rules: ../flow-reader-plugins/.cursor/rules/audiobookshelf.mdc
+- Pitfalls:
+  - Book ids `abs:*`; plugin id `audiobookshelf` and prefix `abs` never change.
+  - EPUB only; password never stored; patches never send `progress`, `currentTime`, or `isFinished`.
+  - `serverSetting` + `auth.bearer`; cleartext only for the configured server host.
+  - Tab `icon.png`; Account fields inline; Manage uses `listLibraries` / `setLibraryEnabled`.
+  - Sub-tabs Downloaded (local shelf) and Catalog (`shelf`: books in the tab, Library / Series / Collections / Authors, ABS sorts). Opens auto-join Downloaded.
+  - `locusSync` + `WorkDetail.file`; chapters come from `EpubChapterSource`, not the HTML cache.
+  - Pushing plugins `main` publishes to users; wait for the owner's go-ahead.
+- Rejected: audiobook playback and API-token-only auth (owner: username/password, ebooks only)
+- Device check: icon tab, Account inline sign-in, Manage library toggles, Catalog lists books in the tab (no library card), sort and Series view, Downloaded after open.
 - Known issues: none recorded
 
 ## Data

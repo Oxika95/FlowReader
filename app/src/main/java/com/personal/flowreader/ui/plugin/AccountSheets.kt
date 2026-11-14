@@ -3,8 +3,6 @@ package com.personal.flowreader.ui.plugin
 import android.app.Application
 import android.text.format.DateUtils
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Person
@@ -23,15 +21,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.personal.flowreader.FlowApp
 import com.personal.flowreader.plugin.InstalledPlugin
 import com.personal.flowreader.plugin.api.PluginSitePage
 import com.personal.flowreader.plugin.store.SyncMode
-import com.personal.flowreader.ui.design.card.FlowActionRow
 import com.personal.flowreader.ui.design.card.FlowConfirmCard
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
 import com.personal.flowreader.ui.design.card.FlowTextAction
@@ -41,7 +35,6 @@ import com.personal.flowreader.ui.design.controls.FlowHint
 import com.personal.flowreader.ui.design.controls.FlowIconButton
 import com.personal.flowreader.ui.design.controls.FlowListRow
 import com.personal.flowreader.ui.design.controls.FlowSection
-import com.personal.flowreader.ui.design.controls.FlowTextField
 import com.personal.flowreader.ui.design.tabs.FlowTab
 import com.personal.flowreader.ui.design.tabs.FlowTabBar
 import com.personal.flowreader.ui.design.tabs.FlowTabLevel
@@ -52,63 +45,28 @@ import okhttp3.Cookie
 /** Sub-tabs inside the Account hub card. */
 private enum class AccountHubTab { Account, Urls, Manage }
 
-/** Sign-in form generated from the manifest's `auth.fields`, or the site's page for `auth.web`. */
+/**
+ * Web sign-in card only. Field-auth plugins sign in on the Account tab
+ * ([FieldAuthForm]); [PluginTabViewModel.setShowLogin] routes them there.
+ */
 @Composable
 internal fun LoginSheet(
     ui: PluginTabUi,
-    onField: (String, String) -> Unit,
-    onSubmit: () -> Unit,
     onWebSignedIn: (List<Cookie>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val auth = ui.manifest.auth ?: return
-    auth.web?.let { web ->
-        if (ui.showLogin) {
-            WebLoginOverlay(
-                title = "${ui.manifest.name} sign in",
-                web = web,
-                allowedHosts = ui.manifest.allowedHosts,
-                busy = ui.busy,
-                error = ui.error,
-                onSignedIn = onWebSignedIn,
-                onDismiss = onDismiss,
-            )
-        }
-        return
-    }
-    FlowFullscreenCard(
-        visible = ui.showLogin,
-        onDismiss = onDismiss,
-        dismissible = !ui.busy,
+    val web = auth.web ?: return
+    if (!ui.showLogin) return
+    WebLoginOverlay(
         title = "${ui.manifest.name} sign in",
-        footer = {
-            FlowActionRow {
-                FlowTextAction("Cancel", onDismiss, enabled = !ui.busy)
-                FlowTextAction("Sign in", onSubmit, enabled = !ui.busy)
-            }
-        },
-    ) {
-        FlowHint(auth.note.ifBlank { "Optional. Passwords are not stored — only the site's session cookies." })
-        auth.fields.forEachIndexed { i, field ->
-            val last = i == auth.fields.lastIndex
-            FlowTextField(
-                value = ui.loginFields[field.key].orEmpty(),
-                onValueChange = { onField(field.key, it) },
-                label = field.label,
-                visualTransformation = if (field.secret) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = when {
-                        field.secret -> KeyboardType.Password
-                        field.type == "email" -> KeyboardType.Email
-                        else -> KeyboardType.Text
-                    },
-                    imeAction = if (last) ImeAction.Done else ImeAction.Next,
-                ),
-                keyboardActions = KeyboardActions(onDone = { onSubmit() }),
-            )
-        }
-        ui.error?.let { FlowHint(it, error = true) }
-    }
+        web = web,
+        allowedHosts = ui.manifest.allowedHosts,
+        busy = ui.busy,
+        error = ui.error,
+        onSignedIn = onWebSignedIn,
+        onDismiss = onDismiss,
+    )
 }
 
 /**
@@ -121,10 +79,14 @@ internal fun AccountSheet(
     onDismiss: () -> Unit,
     onShowLogin: () -> Unit,
     onLogout: () -> Unit,
+    onField: (String, String) -> Unit,
+    onServerChange: (String) -> Unit,
+    onLogin: () -> Unit,
     onOpenSite: (title: String, url: String) -> Unit,
     onSync: (String) -> Unit,
     onSyncNow: () -> Unit,
     onDeleteData: () -> Unit,
+    onLibrariesChanged: () -> Unit = {},
 ) {
     val manifest = ui.manifest
     val twoWay = ui.sync.supported
@@ -196,6 +158,9 @@ internal fun AccountSheet(
                 ui = ui,
                 onShowLogin = onShowLogin,
                 onLogout = onLogout,
+                onField = onField,
+                onServerChange = onServerChange,
+                onLogin = onLogin,
             )
             AccountHubTab.Urls -> AccountUrlsTab(
                 ui = ui,
@@ -210,6 +175,7 @@ internal fun AccountSheet(
                 onSync = onSync,
                 onSyncNow = onSyncNow,
                 onDelete = { confirmDelete = true },
+                onLibrariesChanged = onLibrariesChanged,
             )
         }
     }
@@ -232,11 +198,16 @@ private fun AccountIdentityTab(
     ui: PluginTabUi,
     onShowLogin: () -> Unit,
     onLogout: () -> Unit,
+    onField: (String, String) -> Unit,
+    onServerChange: (String) -> Unit,
+    onLogin: () -> Unit,
 ) {
-    if (ui.manifest.auth == null) {
+    val auth = ui.manifest.auth
+    if (auth == null) {
         FlowHint("This plugin has no account sign-in.")
         return
     }
+    val fieldAuth = auth.web == null && auth.fields.isNotEmpty()
     if (ui.session.loggedIn) {
         Text(
             if (ui.session.account.isBlank()) "Signed in" else "Signed in as ${ui.session.account}",
@@ -246,8 +217,22 @@ private fun AccountIdentityTab(
         TextButton(onClick = onLogout, enabled = !ui.busy && !ui.sync.running) {
             Text("Sign out", style = FlowType.action)
         }
-        TextButton(onClick = onShowLogin, enabled = !ui.busy && !ui.sync.running) {
-            Text("Sign in again", style = FlowType.action)
+        if (fieldAuth) {
+            FlowSection("Sign in again")
+            FieldAuthForm(ui = ui, onField = onField, onServerChange = onServerChange, onSubmit = onLogin)
+            TextButton(onClick = onLogin, enabled = !ui.busy && !ui.sync.running) {
+                Text("Sign in", style = FlowType.action)
+            }
+        } else {
+            TextButton(onClick = onShowLogin, enabled = !ui.busy && !ui.sync.running) {
+                Text("Sign in again", style = FlowType.action)
+            }
+        }
+    } else if (fieldAuth) {
+        Text("Not signed in", style = FlowType.rowTitle)
+        FieldAuthForm(ui = ui, onField = onField, onServerChange = onServerChange, onSubmit = onLogin)
+        TextButton(onClick = onLogin, enabled = !ui.busy) {
+            Text("Sign in", style = FlowType.action)
         }
     } else {
         Text("Not signed in", style = FlowType.rowTitle)
@@ -292,12 +277,17 @@ private fun AccountManageTab(
     onSync: (String) -> Unit,
     onSyncNow: () -> Unit,
     onDelete: () -> Unit,
+    onLibrariesChanged: () -> Unit,
 ) {
     val manifest = ui.manifest
     val idle = !ui.busy && !ui.sync.running
-    if (manifest.settings.isNotEmpty()) {
+    val hideKeys = setOfNotNull(manifest.serverSettingKey())
+    if (manifest.settings.any { it.key !in hideKeys }) {
         FlowSection("Settings")
         PluginSettingsForm(pluginId = manifest.id)
+    }
+    if (ui.session.loggedIn) {
+        LibraryTogglesSection(pluginId = manifest.id, onChanged = onLibrariesChanged)
     }
     FlowSection("Data")
     if (showDataActions) {
@@ -378,7 +368,8 @@ internal fun PluginAccountSettings(plugin: InstalledPlugin) {
         factory = PluginTabViewModel.factory(app, plugin.id),
     )
     val ui by vm.ui.collectAsState()
-    if (ui.manifest.auth == null) return
+    val auth = ui.manifest.auth ?: return
+    val fieldAuth = auth.web == null && auth.fields.isNotEmpty()
     FlowSection("Account")
     Text(
         when {
@@ -391,14 +382,24 @@ internal fun PluginAccountSettings(plugin: InstalledPlugin) {
     if (ui.session.loggedIn) {
         ui.sessionStaleHint?.let { FlowHint(it) }
         TextButton(onClick = vm::logout, enabled = !ui.busy) { Text("Sign out", style = FlowType.action) }
+    } else if (fieldAuth) {
+        LaunchedEffect(plugin.id) {
+            val saved = (app as FlowApp).pluginManager.serverUrl(plugin.id)
+            if (saved.isNotBlank() && ui.serverDraft.isBlank()) vm.setServerDraft(saved)
+        }
+        FieldAuthForm(
+            ui = ui,
+            onField = vm::setLoginField,
+            onServerChange = vm::setServerDraft,
+            onSubmit = vm::login,
+        )
+        TextButton(onClick = vm::login, enabled = !ui.busy) { Text("Sign in", style = FlowType.action) }
     } else {
         TextButton(onClick = { vm.setShowLogin(true) }, enabled = !ui.busy) { Text("Sign in", style = FlowType.action) }
     }
-    if (!ui.showLogin) ui.error?.let { FlowHint(it, error = true) }
+    ui.error?.let { FlowHint(it, error = true) }
     LoginSheet(
         ui = ui,
-        onField = vm::setLoginField,
-        onSubmit = vm::login,
         onWebSignedIn = vm::completeWebLogin,
         onDismiss = { vm.setShowLogin(false) },
     )

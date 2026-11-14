@@ -6,8 +6,8 @@ screen, owns the chapter cache and the reader, and routes shared links.
 
 - [Plugin API](plugins/api.md): manifest, functions, `flow` host API, repository index
 - [UI contract](plugins/ui-contract.md): the fixed cards, sheets, and rules plugins render into
-- [Source kinds](plugins/source-kinds.md) (design): synced plugins (Royal Road: the site owns
-  position) vs sourced plugins (Patreon: content from the web, position on this device)
+- [Source kinds](plugins/source-kinds.md) (design): synced plugins (Royal Road and Audiobookshelf:
+  the site owns position) vs sourced plugins (Patreon: content from the web, position on this device)
 
 ## Install
 
@@ -42,6 +42,9 @@ added). Tap = media card; double-tap = reader. Plugin stats/badges/links/actions
 notification. **Rename** (inline on the media-card title) / **Reset** use `titleOverride`. **Locked** chapters are Contents-only.
 **Pull to refresh** re-imports or syncs, then checks for new chapters. Patreon **All posts** names
 from largest collection, else top tag, else creator.
+
+A list with `shelf: true` (Audiobookshelf Catalog) fills the tab with that server's library
+instead of story rows.
 
 **Browse lists** (`kind: "browse"`, Patreon: Memberships) list entry points instead of stories.
 Tapping a creator opens a creator page with tabs; each tab loads only when first shown and stays
@@ -108,6 +111,14 @@ forces a refresh). Source-kind rules (`synced` vs `sourced`) are designed in
 [plugins/source-kinds.md](plugins/source-kinds.md); Royal Road syncs lists and positions, Patreon
 keeps positions on-device only.
 
+## Audiobookshelf
+
+Self-hosted EPUB library. Account asks for the server address (`http://` or `https://`, for example
+a machine on your network) and a username and password. The password is not stored; the app keeps
+the server's access token. The tab has Downloaded and Catalog. Catalog shows the libraries you
+turned on, with Library, Series, Collections, Authors, and the server's sort. Account → Manage
+toggles those libraries. Reading position syncs as the EPUB location. Audiobook files are not played.
+
 ## Sign-in
 
 Plugins sign in either with a form (`auth.fields`; the password goes only to the site) or, with
@@ -146,9 +157,10 @@ Overwrite import choice on Library.
 
 ### Two-way sync
 
-Plugins with `setMembership` and `readPositions` (Royal Road today) sync lists and positions both
+Plugins with `setMembership` and `readPositions` (Royal Road) sync lists and positions both
 ways via **Sync** (Account; opening Account does not sync), after sign-in, pull-to-refresh, and
-before each new-chapter check. Quiet OkHttp `list()` pulls. Code:
+before each new-chapter check. Audiobookshelf syncs the reading position only (its lists are not
+two-way). Quiet OkHttp `list()` pulls. Code:
 [`plugin/sync/`](../app/src/main/java/com/personal/flowreader/plugin/sync/).
 
 - **Initial pull:** empty local baselines → site overwrites memberships + forces positions.

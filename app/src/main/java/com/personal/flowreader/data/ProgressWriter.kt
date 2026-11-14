@@ -43,13 +43,16 @@ data class ProgressUpdate(
             blockIndex: Int = 0,
             charOffset: Int = 0,
             anchorText: String = "",
+            /** When set (ebook locus sync), overrides the chapter-index fraction. */
+            fraction: Float? = null,
         ) = ProgressUpdate(
             session = ReadingSessionId(domain, rowKey),
             rowKey = rowKey,
             chapterIndex = chapterIndex,
             blockIndex = blockIndex,
             charOffset = charOffset,
-            fraction = if (chapterCount > 0) chapterIndex.toFloat() / chapterCount else 0f,
+            fraction = fraction?.coerceIn(0f, 1f)
+                ?: if (chapterCount > 0) chapterIndex.toFloat() / chapterCount else 0f,
             at = at,
             anchorText = anchorText,
             chapterHref = chapterHref,
