@@ -39,8 +39,9 @@ Pushing `main` publishes to users immediately.
    `main`.
 3. Watch the Pages workflow, and confirm the live `index.json` file hash matches the local `index.json`.
 
-## Record
+## Record (`flow-reader-chats`, branch `main`)
 
-- Append a row to `../flow-reader-chats/decisions/release.md` with the version, date and the confirmed device checks.
-- Update the current version in `../flow-reader-chats/areas/release.md` (until area files are retired).
-- Reply with the versions shipped, the release URL and the commit SHAs.
+- Append a row to `decisions/release.md` with the version, date and the confirmed device checks.
+- Update the current version in `areas/release.md` (until area files are retired).
+- Commit with commit-mine and push `main`. Commit only the release record, not other dirty files in that repo.
+- Reply with the versions shipped, the release URL and the commit SHAs for all three repos.
