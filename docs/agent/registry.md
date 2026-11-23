@@ -490,10 +490,10 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 ## Plugin UI
 
 ### Plugin tab (PluginTab)
-- Words: plugin tab, Follow, Favorite, Read Later, list sub-tab, Search, Account, pull to refresh, new chapters dot
+- Words: plugin tab, Follow, Favorite, Read Later, list sub-tab, Search, Account, pull to refresh, new chapters dot, openInSearch
 - Owner: ui/plugin/PluginTabViewModel.kt
-- Changes with: ui/plugin/PluginTab.kt, ui/plugin/PluginSyncController.kt, ui/plugin/PositionConflictCard.kt, ui/plugin/SyncTargets.kt, ui/library/PluginNewChapters.kt, library/plugin/LibraryPluginActions.kt
-- Tests: SyncTargetsTest, GroupedRowsTest, CrawlCountTest
+- Changes with: ui/plugin/PluginTab.kt, ui/plugin/AddFromSource.kt, ui/plugin/PluginShelf.kt, ui/plugin/PluginSyncController.kt, ui/plugin/PositionConflictCard.kt, ui/plugin/SyncTargets.kt, ui/library/PluginNewChapters.kt, library/plugin/LibraryPluginActions.kt
+- Tests: SyncTargetsTest, GroupedRowsTest, CrawlCountTest, PluginApiVersionTest
 - Rules: .cursor/rules/plugin-ui.mdc, .cursor/rules/plugin-api.mdc
 - Pitfalls:
   - `PluginTabViewModel` is very large and keyed `plugin-tab:{id}:{version}`; up to three instances of it can exist per plugin (Library, reader card, Settings). They share only `PluginManager.sessionChanges` and `TwoWaySync.changes`.
@@ -501,7 +501,8 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
   - Position writes go through `ProgressWriter` with the catalog row existing first; never write a plugin position table directly.
   - Tap on a story opens its media card; double-tap opens the reader.
   - Modal overlays inside a tab sit below the tab bar; hoist them to the Library root.
-- Rejected: an RR tab as a browse page with chips, or an on-tab search bar; equal-width tab slots with ellipsized labels (labels must not truncate). From areas/plugins.md.
+  - `lists[].openInSearch` shelves are excluded from sub-tabs; Search (FAB) hosts them, with "Search {name} >" for the title bar.
+- Rejected: an RR tab as a browse page with chips, or an on-tab search bar; equal-width tab slots with ellipsized labels (labels must not truncate). From areas/plugins.md. Search-section discover shelf (`openInSearch`) is allowed and is not that rejected shape.
 - Device check: open a plugin tab, switch list sub-tabs, pull to refresh, toggle a list on a story, read a chapter, then return and check the "Chapter n/total" chip.
 - Known issues: none recorded
 
@@ -539,17 +540,18 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Known issues: none recorded
 
 ### Creator page, browse and search
-- Words: creator page, Memberships, browse list, add by link, search, Add from source, sort chips
+- Words: creator page, Memberships, browse list, add by link, search, Add from source, sort chips, openInSearch, Search section shelf
 - Owner: ui/plugin/CreatorPage.kt
-- Changes with: ui/plugin/PluginBrowse.kt, ui/plugin/AddFromSource.kt, ui/plugin/WorkCard.kt, ui/plugin/PluginListCrawlCard.kt, ui/common/BookCover.kt
-- Tests: GroupedRowsTest, SiteOpenUrlTest
+- Changes with: ui/plugin/PluginBrowse.kt, ui/plugin/AddFromSource.kt, ui/plugin/PluginShelf.kt, ui/plugin/WorkCard.kt, ui/plugin/PluginListCrawlCard.kt, ui/common/BookCover.kt
+- Tests: GroupedRowsTest, SiteOpenUrlTest, PluginApiVersionTest
 - Rules: .cursor/rules/plugin-ui.mdc
 - Pitfalls:
   - File names do not match contents: the search pane is in `AddFromSource.kt`; `BrowseListPane` is in `CreatorPage.kt`.
   - `PluginBrowseController` drives creator-page tabs and paging through the plugin's `browse`.
+  - `PluginShelfPane` dual dropdowns: when `browse` omits `desc`, the second menu is a filter (no ↑/↓ flip); ABS still sends `desc`.
   - Remote covers use `rememberRemoteCover`, a separate client from the plugin HTTP stack.
 - Rejected: none recorded
-- Device check: on Patreon open a creator from Memberships, switch tabs, load more, add a story by link, and search.
+- Device check: on Patreon open a creator from Memberships, switch tabs, load more, add a story by link, and search. On RR, eyeglass → Lists + Genres, then Search Royal Road > title bar and back.
 - Known issues: none recorded
 
 ### Plugin settings and data panes
@@ -675,7 +677,7 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 ## Plugins repo
 
 ### Royal Road plugin
-- Words: Royal Road, RR, rr, royalroad, Follows, fiction, author notes
+- Words: Royal Road, RR, rr, royalroad, Follows, fiction, author notes, curated lists, Rising Stars, Best Rated, genre filter
 - Owner: ../flow-reader-plugins/RoyalRoad
 - Changes with: ../flow-reader-plugins/test/royalroad.test.mjs, ../flow-reader-plugins/index.json
 - Tests: royalroad.test.mjs (plugins repo)
@@ -685,9 +687,11 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
   - Parses site HTML, so a markup change on the site breaks it silently; the plugin has probes (markup and login-wall checks) that feed the Plugins debug channel.
   - Chapter body is `div.chapter-inner` only; author notes are a setting, default off.
   - Follow, Favorite and Read Later are syncable lists; the app's two-way sync calls `setMembership`, `syncProgress` and `readPositions`.
+  - Search FAB opens curated fiction lists (`fictions` list, `openInSearch` shelf) via `browse`; title search is "Search Royal Road >". Advanced filters later: `https://www.royalroad.com/fictions/search?globalFilters=true`.
+  - Curated genre filter is `?genre=` on `/fictions/{list}` (slug with underscores); omit `desc` on browse pages so the host treats genres as filters.
   - Any release needs a `plugin.json` version bump and a rebuilt `index.json`; pushing `main` publishes to users at once.
 - Rejected: none recorded
-- Device check: sign in, Sync now, follow a story from the app and confirm it appears on the site, read a chapter with author notes on and off.
+- Device check: eyeglass → Lists + Genres, switch list/genre, Search Royal Road > title search and back, open a result. Sign in, Sync now, follow a story from the app and confirm it appears on the site, read a chapter with author notes on and off.
 - Known issues: none recorded
 
 ### Patreon plugin
@@ -884,9 +888,9 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
 - Known issues: none recorded
 
 ### Design system controls, surfaces and icons
-- Words: toggle row, slider row, dropdown row, text field, chips, list row, badge, dot, button, FAB, cover, surface, icon token
+- Words: toggle row, slider row, dropdown row, text field, chips, list row, badge, dot, button, FAB, cover, surface, icon token, skeleton, FlowSkeletonList
 - Owner: ui/design/controls/FlowSettingsRows.kt
-- Changes with: ui/design/controls/FlowButtons.kt, ui/design/controls/FlowListRow.kt, ui/design/controls/FlowBadge.kt, ui/design/surface/FlowCover.kt, ui/design/surface/FlowSurface.kt, ui/design/FlowIcons.kt
+- Changes with: ui/design/controls/FlowButtons.kt, ui/design/controls/FlowListRow.kt, ui/design/controls/FlowBadge.kt, ui/design/controls/FlowSkeleton.kt, ui/design/surface/FlowCover.kt, ui/design/surface/FlowSurface.kt, ui/design/FlowIcons.kt
 - Tests: none
 - Rules: .cursor/rules/ui-system.mdc
 - Pitfalls:
@@ -894,9 +898,10 @@ Every source file and plugin folder must be named by an `Owner:` or `Changes wit
   - Icon tokens in `FlowIcons` are plugin API: append only; never rename or remove.
   - `FlowSurface` is for design-system internals.
   - Do not borrow another component's size token for a new component; add one.
+  - `FlowSkeletonList` is for empty loading (row stencils); keep the thin `LinearProgressIndicator` only for busy overlays that already use it.
   - "Use this instead" list: `docs/ui-system/README.md`.
 - Rejected: none recorded
-- Device check: Settings > Layout and Audio exercise most rows; Library cards exercise badges and dots.
+- Device check: Settings > Layout and Audio exercise most rows; Library cards exercise badges and dots; RR Search discover shows skeleton while the first page loads.
 - Known issues: none recorded
 
 ### Theme and tokens

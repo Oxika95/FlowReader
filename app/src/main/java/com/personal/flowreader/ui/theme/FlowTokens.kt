@@ -55,6 +55,8 @@ object FlowTokens {
         val ButtonSecondary = 40.dp
         val ButtonPrimary = 48.dp
         val FieldHeight = 56.dp
+        /** Compact outlined dropdown (shelf / dense toolbars); below [FieldHeight]. */
+        val DropdownCompact = 40.dp
         /** Both tab levels keep the 48dp minimum touch target. */
         val TabBar = 48.dp
         val TabIndicatorPrimary = 3.dp
@@ -68,6 +70,11 @@ object FlowTokens {
         val CircleButton = Icon.Hero
         val CircleButtonIcon = Icon.M
         val ProgressBar = 3.dp
+        /** Skeleton stencil: title/meta bar thickness and chip stubs (list-row placeholders). */
+        val SkeletonTitle = Space.M
+        val SkeletonMeta = Space.S
+        val SkeletonChip = Icon.Hero
+        val SkeletonChipWide = 48.dp
         val SliderValueWidth = 48.dp
         val AccentTrack = 22.dp
         val GridMinCell = 140.dp

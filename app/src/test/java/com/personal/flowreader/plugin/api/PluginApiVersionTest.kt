@@ -82,6 +82,27 @@ class PluginApiVersionTest {
     }
 
     @Test
+    fun manifest_readsOpenInSearchShelf() {
+        val m = PluginManifest.parse(
+            """{"id":"demo","apiVersion":6,"capabilities":["browse","search"],
+               "lists":[
+                 {"id":"follow","title":"Follow"},
+                 {"id":"fictions","kind":"browse","shelf":true,"openInSearch":true},
+                 {"id":"catalog","kind":"browse","shelf":true}
+               ]}""",
+        )
+        assertTrue(m.list("fictions")!!.openInSearch)
+        assertFalse(m.list("catalog")!!.openInSearch)
+        assertEquals("fictions", m.searchShelfList()?.id)
+        assertEquals(listOf("follow", "catalog"), m.tabLists().map { it.id })
+        assertFalse(
+            PluginManifest.parse(
+                """{"id":"demo","lists":[{"id":"x","kind":"browse","openInSearch":true}]}""",
+            ).list("x")!!.openInSearch,
+        )
+    }
+
+    @Test
     fun browsePage_keepsKnownSortOrFallsBackToFirst() {
         val page = PluginJson.browsePage(
             JSONObject(

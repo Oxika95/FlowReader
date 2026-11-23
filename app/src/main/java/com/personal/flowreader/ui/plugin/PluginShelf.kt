@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,6 +28,7 @@ import com.personal.flowreader.ui.design.card.FlowEmptyState
 import com.personal.flowreader.ui.design.card.flowDisplayListPadding
 import com.personal.flowreader.ui.design.controls.FlowDropdownRow
 import com.personal.flowreader.ui.design.controls.FlowHint
+import com.personal.flowreader.ui.design.controls.FlowSkeletonList
 import com.personal.flowreader.ui.design.layer.FlowPullRefresh
 import com.personal.flowreader.ui.theme.FlowTokens
 import com.personal.flowreader.ui.theme.FlowType
@@ -54,6 +54,8 @@ private data class ShelfState(
     val refreshing: Boolean = false,
     val error: String? = null,
     val descending: Boolean = false,
+    /** When true, [sorts] are filters (no ↑/↓ flip); set when the page omits `desc`. */
+    val filterSorts: Boolean = false,
     val request: ShelfRequest = ShelfRequest(),
 )
 
@@ -71,6 +73,8 @@ internal fun PluginShelfPane(
     revision: Int = 0,
     modifier: Modifier = Modifier,
     bottomInset: Dp = FlowTokens.Space.None,
+    /** Drawn under the dual dropdowns (e.g. Search-section link into query mode). */
+    belowToolbar: (@Composable () -> Unit)? = null,
 ) {
     val app = LocalContext.current.applicationContext as FlowApp
     var state by remember(pluginId, listId) { mutableStateOf(ShelfState()) }
@@ -105,6 +109,7 @@ internal fun PluginShelfPane(
                 refreshing = false,
                 error = null,
                 descending = page.descending ?: state.descending,
+                filterSorts = page.descending == null,
             )
         } else {
             state.copy(
@@ -126,16 +131,20 @@ internal fun PluginShelfPane(
             state = state,
             onView = { tab -> go(ShelfRequest(tab = tab, generation = request.generation + 1)) },
             onSort = { sort ->
-                val current = bareSort(request.sort).ifBlank { state.sorts.firstOrNull()?.id.orEmpty() }
-                val flipping = current.isNotEmpty() && current == sort.id
-                val next = if (!flipping) sort.id else if (state.descending) "+${sort.id}" else "!${sort.id}"
-                go(request.copy(sort = next, page = 1, generation = request.generation + 1))
+                if (state.filterSorts) {
+                    go(request.copy(sort = sort.id, page = 1, generation = request.generation + 1))
+                } else {
+                    val current = bareSort(request.sort).ifBlank { state.sorts.firstOrNull()?.id.orEmpty() }
+                    val flipping = current.isNotEmpty() && current == sort.id
+                    val next = if (!flipping) sort.id else if (state.descending) "+${sort.id}" else "!${sort.id}"
+                    go(request.copy(sort = next, page = 1, generation = request.generation + 1))
+                }
             },
             onBack = {
                 go(request.copy(drillId = null, drillTitle = "", page = 1, sort = "", generation = request.generation + 1))
             },
         )
-        if (state.loading && state.items.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+        belowToolbar?.invoke()
         state.error?.let {
             FlowHint(it, error = true, modifier = Modifier.padding(horizontal = FlowTokens.Pad.Screen))
         }
@@ -144,12 +153,16 @@ internal fun PluginShelfPane(
             onRefresh = { go(request.copy(page = 1, generation = request.generation + 1), refresh = true) },
             modifier = Modifier.weight(1f),
         ) {
-            if (!state.loading && state.items.isEmpty() && state.error == null) {
-                FlowEmptyState("Nothing to show yet.", Modifier.fillMaxSize())
-            } else {
-                FlowDisplayList(
+            when {
+                state.loading && state.items.isEmpty() -> FlowSkeletonList(Modifier.fillMaxSize())
+                !state.loading && state.items.isEmpty() && state.error == null ->
+                    FlowEmptyState("Nothing to show yet.", Modifier.fillMaxSize())
+                else -> FlowDisplayList(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = flowDisplayListPadding(bottomExtra = bottomInset),
+                    contentPadding = flowDisplayListPadding(
+                        bottomExtra = bottomInset,
+                        top = FlowTokens.Space.XS,
+                    ),
                 ) {
                     items(groupedRows(state.items), key = { it.key() }) { entry ->
                         when (entry) {
@@ -208,7 +221,8 @@ private fun ShelfToolbar(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = FlowTokens.Pad.Screen, vertical = FlowTokens.Space.S),
+            .padding(horizontal = FlowTokens.Pad.Screen)
+            .padding(top = FlowTokens.Space.XS, bottom = FlowTokens.Space.None),
     ) {
         if (request.drillId != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -229,10 +243,22 @@ private fun ShelfToolbar(
                         optionLabel = { tab -> tab.label.ifBlank { tab.id } },
                         onSelect = { onView(it.id) },
                         modifier = Modifier.weight(1f),
+                        compact = true,
                     )
                 }
                 if (selectedSort != null) {
-                    SortMenu(selectedSort, sorts, state.descending, onSort, Modifier.weight(1f))
+                    if (state.filterSorts) {
+                        FlowDropdownRow(
+                            selected = selectedSort,
+                            options = sorts,
+                            optionLabel = { it.label.ifBlank { it.id } },
+                            onSelect = onSort,
+                            modifier = Modifier.weight(1f),
+                            compact = true,
+                        )
+                    } else {
+                        SortMenu(selectedSort, sorts, state.descending, onSort, Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -255,6 +281,7 @@ private fun SortMenu(
         },
         onSelect = onSort,
         modifier = modifier,
+        compact = true,
     )
 }
 

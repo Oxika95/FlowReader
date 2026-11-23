@@ -258,8 +258,12 @@ private fun DisplayTile(
 }
 
 /** Standard content padding for display card lists/grids (clears the FAB). */
-fun flowDisplayListPadding(inset: Dp = FlowTokens.Pad.Screen, bottomExtra: Dp = FlowTokens.Space.None): PaddingValues =
-    PaddingValues(start = inset, top = inset, end = inset, bottom = inset + FlowTokens.Comp.FabClearance + bottomExtra)
+fun flowDisplayListPadding(
+    inset: Dp = FlowTokens.Pad.Screen,
+    bottomExtra: Dp = FlowTokens.Space.None,
+    top: Dp = inset,
+): PaddingValues =
+    PaddingValues(start = inset, top = top, end = inset, bottom = inset + FlowTokens.Comp.FabClearance + bottomExtra)
 
 /** Vertical list of display cards with standard spacing and FAB clearance. */
 @Composable

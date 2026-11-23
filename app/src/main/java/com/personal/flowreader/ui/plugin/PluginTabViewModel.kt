@@ -98,7 +98,7 @@ data class PluginTabUi(
     val libraryMeta: Map<String, PluginLibraryMeta> = emptyMap(),
     val newCounts: Map<String, Int> = emptyMap(),
     val listMembers: Map<String, Set<String>> = emptyMap(),
-    val section: PluginSection = manifest.lists.firstOrNull()?.let { PluginSection.Library(it.id) }
+    val section: PluginSection = manifest.tabLists().firstOrNull()?.let { PluginSection.Library(it.id) }
         ?: PluginSection.Search,
     val listBookIds: Set<String> = emptySet(),
     val listRows: Map<String, PluginWork> = emptyMap(),
@@ -107,6 +107,8 @@ data class PluginTabUi(
     val searchResults: List<PluginWork> = emptyList(),
     val searchPage: Int = 0,
     val searchHasMore: Boolean = false,
+    /** Title-query mode inside Search; false = openInSearch discover shelf when present. */
+    val searchQueryMode: Boolean = false,
     val story: PluginStory? = null,
     val showManage: Boolean = false,
     val showToc: Boolean = false,
@@ -337,8 +339,22 @@ class PluginTabViewModel(app: Application, val pluginId: String) : AndroidViewMo
 
     fun setSection(section: PluginSection) {
         val (ids, rows) = membership(section)
-        _ui.update { it.copy(section = section, listBookIds = ids, listRows = rows, error = null) }
+        _ui.update {
+            it.copy(
+                section = section, listBookIds = ids, listRows = rows, error = null,
+                searchQueryMode = section != PluginSection.Search && it.searchQueryMode,
+            )
+        }
         maybeRefreshBrowse(section)
+    }
+
+    fun setSearchQueryMode(on: Boolean) = _ui.update {
+        it.copy(
+            searchQueryMode = on, error = null,
+            searchResults = if (on) it.searchResults else emptyList(),
+            searchPage = if (on) it.searchPage else 0,
+            searchHasMore = on && it.searchHasMore,
+        )
     }
 
     // --- Browse lists -----------------------------------------------------------------------

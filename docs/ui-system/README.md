@@ -101,6 +101,7 @@ before writing a row, button, list or loader.
 | a badge, "N new" chip or dot | `FlowBadge`, `newChaptersLabel`, `FlowDot` |
 | a progress bar | `FlowProgressBar` |
 | pull-to-refresh | `FlowPullRefresh`; an empty list message that still scrolls is `FlowEmptyState` |
+| empty-list loading bar / spinner | `FlowSkeletonList` (row stencils matching display cards) |
 | item metadata card for a new source | `FlowMediaCard` with a new pure adapter, not new parameters |
 | decoding a cover bitmap | `rememberBookCover`, `rememberRemoteCover`, `FlowCover` |
 | `MaterialTheme.typography.*` | `FlowType` roles |

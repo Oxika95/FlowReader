@@ -42,6 +42,7 @@ import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.clickable
 import com.personal.flowreader.ui.theme.FlowMotion
 import com.personal.flowreader.ui.theme.FlowTokens
@@ -220,7 +222,7 @@ fun FlowTextField(
     )
 }
 
-/** Read-only field that opens a menu of [options]. */
+/** Read-only field that opens a menu of [options]. [compact] uses [FlowTokens.Comp.DropdownCompact] with no vertical inset (text centered). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun <T> FlowDropdownRow(
@@ -231,26 +233,60 @@ fun <T> FlowDropdownRow(
     modifier: Modifier = Modifier,
     label: String? = null,
     enabled: Boolean = true,
+    compact: Boolean = false,
 ) {
     var open by rememberSaveable { mutableStateOf(false) }
+    val value = optionLabel(selected)
     Column(modifier.fillMaxWidth()) {
         if (label != null) FlowLabel(label)
         ExposedDropdownMenuBox(
             expanded = open && enabled,
             onExpandedChange = { if (enabled) open = it },
         ) {
-            OutlinedTextField(
-                value = optionLabel(selected),
-                onValueChange = {},
-                readOnly = true,
-                enabled = enabled,
-                singleLine = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) },
-                shape = FlowTokens.Shape.Field,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled),
-            )
+            if (compact) {
+                val outline = when {
+                    !enabled -> MaterialTheme.colorScheme.outline.copy(alpha = FlowTokens.Alpha.Disabled)
+                    open -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.outline
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(FlowTokens.Comp.DropdownCompact)
+                        .border(FlowTokens.Stroke.Hairline, outline, FlowTokens.Shape.Field)
+                        .clip(FlowTokens.Shape.Field)
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled)
+                        .padding(horizontal = FlowTokens.Space.M),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = value,
+                        style = FlowType.label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = FlowTokens.Alpha.Disabled)
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ExposedDropdownMenuDefaults.TrailingIcon(open)
+                }
+            } else {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = enabled,
+                    singleLine = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) },
+                    shape = FlowTokens.Shape.Field,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled),
+                )
+            }
             ExposedDropdownMenu(expanded = open && enabled, onDismissRequest = { open = false }) {
                 options.forEach { option ->
                     DropdownMenuItem(

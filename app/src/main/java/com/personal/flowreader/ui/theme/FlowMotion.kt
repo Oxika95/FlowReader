@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 object FlowMotion {
     const val Short = 150
     const val Medium = 250
+    /** Soft shimmer sweep on skeleton stencils. */
+    const val Skeleton = 1200
 
     private const val CardScale = 0.96f
 

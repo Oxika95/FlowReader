@@ -47,6 +47,11 @@
             "type": "boolean",
             "default": false,
             "description": "browse list shown in the tab via browse() (views and sorts), not as rows that open a card"
+          },
+          "openInSearch": {
+            "type": "boolean",
+            "default": false,
+            "description": "shelf list hosted in the Search section (FAB), not as a sub-tab; requires shelf"
           }
         }
       }

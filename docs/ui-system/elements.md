@@ -83,6 +83,12 @@ selected tab in view.
 `PullToRefreshBox`). The content must scroll vertically: `FlowDisplayList` / `FlowDisplayGrid`, or
 `FlowEmptyState`, which scrolls so an empty list still pulls. Used by the plugin tab's lists.
 
+## Skeleton (`ui/design/controls/FlowSkeleton.kt`)
+
+`FlowSkeletonList(rows)` draws list-row stencils (cover + title/meta bars) with a soft primary
+shimmer on `surfaceVariant`. Use for empty loading states that match `FlowDisplayLayout.Row`
+(plugin shelf Search discover). Accessibility label: "Loading".
+
 ## Meta (`FlowBadge.kt`)
 
 `FlowBadge(label, onCover)`, `FlowStat(stat, color)`, `FlowMetaRow(badges, stats, onCover)`:

@@ -13,8 +13,8 @@ android {
         applicationId = "com.personal.flowreader"
         minSdk = 26
         targetSdk = 36
-        versionCode = 121
-        versionName = "1.21-alpha"
+        versionCode = 122
+        versionName = "1.22-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

@@ -81,6 +81,11 @@ data class PluginList(
     val kind: PluginListKind = PluginListKind.Stories,
     /** Browse list drawn in the tab (`browse`), not as rows that open a card. */
     val shelf: Boolean = false,
+    /**
+     * Shelf list hosted in the Search section (FAB), not as a sub-tab. Requires [shelf].
+     * Absent = today's tab behaviour.
+     */
+    val openInSearch: Boolean = false,
 ) {
     val isBrowse: Boolean get() = kind == PluginListKind.Browse
 }
@@ -185,6 +190,13 @@ data class PluginManifest(
 
     fun list(id: String): PluginList? = lists.firstOrNull { it.id == id }
 
+    /** Lists shown as secondary sub-tabs (excludes [PluginList.openInSearch] shelves). */
+    fun tabLists(): List<PluginList> = lists.filterNot { it.openInSearch }
+
+    /** Shelf list drawn in the Search section, if the manifest declares one. */
+    fun searchShelfList(): PluginList? =
+        lists.firstOrNull { it.openInSearch && it.shelf && it.isBrowse }
+
     /** Resolved [serverSetting] key, or null when the setting is missing or blank. */
     fun serverSettingKey(): String? = serverSetting.trim().takeIf { it.isNotEmpty() }
 
@@ -258,6 +270,9 @@ data class PluginManifest(
                             notifyDefault = listKind == PluginListKind.Stories && l.optBoolean("notifyDefault", false),
                             kind = listKind,
                             shelf = listKind == PluginListKind.Browse && l.optBoolean("shelf", false),
+                            openInSearch = listKind == PluginListKind.Browse &&
+                                l.optBoolean("shelf", false) &&
+                                l.optBoolean("openInSearch", false),
                         )
                     }
                 },

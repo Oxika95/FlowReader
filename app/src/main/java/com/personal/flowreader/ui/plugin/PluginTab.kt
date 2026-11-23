@@ -213,12 +213,15 @@ fun PluginTabContent(
                 }
             }
             PluginSection.Search -> PluginSearchPane(
+                pluginId = plugin.id,
                 ui = ui,
                 onQuery = vm::setQuery,
                 onSearch = vm::search,
                 onOpen = vm::openWork,
+                onSearchQueryMode = vm::setSearchQueryMode,
                 modifier = Modifier.weight(1f),
                 bearerToken = app.pluginManager.bearerToken(plugin.id),
+                bottomInset = bottomInset,
             )
         }
     }
@@ -262,7 +265,7 @@ private fun PluginSubTabs(
         else -> null
     }
     val tabs = buildList {
-        manifest.lists.forEach { list ->
+        manifest.tabLists().forEach { list ->
             val section = PluginSection.Library(list.id)
             val selected = !ui.showAccount && ui.section == section
             val members = ui.listMembers[list.id].orEmpty()

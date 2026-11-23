@@ -1,25 +1,31 @@
 package com.personal.flowreader.ui.plugin
 
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import com.personal.flowreader.plugin.api.PluginCapability
 import com.personal.flowreader.plugin.api.PluginWork
 import com.personal.flowreader.ui.design.card.FlowDisplayList
 import com.personal.flowreader.ui.design.card.FlowFullscreenCard
+import com.personal.flowreader.ui.design.card.FlowTextAction
 import com.personal.flowreader.ui.design.card.flowDisplayListPadding
 import com.personal.flowreader.ui.design.controls.FlowHint
 import com.personal.flowreader.ui.design.controls.FlowTextField
@@ -41,24 +47,75 @@ private fun SearchField(ui: PluginTabUi, onQuery: (String) -> Unit, onSearch: ()
     )
 }
 
-/** Search section: query field, work display cards, and "Load more" when the plugin reports more pages. */
+/**
+ * Search section: optional discover shelf ([PluginList.openInSearch]) with dual dropdowns, then
+ * title-query mode via "Search {name} >". Without an openInSearch list, query mode only.
+ */
 @Composable
 internal fun PluginSearchPane(
+    pluginId: String,
     ui: PluginTabUi,
     onQuery: (String) -> Unit,
     onSearch: (more: Boolean) -> Unit,
     onOpen: (PluginWork) -> Unit,
+    onSearchQueryMode: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     bearerToken: String? = null,
+    bottomInset: Dp = FlowTokens.Space.None,
 ) {
-    Column(modifier.fillMaxWidth()) {
+    val shelf = ui.manifest.searchShelfList()
+    if (shelf != null && !ui.searchQueryMode) {
+        PluginShelfPane(
+            pluginId = pluginId,
+            listId = shelf.id,
+            bearerToken = bearerToken,
+            onOpenBook = onOpen,
+            modifier = modifier,
+            bottomInset = bottomInset,
+            belowToolbar = {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = FlowTokens.Pad.Screen)
+                        .padding(top = FlowTokens.Space.None, bottom = FlowTokens.Space.XS),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FlowTextAction(
+                        "Search ${ui.manifest.name} >",
+                        { onSearchQueryMode(true) },
+                        enabled = !ui.busy,
+                        compact = true,
+                    )
+                }
+            },
+        )
+        return
+    }
+    Column(modifier.fillMaxSize()) {
+        if (shelf != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = FlowTokens.Pad.Screen, vertical = FlowTokens.Space.S),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { onSearchQueryMode(false) }, enabled = !ui.busy) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to lists")
+                }
+                Text("Search ${ui.manifest.name}", style = FlowType.rowTitle, modifier = Modifier.weight(1f))
+            }
+        }
         SearchField(
             ui = ui,
             onQuery = onQuery,
             onSearch = { onSearch(false) },
             modifier = Modifier.padding(horizontal = FlowTokens.Pad.Screen, vertical = FlowTokens.Space.S),
         )
-        FlowDisplayList(contentPadding = flowDisplayListPadding()) {
+        FlowDisplayList(
+            modifier = Modifier.weight(1f),
+            contentPadding = flowDisplayListPadding(bottomExtra = bottomInset),
+        ) {
             items(ui.searchResults, key = { it.id }) { work ->
                 WorkCard(work = work, enabled = !ui.busy, onOpen = onOpen, bearerToken = bearerToken)
             }

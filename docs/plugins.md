@@ -34,6 +34,9 @@ Then show the tab from Library → **+** → **Plugins**.
 
 Sub-tabs are the plugin's lists as icons (manifest `lists[].icon`; for Royal Road: Follow,
 Favorite, Read Later), then Account (or plugin Settings) when supported. Search is the FAB.
+On Royal Road the Search FAB opens curated fiction lists (Best Rated, Rising Stars, and the rest)
+with a genre filter; **Search Royal Road >** switches to a title search bar. A list marked
+`openInSearch` stays out of the sub-tabs and lives in that Search section instead.
 Library rows: title, author, **Chapter n/total** chip (primary / secondary / muted) and **"N new"**
 when chapters remain after the saved position. Sort circle above the FAB opens a compact **Sort**
 card (default **Updates**: unread-ahead, then unstarted, then complete; else Title / Author / Date

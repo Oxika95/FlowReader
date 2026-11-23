@@ -60,6 +60,9 @@ stories. `"shelf": true` skips those rows: the tab calls `browse(listId, page, s
 and draws that page's `tabs` and `sorts`. A row id of `series:`, `collection:`, or `author:`
 stays in the tab and calls `browse` again for that group's books. `desc` on the page is the
 direction applied; choosing the current sort again sends `!id` (high to low) or `+id` (low to high).
+When the page omits `desc`, the second dropdown is a plain filter (no ↑/↓, no flip).
+`"openInSearch": true` (with `shelf`) keeps the list out of sub-tabs and hosts the same shelf UI
+in the Search section (FAB); a "Search {name} >" action switches to the title-query field.
 
 - `list(listId, page)` returns its rows as `Work`s; the host stores only the rows (no library books,
   no catalog entries) and Overwrite never deletes stories. `membershipToggle` and `notifyDefault`

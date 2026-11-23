@@ -26,6 +26,8 @@ Docs: `docs/plugins/api.md` (router to manifest, functions, features, host pages
   (`storyId`), or items, loaded on first view and kept while open. Text tabs add `sections`;
   `Work.group` drives `groupedRows` headers; badges may be `{label, tone}` (`PluginTone` →
   `FlowBadgeTone`), persisted in membership rows via `PluginJson.badgesToJson`.
+  `shelf` + `openInSearch`: Search-section shelf (`PluginShelf` / `AddFromSource`); omit `desc` on
+  the page for a filter dropdown instead of sort flip.
 - Two-way sync (`plugin/sync/`): `syncable` lists and positions; optional `readPositions(works)` →
   `PluginReadPosition[]` (progressSync); `setMembership(..., false)` removes on the site;
   `flow.fetch(url, { cookies: false })` sends clearance cookies only (Anubis / CF), not session.

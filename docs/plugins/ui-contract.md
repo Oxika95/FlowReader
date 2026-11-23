@@ -9,11 +9,13 @@ from the manifest and from data the plugin returns. Plugin UI code:
 Each enabled plugin adds one library tab (next to Files and Queue).
 
 - **Sub-tabs**: a `Secondary` `FlowTabBar`. Order:
-  1. One text tab per manifest `lists[]` entry, in declared order (local stories on that list).
+  1. One text tab per manifest `lists[]` entry that is not `openInSearch`, in declared order
+     (local stories on that list, or an in-tab shelf).
   2. Trailing action: **Account** (if `auth`), else **Plugin settings** (if `settings`).
 - **Body**: local stories use `LibraryBooksPane` (the Files display cards, following the library
   view mode). Search results (via FAB) and browse-list rows (`kind: "browse"`) use `WorkCard` (a
-  `FlowDisplayCard` row).
+  `FlowDisplayCard` row). An `openInSearch` shelf defaults the Search section to that shelf's
+  dual dropdowns; "Search {name} >" switches to the title-query field.
 - **FAB** (`PluginTabFab`): search icon → Search section when `search` is declared; otherwise `+`
   opens **Add from source** when `resolveUrl` is declared.
 
@@ -35,7 +37,8 @@ Each enabled plugin adds one library tab (next to Files and Queue).
 | `SyncChoiceSheet` | `FlowConfirmCard` | After sign-in / Sync | Merge vs Overwrite | Merge, Overwrite, Cancel |
 | `PluginSettingsSheet` | `FlowFullscreenCard` | Settings > Plugins > the plugin's sub-tab (inline form), or the tab's settings action | One row per manifest `settings[]` entry | Edits persist immediately |
 | `AddFromSourceSheet` | `FlowFullscreenCard` | FAB when `resolveUrl` only | Paste URL | Go |
-| `PluginSearchPane` | Search field + `WorkCard` list | FAB search icon | Query + results | Search, Load more, result tap |
+| `PluginSearchPane` | Search field + `WorkCard` list, or `PluginShelfPane` when `openInSearch` | FAB search icon | Discover shelf (tabs/sorts) or query + results | List/genre (or sort) dropdowns; Search {name} >; Back; Search; Load more; result tap |
+| `PluginShelfPane` | Dual `FlowDropdownRow` + `WorkCard` list | Shelf list tab, or Search when `openInSearch` | `browse` tabs + sorts/filters + items | View/sort (or filter when page omits `desc`); Load more; result tap |
 
 All sheets stack over the media card (Back closes the top one).
 

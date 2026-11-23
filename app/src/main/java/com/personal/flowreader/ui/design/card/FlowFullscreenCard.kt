@@ -240,17 +240,23 @@ fun FlowActionRow(
     }
 }
 
-/** Text action for [FlowActionRow]. [destructive] tints with `colorScheme.error`. */
+/** Text action for [FlowActionRow]. [destructive] tints with `colorScheme.error`. [compact] tightens padding for dense toolbars. */
 @Composable
 fun FlowTextAction(
     label: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
     destructive: Boolean = false,
+    compact: Boolean = false,
 ) {
     TextButton(
         onClick = onClick,
         enabled = enabled,
+        contentPadding = if (compact) {
+            PaddingValues(horizontal = FlowTokens.Space.S, vertical = FlowTokens.Space.XS)
+        } else {
+            ButtonDefaults.TextButtonContentPadding
+        },
         colors = if (destructive) {
             ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
         } else {
